@@ -34,10 +34,10 @@ rechit_y = rechit_y[rechit_z>0]
 rechit_e = rechit_e[rechit_z>0]
 rechit_z = rechit_z[rechit_z>0]
 
-#rechit_x = rechit_x[rechit_e>5e-2]
-#rechit_y = rechit_y[rechit_e>5e-2]
-#rechit_z = rechit_z[rechit_e>5e-2]
-#rechit_e = rechit_e[rechit_e>5e-2]
+rechit_x = rechit_x[rechit_e>5e-2]
+rechit_y = rechit_y[rechit_e>5e-2]
+rechit_z = rechit_z[rechit_e>5e-2]
+rechit_e = rechit_e[rechit_e>5e-2]
 
 pl = plotter_3d("outfile.pdf", interactive=True)
 pl.set_data(rechit_x,rechit_y,rechit_z,rechit_e)#np.logical_and(rechit_z<0, rechit_e>1e-6))
