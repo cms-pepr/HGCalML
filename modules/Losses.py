@@ -9,8 +9,8 @@ def weighted_frac_loss( truth, pred, usesqrt):
     print('pred',pred.shape)
     print('truth',truth.shape)
     
-    sigfrac = truth[:,:,0:-1]
-    weight = truth[:,:,-1]
+    sigfrac = truth[:,:,1:]
+    weight = truth[:,:,0]
     weight = tf.expand_dims(weight,axis=2)
     
     print('weight',weight.shape)

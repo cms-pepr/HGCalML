@@ -9,18 +9,15 @@ CC_FLAGS += -I./interface -I${DEEPJETCORE}/compiled/interface
 
 all: $(patsubst bin/%.cpp, %, $(wildcard bin/*.cpp))
 
-#compile the module helpers if necessary
-../modules/libdeepjethelpers.so:
-        cd ../modules; make; cd -
 
 %: bin/%.cpp  $(OBJ_FILES) ${DEEPJETCORE}/compiled/libdeepjetcorehelpers.so
-        g++ $(CC_FLAGS) $(LD_FLAGS) $(OBJ_FILES) $< -o $@ 
+	g++ $(CC_FLAGS) $(LD_FLAGS) $(OBJ_FILES) $< -o $@ 
 
 
 obj/%.o: src/%.cpp
-        g++ $(CC_FLAGS) -c -o $@ $<
+	g++ $(CC_FLAGS) -c -o $@ $<
 
 
 clean: 
-        rm -f obj/*.o obj/*.d
-        rm -f %
+	rm -f obj/*.o obj/*.d
+	rm -f %
