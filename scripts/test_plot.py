@@ -38,9 +38,9 @@ for event in range(4,20):
     average_eta = np.mean(simcluster_eta)
     average_phi = np.mean(simcluster_phi)
     
-    selection_eta = np.abs(rechit_eta - average_eta) < 0.3
-    selection_phi = np.logical_or(np.abs(rechit_phi - average_phi) < 0.3, 
-                                  np.abs(rechit_phi - average_phi -2.*3.1415) < 0.3)
+    selection_eta = np.abs(rechit_eta - average_eta) < 0.5
+    selection_phi = np.logical_or(np.abs(rechit_phi - average_phi) < 0.5, 
+                                  np.abs(rechit_phi - average_phi -2.*3.1415) < 0.5)
     
     selection = np.logical_and(selection_eta,selection_phi)
     selection = np.logical_and(selection,rechit_z>0)
@@ -49,6 +49,8 @@ for event in range(4,20):
     rechit_y = rechit_y[selection]
     rechit_e = rechit_e[selection]
     rechit_z = rechit_z[selection]
+    
+    print('selected rechits ', rechit_x.shape, 'eta', average_eta)
     
     #rechit_x = rechit_x[rechit_e>1e-2]
     #rechit_y = rechit_y[rechit_e>1e-2]
@@ -59,9 +61,5 @@ for event in range(4,20):
     pl.set_data(rechit_x,rechit_y,rechit_z,rechit_e)#np.logical_and(rechit_z<0, rechit_e>1e-6))
     pl.plot3d()
     pl.save_binary("testfile_"+ str(event) +".bin")
-
-
-
-
 
 
