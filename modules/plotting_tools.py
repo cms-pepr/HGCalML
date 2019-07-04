@@ -98,9 +98,9 @@ class plotter_3d(base_plotter):
             
             
         size_scaling = e
-        size_scaling /= np.max(size_scaling)
-        size_scaling -= np.min(size_scaling)-0.01
-        size_scaling = np.exp(size_scaling*5.)
+        #size_scaling /= np.max(size_scaling)
+        #size_scaling -= np.min(size_scaling)-0.01
+        #size_scaling = np.exp(size_scaling*5.)
         size_scaling /=  np.max(size_scaling)
         size_scaling *= 20.
         
@@ -113,29 +113,6 @@ class plotter_3d(base_plotter):
         plt.close()
         
         
-    def _plot(self):
-        #return
-        pred_coords = predict_output_list[0][0]
-        #print('pred_coords',pred_coords.shape)
-        orig_coords = model_input_list[0][0]
-        fig = plt.figure()
-        ax = fig.add_subplot(121, projection='3d')
-        xs = np.reshape(pred_coords[:,-1],[1,-1])
-        ys = np.reshape(pred_coords[:,-2],[1,-1])
-        zs = np.reshape(pred_coords[:,-3],[1,-1])
-        #flattened_sigfrac = np.reshape(truth_list[0][:,:,:,0],[1,-1])
-        #ax.set_axis_off()
-        ax.scatter(xs=xs, ys=ys, zs=zs, 
-                   c=np.reshape(orig_coords, [1,-1]), s=5*np.reshape(orig_coords, [1,-1]),
-                   cmap='YlOrRd')#,c=flattened_sigfrac)
-        ax.view_init(30, self.glob_counter)
-        
-        if self.glob_anglecounter>360:
-            self.glob_anglecounter=0
-        fig.add_subplot(122)
-        plt.imshow(orig_coords[:,:,0])
-        fig.savefig(outputname)
-        plt.close()
             
             
         

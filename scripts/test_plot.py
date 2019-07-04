@@ -7,7 +7,10 @@ import numpy as np
 ## get the data
 
 
-infile = "/afs/cern.ch/work/j/jkiesele/HGCal/data_test/hgc_tuple/ntup_0_n20.root"
+indir = "/eos/cms/store/cmst3/group/hgcal/CMG_studies/gvonsem/hgcalsim/LocalRun/NtupTask/dev_CloseByParticleGun_fixedTimeOffset_DeltaR"
+DR="0p2"
+DRcut=0.4
+infile = indir+DR+"_trialLocal/ntup_0_n50.root"
 
 usebranches = ['rechit_x','rechit_y','rechit_z','rechit_energy',
                'simcluster_eta','simcluster_phi',
@@ -38,9 +41,9 @@ for event in range(4,20):
     average_eta = np.mean(simcluster_eta)
     average_phi = np.mean(simcluster_phi)
     
-    selection_eta = np.abs(rechit_eta - average_eta) < 0.5
-    selection_phi = np.logical_or(np.abs(rechit_phi - average_phi) < 0.5, 
-                                  np.abs(rechit_phi - average_phi -2.*3.1415) < 0.5)
+    selection_eta = np.abs(rechit_eta - average_eta) < DRcut
+    selection_phi = np.logical_or(np.abs(rechit_phi - average_phi) < DRcut,
+                                  np.abs(rechit_phi - average_phi -2.*3.1415) < DRcut)
     
     selection = np.logical_and(selection_eta,selection_phi)
     selection = np.logical_and(selection,rechit_z>0)
