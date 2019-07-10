@@ -8,12 +8,14 @@ class GlobalExchange(keras.layers.Layer):
         super(GlobalExchange, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        # input_shape = (None, V, F)
+        # tf.ragged FIXME?
         self.num_vertices = input_shape[1]
         super(GlobalExchange, self).build(input_shape)
 
     def call(self, x):
         mean = tf.reduce_mean(x, axis=1, keepdims=True)
+        # tf.ragged FIXME?
+        # maybe just use tf.shape(x)[1] instead?
         mean = tf.tile(mean, [1, self.num_vertices, 1])
         return tf.concat([x, mean], axis=-1)
 
@@ -39,6 +41,8 @@ class GravNet(keras.layers.Layer):
     def build(self, input_shape):
         self.input_feature_transform.build(input_shape)
         self.input_spatial_transform.build(input_shape)
+        
+        # tf.ragged FIXME?
         self.output_feature_transform.build((input_shape[0], input_shape[1], input_shape[2] + self.input_feature_transform.units * 2))
 
         for layer in self._sublayers:
@@ -58,19 +62,22 @@ class GravNet(keras.layers.Layer):
         return self.output_feature_transform(updated_features)
 
     def compute_output_shape(self, input_shape):
+        
+        # tf.ragged FIXME? tf.shape() might do the trick already
         return (input_shape[0], input_shape[1], self.output_feature_transform.units)
 
     def collect_neighbours(self, coordinates, features):
-        # V = number of vertices
-        # N = number of neighbours
-        # F = number of features per vertex
-    
+        
+        # tf.ragged FIXME?
+        # for euclidean_squared see caloGraphNN.py
         distance_matrix = euclidean_squared(coordinates, coordinates)
         ranked_distances, ranked_indices = tf.nn.top_k(-distance_matrix, self.n_neighbours)
 
         neighbour_indices = ranked_indices[:, :, 1:]
 
         n_batches = tf.shape(features)[0]
+        
+        # tf.ragged FIXME? or could that work?
         n_vertices = tf.shape(features)[1]
         n_features = tf.shape(features)[2]
 
@@ -79,6 +86,7 @@ class GravNet(keras.layers.Layer):
         batch_range = tf.expand_dims(batch_range, axis=1)
         batch_range = tf.expand_dims(batch_range, axis=1) # (B, 1, 1, 1)
 
+        # tf.ragged FIXME? n_vertices
         batch_indices = tf.tile(batch_range, [1, n_vertices, self.n_neighbours - 1, 1]) # (B, V, N-1, 1)
         vertex_indices = tf.expand_dims(neighbour_indices, axis=3) # (B, V, N-1, 1)
         indices = tf.concat([batch_indices, vertex_indices], axis=-1)
@@ -106,6 +114,9 @@ class GravNet(keras.layers.Layer):
             base_config = super(GravNet, self).get_config()
             return dict(list(base_config.items()) + list(config.items()))
 
+
+
+
 class GarNet(keras.layers.Layer):
     def __init__(self, n_aggregators, n_filters, n_propagate, **kwargs):
         super(GarNet, self).__init__(**kwargs)
@@ -123,6 +134,8 @@ class GarNet(keras.layers.Layer):
     def build(self, input_shape):
         self.input_feature_transform.build(input_shape)
         self.aggregator_distance.build(input_shape)
+        
+        # tf.ragged FIXME? tf.shape()?
         self.output_feature_transform.build((input_shape[0], input_shape[1], input_shape[2] + self.aggregator_distance.units + 2 * self.aggregator_distance.units * (self.input_feature_transform.units + self.aggregator_distance.units)))
 
         for layer in self._sublayers:
@@ -158,15 +171,18 @@ class GarNet(keras.layers.Layer):
 
     def apply_edge_weights(self, features, edge_weights, aggregation=None):
         features = tf.expand_dims(features, axis=1) # (B, 1, v, f)
-        edge_weights = tf.expand_dims(edge_weights, axis=3) # (B, u, v, 1)
+        edge_weights = tf.expand_dims(edge_weights, axis=3) # (B, A, v, 1)
 
+        # tf.ragged FIXME? broadcasting should work
         out = edge_weights * features # (B, u, v, f)
+        # tf.ragged FIXME? these values won't work
         n = features.shape[-2].value * features.shape[-1].value
 
         if aggregation:
             out = aggregation(out, axis=2) # (B, u, f)
             n = features.shape[-1].value
         
+        # tf.ragged FIXME? there might be a chance to spell out batch dim instead and use -1 for vertices?
         return tf.reshape(out, [-1, out.shape[1].value, n]) # (B, u, n)
     
     def get_config(self):
@@ -175,7 +191,7 @@ class GarNet(keras.layers.Layer):
             return dict(list(base_config.items()) + list(config.items()))
     
     
-    
+    # tf.ragged FIXME? the last one should be no problem
 class weighted_sum_layer(keras.layers.Layer):
     def __init__(self, **kwargs):
         super(weighted_sum_layer, self).__init__(**kwargs)

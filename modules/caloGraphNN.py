@@ -9,6 +9,7 @@ def gauss(x):
 def gauss_of_lin(x):
     return tf.exp(-1*(tf.abs(x)))
 
+# tf.ragged FIXME? This is the only function used from here in the keras implementation
 def euclidean_squared(A, B):
     """
     Returns euclidean distance between two batches of shape [B,N,F] and [B,M,F] where B is batch size, N is number of
@@ -21,6 +22,7 @@ def euclidean_squared(A, B):
 
     """
 
+    # tf.ragged FIXME? dangerous, but only used for asserts. Can be omitted.
     shape_A = A.get_shape().as_list()
     shape_B = B.get_shape().as_list()
     
