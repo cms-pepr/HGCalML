@@ -60,47 +60,6 @@ class GravNet(keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         return (input_shape[0], input_shape[1], self.output_feature_transform.units)
 
-    def collect_neighbours_fullmatrix(self, coordinates, features):
-        # implementation changed wrt caloGraphNN to account for batch size (B) being unknown (None)
-        # V = number of vertices
-        # N = number of neighbours
-        # F = number of features per vertex
-    
-        # distance_matrix is the actual (B, V, V) matrix
-        distance_matrix = euclidean_squared(coordinates, coordinates)
-        _, ranked_indices = tf.nn.top_k(-distance_matrix, self.n_neighbours)
-
-        neighbour_indices = ranked_indices[:, :, 1:]
-    
-        n_vertices = tf.shape(features)[1]
-        n_features = tf.shape(features)[2]
-    
-        # make a boolean mask of the neighbours (B, V, N-1)
-        neighbour_mask = tf.one_hot(neighbour_indices, depth=n_vertices, axis=-1, dtype=tf.int32)
-        neighbour_mask = tf.reduce_sum(neighbour_mask, axis=2)
-        neighbour_mask = tf.cast(neighbour_mask, tf.bool)
-
-        # (B, V, F) -[tile]> (B, V, V, F) -[mask]> (B, V, N-1, F)
-        neighbour_features = tf.expand_dims(features, axis=1)
-        neighbour_features = tf.tile(neighbour_features, [1, n_vertices, 1, 1])
-        neighbour_features = tf.boolean_mask(neighbour_features, neighbour_mask)
-        neighbour_features = tf.reshape(neighbour_features, [-1, n_vertices, self.n_neighbours - 1, n_features])
-
-        # (B, V, V) -[mask]> (B, V, N-1)
-        distance = tf.boolean_mask(distance_matrix, neighbour_mask)
-        distance = tf.reshape(distance, [-1, n_vertices, self.n_neighbours - 1])
-    
-        weights = gauss_of_lin(distance * 10.)
-        weights = tf.expand_dims(weights, axis=-1)
-    
-        # weight the neighbour_features
-        neighbour_features *= weights
-    
-        neighbours_max = tf.reduce_max(neighbour_features, axis=2)
-        neighbours_mean = tf.reduce_mean(neighbour_features, axis=2)
-    
-        return tf.concat([neighbours_max, neighbours_mean], axis=-1)
-
     def collect_neighbours(self, coordinates, features):
         # V = number of vertices
         # N = number of neighbours
@@ -140,7 +99,10 @@ class GravNet(keras.layers.Layer):
         return tf.concat([neighbours_max, neighbours_mean], axis=-1)
 
     def get_config(self):
-            config = {'n_neighbours': self.n_neighbours, 'n_dimensions': self.n_dimensions, 'n_filters': self.n_filters, 'n_propagate': self.n_propagate}
+            config = {'n_neighbours': self.n_neighbours, 
+                      'n_dimensions': self.n_dimensions, 
+                      'n_filters': self.n_filters, 
+                      'n_propagate': self.n_propagate}
             base_config = super(GravNet, self).get_config()
             return dict(list(base_config.items()) + list(config.items()))
 

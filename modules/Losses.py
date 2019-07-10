@@ -3,6 +3,8 @@
 global_loss_list = {}
 
 import tensorflow as tf
+import keras
+import keras.backend as K
 
 def weighted_frac_loss( truth, pred, usesqrt):
     
@@ -10,28 +12,29 @@ def weighted_frac_loss( truth, pred, usesqrt):
     print('truth',truth.shape)
     
     sigfrac = truth[:,:,1:]
-    weight = truth[:,:,0]
-    weight = tf.expand_dims(weight,axis=2)
+    weight = truth[:,:,0:1]
     
     print('weight',weight.shape)
     print('sigfrac',sigfrac.shape)
     
     if usesqrt:
-        weight = tf.sqrt(tf.abs(weight))
+        weight = tf.sqrt(tf.abs(weight)+K.epsilon())
     
     p_sigfrac = pred
     
     diffs = sigfrac - p_sigfrac
     diffsw = diffs * diffs * weight
     
-    sumsig = tf.reduce_sum(sigfrac*weight, axis=1)
+    sumsig = tf.reduce_sum(sigfrac*weight, axis=1) + K.epsilon()
     
-    sumsig = tf.Print(sumsig,[sumsig],'sumsig')
+    #sumsig = tf.Print(sumsig,[sumsig],'sumsig')
     
     sumdiffs = tf.reduce_sum(diffsw, axis=1)
     
+    #sumdiffs = tf.Print(sumdiffs,[sumdiffs],'sumdiffs')
+    
     #this loss is a bit different from the paper one
-    return  tf.reduce_mean(sumdiffs)#tf.sign(sumsig)*sumdiffs/sumsig) #the sign masks out the zeros
+    return  tf.reduce_mean(sumdiffs/sumsig)#tf.sign(sumsig)*sumdiffs/sumsig) #the sign masks out the zeros
     
     
 
