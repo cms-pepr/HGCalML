@@ -110,7 +110,14 @@ class TrainData_hitlist(TrainData):
 
 
 
+class TrainData_hitlist_layercluster(TrainData_hitlist):
+    def __init__(self):
+        TrainData.__init__(self)
 
+        self.max_rechits = 500
+        self.n_features=20
+        self.n_simcluster=20
+        
 
 
 

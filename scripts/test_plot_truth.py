@@ -7,27 +7,60 @@ from root_numpy import tree2array, root2array
 from plotting_tools import plotter_3d, movie_maker, plotter_fraction_colors
 import numpy as np
 from DeepJetCore.preprocessing import readListArray
-## get the data
+from argparse import ArgumentParser
+import ROOT
+import os
+
+parser = ArgumentParser('')
+parser.add_argument('inputFile')
+parser.add_argument('outputDir')
+parser.add_argument('--layerclusters', help='Plot layer clusters instead of rechits', action='store_true' , default=False )
+args = parser.parse_args()
 
 
-indir = "/eos/cms/store/cmst3/group/hgcal/CMG_studies/gvonsem/hgcalsim/LocalRun/NtupTask/dev_CloseByParticleGun_fixedTimeOffset_DeltaR"
-DR="0p3"
-DRcut=0.4
-infile = indir+DR+"_trialLocal/ntuple_converted_0_ntuple.root"
+infile = args.inputFile
+outdir=args.outputDir+"/"
+plotRechits= not args.layerclusters
 
-outdir="/eos/home-j/jkiesele/HGCal/HGCalML_data/"
+os.system('mkdir -p '+outdir)
 
-print('reading features')
+features=None
+truth=None
 
-features = readListArray(filename=infile, treename="Delphes", branchname="rechit_features", 
-                         nevents=50, list_size=50000, n_feat_per_element=10,
-                zeropad=True)
+add_to_out="lc_"
+if plotRechits:
+    add_to_out="rh_"
 
-print('reading truth')
+rfile = ROOT.TFile(infile)
+tree = rfile.Get("Delphes")
+nentries=tree.GetEntries()
+        
 
-truth = readListArray(filename=infile, treename="Delphes", branchname="simcluster_fractions", 
-                         nevents=50, list_size=50000, n_feat_per_element=20,
-                zeropad=True)
+if plotRechits:
+    print('reading features')
+    
+    features = readListArray(filename=infile, treename="Delphes", branchname="rechit_features", 
+                             nevents=nentries, list_size=50000, n_feat_per_element=20,
+                    zeropad=True)
+    
+    print('reading truth')
+    
+    truth = readListArray(filename=infile, treename="Delphes", branchname="rechit_simcluster_fractions", 
+                             nevents=nentries, list_size=50000, n_feat_per_element=20,
+                    zeropad=True)
+
+else:
+    print('reading features')
+    
+    features = readListArray(filename=infile, treename="Delphes", branchname="layercluster_features", 
+                             nevents=nentries, list_size=10000, n_feat_per_element=30,
+                    zeropad=True)
+    
+    print('reading truth')
+    
+    truth = readListArray(filename=infile, treename="Delphes", branchname="layercluster_simcluster_fractions", 
+                             nevents=nentries, list_size=10000, n_feat_per_element=20,
+                    zeropad=True)
 
 #B x V x F
 
@@ -40,6 +73,10 @@ print('plotting')
 def remove_zero_energy(a, e):
     return a[e>0]
 
+#clean up
+
+print(truth.shape)
+
 def plot_event(hgc_event):
     
     print(hgc_event)
@@ -48,14 +85,14 @@ def plot_event(hgc_event):
     rechit_x = features[hgc_event,:, 5]
     rechit_y = features[hgc_event,:, 6]
     rechit_z = features[hgc_event,:, 7]
-
-    simcluster_truth = remove_zero_energy(truth[hgc_event],rechit_e)
-
+    
+    simcluster_truth = truth[hgc_event]
+    
+    simcluster_truth = remove_zero_energy(simcluster_truth,rechit_e)
     rechit_x = remove_zero_energy(rechit_x,rechit_e)
     rechit_y = remove_zero_energy(rechit_y,rechit_e)
     rechit_z = remove_zero_energy(rechit_z,rechit_e)
     rechit_e = remove_zero_energy(rechit_e,rechit_e)
-    
     
     simcluster_truth = remove_zero_energy(simcluster_truth,rechit_z)
     rechit_x = remove_zero_energy(rechit_x,rechit_z)
@@ -66,26 +103,28 @@ def plot_event(hgc_event):
     print('n simclusters: ',truth.shape[1])
     
     
-    pl = plotter_fraction_colors( output_file=outdir+str(hgc_event)+"_2sim.pdf", interactive=True)
+    pl = plotter_fraction_colors( output_file=outdir+str(hgc_event)+add_to_out+"simcl", interactive=False)
     pl.marker_scale=2.
-    pl.interactive=True
+    #pl.interactive=True
     pl.set_data(rechit_x,rechit_y,rechit_z,rechit_e, simcluster_truth)#np.logical_and(rechit_z<0, rechit_e>1e-6))
     pl.plot3d()
-    #pl.save_image()
+    pl.save_image()
     
     #var = raw_input('reshuffle colours and plot again? "yY/yes"\n')
     #if not(var=='y' or var =='Y' or var =='yes'):
     #hgc_event+=1
+    #return
     
 
-    mm = movie_maker(pl, output_file=outdir+"mm3_sim_"+str(hgc_event), silent=False)
+    mm = movie_maker(pl, output_file=outdir+add_to_out+"mm"+str(hgc_event), silent=True)
     mm.make_movie()
     pl.reset()
     
+maxevents= nentries
+if maxevents>30:
+    maxevents=30
     
-plot_event(0)
-exit()
-allevents = [i for i in range(1)]
+allevents = [i for i in range(maxevents)]
 
 from multiprocessing import Pool
 p = Pool()
