@@ -15,13 +15,16 @@ parser = ArgumentParser('')
 parser.add_argument('inputFile')
 parser.add_argument('outputDir')
 parser.add_argument('--layerclusters', help='Plot layer clusters instead of rechits', action='store_true' , default=False )
+parser.add_argument('--movie', help='Also create a movie', action='store_true' , default=False )
+parser.add_argument('-n', help='Maximum number of events', default="-1" )
 args = parser.parse_args()
 
 
 infile = args.inputFile
 outdir=args.outputDir+"/"
 plotRechits= not args.layerclusters
-
+events_max=int(args.n)
+make_movie = args.movie
 os.system('mkdir -p '+outdir)
 
 features=None
@@ -71,7 +74,7 @@ name = "brg"
 print('plotting')
 
 def remove_zero_energy(a, e):
-    return a[e>0]
+    return a[e> 0.01]
 
 #clean up
 
@@ -100,7 +103,7 @@ def plot_event(hgc_event):
     rechit_e = remove_zero_energy(rechit_e,rechit_z)
     rechit_z = remove_zero_energy(rechit_z,rechit_z)
     
-    print('n simclusters: ',truth.shape[1])
+    print('n rechits: ',len(rechit_e))
     
     
     pl = plotter_fraction_colors( output_file=outdir+str(hgc_event)+add_to_out+"simcl", interactive=False)
@@ -114,7 +117,8 @@ def plot_event(hgc_event):
     #if not(var=='y' or var =='Y' or var =='yes'):
     #hgc_event+=1
     #return
-    
+    if not make_movie:
+        return    
 
     mm = movie_maker(pl, output_file=outdir+add_to_out+"mm"+str(hgc_event), silent=True)
     mm.make_movie()
@@ -123,6 +127,8 @@ def plot_event(hgc_event):
 maxevents= nentries
 if maxevents>30:
     maxevents=30
+if events_max<maxevents:
+    maxevents=events_max
     
 allevents = [i for i in range(maxevents)]
 
