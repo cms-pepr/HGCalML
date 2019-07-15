@@ -24,13 +24,14 @@ class GlobalExchange(keras.layers.Layer):
 
 
 class GravNet(keras.layers.Layer):
-    def __init__(self, n_neighbours, n_dimensions, n_filters, n_propagate, **kwargs):
+    def __init__(self, n_neighbours, n_dimensions, n_filters, n_propagate, also_coordinates=False, **kwargs):
         super(GravNet, self).__init__(**kwargs)
 
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
         self.n_filters = n_filters
         self.n_propagate = n_propagate
+        self.also_coordinates = also_coordinates
         
         self.input_feature_transform = keras.layers.Dense(n_propagate)
         self.input_spatial_transform = keras.layers.Dense(n_dimensions)
@@ -59,9 +60,14 @@ class GravNet(keras.layers.Layer):
 
         updated_features = tf.concat([x, collected_neighbours], axis=-1)
 
+        if self.also_coordinates:
+            return [self.output_feature_transform(updated_features), coordinates]
         return self.output_feature_transform(updated_features)
 
     def compute_output_shape(self, input_shape):
+        if self.also_coordinates:
+            return [(input_shape[0], input_shape[1], self.output_feature_transform.units),
+                    (input_shape[0], input_shape[1], self.n_dimensions)]
         
         # tf.ragged FIXME? tf.shape() might do the trick already
         return (input_shape[0], input_shape[1], self.output_feature_transform.units)
@@ -110,7 +116,8 @@ class GravNet(keras.layers.Layer):
             config = {'n_neighbours': self.n_neighbours, 
                       'n_dimensions': self.n_dimensions, 
                       'n_filters': self.n_filters, 
-                      'n_propagate': self.n_propagate}
+                      'n_propagate': self.n_propagate,
+                      'also_coordinates': self.also_coordinates}
             base_config = super(GravNet, self).get_config()
             return dict(list(base_config.items()) + list(config.items()))
 

@@ -7,21 +7,16 @@ import keras
 import keras.backend as K
 
 def weighted_frac_loss( truth, pred, usesqrt):
-    
-    print('pred',pred.shape)
-    print('truth',truth.shape)
+    #pred can contain more stuff, just take the first entries
     
     sigfrac = truth[:,:,1:]
     weight = truth[:,:,0:1]
     
-    print('weight',weight.shape)
-    print('sigfrac',sigfrac.shape)
-    
     if usesqrt:
         weight = tf.sqrt(tf.abs(weight)+K.epsilon())
     
-    p_sigfrac = pred
-    
+    p_sigfrac = pred[:,:,0:tf.shape(truth)[2]-1]
+    print(p_sigfrac.shape)
     diffs = sigfrac - p_sigfrac
     diffsw = diffs * diffs * weight
     

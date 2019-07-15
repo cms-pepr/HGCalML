@@ -80,7 +80,7 @@ class plotter_3d(base_plotter):
         
     
     
-    def plot3d(self, e_scaling='sqrt', cut=None):
+    def plot3d(self, e_scaling='sqrt', cut=None, ax=None):
         
         if not self._check_dimension(3):
             print(self.data)
@@ -88,9 +88,10 @@ class plotter_3d(base_plotter):
 
         x, y, z, e, c = self.data['x'], self.data['y'], self.data['z'], self.data['e'], self.data['c']
 
-        
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
+        fig=None
+        if ax is None:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
         #switch for standard CMS coordinates
         
         zs = np.reshape(x,[1,-1])
@@ -212,3 +213,65 @@ class movie_maker(object):
         os.system('rm -f '+ all_prefix +'*.png')
         self.plotter.interactive = was_interactive  
         
+class snapshot_movie_maker_4plots(object):
+    '''
+    creates 4 plots:
+    truth, prediction
+    coordinatesA, coordinatesB
+    '''
+    def __init__(self, output_file, glob_counter=0):
+        self.output_file=output_file
+        os.system('mkdir -p '+output_file)
+        self.tmp_out_prefix=output_file+'/tmp/'
+        os.system('mkdir -p '+self.tmp_out_prefix)
+        self.glob_counter=glob_counter
+        self.plotters=[plotter_fraction_colors( interactive=False ) for i in range(4)]
+        for i in range(len(self.plotters)):
+            if i:
+                self.plotters[i].gray_noise=False
+        self.plot_data={}
+        self.fig, self.axs = plt.subplots(2, 2, subplot_kw=dict(projection='3d'))
+        
+    #fast, don't calcualte anything here
+    def set_plot_data(self, plt_idx, x, y, z, e, fractions):
+        self.plot_data[plt_idx] = [x, y, z, e, fractions]
+        
+    def reset(self):
+        for plt_idx in range(len(self.plotters)):
+            self.plotters[plt_idx].reset()
+        plt.close()
+        self.fig, self.axs = plt.subplots(2, 2, subplot_kw=dict(projection='3d'))
+            
+    def make_snapshot(self):
+        x_idx=[0,0,1,1]
+        y_idx=[0,1,0,1] 
+        for plt_idx in range(len(self.plotters)):
+            self.plotters[plt_idx].reset()
+            self.plotters[plt_idx].set_data(self.plot_data[plt_idx][0], 
+                                            self.plot_data[plt_idx][1],
+                                            self.plot_data[plt_idx][2],
+                                            self.plot_data[plt_idx][3],
+                                            self.plot_data[plt_idx][4])
+            ax = self.axs[x_idx[plt_idx]][y_idx[plt_idx]]
+            self.plotters[plt_idx].plot3d(ax=ax)
+            angle_in=self.glob_counter+80.
+            while angle_in>=360: angle_in-=360
+            while angle_in<=-360: angle_in-=360
+            ax.view_init(30, angle_in)
+            outputname = self.tmp_out_prefix+str(self.glob_counter).rjust(10, '0')+'.png'
+            self.fig.savefig(outputname, dpi=300)
+            
+        
+    def increment_counter(self):
+        self.glob_counter+=1 
+        
+    def end_job(self):
+        os.system('ffmpeg -r 20 -f image2  -i '+ self.tmp_out_prefix +'$w%10d.png -f mp4 -q:v 0 -vcodec mpeg4 -r 20 '+ self.output_file +'movie.mp4')
+        os.system('echo rm -f '+ self.tmp_out_prefix +'*.png')
+        
+        
+        
+        
+        
+        
+    
