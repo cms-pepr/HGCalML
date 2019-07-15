@@ -129,7 +129,7 @@ class TrainData_hitlist_layercluster(TrainData_hitlist):
         self.feat_branch="layercluster_features"
         self.truth_branch="layercluster_simcluster_fractions"
         # this needs to be adapted!!
-        self.max_rechits = 500
+        self.max_rechits = 1200
         #this should be fine
         self.n_features=17
         self.n_simcluster=20
