@@ -1,5 +1,16 @@
 
 
+###
+#
+#
+# for testing: rm -rf TEST; python gravnet.py /eos/cms/store/cmst3/group/hgcal/CMG_studies/gvonsem/hgcalsim/ConverterTask/closeby_1.0To100.0_idsmix_dR0.1_n10_rnd1_s1/dev_LayerClusters_prod2/testconv/dataCollection.dc TEST
+#
+###
+
+
+
+
+
 
 from DeepJetCore.training.training_base import training_base
 import keras
