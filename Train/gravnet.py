@@ -21,40 +21,38 @@ from DeepJetCore.DJCLayers import ScalarMultiply, Clip, SelectFeatures
 
 from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_training
 
-
+n_gravnet_layers=2
 
 def my_model(Inputs,nclasses,nregressions,otheroption):
     
     x = Inputs[0] #this is the self.x list from the TrainData data structure
     
     print('x',x.shape)
-    orig_xyz = SelectFeatures(5,8)(x)
     
     mask = CreateZeroMask(0)(x)
-    print(mask.shape)
+    x = BatchNormalization(momentum=0.6)(x)
     
-    x = GlobalExchange()(x)
-    for i in range(4):
+    coords=[]
+    for i in range(n_gravnet_layers):
+        x, coord = GravNet(n_neighbours=24, n_dimensions=4, n_filters=48, n_propagate=12, also_coordinates=True)(x)
+        coords.append(coord)
+        x = Multiply()([x,mask])
+        
         x = GlobalExchange()(x)
         x = Multiply()([x,mask])
-        
         x = Dense(64,activation='elu')(x)
         x = Dense(48,activation='elu')(x)
+        x = BatchNormalization(momentum=0.6)(x)
         x = Dense(32,activation='tanh')(x)
-        if i<3:
-            x = GravNet(n_neighbours=24, n_dimensions=4, n_filters=48, n_propagate=12)(x)
-        else:
-            x, coords = GravNet(n_neighbours=24, n_dimensions=4, n_filters=48, n_propagate=12, also_coordinates=True)(x)
-        x = Multiply()([x,mask])
-        
-        x = BatchNormalization()(x)
+        x = BatchNormalization(momentum=0.6)(x)
         
     
     x = Dense(32,activation='elu')(x)
     x = Dense(nregressions,activation=None)(x) #max 1 shower here
-    x = Clip(-0.2, 1.2) (x)
+    #x = Clip(-0.2, 1.2) (x)
     
-    x = Concatenate()([x,orig_xyz,coords])
+    
+    x = Concatenate()([x]+coords)
     print('pred[0] shape',x.shape)
     predictions = [x]
     return Model(inputs=Inputs, outputs=predictions)
@@ -63,25 +61,25 @@ def my_model(Inputs,nclasses,nregressions,otheroption):
 train=training_base(testrun=False,resumeSilently=True,renewtokens=True)
 
 
-
-
-ppdt = plot_truth_pred_plus_coords_during_training(
-               samplefile='/eos/cms/store/cmst3/group/hgcal/CMG_studies/gvonsem/hgcalsim/ConverterTask/closeby_1.0To100.0_idsmix_dR0.1_n10_rnd1_s1/dev_LayerClusters_prod2/testconv/tuple_149_n100.meta',
-               output_file=train.outputDir+'/train_progress',
-               use_event=1,
+ppdts=[ plot_truth_pred_plus_coords_during_training(
+               samplefile='/eos/cms/store/cmst3/group/hgcal/CMG_studies/gvonsem/hgcalsim/ConverterTask/closeby_1.0To100.0_idsmix_dR0.1_n10_rnd1_s1/dev_LayerClusters_prod2/testconv/tuple_148_n100.meta',
+               output_file=train.outputDir+'/train_progress'+str(i),
+               use_event=7,
                x_index = 5,
                y_index = 6,
                z_index = 7,
                pred_fraction_end = 20,
-               transformed_x_index = 21,
-               transformed_y_index = 22,
-               transformed_z_index = 23,
-               transformed_e_index = 24,
+               transformed_x_index = 20+4*i,
+               transformed_y_index = 21+4*i,
+               transformed_z_index = 22+4*i,
+               transformed_e_index = 23+4*i,
                cut_z='pos',
                afternbatches=1,
                on_epoch_end=False
-               )
+               ) for i in range(n_gravnet_layers) ]
 
+
+ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
 from Losses import fraction_loss
 
@@ -91,21 +89,22 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     train.setModel(my_model,otheroption=1)
     
     #for regression use a different loss, e.g. mean_squared_error
-    train.compileModel(learningrate=0.001,
+    train.compileModel(learningrate=0.0003,
                    loss=fraction_loss,
                    clipnorm=1) 
                    
 print(train.keras_model.summary())
 
-nbatch=2
-model,history = train.trainModel(nepochs=3, 
+nbatch=10
+model,history = train.trainModel(nepochs=20, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=2,
+                                 verbose=1,
                                  
-                                 additional_callbacks=[ppdt.callback])
+                                 additional_callbacks=ppdts_callbacks)
 
-ppdt.end_job()
+for p in ppdts:
+    p.end_job()
 exit()
 
 train.change_learning_rate(0.0001)
@@ -114,7 +113,7 @@ model,history = train.trainModel(nepochs=100+100,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=1,
                                  
-                                 additional_callbacks=[ppdt.callback])
+                                 additional_callbacks=ppdts_callbacks)
 
 train.change_learning_rate(0.00001)
 model,history = train.trainModel(nepochs=100+100+100, 
@@ -122,7 +121,7 @@ model,history = train.trainModel(nepochs=100+100+100,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=1,
                                  
-                                 additional_callbacks=[ppdt.callback])
+                                 additional_callbacks=ppdts_callbacks)
 
 
 

@@ -13,7 +13,7 @@ class TrainData_hitlist(TrainData):
         self.feat_branch="rechit_features"
         self.truth_branch="rechit_simcluster_fractions"
         # this needs to be adapted!!
-        self.max_rechits = 6000
+        self.max_rechits = 3500
         
         #this should be fine
         self.n_features=10

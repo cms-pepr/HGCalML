@@ -99,7 +99,7 @@ class GravNet(keras.layers.Layer):
     
         neighbour_features = tf.gather_nd(features, indices) # (B, V, N-1, F)
     
-        distance = ranked_distances[:, :, 1:]
+        distance = -ranked_distances[:, :, 1:]
     
         weights = gauss_of_lin(distance * 10.)
         weights = tf.expand_dims(weights, axis=-1)

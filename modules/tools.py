@@ -138,7 +138,7 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
             return esel
         else: return e>0.
 
-    def make_plot(self,call_counter,feat,predicted,truth):
+    def _make_plot(self,call_counter,feat,predicted,truth):
         self.snapshot_maker.glob_counter=call_counter
         
         pred  = predicted[0][0] #list entry 0, 0th event
@@ -168,11 +168,13 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
         self.snapshot_maker.set_plot_data(2, tx[esel], ty[esel], tz[esel], e[esel], truth_fracs[esel]) #just the predicted plot
         self.snapshot_maker.set_plot_data(3, tx[esel], ty[esel], te[esel], e[esel], truth_fracs[esel]) #just the predicted plot
         
-        p = Process(target=self.snapshot_maker.make_snapshot)#, args=(,))
+        self.snapshot_maker.make_snapshot()
+        
+        
+    def make_plot(self,call_counter,feat,predicted,truth):
+        #send this directly to a fork so it does not interrupt training too much
+        p = Process(target=self._make_plot, args=(call_counter,feat,predicted,truth))
         p.start()
-        
-        
-               
         
         
         

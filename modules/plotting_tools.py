@@ -266,8 +266,8 @@ class snapshot_movie_maker_4plots(object):
         self.glob_counter+=1 
         
     def end_job(self):
-        os.system('ffmpeg -r 20 -f image2  -i '+ self.tmp_out_prefix +'$w%10d.png -f mp4 -q:v 0 -vcodec mpeg4 -r 20 '+ self.output_file +'movie.mp4')
-        os.system('echo rm -f '+ self.tmp_out_prefix +'*.png')
+        os.system('ffmpeg -r 20 -f image2  -i '+ self.tmp_out_prefix +'$w%10d.png -f mp4 -q:v 0 -vcodec mpeg4 -r 20 '+ self.output_file +'_movie.mp4')
+        os.system('rm -f '+ self.tmp_out_prefix +'*.png')
         
         
         
