@@ -13,21 +13,26 @@ global_layers_list['weighted_sum_layer']=weighted_sum_layer
 from keras.layers import Layer
 import tensorflow as tf
 
-class MaskZeros(Layer):
-    def __init__(self, **kwargs):
-        super(MaskZeros, self).__init__(**kwargs)
+class CreateZeroMask(Layer):
+    def __init__(self, feature_index, **kwargs):
+        super(CreateZeroMask, self).__init__(**kwargs)
+        self.feature_index=feature_index
     
     def compute_output_shape(self, input_shape):
-        return input_shape
+        return (input_shape[0],input_shape[1],1)
     
     def call(self, inputs):
-        return inputs
-        
+        zeros = tf.zeros(shape=tf.shape(inputs)[:-1])
+        mask = tf.where(inputs[:,:,0]>0, zeros+1., zeros)
+        mask = tf.expand_dims(mask,axis=2)
+        return mask
     
     def get_config(self):
-        base_config = super(MaskZeros, self).get_config()
-        return dict(list(base_config.items()))
+        config = {'feature_index': self.feature_index}
+        base_config = super(CreateZeroMask, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+        
     
 
-global_layers_list['MaskZeros']=MaskZeros
+global_layers_list['CreateZeroMask']=CreateZeroMask
    

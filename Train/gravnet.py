@@ -4,8 +4,8 @@
 from DeepJetCore.training.training_base import training_base
 import keras
 from keras.models import Model
-from keras.layers import  Dense,Conv1D, Conv2D, BatchNormalization #etc
-from Layers import GarNet, GravNet, GlobalExchange
+from keras.layers import  Dense,Conv1D, Conv2D, BatchNormalization, Multiply #etc
+from Layers import GarNet, GravNet, GlobalExchange, CreateZeroMask
 from DeepJetCore.DJCLayers import ScalarMultiply, Clip
 
 from tools import plot_pred_during_training
@@ -18,14 +18,23 @@ def my_model(Inputs,nclasses,nregressions,otheroption):
     
     print('x',x.shape)
     
+    mask = CreateZeroMask(0)(x)
+    print(mask.shape)
+    
     x = GlobalExchange()(x)
     for i in range(4):
         x = GlobalExchange()(x)
+        x = Multiply()([x,mask])
+        
         x = Dense(64,activation='elu')(x)
         x = Dense(48,activation='elu')(x)
         x = Dense(32,activation='tanh')(x)
+        
         x = GravNet(n_neighbours=24, n_dimensions=4, n_filters=48, n_propagate=12)(x)
+        x = Multiply()([x,mask])
+        
         x = BatchNormalization()(x)
+        
     
     x = Dense(32,activation='elu')(x)
     x = Dense(nregressions,activation=None)(x) #max 1 shower here
@@ -71,7 +80,7 @@ nbatch=2
 model,history = train.trainModel(nepochs=100, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=1,
+                                 verbose=2,
                                  
                                  additional_callbacks=[ppdt.callback])
 

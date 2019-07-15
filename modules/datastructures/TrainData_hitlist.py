@@ -66,7 +66,7 @@ class TrainData_hitlist(TrainData):
                                       zeropad=True,
                                       list_size_cut=True)
         
-        print('TrainData_hitlistX: convert from root: fraction of hits cut ', 100.*float(n_rechits_cut)/float(self.nsamples),'%')
+        print('TrainData_hitlistX: ' ,filename,';convert from root: fraction of hits cut ', 100.*float(n_rechits_cut)/float(self.nsamples),'%')
         
         #needs the energy, too to determine weights
         fraction_array = numpy.concatenate([fraction_array,energy_only],axis=-1)
