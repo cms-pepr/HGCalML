@@ -3,7 +3,8 @@ from plotting_tools import plotter_fraction_colors, snapshot_movie_maker_4plots
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 from multiprocessing import Process
 import numpy as np
-
+import gc
+from gc import isenabled
 
 class plot_pred_during_training(object):
     def __init__(self, 
@@ -125,6 +126,7 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
         self.transformed_e_index = transformed_e_index
         
         self.pred_fraction_end=pred_fraction_end
+        self.threadlist=[]
         
         
     def end_job(self):
@@ -175,11 +177,25 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
         
         
     def make_plot(self,call_counter,feat,predicted,truth):
+        
+        #clean up
+        t_alive=[]
+        for t in self.threadlist:
+            if not t.is_alive():
+                t.join()
+            else:
+                t_alive.append(t)
+        self.threadlist = t_alive  
+        
         #send this directly to a fork so it does not interrupt training too much
         p = Process(target=self._make_plot, args=(call_counter,feat,predicted,truth))
+        self.threadlist.append(p)
+        gcisenabled = gc.isenabled()
+        gc.disable()
         p.start()
-        
-        
+        if gcisenabled:
+            gc.enable()
+        del feat,predicted,truth
         
         
         

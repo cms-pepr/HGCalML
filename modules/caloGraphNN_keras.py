@@ -24,18 +24,19 @@ class GlobalExchange(keras.layers.Layer):
 
 
 class GravNet(keras.layers.Layer):
-    def __init__(self, n_neighbours, n_dimensions, n_filters, n_propagate, also_coordinates=False, **kwargs):
+    def __init__(self, n_neighbours, n_dimensions, n_filters, n_propagate, name, also_coordinates=False, **kwargs):
         super(GravNet, self).__init__(**kwargs)
 
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
         self.n_filters = n_filters
         self.n_propagate = n_propagate
+        self.name = name
         self.also_coordinates = also_coordinates
         
-        self.input_feature_transform = keras.layers.Dense(n_propagate)
-        self.input_spatial_transform = keras.layers.Dense(n_dimensions)
-        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh')
+        self.input_feature_transform = keras.layers.Dense(n_propagate, name = name+'_FLR')
+        self.input_spatial_transform = keras.layers.Dense(n_dimensions, name = name+'_S')
+        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh', name = name+'_Fout')
 
         self._sublayers = [self.input_feature_transform, self.input_spatial_transform, self.output_feature_transform]
 
@@ -117,6 +118,7 @@ class GravNet(keras.layers.Layer):
                       'n_dimensions': self.n_dimensions, 
                       'n_filters': self.n_filters, 
                       'n_propagate': self.n_propagate,
+                      'name':self.name,
                       'also_coordinates': self.also_coordinates}
             base_config = super(GravNet, self).get_config()
             return dict(list(base_config.items()) + list(config.items()))
@@ -125,16 +127,17 @@ class GravNet(keras.layers.Layer):
 
 
 class GarNet(keras.layers.Layer):
-    def __init__(self, n_aggregators, n_filters, n_propagate, **kwargs):
+    def __init__(self, n_aggregators, n_filters, n_propagate, name,  **kwargs):
         super(GarNet, self).__init__(**kwargs)
 
         self.n_aggregators = n_aggregators
         self.n_filters = n_filters
         self.n_propagate = n_propagate
+        self.name = name
 
-        self.input_feature_transform = keras.layers.Dense(n_propagate)
-        self.aggregator_distance = keras.layers.Dense(n_aggregators)
-        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh')
+        self.input_feature_transform = keras.layers.Dense(n_propagate, name=name+'_FLR')
+        self.aggregator_distance = keras.layers.Dense(n_aggregators, name=name+'_S')
+        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh', name=name+'_Fout')
 
         self._sublayers = [self.input_feature_transform, self.aggregator_distance, self.output_feature_transform]
 
@@ -193,7 +196,7 @@ class GarNet(keras.layers.Layer):
         return tf.reshape(out, [-1, out.shape[1].value, n]) # (B, u, n)
     
     def get_config(self):
-            config = {'n_aggregators': self.n_aggregators, 'n_filters': self.n_filters, 'n_propagate': self.n_propagate}
+            config = {'n_aggregators': self.n_aggregators, 'n_filters': self.n_filters, 'n_propagate': self.n_propagate, 'name': self.name}
             base_config = super(GarNet, self).get_config()
             return dict(list(base_config.items()) + list(config.items()))
     
