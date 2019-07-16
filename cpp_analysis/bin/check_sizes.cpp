@@ -50,9 +50,12 @@ int main(int argc, char* argv[]){
 
     TH1D nrechits("nrechits","nrechits",20,1000,10000);
     TH1D nlayerclusters("nlayerclusters","nlayerclusters",20,100,2000);
+    TH1D rechit_energy("rechit_energy","rechit_energy",20,0,0.05);
+    TH1D rechit_truthenergy("rechit_truthenergy","rechit_truthenergy",20,0,0.05);
 
     int max_nrechits=0, max_nlayerclusters=0, max_simclusters=0;
     float avg_nrechits=0, avg_nlayerclusters=0;
+
 
     const int nentries = tree->GetEntries();
     for(int event=0;event<nentries;event++){
@@ -75,6 +78,19 @@ int main(int argc, char* argv[]){
 
         nrechits.Fill(nrh);
         nlayerclusters.Fill(nlc);
+
+        for(size_t i=0;i<rh_feat->size();i++){
+            rechit_energy.Fill(rh_feat->at(i).at(0));
+            float truthsum = 0;
+            for(size_t j=0;j<rh_truth->at(i).size();j++){
+                truthsum+=rh_truth->at(i).at(j);
+            }
+            if(truthsum>0)
+                rechit_truthenergy.Fill(truthsum*rh_feat->at(i).at(0));
+            if(truthsum>0 && fabs(truthsum-1.)>0.0001)
+                std::cout << "weird truthsum" << truthsum << std::endl;
+        }
+
     }
     avg_nrechits/=(float)nentries;
     avg_nlayerclusters/=(float)nentries;
@@ -95,6 +111,11 @@ int main(int argc, char* argv[]){
     cv.Print("nrechits.pdf");
     nlayerclusters.Draw();
     cv.Print("nlayerclusters.pdf");
+    rechit_energy.Draw();
+    cv.Print("rechit_energy.pdf");
+    rechit_truthenergy.SetLineColor(kRed);
+    rechit_truthenergy.Draw("same");
+    cv.Print("rechit_truthenergy.pdf");
 
 
     return 0;

@@ -21,7 +21,7 @@ from DeepJetCore.DJCLayers import ScalarMultiply, Clip, SelectFeatures
 
 from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_training
 
-n_gravnet_layers=2
+n_gravnet_layers=3
 
 def my_model(Inputs,nclasses,nregressions,otheroption):
     
@@ -34,22 +34,23 @@ def my_model(Inputs,nclasses,nregressions,otheroption):
     
     coords=[]
     for i in range(n_gravnet_layers):
-        x, coord = GravNet(n_neighbours=24, n_dimensions=4, n_filters=48, n_propagate=12, also_coordinates=True)(x)
-        coords.append(coord)
-        x = Multiply()([x,mask])
         
         x = GlobalExchange()(x)
         x = Multiply()([x,mask])
         x = Dense(64,activation='elu')(x)
         x = Dense(48,activation='elu')(x)
-        x = BatchNormalization(momentum=0.6)(x)
+        x = BatchNormalization(momentum=0.3)(x)
         x = Dense(32,activation='tanh')(x)
-        x = BatchNormalization(momentum=0.6)(x)
+        x = BatchNormalization(momentum=0.3)(x)
+        x, coord = GravNet(n_neighbours=24, n_dimensions=4, n_filters=48, n_propagate=12, also_coordinates=True)(x)
+        coords.append(coord)
+        x = BatchNormalization(momentum=0.3)(x)
+        x = Multiply()([x,mask])
         
     
     x = Dense(32,activation='elu')(x)
-    x = Dense(nregressions,activation=None)(x) #max 1 shower here
-    #x = Clip(-0.2, 1.2) (x)
+    x = Dense(nregressions,activation=None, kernel_initializer='zeros')(x) #max 1 shower here
+    x = Clip(-0.2, 1.2) (x)
     
     
     x = Concatenate()([x]+coords)
@@ -60,9 +61,14 @@ def my_model(Inputs,nclasses,nregressions,otheroption):
 
 train=training_base(testrun=False,resumeSilently=True,renewtokens=True)
 
+sampledir = '/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/CreateMLDataset/closeby_1.0To100.0_idsmix_dR0.2_n10_rnd1_s1/hitlist/prod3'
+
+#gets called every epoch
+def decay_function(aftern_batches):
+    return int(aftern_batches*1.1)
 
 ppdts=[ plot_truth_pred_plus_coords_during_training(
-               samplefile='/eos/cms/store/cmst3/group/hgcal/CMG_studies/gvonsem/hgcalsim/ConverterTask/closeby_1.0To100.0_idsmix_dR0.1_n10_rnd1_s1/dev_LayerClusters_prod2/testconv/tuple_148_n100.meta',
+               samplefile=sampledir+'/tuple_10Of50_n100.meta',
                output_file=train.outputDir+'/train_progress'+str(i),
                use_event=7,
                x_index = 5,
@@ -74,8 +80,9 @@ ppdts=[ plot_truth_pred_plus_coords_during_training(
                transformed_z_index = 22+4*i,
                transformed_e_index = 23+4*i,
                cut_z='pos',
-               afternbatches=1,
-               on_epoch_end=False
+               afternbatches=50,
+               on_epoch_end=False,
+               decay_function=decay_function
                ) for i in range(n_gravnet_layers) ]
 
 
@@ -95,11 +102,11 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
                    
 print(train.keras_model.summary())
 
-nbatch=30
-model,history = train.trainModel(nepochs=5, 
+nbatch=10
+model,history = train.trainModel(nepochs=50, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=1,
+                                 verbose=2,
                                  
                                  additional_callbacks=ppdts_callbacks)
 

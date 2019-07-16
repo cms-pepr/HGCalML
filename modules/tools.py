@@ -18,7 +18,8 @@ class plot_pred_during_training(object):
                plotter=None,
                plotfunc=None,
                afternbatches=-1,
-               on_epoch_end=True
+               on_epoch_end=True,
+               decay_function=None
                  ):
         
         self.x_index = x_index 
@@ -32,13 +33,14 @@ class plot_pred_during_training(object):
             elif 'neg' in self.cut_z:
                 self.cut_z = -1.
         
-        
+        self.decay_function=decay_function
         self.callback = PredictCallback(
             samplefile=samplefile,
             function_to_apply=self.make_plot, #needs to be function(counter,[model_input], [predict_output], [truth])
                  after_n_batches=afternbatches,
                  on_epoch_end=on_epoch_end,
-                 use_event=use_event)
+                 use_event=use_event,
+                 decay_function=self.decay_function)
         
         self.output_file=output_file
         if plotter is not None:
@@ -104,7 +106,8 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
                transformed_e_index = 24,
                cut_z=None,
                afternbatches=-1,
-               on_epoch_end=True
+               on_epoch_end=True,
+               **kwargs
                  ):
         plot_pred_during_training.__init__(self,samplefile,output_file,use_event,
                                            x_index,y_index,z_index,
@@ -113,7 +116,7 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
                                            plotter=None,
                                            plotfunc=None,
                                            afternbatches=afternbatches,
-                                           on_epoch_end=on_epoch_end)
+                                           on_epoch_end=on_epoch_end, **kwargs)
         self.snapshot_maker = snapshot_movie_maker_4plots(output_file)
         
         self.transformed_x_index = transformed_x_index

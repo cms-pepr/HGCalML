@@ -230,7 +230,6 @@ class snapshot_movie_maker_4plots(object):
             if i:
                 self.plotters[i].gray_noise=False
         self.plot_data={}
-        self.fig, self.axs = plt.subplots(2, 2, subplot_kw=dict(projection='3d'))
         
     #fast, don't calcualte anything here
     def set_plot_data(self, plt_idx, x, y, z, e, fractions):
@@ -245,6 +244,7 @@ class snapshot_movie_maker_4plots(object):
     def make_snapshot(self):
         x_idx=[0,0,1,1]
         y_idx=[0,1,0,1] 
+        fig, axs = plt.subplots(2, 2, subplot_kw=dict(projection='3d'))
         for plt_idx in range(len(self.plotters)):
             self.plotters[plt_idx].reset()
             self.plotters[plt_idx].set_data(self.plot_data[plt_idx][0], 
@@ -252,15 +252,15 @@ class snapshot_movie_maker_4plots(object):
                                             self.plot_data[plt_idx][2],
                                             self.plot_data[plt_idx][3],
                                             self.plot_data[plt_idx][4])
-            ax = self.axs[x_idx[plt_idx]][y_idx[plt_idx]]
+            ax = axs[x_idx[plt_idx]][y_idx[plt_idx]]
             self.plotters[plt_idx].plot3d(ax=ax)
             angle_in=self.glob_counter+80.
             while angle_in>=360: angle_in-=360
             while angle_in<=-360: angle_in-=360
             ax.view_init(30, angle_in)
             outputname = self.tmp_out_prefix+str(self.glob_counter).rjust(10, '0')+'.png'
-            self.fig.savefig(outputname, dpi=300)
-            
+            fig.savefig(outputname, dpi=300)
+        plt.close()    
         
     def increment_counter(self):
         self.glob_counter+=1 

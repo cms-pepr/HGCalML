@@ -42,28 +42,28 @@ nentries=tree.GetEntries()
 if plotRechits:
     print('reading features')
     
-    features = readListArray(filename=infile, treename="Delphes", branchname="rechit_features", 
-                             nevents=nentries, list_size=50000, n_feat_per_element=20,
-                    zeropad=True)
+    features,_ = readListArray(filename=infile, treename="Delphes", branchname="rechit_features", 
+                             nevents=nentries, list_size=3500, n_feat_per_element=10,
+                    zeropad=True,list_size_cut=True)
     
     print('reading truth')
     
-    truth = readListArray(filename=infile, treename="Delphes", branchname="rechit_simcluster_fractions", 
-                             nevents=nentries, list_size=50000, n_feat_per_element=20,
-                    zeropad=True)
+    truth,_ = readListArray(filename=infile, treename="Delphes", branchname="rechit_simcluster_fractions", 
+                             nevents=nentries, list_size=3500, n_feat_per_element=20,
+                    zeropad=True,list_size_cut=True)
 
 else:
     print('reading features')
     
-    features = readListArray(filename=infile, treename="Delphes", branchname="layercluster_features", 
-                             nevents=nentries, list_size=10000, n_feat_per_element=30,
-                    zeropad=True)
+    features,_ = readListArray(filename=infile, treename="Delphes", branchname="layercluster_features", 
+                             nevents=nentries, list_size=3500, n_feat_per_element=30,
+                    zeropad=True,list_size_cut=True)
     
     print('reading truth')
     
-    truth = readListArray(filename=infile, treename="Delphes", branchname="layercluster_simcluster_fractions", 
-                             nevents=nentries, list_size=10000, n_feat_per_element=20,
-                    zeropad=True)
+    truth,_ = readListArray(filename=infile, treename="Delphes", branchname="layercluster_simcluster_fractions", 
+                             nevents=nentries, list_size=3500, n_feat_per_element=20,
+                    zeropad=True,list_size_cut=True)
 
 #B x V x F
 
