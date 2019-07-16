@@ -124,7 +124,7 @@ class TrainData_hitlist(TrainData):
 
 class TrainData_hitlist_layercluster(TrainData_hitlist):
     def __init__(self):
-        TrainData.__init__(self)
+        TrainData_hitlist.__init__(self)
 
         self.feat_branch="layercluster_features"
         self.truth_branch="layercluster_simcluster_fractions"
