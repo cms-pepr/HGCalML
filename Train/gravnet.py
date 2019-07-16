@@ -80,7 +80,7 @@ ppdts=[ plot_truth_pred_plus_coords_during_training(
                transformed_z_index = 22+4*i,
                transformed_e_index = 23+4*i,
                cut_z='pos',
-               afternbatches=50,
+               afternbatches=20,
                on_epoch_end=False,
                decay_function=decay_function
                ) for i in range(n_gravnet_layers) ]
@@ -96,17 +96,17 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     train.setModel(my_model,otheroption=1)
     
     #for regression use a different loss, e.g. mean_squared_error
-    train.compileModel(learningrate=0.0003,
+    train.compileModel(learningrate=0.0005,
                    loss=fraction_loss,
                    clipnorm=1) 
                    
 print(train.keras_model.summary())
 
-nbatch=10
+nbatch=120
 model,history = train.trainModel(nepochs=50, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=2,
+                                 verbose=1,
                                  
                                  additional_callbacks=ppdts_callbacks)
 

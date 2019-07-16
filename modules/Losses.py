@@ -20,6 +20,7 @@ def weighted_frac_loss( truth, pred, usesqrt):
     diffs = sigfrac - p_sigfrac
     diffsw = diffs * diffs * weight
     
+    e_weight = tf.tile(e_weight, [1,1,tf.shape(sigfrac)[-1]])
     diffs  = tf.where(e_weight>0, diffs,  tf.zeros_like(diffs))
     diffsw = tf.where(e_weight>0, diffsw, tf.zeros_like(diffsw))
     
@@ -29,7 +30,8 @@ def weighted_frac_loss( truth, pred, usesqrt):
     
     sumdiffs = tf.reduce_sum(diffsw, axis=1)
     
-    sumdiffs = tf.Print(sumdiffs,[sumdiffs],'sumdiffs')
+    #sumdiffs = tf.Print(sumdiffs,[sumdiffs],'sumdiffs')
+    #sumsig = tf.Print(sumsig,[sumsig],'sumsig')
     
     #this loss is a bit different from the paper one
     return  tf.reduce_mean(sumdiffs/sumsig)#tf.sign(sumsig)*sumdiffs/sumsig) #the sign masks out the zeros
