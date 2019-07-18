@@ -34,37 +34,48 @@ add_to_out="lc_"
 if plotRechits:
     add_to_out="rh_"
 
-rfile = ROOT.TFile(infile)
-tree = rfile.Get("Delphes")
-nentries=tree.GetEntries()
         
+if 'root' == infile[-4:]:    
+    
+    
+    rfile = ROOT.TFile(infile)
+    tree = rfile.Get("Delphes")
+    nentries=tree.GetEntries()
 
-if plotRechits:
-    print('reading features')
+    if plotRechits:
+        print('reading features')
+        
+        features,_ = readListArray(filename=infile, treename="Delphes", branchname="rechit_features", 
+                                 nevents=nentries, list_size=3500, n_feat_per_element=10,
+                        zeropad=True,list_size_cut=True)
+        
+        print('reading truth')
+        
+        truth,_ = readListArray(filename=infile, treename="Delphes", branchname="rechit_simcluster_fractions", 
+                                 nevents=nentries, list_size=3500, n_feat_per_element=20,
+                        zeropad=True,list_size_cut=True)
     
-    features,_ = readListArray(filename=infile, treename="Delphes", branchname="rechit_features", 
-                             nevents=nentries, list_size=3500, n_feat_per_element=10,
-                    zeropad=True,list_size_cut=True)
-    
-    print('reading truth')
-    
-    truth,_ = readListArray(filename=infile, treename="Delphes", branchname="rechit_simcluster_fractions", 
-                             nevents=nentries, list_size=3500, n_feat_per_element=20,
-                    zeropad=True,list_size_cut=True)
-
-else:
-    print('reading features')
-    
-    features,_ = readListArray(filename=infile, treename="Delphes", branchname="layercluster_features", 
-                             nevents=nentries, list_size=3500, n_feat_per_element=30,
-                    zeropad=True,list_size_cut=True)
-    
-    print('reading truth')
-    
-    truth,_ = readListArray(filename=infile, treename="Delphes", branchname="layercluster_simcluster_fractions", 
-                             nevents=nentries, list_size=3500, n_feat_per_element=20,
-                    zeropad=True,list_size_cut=True)
-
+    else:
+        print('reading features')
+        
+        features,_ = readListArray(filename=infile, treename="Delphes", branchname="layercluster_features", 
+                                 nevents=nentries, list_size=3500, n_feat_per_element=30,
+                        zeropad=True,list_size_cut=True)
+        
+        print('reading truth')
+        
+        truth,_ = readListArray(filename=infile, treename="Delphes", branchname="layercluster_simcluster_fractions", 
+                                 nevents=nentries, list_size=3500, n_feat_per_element=20,
+                        zeropad=True,list_size_cut=True)
+ 
+elif   'meta' == infile[-4:]:
+    from DeepJetCore.TrainData import TrainData
+    td=TrainData()
+    td.readIn(infile)
+    features = td.x[0]
+    truth = td.y[0][:,:,0:-1]#cut off energy
+    nentries = len(td.x[0])
+         
 #B x V x F
 
 name = "brg"
@@ -104,6 +115,12 @@ def plot_event(hgc_event):
     rechit_z = remove_zero_energy(rechit_z,rechit_z)
     
     print('n rechits: ',len(rechit_e))
+    print(simcluster_truth[0])
+    print(simcluster_truth[1])
+    print(simcluster_truth[2])
+    print(simcluster_truth[3])
+    print(simcluster_truth[4])
+    print(simcluster_truth[5])
     
     
     pl = plotter_fraction_colors( output_file=outdir+str(hgc_event)+add_to_out+"simcl", interactive=False)

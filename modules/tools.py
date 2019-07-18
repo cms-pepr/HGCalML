@@ -1,10 +1,22 @@
 
-from plotting_tools import plotter_fraction_colors, snapshot_movie_maker_4plots
+from plotting_tools import plotter_fraction_colors, snapshot_movie_maker_Nplots
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
+import multiprocessing
 from multiprocessing import Process
 import numpy as np
 import gc
-from gc import isenabled
+import copy
+import ctypes
+
+def make_shared(arr):
+    fulldim=1
+    shapeinfo=arr.shape
+    flattened = np.reshape(arr,[-1])
+    shared_array_base = multiprocessing.RawArray(ctypes.c_float, flattened)
+    shared_array = np.ctypeslib.as_array(shared_array_base)#.get_obj())
+    #print('giving shape',shapeinfo)
+    shared_array = shared_array.reshape(shapeinfo)
+    return shared_array
 
 class plot_pred_during_training(object):
     def __init__(self, 
@@ -108,6 +120,7 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
                cut_z=None,
                afternbatches=-1,
                on_epoch_end=True,
+               only_truth_and_pred=False,
                **kwargs
                  ):
         plot_pred_during_training.__init__(self,samplefile,output_file,use_event,
@@ -118,12 +131,16 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
                                            plotfunc=None,
                                            afternbatches=afternbatches,
                                            on_epoch_end=on_epoch_end, **kwargs)
-        self.snapshot_maker = snapshot_movie_maker_4plots(output_file)
+        if only_truth_and_pred:
+            self.snapshot_maker = snapshot_movie_maker_Nplots(output_file, nplots=2)
+        else:
+            self.snapshot_maker = snapshot_movie_maker_Nplots(output_file, nplots=4)
         
         self.transformed_x_index = transformed_x_index
         self.transformed_y_index = transformed_y_index
         self.transformed_z_index = transformed_z_index
         self.transformed_e_index = transformed_e_index
+        self.only_truth_and_pred = only_truth_and_pred
         
         self.pred_fraction_end=pred_fraction_end
         self.threadlist=[]
@@ -146,9 +163,9 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
     def _make_plot(self,call_counter,feat,predicted,truth):
         self.snapshot_maker.glob_counter=call_counter
         
-        pred  = predicted[0][0] #list entry 0, 0th event
-        truth = truth[0][0] # make the first epoch be the truth plot
-        feat  = feat[0][0] #list entry 0, 0th event
+        pred  = copy.deepcopy(predicted[0]) #not a list anymore, 0th event
+        truth = copy.deepcopy(truth[0]) # make the first epoch be the truth plot
+        feat  = copy.deepcopy(feat[0]) #not a list anymore 0th event
         
         e = feat[:,self.e_index]
         z = feat[:,self.z_index]
@@ -158,20 +175,25 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
         esel = e>0
         ez_sel = self._make_e_zsel(z,e)
         
+        tx,ty,tz,te=None,None,None,None
         
-        tx = pred[:,self.transformed_x_index]
-        ty = pred[:,self.transformed_y_index]
-        tz = pred[:,self.transformed_z_index]
-        te = pred[:,self.transformed_e_index]
-        truth_fracs = truth[:,1:]
+        if not self.only_truth_and_pred:
+            tx = pred[:,self.transformed_x_index]
+            ty = pred[:,self.transformed_y_index]
+            tz = pred[:,self.transformed_z_index]
+            te = pred[:,self.transformed_e_index]
+        truth_fracs = truth[:,0:-1] #last one is energy
         pred_fracs = pred[:,:self.pred_fraction_end]
  
+        sel_truth_fracs = truth_fracs[ez_sel]
+ 
         self.snapshot_maker.reset()
-        self.snapshot_maker.set_plot_data(0, x[ez_sel], y[ez_sel], z[ez_sel], e[ez_sel], truth_fracs[ez_sel]) #just the truth plot
+        self.snapshot_maker.set_plot_data(0, x[ez_sel], y[ez_sel], z[ez_sel], e[ez_sel], sel_truth_fracs) #just the truth plot
         self.snapshot_maker.set_plot_data(1, x[ez_sel], y[ez_sel], z[ez_sel], e[ez_sel], pred_fracs[ez_sel]) #just the predicted plot
         
-        self.snapshot_maker.set_plot_data(2, tx[esel], ty[esel], tz[esel], e[esel], truth_fracs[esel]) #just the predicted plot
-        self.snapshot_maker.set_plot_data(3, tx[esel], ty[esel], te[esel], e[esel], truth_fracs[esel]) #just the predicted plot
+        if not self.only_truth_and_pred:
+            self.snapshot_maker.set_plot_data(2, tx[ez_sel], ty[ez_sel], tz[ez_sel], e[ez_sel], sel_truth_fracs) #just the predicted plot
+            self.snapshot_maker.set_plot_data(3, tx[ez_sel], ty[ez_sel], te[ez_sel], e[ez_sel], sel_truth_fracs) #just the predicted plot
         
         self.snapshot_maker.make_snapshot()
         
@@ -187,15 +209,21 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
                 t_alive.append(t)
         self.threadlist = t_alive  
         
+        s_feat = make_shared(feat[0])
+        s_predicted = make_shared(predicted[0])
+        s_truth = make_shared(truth[0])
+        
+        del feat,truth,predicted
+        
         #send this directly to a fork so it does not interrupt training too much
-        p = Process(target=self._make_plot, args=(call_counter,feat,predicted,truth))
+        p = Process(target=self._make_plot, args=(call_counter,s_feat,s_predicted,s_truth))
         self.threadlist.append(p)
         gcisenabled = gc.isenabled()
         gc.disable()
         p.start()
         if gcisenabled:
             gc.enable()
-        del feat,predicted,truth
+        #del feat,predicted,truth
         
         
         

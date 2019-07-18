@@ -133,6 +133,7 @@ class plotter_fraction_colors(plotter_3d):
         self.randomise_color=True
         self.rseed=4
         self.gray_noise=True
+        self.not_gray_interval=0.5
         
         
     def set_data(self, x, y, z, e, fractions):
@@ -162,7 +163,7 @@ class plotter_fraction_colors(plotter_3d):
             random.shuffle(select) 
         
         #truth_per_event: [[ f,f,f,f], [f,f,f,f,]] 
-        with_simcluster = np.sum(truth_per_event, axis=-1)>0.
+        with_simcluster = np.abs(np.abs(np.sum(truth_per_event, axis=-1))-1.) < self.not_gray_interval
         
         #can be vectorised FIXME
         for i in range(truth_per_event.shape[0]):
@@ -213,53 +214,63 @@ class movie_maker(object):
         os.system('rm -f '+ all_prefix +'*.png')
         self.plotter.interactive = was_interactive  
         
-class snapshot_movie_maker_4plots(object):
+class snapshot_movie_maker_Nplots(object):
     '''
     creates 4 plots:
     truth, prediction
     coordinatesA, coordinatesB
     '''
-    def __init__(self, output_file, glob_counter=0):
+    def __init__(self, output_file, nplots=4, glob_counter=0):
         self.output_file=output_file
         os.system('mkdir -p '+output_file)
         self.tmp_out_prefix=output_file+'/tmp/'
         os.system('mkdir -p '+self.tmp_out_prefix)
         self.glob_counter=glob_counter
-        self.plotters=[plotter_fraction_colors( interactive=False ) for i in range(4)]
+        if nplots>4:
+            raise Exception("snapshot_movie_maker_Nplots: maximum 4 plots")
+        self.plotters=[plotter_fraction_colors( interactive=False ) for i in range(nplots)]
         for i in range(len(self.plotters)):
-            if i:
-                self.plotters[i].gray_noise=False
+            self.plotters[i].gray_noise=True
         self.plot_data={}
         
     #fast, don't calcualte anything here
     def set_plot_data(self, plt_idx, x, y, z, e, fractions):
-        self.plot_data[plt_idx] = [x, y, z, e, fractions]
+        self.plot_data[str(plt_idx)] = [x, y, z, e, fractions]
         
     def reset(self):
+        self.plot_data={}
         for plt_idx in range(len(self.plotters)):
             self.plotters[plt_idx].reset()
         plt.close()
-        self.fig, self.axs = plt.subplots(2, 2, subplot_kw=dict(projection='3d'))
             
     def make_snapshot(self):
         x_idx=[0,0,1,1]
         y_idx=[0,1,0,1] 
-        fig, axs = plt.subplots(2, 2, subplot_kw=dict(projection='3d'))
+        
+        fig, axs = None, None
+        if len(self.plotters)>2:
+            fig, axs = plt.subplots(2, 2, subplot_kw=dict(projection='3d'))
+        if len(self.plotters)<=2:
+            fig, axs = plt.subplots(2, 1, subplot_kw=dict(projection='3d'))
+            
         for plt_idx in range(len(self.plotters)):
             self.plotters[plt_idx].reset()
-            self.plotters[plt_idx].set_data(self.plot_data[plt_idx][0], 
-                                            self.plot_data[plt_idx][1],
-                                            self.plot_data[plt_idx][2],
-                                            self.plot_data[plt_idx][3],
-                                            self.plot_data[plt_idx][4])
-            ax = axs[x_idx[plt_idx]][y_idx[plt_idx]]
+            self.plotters[plt_idx].set_data(self.plot_data[str(plt_idx)][0], 
+                                            self.plot_data[str(plt_idx)][1],
+                                            self.plot_data[str(plt_idx)][2],
+                                            self.plot_data[str(plt_idx)][3],
+                                            self.plot_data[str(plt_idx)][4])
+            if len(self.plotters)>2:
+                ax = axs[x_idx[plt_idx]][y_idx[plt_idx]]
+            else:
+                ax = axs[plt_idx]
             self.plotters[plt_idx].plot3d(ax=ax)
             angle_in=self.glob_counter+80.
             while angle_in>=360: angle_in-=360
             while angle_in<=-360: angle_in-=360
             ax.view_init(30, angle_in)
-            outputname = self.tmp_out_prefix+str(self.glob_counter).rjust(10, '0')+'.png'
-            fig.savefig(outputname, dpi=300)
+        outputname = self.tmp_out_prefix+str(self.glob_counter).rjust(10, '0')+'.png'
+        fig.savefig(outputname, dpi=300)
         plt.close()    
         
     def increment_counter(self):
