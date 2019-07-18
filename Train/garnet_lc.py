@@ -21,8 +21,10 @@ from DeepJetCore.DJCLayers import ScalarMultiply, Clip, SelectFeatures
 
 from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_training
 
-n_garnet_layers=20
+n_garnet_layers=10
 def garnet_model(Inputs,nclasses,nregressions,otheroption):
+    
+    nfilters=48
     
     x = Inputs[0] #this is the self.x list from the TrainData data structure
     
@@ -37,19 +39,22 @@ def garnet_model(Inputs,nclasses,nregressions,otheroption):
         
         x = GlobalExchange()(x)
         x = Multiply()([x,mask])
-        x = Dense(64,activation='tanh')(x)
+        x = Dense(nfilters,activation='tanh')(x)
         x = BatchNormalization(momentum=0.6)(x)
         x = Multiply()([x,mask])
-        x = GarNet(n_aggregators=8, n_filters=64, n_propagate=8, name = 'garnet_'+str(i),)(x)
+        x = GarNet(n_aggregators=8, n_filters=nfilters, n_propagate=8, name = 'garnet_'+str(i),)(x)
         x = BatchNormalization(momentum=0.6)(x)
         x = Multiply()([x,mask])
-        if i%2 == 0:
+        if n_garnet_layers <= 10 or i%2 == 0:
             feats.append(x)
         
     x = Concatenate()(feats)
-    x = Dense(32,activation='elu',name='pre_last_correction')(x)
-    x = Dense(nregressions,activation=None, kernel_initializer='zeros')(x) #max 1 shower here
-    x = Clip(-0.5, 1.5) (x)
+    x = Dense(32,activation='tanh',name='pre_last_correction')(x)
+    x = Dense(nregressions,activation=None,name='pre_last_correction_sm')(x)
+    #x = SelectFeatures(1,nregressions+1)(x) #zero is the no-simcluster index
+    #this cannot be used for the final trainings, but to get an idea of what is happening this might be useful
+    
+    #x = Clip(-0.5, 1.5) (x)
     
     
     #x = Concatenate()([x]+coords)
@@ -63,7 +68,7 @@ sampledir = '/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/CreateMLDatas
 
 #gets called every epoch
 def decay_function(aftern_batches):
-    return aftern_batches+10
+    return aftern_batches+5
 
 ppdts=[ plot_truth_pred_plus_coords_during_training(
                samplefile=sampledir+'/tuple_9Of50_n100.meta',
@@ -78,7 +83,7 @@ ppdts=[ plot_truth_pred_plus_coords_during_training(
                transformed_z_index = 22+4*i, #these will be ignored
                transformed_e_index = 23+4*i, #these will be ignored
                cut_z='pos',
-               afternbatches=20,
+               afternbatches=10,
                on_epoch_end=False,
                decay_function=decay_function,
                only_truth_and_pred=True
@@ -87,7 +92,7 @@ ppdts=[ plot_truth_pred_plus_coords_during_training(
 
 ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
-from Losses import fraction_loss
+from Losses import fraction_loss, fraction_loss_noweight
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
@@ -95,25 +100,36 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     train.setModel(garnet_model,otheroption=1)
     
     #for regression use a different loss, e.g. mean_squared_error
-    train.compileModel(learningrate=0.0002,
+    train.compileModel(learningrate=0.003,
                    loss=fraction_loss,
                    clipnorm=1) 
                    
 print(train.keras_model.summary())
 #exit()
-nbatch=200
-model,history = train.trainModel(nepochs=20, 
+nbatch=300
+verbosity=2
+model,history = train.trainModel(nepochs=10, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=1,
+                                 verbose=verbosity,
                                  
                                  additional_callbacks=ppdts_callbacks)
 
-nbatch=nbatch*2
-model,history = train.trainModel(nepochs=20, 
+nbatch=300
+train.change_learning_rate(0.0005)
+model,history = train.trainModel(nepochs=10+10, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=1,
+                                 verbose=verbosity,
+                                 
+                                 additional_callbacks=ppdts_callbacks)
+
+train.change_learning_rate(0.0001)
+#nbatch=nbatch*2
+model,history = train.trainModel(nepochs=100+100, 
+                                 batchsize=nbatch,
+                                 checkperiod=1, # saves a checkpoint model every N epochs
+                                 verbose=verbosity,
                                  
                                  additional_callbacks=ppdts_callbacks)
 
@@ -121,19 +137,19 @@ model,history = train.trainModel(nepochs=20,
 
 
 train.change_learning_rate(0.00003)
-model,history = train.trainModel(nepochs=100, 
+model,history = train.trainModel(nepochs=100+100+100, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=1,
+                                 verbose=verbosity,
                                  
                                  additional_callbacks=ppdts_callbacks)
 
 
 train.change_learning_rate(0.00001)
-model,history = train.trainModel(nepochs=100+100+100, 
+model,history = train.trainModel(nepochs=100+100+100+100, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=1,
+                                 verbose=verbosity,
                                  
                                  additional_callbacks=ppdts_callbacks)
 

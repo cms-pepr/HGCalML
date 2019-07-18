@@ -247,11 +247,13 @@ class snapshot_movie_maker_Nplots(object):
         x_idx=[0,0,1,1]
         y_idx=[0,1,0,1] 
         
+        plt.rcParams.update({'axes.labelsize': 'small'})
         fig, axs = None, None
         if len(self.plotters)>2:
             fig, axs = plt.subplots(2, 2, subplot_kw=dict(projection='3d'))
         if len(self.plotters)<=2:
-            fig, axs = plt.subplots(2, 1, subplot_kw=dict(projection='3d'))
+            fig, axs = plt.subplots(1, 2, subplot_kw=dict(projection='3d'), figsize=matplotlib.figure.figaspect(3./8.))
+            
             
         for plt_idx in range(len(self.plotters)):
             self.plotters[plt_idx].reset()
