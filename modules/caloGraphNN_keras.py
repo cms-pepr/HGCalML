@@ -24,7 +24,8 @@ class GlobalExchange(keras.layers.Layer):
 
 
 class GravNet(keras.layers.Layer):
-    def __init__(self, n_neighbours, n_dimensions, n_filters, n_propagate, name, also_coordinates=False, **kwargs):
+    def __init__(self, n_neighbours, n_dimensions, n_filters, n_propagate, name, 
+                 also_coordinates=False, feature_dropout=-1, **kwargs):
         super(GravNet, self).__init__(**kwargs)
 
         self.n_neighbours = n_neighbours
@@ -33,6 +34,7 @@ class GravNet(keras.layers.Layer):
         self.n_propagate = n_propagate
         self.name = name
         self.also_coordinates = also_coordinates
+        self.feature_dropout = feature_dropout
         
         self.input_feature_transform = keras.layers.Dense(n_propagate, name = name+'_FLR')
         self.input_spatial_transform = keras.layers.Dense(n_dimensions, name = name+'_S')
@@ -55,6 +57,9 @@ class GravNet(keras.layers.Layer):
 
     def call(self, x):
         features = self.input_feature_transform(x)
+        if self.feature_dropout>0 and self.feature_dropout < 1:
+            features = keras.layers.Dropout(self.feature_dropout)(features)
+        
         coordinates = self.input_spatial_transform(x)
 
         collected_neighbours = self.collect_neighbours(coordinates, features)
@@ -119,7 +124,8 @@ class GravNet(keras.layers.Layer):
                       'n_filters': self.n_filters, 
                       'n_propagate': self.n_propagate,
                       'name':self.name,
-                      'also_coordinates': self.also_coordinates}
+                      'also_coordinates': self.also_coordinates,
+                      'feature_dropout' : self.feature_dropout}
             base_config = super(GravNet, self).get_config()
             return dict(list(base_config.items()) + list(config.items()))
 
