@@ -16,7 +16,7 @@ from DeepJetCore.training.training_base import training_base
 import keras
 from keras.models import Model
 from keras.layers import  Dense,Conv1D, Conv2D, BatchNormalization, Multiply, Concatenate #etc
-from Layers import GarNet, GravNet, GlobalExchange, CreateZeroMask
+from Layers import GarNet, GravNet, GlobalExchange, CreateZeroMask, SortPredictionByEta
 from DeepJetCore.DJCLayers import ScalarMultiply, Clip, SelectFeatures
 
 from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_training
@@ -66,6 +66,9 @@ def gravnet_model(Inputs,nclasses,nregressions,otheroption):
     x = Dense(nregressions,activation=None,kernel_initializer=keras.initializers.RandomNormal(mean=0.0, stddev=0.001))(x) 
     #x = Clip(-0.5, 1.5) (x)
     x = Multiply()([x,mask])
+    
+    x = SortPredictionByEta(input_energy_index=0, input_eta_index=1)([x,Inputs[0]])
+    
     
     x = Concatenate()([x]+coords)
     predictions = [x]
@@ -117,7 +120,7 @@ train.compileModel(learningrate=0.001,
                    
 print(train.keras_model.summary())
 
-nbatch=100
+nbatch=2#100
 verbosity=2
 
 model,history = train.trainModel(nepochs=20, 
@@ -142,7 +145,6 @@ model,history = train.trainModel(nepochs=100+50+20,
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
-                                 loss = fraction_loss,
                                  additional_callbacks=ppdts_callbacks)
 
 
@@ -151,7 +153,6 @@ model,history = train.trainModel(nepochs=100+50+20+100,
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
-                                 
                                  additional_callbacks=ppdts_callbacks)
 
 

@@ -15,6 +15,7 @@ from matplotlib import cm
 import os
 from multiprocessing import Pool
 import random
+import glob
 
 class base_plotter(object):
     def __init__(self):
@@ -220,18 +221,28 @@ class snapshot_movie_maker_Nplots(object):
     truth, prediction
     coordinatesA, coordinatesB
     '''
-    def __init__(self, output_file, nplots=4, glob_counter=0):
+    def __init__(self, output_file, nplots=4, glob_counter=0, ignore_existing_files=False):
         self.output_file=output_file
         os.system('mkdir -p '+output_file)
         self.tmp_out_prefix=output_file+'/tmp/'
         os.system('mkdir -p '+self.tmp_out_prefix)
         self.glob_counter=glob_counter
+        self.offset_counter=0
         if nplots>4:
             raise Exception("snapshot_movie_maker_Nplots: maximum 4 plots")
         self.plotters=[plotter_fraction_colors( interactive=False ) for i in range(nplots)]
         for i in range(len(self.plotters)):
             self.plotters[i].gray_noise=True
         self.plot_data={}
+        self.rjust=10
+        
+        #check if there are already files, and set offset FIXME
+        if False and not ignore_existing_files:
+            previous = glob.glob(self.tmp_out_prefix+"/*.png")
+            numbers = [int(p[0:-4]) for p in previous]
+            self.offset_counter= max(numbers)
+            print(self.offset_counter)
+            
         
     #fast, don't calcualte anything here
     def set_plot_data(self, plt_idx, x, y, z, e, fractions):
@@ -271,7 +282,7 @@ class snapshot_movie_maker_Nplots(object):
             while angle_in>=360: angle_in-=360
             while angle_in<=-360: angle_in-=360
             ax.view_init(30, angle_in)
-        outputname = self.tmp_out_prefix+str(self.glob_counter).rjust(10, '0')+'.png'
+        outputname = self.tmp_out_prefix+str(self.glob_counter+self.offset_counter).rjust(self.rjust, '0')+'.png'
         fig.savefig(outputname, dpi=300)
         plt.close()    
         

@@ -146,6 +146,8 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
         self.threadlist=[]
         
         
+        
+        
     def end_job(self):
         self.snapshot_maker.end_job()
     

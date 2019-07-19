@@ -100,7 +100,7 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     train.setModel(garnet_model,otheroption=1)
     
     #for regression use a different loss, e.g. mean_squared_error
-    train.compileModel(learningrate=0.003,
+train.compileModel(learningrate=0.003,
                    loss=fraction_loss,
                    clipnorm=1) 
                    
