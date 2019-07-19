@@ -69,10 +69,10 @@ def gravnet_model(Inputs,nclasses,nregressions,otheroption):
     
     x = SortPredictionByEta(input_energy_index=0, input_eta_index=1)([x,Inputs[0]])
     
-    
     x = Concatenate()([x]+coords)
     predictions = [x]
     return Model(inputs=Inputs, outputs=predictions)
+
 
 
 
@@ -113,14 +113,20 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     #for regression use the regression model
     train.setModel(gravnet_model,otheroption=1)
     
+    #read weights where possible from pretrained model
+    #import os
+    #from DeepJetCore.modeltools import load_model, apply_weights_where_possible
+    #m_weights =load_model(os.environ['DEEPJETCORE_SUBPACKAGE'] + '/pretrained/gravnet_1.h5')
+    #train.keras_model = apply_weights_where_possible(train.keras_model, m_weights)
+    
     #for regression use a different loss, e.g. mean_squared_error
 train.compileModel(learningrate=0.001,
                    loss=fraction_loss)
                    #clipnorm=1) 
-                   
+                  
 print(train.keras_model.summary())
 
-nbatch=2#100
+nbatch=100
 verbosity=2
 
 model,history = train.trainModel(nepochs=20, 
@@ -131,7 +137,7 @@ model,history = train.trainModel(nepochs=20,
                                  additional_callbacks=ppdts_callbacks)
 
 train.change_learning_rate(0.0003)
-model,history = train.trainModel(nepochs=50+20, 
+model,history = train.trainModel(nepochs=150+20, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
@@ -141,7 +147,7 @@ model,history = train.trainModel(nepochs=50+20,
 
 
 train.change_learning_rate(0.00003)
-model,history = train.trainModel(nepochs=100+50+20, 
+model,history = train.trainModel(nepochs=200+150+20, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
@@ -149,7 +155,7 @@ model,history = train.trainModel(nepochs=100+50+20,
 
 
 train.change_learning_rate(0.00001)
-model,history = train.trainModel(nepochs=100+50+20+100, 
+model,history = train.trainModel(nepochs=200+150+20+100, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
