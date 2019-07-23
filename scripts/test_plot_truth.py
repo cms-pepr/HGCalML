@@ -115,12 +115,12 @@ def plot_event(hgc_event):
     rechit_z = remove_zero_energy(rechit_z,rechit_z)
     
     print('n rechits: ',len(rechit_e))
-    print(simcluster_truth[0])
-    print(simcluster_truth[1])
-    print(simcluster_truth[2])
-    print(simcluster_truth[3])
-    print(simcluster_truth[4])
-    print(simcluster_truth[5])
+    #print(simcluster_truth[0])
+    #print(simcluster_truth[1])
+    #print(simcluster_truth[2])
+    #print(simcluster_truth[3])
+    #print(simcluster_truth[4])
+    #print(simcluster_truth[5])
     
     
     pl = plotter_fraction_colors( output_file=outdir+str(hgc_event)+add_to_out+"simcl", interactive=False)

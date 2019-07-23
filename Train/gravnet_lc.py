@@ -24,12 +24,14 @@ from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_
 n_gravnet_layers=3 #+1
 n_coords=4
 
-def gravnet_model(Inputs,nclasses,nregressions,otheroption):
+def gravnet_model(Inputs,nclasses,nregressions,feature_dropout=0.1):
     
     x = Inputs[0] #this is the self.x list from the TrainData data structure
     
     print('x',x.shape)
     coords=[]
+    
+    etas = SelectFeatures(1,2)(x)#just to propagate to the prediction
     
     mask = CreateZeroMask(0)(x)
     x = BatchNormalization(momentum=0.9)(x)
@@ -53,7 +55,9 @@ def gravnet_model(Inputs,nclasses,nregressions,otheroption):
         x = Multiply()([x,mask])
         x, coord = GravNet(n_neighbours=40, n_dimensions=4, n_filters=80, n_propagate=16, 
                            name = 'gravnet_'+str(i),
-                           also_coordinates=True)(x)
+                           also_coordinates=True,
+                           feature_dropout=feature_dropout
+                           )(x)
         coords.append(coord)
         x = BatchNormalization(momentum=0.9)(x)
         x = Multiply()([x,mask])
@@ -63,13 +67,13 @@ def gravnet_model(Inputs,nclasses,nregressions,otheroption):
     x = Dense(64,activation='elu',name='pre_last_correction')(x)
     x = BatchNormalization(momentum=0.9)(x)
     x = Multiply()([x,mask])
-    x = Dense(nregressions,activation=None,kernel_initializer=keras.initializers.RandomNormal(mean=0.0, stddev=0.001))(x) 
+    x = Dense(nregressions,activation=None,kernel_initializer='zeros')(x) 
     #x = Clip(-0.5, 1.5) (x)
     x = Multiply()([x,mask])
     
-    x = SortPredictionByEta(input_energy_index=0, input_eta_index=1)([x,Inputs[0]])
+    #x = SortPredictionByEta(input_energy_index=0, input_eta_index=1)([x,Inputs[0]])
     
-    x = Concatenate()([x]+coords)
+    x = Concatenate()([x]+coords+[etas])
     predictions = [x]
     return Model(inputs=Inputs, outputs=predictions)
 
@@ -82,7 +86,7 @@ sampledir = '/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/CreateMLDatas
 
 #gets called every epoch
 def decay_function(aftern_batches):
-    return int(aftern_batches+5)
+    return aftern_batches# int(aftern_batches+5)
 
 ppdts=[ plot_truth_pred_plus_coords_during_training(
                samplefile=sampledir+'/tuple_9Of50_n100.meta',
@@ -98,7 +102,7 @@ ppdts=[ plot_truth_pred_plus_coords_during_training(
                transformed_z_index = 22+4*i,
                transformed_e_index = 23+4*i,
                cut_z='pos',
-               afternbatches=20,
+               afternbatches=10,
                on_epoch_end=False,
                decay_function=decay_function
                ) for i in range(n_coords) ]
@@ -106,12 +110,12 @@ ppdts=[ plot_truth_pred_plus_coords_during_training(
 
 ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
-from Losses import fraction_loss, fraction_loss_noweight
+from Losses import fraction_loss, fraction_loss_noweight, fraction_loss_sorted, fraction_loss_sorted_all
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
     #for regression use the regression model
-    train.setModel(gravnet_model,otheroption=1)
+    train.setModel(gravnet_model,feature_dropout=-1.)
     
     #read weights where possible from pretrained model
     #import os
@@ -121,12 +125,12 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     
     #for regression use a different loss, e.g. mean_squared_error
 train.compileModel(learningrate=0.001,
-                   loss=fraction_loss)
+                   loss=fraction_loss_sorted_all)#fraction_loss)
                    #clipnorm=1) 
                   
 print(train.keras_model.summary())
 
-nbatch=100
+nbatch=20#160
 verbosity=2
 
 model,history = train.trainModel(nepochs=20, 
@@ -145,6 +149,8 @@ model,history = train.trainModel(nepochs=150+20,
                                  additional_callbacks=ppdts_callbacks)
 
 
+train.compileModel(learningrate=0.00003,
+                   loss=fraction_loss_sorted_all)
 
 train.change_learning_rate(0.00003)
 model,history = train.trainModel(nepochs=200+150+20, 
