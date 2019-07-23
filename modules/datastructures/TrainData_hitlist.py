@@ -17,7 +17,7 @@ class TrainData_hitlist(TrainData):
         
         #this should be fine
         self.n_features=10
-        self.n_simcluster=20
+        self.n_simcluster=10
         
         self.regressiontargetclasses = [str(i) for i in range(self.n_simcluster)]
         
@@ -132,7 +132,7 @@ class TrainData_hitlist_layercluster(TrainData_hitlist):
         self.max_rechits = 1200
         #this should be fine
         self.n_features=17
-        self.n_simcluster=20
+        self.n_simcluster=10
         
 
 
