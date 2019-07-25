@@ -91,6 +91,7 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     t_sumenergy = tf.reduce_sum(t_energy, axis=1)
     
     t_isnoise = (1.-t_issc)
+    t_isnoise = tf.where(t_isnoise>0., t_isnoise, tf.zeros_like(t_isnoise))
     r_sumnoise_energy = tf.reduce_sum(t_isnoise * r_energy, axis=-1)
     
     #t_sigfrac, p_sigfrac : B x V x Fracs
