@@ -87,11 +87,14 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     r_energy  = energy_weighting(r_energy, usesqrt, weightfactor)
     
     t_issc    = tf.reduce_sum(t_sigfrac,axis=-1)
+    t_issc    = tf.where(t_issc>0., t_issc, tf.zeros_like(t_issc))
+    t_issc    = tf.where(t_issc>1., tf.zeros_like(t_issc), t_issc)
     t_energy  = tf.expand_dims(r_energy, axis=2)*t_sigfrac
     t_sumenergy = tf.reduce_sum(t_energy, axis=1)
     
     t_isnoise = (1.-t_issc)
     t_isnoise = tf.where(t_isnoise>0., t_isnoise, tf.zeros_like(t_isnoise))
+    t_isnoise = tf.where(t_isnoise>1., tf.zeros_like(t_isnoise)+1., t_isnoise)
     r_sumnoise_energy = tf.reduce_sum(t_isnoise * r_energy, axis=-1)
     
     #t_sigfrac, p_sigfrac : B x V x Fracs
@@ -119,7 +122,7 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     
     #penalty = tf.Print(penalty, [t_issc, r_energy], 't_issc, r_energy] ', summarize=200)
     ## weighting goes here
-    loss = 2. * sc_loss + 0.1 * rest_loss + 2. * penalty
+    loss = 1. * sc_loss + 0.1 * rest_loss + 2. * penalty
     
     loss   = tf.Print(loss,[tf.reduce_mean(loss), 
                             tf.reduce_mean(sc_loss),
@@ -130,7 +133,7 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
                             ],
                             'loss, sc_loss, rest_loss, penalty, mean err(pred fracs) SC, mean err(pred fracs) Noise ')
     
-    return loss
+    return tf.reduce_mean(loss)
     
 
 def fraction_loss_noweight( truth, pred):

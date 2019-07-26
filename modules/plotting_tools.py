@@ -17,6 +17,26 @@ from multiprocessing import Pool
 import random
 import glob
 
+def create_max_color_diff(col_list):
+    ncol=len(col_list)
+    idxa=0
+    idxb=int(float(ncol)/2.+0.51)
+    out=[]
+    uuidx=0
+    while len(out)<len(col_list):
+        if uuidx==0:
+            out.append(col_list[idxa])
+            idxa+=1
+            uuidx=1
+        else:
+            out.append(col_list[idxb])
+            idxb+=1
+            uuidx=0
+    return out
+        
+        
+    
+
 class base_plotter(object):
     def __init__(self):
         self.output_file=""
@@ -119,8 +139,9 @@ class plotter_3d(base_plotter):
         size_scaling *= 40.
         
         #c = size_scaling #/=np.min(c)
-        
+        ax.view_init(30, 130)
         ax.scatter(xs=xs, ys=ys, zs=zs, c=c, s=self.marker_scale*size_scaling)
+        
         if self.interactive:
             plt.show()
             
@@ -131,14 +152,19 @@ class plotter_fraction_colors(plotter_3d):
     def __init__(self,**kwargs ):
         plotter_3d.__init__(self,**kwargs)
         self.colorscheme='rainbow'
-        self.randomise_color=True
+        self.randomise_color=False
         self.rseed=4
         self.gray_noise=True
-        self.not_gray_interval=0.5
+        self.highlight_noise=False
+        self.noise_color=(0.,0.,0.,.1)
+        self.not_gray_interval=0.1
         
         
     def set_data(self, x, y, z, e, fractions):
         marker_colors = self.make_simcluster_marker_colours(fractions)
+        if  self.highlight_noise:
+            sel =  np.all(marker_colors == self.noise_color, axis=-1)
+            e [sel]*=10.
         plotter_3d.set_data(self,x,y,z,e,marker_colors)
         
     def make_simcluster_marker_colours(self,truth_per_event):
@@ -152,7 +178,7 @@ class plotter_fraction_colors(plotter_3d):
         
         max_sim = np.array(np.argmax(truth_per_event, axis=1),dtype='int')
         
-        marker_colors = np.array([(0.,0.,0.,.1) for i in range(len(truth_per_event))])
+        marker_colors = np.array([self.noise_color for i in range(len(truth_per_event))])
         
         if len(color_map)<n_simclusters:
             print('colour map too small ',len(color_map), 'for', n_simclusters, 'simclusters')
@@ -162,9 +188,12 @@ class plotter_fraction_colors(plotter_3d):
             if self.rseed is not None:
                 random.seed(self.rseed)
             random.shuffle(select) 
+        else:
+            select = create_max_color_diff(select)
         
         #truth_per_event: [[ f,f,f,f], [f,f,f,f,]] 
-        with_simcluster = np.abs(np.abs(np.sum(truth_per_event, axis=-1))-1.) < self.not_gray_interval
+        sum_truthfrac = np.abs(np.sum(truth_per_event, axis=-1))
+        with_simcluster = np.abs(sum_truthfrac-1.) < self.not_gray_interval
         
         #can be vectorised FIXME
         for i in range(truth_per_event.shape[0]):
@@ -211,7 +240,7 @@ class movie_maker(object):
         for a in angles:
             worker(a)
         
-        os.system('ffmpeg -r 20 -f image2  -i '+ all_prefix +'$w%10d.png -f mp4 -q:v 0 -vcodec mpeg4 -r 20 '+ all_prefix +'movie.mp4')
+        os.system('ffmpeg -r 20 -f image2  -i '+ all_prefix +'%10d.png -f mp4 -q:v 0 -vcodec mpeg4 -r 20 '+ all_prefix +'movie.mp4')
         os.system('rm -f '+ all_prefix +'*.png')
         self.plotter.interactive = was_interactive  
         
