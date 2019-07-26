@@ -69,7 +69,7 @@ class SortPredictionByEta(Layer):
         #pred_sumenergy   : B x Fracs
 
         weighted_etas = tf.reduce_sum(pred_energies * etas, axis=1)/(pred_sumenergy+K.epsilon())
-        weighted_etas = tf.where(tf.abs(weighted_etas)>0.1, etas, tf.zeros_like(weighted_etas)+500.)
+        weighted_etas = tf.where(tf.abs(weighted_etas)>0.1, weighted_etas, tf.zeros_like(weighted_etas)+500.)
         # B x Fracs
         
         ranked_etas, ranked_indices = tf.nn.top_k(-weighted_etas, tf.shape(pred_sumenergy)[1])
