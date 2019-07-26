@@ -25,7 +25,7 @@ class CreateZeroMask(Layer):
     
     def call(self, inputs):
         zeros = tf.zeros(shape=tf.shape(inputs)[:-1])
-        mask = tf.where(inputs[:,:,0]>0, zeros+1., zeros)
+        mask = tf.where(inputs[:,:,self.feature_index]>0, zeros+1., zeros)
         mask = tf.expand_dims(mask,axis=2)
         return mask
     
