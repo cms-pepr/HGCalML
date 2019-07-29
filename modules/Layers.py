@@ -37,8 +37,51 @@ class CreateZeroMask(Layer):
     
 
 global_layers_list['CreateZeroMask']=CreateZeroMask
+
    
-   
+class TransformCoordinates(Layer):
+    def __init__(self, feature_index_x, feature_index_y, feature_index_z, **kwargs):
+        super(TransformCoordinates, self).__init__(**kwargs)
+        self.feature_index_x=feature_index_x
+        self.feature_index_y=feature_index_y
+        self.feature_index_z=feature_index_z
+    
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0],input_shape[1],3)
+    
+    def call(self, inputs):
+        
+        xcoord = inputs[:,:,self.feature_index_x:self.feature_index_x+1]
+        ycoord = inputs[:,:,self.feature_index_y:self.feature_index_y+1]
+        zcoord = inputs[:,:,self.feature_index_z:self.feature_index_z+1]
+        	
+        #transform to spherical coordinates
+        r = tf.math.sqrt( xcoord**2 + ycoord**2 + zcoord**2 )
+        theta = tf.math.acos( zcoord / r )
+        phi = tf.math.atan( ycoord / xcoord )
+        
+        ##replace nan values with 0 to deal with divergences		
+        thetazeros = tf.zeros(shape=tf.shape(theta))
+        phizeros = tf.zeros(shape=tf.shape(phi))    
+        theta = tf.where(tf.is_nan(theta), thetazeros, theta)
+        phi = tf.where(tf.is_nan(phi), phizeros, phi)	  
+        
+        #replace cartesian coordinates with spherical ones calculated above    
+        #by concatenating tensors along last axis (the features axis)
+        transf = tf.concat( [r,theta,phi], -1)
+        
+        return transf
+
+    
+    def get_config(self):
+        config = {'feature_index_x': self.feature_index_x, 'feature_index_y': self.feature_index_y, 'feature_index_z': self.feature_index_z}		
+        base_config = super(TransformCoordinates, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+
+
+global_layers_list['TransformCoordinates']=TransformCoordinates   
+
+
 class SortPredictionByEta(Layer):
     '''
     input: [predicted, input_features]
