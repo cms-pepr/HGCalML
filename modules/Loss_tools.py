@@ -81,16 +81,25 @@ def makeDR2Matrix(a_eta, a_phi, b_eta, b_phi):
     dim   = tf.shape(a_eta)[1]
     batch = tf.shape(a_eta)[0]
     
+    print('a_eta',a_eta.shape)
+    print('a_phi',a_phi.shape)
+    print('b_eta',b_eta.shape)
+    print('b_phi',b_phi.shape)
+    
     a_eta = tf.tile(tf.expand_dims(a_eta, axis=2), [1,1,dim]) # B x M x M_same
+    print('a_eta 2',a_eta.shape)
     a_eta = tf.reshape(a_eta, [batch,-1])
     
     b_eta = tf.tile(tf.expand_dims(b_eta, axis=1), [1,dim,1]) # B x M_same x M
+    print('b_eta 2',b_eta.shape)
     b_eta = tf.reshape(b_eta, [batch,-1])
     
     a_phi = tf.tile(tf.expand_dims(a_phi, axis=2), [1,1,dim]) # B x M x M_same
+    print('a_phi 2',a_phi.shape)
     a_phi = tf.reshape(a_phi, [batch,-1])
     
     b_phi = tf.tile(tf.expand_dims(b_phi, axis=1), [1,dim,1]) # B x M_same x M
+    print('b_phi 2',b_phi.shape)
     b_phi = tf.reshape(b_phi, [batch,-1])
     
     dR2 = deltaR2(a_eta, a_phi, b_eta, b_phi)
@@ -98,7 +107,33 @@ def makeDR2Matrix(a_eta, a_phi, b_eta, b_phi):
 
     return dR2
 
+def makeDR2Matrix_SC_hits(sc_eta, sc_phi, hit_eta, hit_phi):
+    '''
+    Assumes sc_x to be of dimension B x N_SC 
+    Assumes sc_x to be of dimension B x V x 1 
+    
+    Returns distances in B x V x N_SC
+    '''
+    dim    = tf.shape(sc_eta)[1]
+    n_vert = tf.shape(hit_eta)[1]
+    batch  = tf.shape(sc_eta)[0]
+    
+    sc_eta = tf.tile(tf.expand_dims(sc_eta, axis=1), [1,n_vert,1]) 
+    sc_eta = tf.reshape(sc_eta, [batch,-1])
+    sc_phi = tf.tile(tf.expand_dims(sc_phi, axis=1), [1,n_vert,1]) 
+    sc_phi = tf.reshape(sc_phi, [batch,-1])
+    
+    hit_eta = tf.tile(hit_eta, [1,1,dim]) 
+    hit_eta = tf.reshape(hit_eta, [batch,-1])
+    hit_phi = tf.tile(hit_phi, [1,1,dim])
+    hit_phi = tf.reshape(hit_phi, [batch,-1])
+    
+    dR2 = deltaR2(sc_eta, sc_phi, hit_eta, hit_phi)
+    dR2 = tf.reshape(dR2, [batch,n_vert,dim])
 
+    return dR2
+
+    
     
 def weightedCenter(energies, fracs, var, isPhi=False):
     '''

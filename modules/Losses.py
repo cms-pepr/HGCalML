@@ -6,7 +6,7 @@ import tensorflow as tf
 import keras
 import keras.backend as K
 
-from Loss_tools import sortFractions, deltaPhi, deltaR2, makeDR2Matrix, weightedCenter
+from Loss_tools import sortFractions, deltaPhi, deltaR2, makeDR2Matrix, weightedCenter, makeDR2Matrix_SC_hits
 
 
 
@@ -250,4 +250,75 @@ def DR_loss(truth, pred):
 global_loss_list['DR_loss']=DR_loss
     
     
+    
+def Indiv_DR_loss(truth, pred):  
+     
+    t_sigfrac = truth[:,:,0:-1]
+    r_energy  = tf.expand_dims(truth[:,:,-1], axis=2)
+    p_sigfrac = pred[:,:,0:tf.shape(truth)[2]-1]
+    
+    etas      = tf.expand_dims(pred[:,:,-2], axis=2)
+    phis      = tf.expand_dims(pred[:,:,-1], axis=2) 
+    
+    sc_eta = weightedCenter(r_energy, t_sigfrac, etas, isPhi=False)
+    sc_phi = weightedCenter(r_energy, t_sigfrac, phis, isPhi=True)
+    
+    #get DR
+    DR2m = makeDR2Matrix_SC_hits(sc_eta, sc_phi, etas, phis) # B x V x N_SC
+    DR2m = DR2m + 1. #set a minimum, still penalise far away wrong associations more
+    DR2m = tf.sqrt(DR2m) # go to actual DR+1
+    #B x V x F
+    
+    t_issc    = tf.reduce_sum(t_sigfrac,axis=-1)
+    t_issc    = tf.where(t_issc>0., t_issc, tf.zeros_like(t_issc))
+    t_issc    = tf.where(t_issc>1., tf.zeros_like(t_issc), t_issc)
+    t_energy  = r_energy*t_sigfrac
+    
+    
+    sum_p_sigfrac = tf.reduce_sum(p_sigfrac, axis=-1)
+    penalty = tf.squeeze(r_energy, axis=-1) * ( t_issc *  (sum_p_sigfrac - 1.)**2 + (1. - t_issc) * sum_p_sigfrac**2)
+    penalty = tf.reduce_mean(penalty, axis=1)
+    
+    #B x V x F
+    
+    t_sumenergy = tf.reduce_sum(t_energy, axis=1)
+    
+    # B x Fracs
+    sc_loss   = tf.reduce_sum(DR2m * t_energy * (t_sigfrac-p_sigfrac)**2, axis=1)/(t_sumenergy+K.epsilon())
+    
+   
+    
+    no_dr_sc_loss   = tf.reduce_sum( t_energy * (t_sigfrac-p_sigfrac)**2, axis=1)/(t_sumenergy+K.epsilon())
+    # B : mean over sim clusters
+    sc_loss   = tf.reduce_mean(sc_loss, axis=-1)
+    
+    loss = sc_loss + penalty
+    # B 
+    loss = tf.Print(loss,[tf.reduce_mean(loss), 
+                            tf.reduce_mean(sc_loss), 
+                            tf.reduce_mean(penalty),
+                            tf.reduce_mean(no_dr_sc_loss)], 'loss, sc_loss, penalty, no_dr_sc_loss ')
+        
+    return loss
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+
+
+
 
