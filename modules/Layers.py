@@ -14,6 +14,39 @@ global_layers_list['weighted_sum_layer']=weighted_sum_layer
 from keras.layers import Layer
 import keras.backend as K
 import tensorflow as tf
+from Loss_tools import deltaPhi
+
+class CenterPhi(Layer):
+    '''
+    Centers phi to the first input vertex, such that the 2pi modulo behaviour 
+    disappears for a small selection
+    '''
+    def __init__(self, phi_feature_index, **kwargs):
+        super(CenterPhi, self).__init__(**kwargs)
+        self.phi_feature_index=phi_feature_index
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    
+    def call(self, inputs):
+        phi = inputs[...,self.phi_feature_index:self.phi_feature_index+1]
+        
+        reference = inputs[...,0:1,self.phi_feature_index:self.phi_feature_index+1]
+        
+        n_phi = deltaPhi( reference, phi )
+        
+        rest_left  = inputs[...,:self.phi_feature_index]
+        rest_right = inputs[...,self.phi_feature_index+1:]
+        
+        return tf.concat( [rest_left, n_phi,rest_right ] , axis=-1 )
+    
+    def get_config(self):
+        config = {'phi_feature_index': self.phi_feature_index}
+        base_config = super(CenterPhi, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+        
+    
+
 
 class CreateZeroMask(Layer):
     def __init__(self, feature_index, **kwargs):

@@ -292,7 +292,7 @@ def Indiv_DR_loss(truth, pred):
     # B : mean over sim clusters
     sc_loss   = tf.reduce_mean(sc_loss, axis=-1)
     
-    loss = sc_loss + penalty
+    loss = sc_loss + 4. * penalty
     # B 
     loss = tf.Print(loss,[tf.reduce_mean(loss), 
                             tf.reduce_mean(sc_loss), 

@@ -177,13 +177,24 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
         esel = e>0
         ez_sel = self._make_e_zsel(z,e)
         
-        tx,ty,tz,te=None,None,None,None
+        tx,ty,tz,te,dummy=None,None,None,None,None
         
         if not self.only_truth_and_pred:
             tx = pred[:,self.transformed_x_index]
-            ty = pred[:,self.transformed_y_index]
-            tz = pred[:,self.transformed_z_index]
-            te = pred[:,self.transformed_e_index]
+            dummy = np.zeros_like(tx)
+            if self.transformed_y_index is not None:
+                ty = pred[:,self.transformed_y_index]
+            else:
+                ty=dummy
+            if self.transformed_z_index is not None:
+                tz = pred[:,self.transformed_z_index]
+            else:
+                tz=dummy
+            if self.transformed_e_index is not None:
+                te = pred[:,self.transformed_e_index]
+            else:
+                te=dummy
+            
         truth_fracs = truth[:,0:-1] #last one is energy
         pred_fracs = pred[:,:self.pred_fraction_end]
  
@@ -194,8 +205,8 @@ class plot_truth_pred_plus_coords_during_training(plot_pred_during_training):
         self.snapshot_maker.set_plot_data(1, x[ez_sel], y[ez_sel], z[ez_sel], e[ez_sel], pred_fracs[ez_sel]) #just the predicted plot
         
         if not self.only_truth_and_pred:
-            self.snapshot_maker.set_plot_data(2, tx[ez_sel], ty[ez_sel], tz[ez_sel], e[ez_sel], sel_truth_fracs) #just the predicted plot
-            self.snapshot_maker.set_plot_data(3, tx[ez_sel], ty[ez_sel], te[ez_sel], e[ez_sel], sel_truth_fracs) #just the predicted plot
+            self.snapshot_maker.set_plot_data(2,  tz[ez_sel], ty[ez_sel], tx[ez_sel], e[ez_sel], sel_truth_fracs) #just the predicted plot
+            self.snapshot_maker.set_plot_data(3,  te[ez_sel], ty[ez_sel], tx[ez_sel], e[ez_sel], sel_truth_fracs) #just the predicted plot
         
         self.snapshot_maker.make_snapshot()
         
