@@ -133,6 +133,27 @@ def makeDR2Matrix_SC_hits(sc_eta, sc_phi, hit_eta, hit_phi):
 
     return dR2
 
+
+def weightedCoordLoss(fracs, coords):
+    '''
+    fracs:    B x V x F
+    energies: B x V x 1
+    coords:   B x V x C
+    
+    returns:  B
+    '''
+    from caloGraphNN import euclidean_squared
+    distances = euclidean_squared(coords, coords) # B x V x V
+    fracdiff  = euclidean_squared(fracs, fracs)   # B x V x V
+    #fracdiff =  tf.where(fracdiff<0.5, tf.zeros_like(fracdiff), fracdiff)
+    #distances = tf.where(fracdiff<0.5, tf.zeros_like(distances), distances)
+    
+    diffsq = (distances - fracdiff)**2
+    diffsq = tf.where(tf.logical_and(fracdiff>0.5, distances>0.5), tf.zeros_like(diffsq), diffsq)
+    #if fracdiff large, distance should be large
+    #fracdiff is max 1. distances are order 1
+    weighted = tf.reduce_mean(diffsq, axis = [1,2])
+    return weighted
     
     
 def weightedCenter(energies, fracs, var, isPhi=False):
@@ -141,6 +162,8 @@ def weightedCenter(energies, fracs, var, isPhi=False):
     energy: B x V x 1
     fracs:  B x V x F
     var:    B x V x 1
+    
+    output: B x F
     '''
     frac_energies   = energies*fracs
     frac_sumenergy  = tf.reduce_sum(frac_energies, axis=1)

@@ -141,13 +141,24 @@ def simple_energy_loss( truth, pred):
     return _simple_energy_loss(r_energy, t_sigfrac, p_sigfrac)
     
 
-def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta=False, sort_pred_by_eta=False):
+def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta=False, sort_pred_by_eta=False,
+                        eta_penalty=False,
+                        card_penalty=False,
+                        distance_pen=False):
+    
+    
+    
+    
+    
     
     t_sigfrac = truth[:,:,0:-1]
     r_energy  = truth[:,:,-1]
+    unweighted_r_energy = r_energy
     p_sigfrac = pred[:,:,0:tf.shape(truth)[2]-1]
     
-    etas      = pred[:,:,tf.shape(truth)[2]:tf.shape(truth)[2]+1]
+    
+    
+    etas      = pred[:,:,tf.shape(pred)[2]-2:tf.shape(pred)[2]-1] #second but last
     
     if sort_truth_by_eta or sort_pred_by_eta:
         if sort_pred_by_eta:
@@ -168,6 +179,9 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     t_isnoise = tf.where(t_isnoise>1., tf.zeros_like(t_isnoise)+1., t_isnoise)
     r_sumnoise_energy = tf.reduce_sum(t_isnoise * r_energy, axis=-1)
     
+    n_unmasked = tf.cast(tf.count_nonzero(r_energy, axis=1), dtype='float32')
+    print(n_unmasked.shape)
+    
     #t_sigfrac, p_sigfrac : B x V x Fracs
     #r_energy             : B x V 
     #t_issc               : B x V  
@@ -175,6 +189,7 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     #t_sumenergy          : B x Fracs
     #t_isnoise            : B x V
     #r_sumnoise_energy    : B
+    #n_unmasked           : B
     
     # B x Fracs
     sc_loss   = tf.reduce_sum(t_energy * (t_sigfrac-p_sigfrac)**2, axis=1)/(t_sumenergy+K.epsilon())
@@ -193,9 +208,38 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     
     #penalty = tf.Print(penalty, [t_issc, r_energy], 't_issc, r_energy] ', summarize=200)
     ## weighting goes here
-    loss = 1. * sc_loss + 0.1 * rest_loss + 2. * penalty
+    loss = 1. * sc_loss + 0.01 * rest_loss + 2. * penalty
     
-    loss   = tf.Print(loss,[tf.reduce_mean(loss), 
+    
+    
+    if eta_penalty:
+        #Inputs:
+        #energy: B x V x 1
+        #fracs:  B x V x F
+        #var:    B x V x 1
+        unweighted_r_energy = tf.expand_dims(unweighted_r_energy,axis=2)
+        pred_eta = weightedCenter(unweighted_r_energy,p_sigfrac, etas)
+        true_eta = weightedCenter(unweighted_r_energy,t_sigfrac, etas)
+        
+        diffsq = (pred_eta-true_eta)**2
+        diffsq = tf.where(tf.abs(true_eta) > 1.,diffsq , tf.zeros_like(diffsq))
+        
+        eta_penalty_val = tf.reduce_sum(diffsq, axis=1) / (tf.cast(tf.count_nonzero(diffsq, axis=1), dtype='float32')+K.epsilon())
+        
+        loss = tf.reduce_mean(loss) +  tf.reduce_mean(eta_penalty_val)
+        
+        loss   = tf.Print(loss,[tf.reduce_mean(loss), 
+                            tf.reduce_mean(sc_loss),
+                            tf.reduce_mean(rest_loss),
+                            tf.reduce_mean(penalty),
+                            tf.reduce_mean(t_issc *  (sum_p_sigfrac - 1.)),
+                            tf.reduce_mean(tf.abs(eta_penalty_val)),
+                            ],
+                            'loss, sc_loss, rest_loss, penalty, mean err(pred fracs) SC, abs sqrt eta_penalty_val ')
+    
+        
+    else:
+        loss   = tf.Print(loss,[tf.reduce_mean(loss), 
                             tf.reduce_mean(sc_loss),
                             tf.reduce_mean(rest_loss),
                             tf.reduce_mean(penalty),
@@ -203,6 +247,23 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
                             tf.reduce_mean(t_isnoise *  (sum_p_sigfrac)),
                             ],
                             'loss, sc_loss, rest_loss, penalty, mean err(pred fracs) SC, mean err(pred fracs) Noise ')
+    
+    if card_penalty:
+        n_true = tf.cast(tf.count_nonzero(tf.reduce_sum(t_sigfrac, axis=1), axis=1), dtype='float32')
+        n_pred = tf.reduce_max(p_sigfrac, axis=1)
+        n_pred = tf.where(n_pred > 0.2, n_pred, tf.zeros_like(n_pred))
+        n_pred = tf.cast(tf.count_nonzero(n_pred, axis=1), dtype='float32')
+        card_penalty_val = (n_true-n_pred)**2 / (n_true+K.epsilon())
+        loss += 0.001 * tf.reduce_mean(card_penalty_val)
+        loss = tf.Print(loss,[card_penalty_val, n_pred, n_true],' card_penalty_val, n_pred, n_true ')
+        
+    if distance_pen:
+        from Loss_tools import weightedCoordLoss
+        last_four_coords= pred[:,:,tf.shape(pred)[2]-(2+4):tf.shape(pred)[2]-2]
+        coordloss = tf.reduce_mean(weightedCoordLoss(t_sigfrac, last_four_coords))
+        loss += 10. * coordloss
+        loss = tf.Print(loss,[coordloss, loss],'coordloss, total loss ')
+        
     
     return tf.reduce_mean(loss)
     
@@ -228,6 +289,31 @@ global_loss_list['fraction_loss']=fraction_loss
 def fraction_loss_lin( truth, pred):
     return weighted_frac_loss(truth, pred, usesqrt=False)
 global_loss_list['fraction_loss_lin']=fraction_loss_lin
+
+
+def fraction_loss_eta_penalty( truth, pred):
+    return weighted_frac_loss(truth, pred, usesqrt=True, eta_penalty=True, sort_truth_by_eta=True)
+global_loss_list['fraction_loss_eta_penalty']=fraction_loss_eta_penalty
+
+
+def fraction_loss_eta_penalty_distance_pen( truth, pred):
+    return weighted_frac_loss(truth, pred, usesqrt=True, eta_penalty=True, sort_truth_by_eta=True,
+                              distance_pen=True)
+global_loss_list['fraction_loss_eta_penalty_distance_pen']=fraction_loss_eta_penalty_distance_pen
+
+
+
+
+def fraction_loss_eta_penalty_sort_both( truth, pred):
+    return weighted_frac_loss(truth, pred, usesqrt=True, eta_penalty=True, sort_truth_by_eta=True, sort_pred_by_eta=True)
+global_loss_list['fraction_loss_eta_penalty_sort_both']=fraction_loss_eta_penalty_sort_both
+
+
+def fraction_loss_eta_penalty_card_pen( truth, pred):
+    return weighted_frac_loss(truth, pred, usesqrt=True, eta_penalty=True, sort_truth_by_eta=True, sort_pred_by_eta=True, card_penalty=True)
+global_loss_list['fraction_loss_eta_penalty_card_pen']=fraction_loss_eta_penalty_card_pen
+
+
 
 
 def DR_loss(truth, pred):
