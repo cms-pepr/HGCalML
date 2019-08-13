@@ -27,15 +27,18 @@ def gravnet_model(Inputs,nclasses,nregressions,feature_dropout=0.1):
     
     mask = CreateZeroMask(0)(x)
     
-    coords=[]
     
-    x = CenterPhi(2)(x)
-    x = Multiply()([x,mask])
     
+    #x = CenterPhi(2)(x)
     etas_phis = SelectFeatures(1,3)(x)#eta, phi, just to propagate to the prediction
     
+    coords=[]
+    
+    x = Multiply()([x,mask])
     
     x = BatchNormalization(momentum=0.9)(x)
+    x = Multiply()([x,mask])
+    x = GarNet(n_aggregators=8, n_filters=64, n_propagate=16, name = 'garnet_pre')(x)
     x = Multiply()([x,mask])
     x, coord = GravNet(n_neighbours=40, n_dimensions=3, n_filters=80, n_propagate=16, 
                        name = 'gravnet_pre',
@@ -46,8 +49,10 @@ def gravnet_model(Inputs,nclasses,nregressions,feature_dropout=0.1):
     
     feats=[]
     for i in range(n_gravnet_layers):
-        x = GlobalExchange()(x)
+        #x = GlobalExchange()(x)
         x = Concatenate()([x,GlobalExchange()(etas_phis)])
+        x = Multiply()([x,mask])
+        x = GarNet(n_aggregators=8, n_filters=64, n_propagate=16, name = 'garnet_'+str(i))(x)
         x = Multiply()([x,mask])
         x = Dense(64,activation='elu')(x)
         x = Dense(64,activation='elu')(x)
@@ -65,10 +70,9 @@ def gravnet_model(Inputs,nclasses,nregressions,feature_dropout=0.1):
         x = Multiply()([x,mask])
         feats.append(x)
     
-    etas_phis = GlobalExchange()(etas_phis)
-    #x = Concatenate()(feats+[etas_phis])
-    x = Concatenate()([x, etas_phis])
+    x = Concatenate()(feats+[x, etas_phis])
     x = Multiply()([x,mask])
+    
     x = Dense(64,activation='elu',name='eta_sort')(x)
     x = Dense(64,activation='elu',name='eta_sort2')(x)
     x = Dense(64,activation='elu',name='pre_last_correction')(x)
@@ -86,18 +90,19 @@ def gravnet_model(Inputs,nclasses,nregressions,feature_dropout=0.1):
 
 train=training_base(testrun=False,resumeSilently=True,renewtokens=True)
 
-sampledir = '/eos/home-m/mrieger/hgcalsim/CreateMLDataset/closeby_1.0To100.0_idsmix_dR0.2_n10_rnd1_s1/hitlist_layercluster/prod4'
-
+sampledir = '/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/gnn.CreateMLDataset/closeby_1.0To100.0_idsmix_dR0.3_n5_rnd1_s1/hitlist_layercluster/prod5'
+samplefile = sampledir+'/tuple_9Of50_n100.meta'
 #gets called every epoch
 def decay_function(aftern_batches):
-    return aftern_batches+1# int(aftern_batches+5)
+    return aftern_batches# int(aftern_batches+5)
 
-plots_after_n_batch=100
+plots_after_n_batch=5
+use_event=5
 
 ppdts=[ plot_truth_pred_plus_coords_during_training(
-               samplefile=sampledir+'/tuple_9Of50_n100.meta',
+               samplefile=samplefile,
                output_file=train.outputDir+'/train_progress'+str(0),
-               use_event=6,
+               use_event=use_event,
                x_index = 5,
                y_index = 6,
                z_index = 7,
@@ -114,18 +119,18 @@ ppdts=[ plot_truth_pred_plus_coords_during_training(
                ) ]
 
 ppdts=ppdts+[ plot_truth_pred_plus_coords_during_training(
-               samplefile=sampledir+'/tuple_9Of50_n100.meta',
+               samplefile=samplefile,
                output_file=train.outputDir+'/train_progress'+str(i+1),
-               use_event=6,
+               use_event=use_event,
                x_index = 5,
                y_index = 6,
                z_index = 7,
                e_index = 0,
                pred_fraction_end = 10,
                transformed_x_index = 13+4*i,
-               transformed_y_index = 13+4*i,
-               transformed_z_index = 13+4*i,
-               transformed_e_index = 13+4*i,
+               transformed_y_index = 14+4*i,
+               transformed_z_index = 15+4*i,
+               transformed_e_index = 16+4*i,
                cut_z='pos',
                afternbatches=plots_after_n_batch,
                on_epoch_end=False,
@@ -135,9 +140,9 @@ ppdts=ppdts+[ plot_truth_pred_plus_coords_during_training(
 
 ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
-from Losses import fraction_loss, fraction_loss_noweight, fraction_loss_sorted, fraction_loss_sorted_all, DR_loss, simple_energy_loss
+from Losses import fraction_loss_eta_penalty, fraction_loss, fraction_loss_eta_penalty_card_pen, fraction_loss_noweight, fraction_loss_sorted, fraction_loss_sorted_all, DR_loss, simple_energy_loss
 
-from Losses import Indiv_DR_loss
+from Losses import Indiv_DR_loss, fraction_loss_eta_penalty_distance_pen, fraction_loss_eta_penalty_sort_both
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
@@ -151,48 +156,42 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     #train.keras_model = apply_weights_where_possible(train.keras_model, m_weights)
     
     #for regression use a different loss, e.g. mean_squared_error
-train.compileModel(learningrate=1e-4,
-                   loss=Indiv_DR_loss,#fraction_loss)
-                   clipnorm=1) 
+train.compileModel(learningrate=5e-3,
+                   loss=fraction_loss_eta_penalty_distance_pen,#fraction_loss)
+                   )#clipnorm=1) 
                   
 print(train.keras_model.summary())
 
-nbatch=50
+nbatch=45
 verbosity=2
 
 model,history = train.trainModel(nepochs=10, 
                                  batchsize=nbatch,
-                                 checkperiod=1, # saves a checkpoint model every N epochs
+                                 checkperiod=10, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
-                                 
                                  additional_callbacks=ppdts_callbacks)
-
-
-#print('\n\nswitching to DR\n\n')
-#train.compileModel(learningrate=0.00001,
-#                   loss=DR_loss)
 
 
 train.change_learning_rate(1e-4)
-model,history = train.trainModel(nepochs=2+40, 
+
+model,history = train.trainModel(nepochs=10+40, 
                                  batchsize=nbatch,
-                                 checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=verbosity,
-                                 
-                                 additional_callbacks=ppdts_callbacks)
-
-
-
-train.change_learning_rate(0.00001)
-model,history = train.trainModel(nepochs=200+150+20, 
-                                 batchsize=nbatch,
-                                 checkperiod=1, # saves a checkpoint model every N epochs
+                                 checkperiod=10, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
                                  additional_callbacks=ppdts_callbacks)
 
 
-train.change_learning_rate(0.00001)
-model,history = train.trainModel(nepochs=200+150+20+100, 
+
+train.change_learning_rate(1e-5)
+model,history = train.trainModel(nepochs=50+200, 
+                                 batchsize=nbatch,
+                                 checkperiod=10, # saves a checkpoint model every N epochs
+                                 verbose=verbosity,
+                                 additional_callbacks=ppdts_callbacks)
+
+
+train.change_learning_rate(1e-6)
+model,history = train.trainModel(nepochs=250+250, 
                                  batchsize=nbatch,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
