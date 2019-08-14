@@ -71,9 +71,44 @@ class CreateZeroMask(Layer):
 
 global_layers_list['CreateZeroMask']=CreateZeroMask
 
+
+
+
+
+class AveragePoolVertices(Layer):
+    def __init__(self, keepdims=False, **kwargs):
+        super(AveragePoolVertices, self).__init__(**kwargs)
+        self.keepdims=keepdims
+    
+    def compute_output_shape(self, input_shape):
+        if self.keepdims:
+            return input_shape
+        return (input_shape[0],input_shape[2])
+    
+    def call(self, inputs):
+        #create mask
+        n_nonmasked = tf.cast(tf.count_nonzero(tf.reduce_sum(inputs, axis=2), axis=-1), dtype='float32')
+        n_nonmasked = tf.expand_dims(n_nonmasked, axis=1)
+        rsum = tf.reduce_sum(inputs, axis=1)
+        out = rsum/(n_nonmasked+K.epsilon())
+        if self.keepdims:
+            out = tf.expand_dims(out, axis=1)
+            out = tf.tile(out, [1, tf.shape(inputs)[1], 1])
+        return out
+    
+    def get_config(self):
+        config = {'keepdims': self.keepdims}
+        base_config = super(AveragePoolVertices, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+    
+        
+    
+
+global_layers_list['CreateZeroMask']=CreateZeroMask
+
    
 class TransformCoordinates(Layer):
-    def __init__(self, feature_index_x, feature_index_y, feature_index_z, **kwargs):
+    def __init__(self, feature_index_x=0, feature_index_y=1, feature_index_z=2, **kwargs):
         super(TransformCoordinates, self).__init__(**kwargs)
         self.feature_index_x=feature_index_x
         self.feature_index_y=feature_index_y
@@ -89,11 +124,12 @@ class TransformCoordinates(Layer):
         zcoord = inputs[:,:,self.feature_index_z:self.feature_index_z+1]
         	
         #transform to spherical coordinates
-        r = tf.math.sqrt( xcoord**2 + ycoord**2 + zcoord**2 )
-        theta = tf.math.acos( zcoord / r )
-        phi = tf.math.atan( ycoord / xcoord )
+        r = tf.math.sqrt( xcoord**2 + ycoord**2 + zcoord**2 +K.epsilon())
+        theta = tf.math.acos( zcoord / (r+K.epsilon()) )
+        phi = tf.math.atan( ycoord / (xcoord+K.epsilon()) )
         
-        ##replace nan values with 0 to deal with divergences		
+        ##replace nan values with 0 to deal with divergences
+        #-> does not work for the gradient, needs to be fied before		
         thetazeros = tf.zeros(shape=tf.shape(theta))
         phizeros = tf.zeros(shape=tf.shape(phi))    
         theta = tf.where(tf.is_nan(theta), thetazeros, theta)
