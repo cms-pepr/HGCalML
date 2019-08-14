@@ -15,7 +15,9 @@ def create_loss_dict(truth, pred):
     t_n_rechits          : B 
     r_eta                : B x V 
     r_phi                : B x V 
-    t_issc               : B x V  
+    t_issc               : B x V
+    r_showers            : B 
+    t_showers            : B
     '''
     
     t_sigfrac = truth[:,:,0:-1]
@@ -31,6 +33,10 @@ def create_loss_dict(truth, pred):
     t_issc    = tf.where(t_issc>0., t_issc, tf.zeros_like(t_issc))
     t_issc    = tf.where(t_issc>1., tf.zeros_like(t_issc), t_issc)
     
+    r_showers = pred[:,0,-3]
+    t_showers = tf.cast(tf.count_nonzero(tf.reduce_sum(t_sigfrac, axis=1), axis=1), dtype='float32')
+    
+    
     return    {'t_sigfrac'   : t_sigfrac,
                'p_sigfrac'   : p_sigfrac,
                'r_energy'    : r_energy,
@@ -39,7 +45,9 @@ def create_loss_dict(truth, pred):
                't_n_rechits' : t_n_rechits,
                'r_eta'       : pred[:,:,tf.shape(pred)[2]-2:tf.shape(pred)[2]-1],
                'r_phi'       : pred[:,:,tf.shape(pred)[2]-1:tf.shape(pred)[2]],
-               't_issc'      : t_issc
+               't_issc'      : t_issc,
+               'r_showers'   : r_showers,
+               't_showers'   : t_showers
                }
     
 
@@ -179,13 +187,16 @@ def makeDR2Matrix_SC_hits(sc_eta, sc_phi, hit_eta, hit_phi):
 def weightedCoordLoss(fracs, r_energy, coords):
     '''
     fracs:    B x V x F
-    energies: B x V x 1
+    energies: B x V 
     coords:   B x V x C
     
-    returns:  B
+    returns:  B x V
     '''
     from caloGraphNN import euclidean_squared
-    n_unmasked = tf.cast(tf.count_nonzero(r_energy, axis=1), dtype='float32')
+    
+    mask = tf.where(r_energy>0, tf.zeros_like(r_energy)+1., tf.zeros_like(r_energy))
+    #r_energy = tf.expand_dims(r_energy, axis=2)
+     
     distances = euclidean_squared(coords, coords) # B x V x V
     fracdiff  = euclidean_squared(fracs, fracs)   # B x V x V
     #fracdiff =  tf.where(fracdiff<0.5, tf.zeros_like(fracdiff), fracdiff)
@@ -195,7 +206,7 @@ def weightedCoordLoss(fracs, r_energy, coords):
     diffsq = tf.where(tf.logical_and(fracdiff>0.5, distances>0.5), tf.zeros_like(diffsq), diffsq)
     #if fracdiff large, distance should be large
     #fracdiff is max 1. distances are order 1
-    weighted = tf.reduce_sum(diffsq, axis = 2)
+    weighted = mask * tf.reduce_sum(diffsq, axis = 2)
     return weighted
     
     

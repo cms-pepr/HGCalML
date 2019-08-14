@@ -12,7 +12,7 @@ from DeepJetCore.training.training_base import training_base
 import keras
 from keras.models import Model
 from keras.layers import  Dense,Conv1D, Conv2D, BatchNormalization, Multiply, Concatenate #etc
-from Layers import GarNet, GravNet, GlobalExchange, CreateZeroMask, SortPredictionByEta, CenterPhi
+from Layers import AveragePoolVertices, GarNet, GravNet, GlobalExchange, CreateZeroMask, SortPredictionByEta, CenterPhi
 from DeepJetCore.DJCLayers import ScalarMultiply, Clip, SelectFeatures, Print
 
 from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_training
@@ -21,68 +21,69 @@ import tensorflow as tf
 n_gravnet_layers=3 #+1
 n_coords=4
 
+def norm_and_mask(x,mask):
+    x = BatchNormalization(momentum=0.3)(x)
+    x = Multiply()([x,mask])
+    return x
+
 def gravnet_model(Inputs,nclasses,nregressions,feature_dropout=0.1):
+    coords=[]
+    feats=[]
     
     x = Inputs[0] #this is the self.x list from the TrainData data structure
-    
+    x = CenterPhi(2)(x)
     mask = CreateZeroMask(0)(x)
+    x = norm_and_mask(x,mask)
     
-    
-    
-    #x = CenterPhi(2)(x)
     etas_phis = SelectFeatures(1,3)(x)#eta, phi, just to propagate to the prediction
+    r_coordinate = SelectFeatures(4,5)(x)
+    energy = SelectFeatures(0,1)(x)
+    x = Concatenate()([etas_phis, r_coordinate,x])#just for the kernel initializer
     
-    coords=[]
-    
-    x = Multiply()([x,mask])
-    
-    x = BatchNormalization(momentum=0.9)(x)
-    x = Multiply()([x,mask])
-    x = GarNet(n_aggregators=8, n_filters=64, n_propagate=16, name = 'garnet_pre')(x)
-    x = Multiply()([x,mask])
     x, coord = GravNet(n_neighbours=40, n_dimensions=3, n_filters=80, n_propagate=16, 
                        name = 'gravnet_pre',
+                       fix_coordinate_space=True,
                        also_coordinates=True)(x)
+    x = norm_and_mask(x,mask)
     coords.append(coord)
-    x = BatchNormalization(momentum=0.9)(x)
-    x = Multiply()([x,mask])
+    feat.append(x)
     
-    feats=[]
+    
     for i in range(n_gravnet_layers):
-        #x = GlobalExchange()(x)
-        x = Concatenate()([x,GlobalExchange()(etas_phis)])
-        x = Multiply()([x,mask])
-        x = GarNet(n_aggregators=8, n_filters=64, n_propagate=16, name = 'garnet_'+str(i))(x)
-        x = Multiply()([x,mask])
+        x = GlobalExchange()(x)
+        
         x = Dense(64,activation='elu')(x)
         x = Dense(64,activation='elu')(x)
-        x = BatchNormalization(momentum=0.9)(x)
-        x = Multiply()([x,mask])
-        x = Dense(64,activation='sigmoid')(x)
-        x = Multiply()([x,mask])
+        x = Dense(64,activation='elu')(x)
+        
         x, coord = GravNet(n_neighbours=40, n_dimensions=4, n_filters=80, n_propagate=16, 
                            name = 'gravnet_'+str(i),
                            also_coordinates=True,
-                           feature_dropout=feature_dropout
-                           )(x)
+                           feature_dropout=feature_dropout,
+                           masked_coordinate_offset=-10)([x,mask])
+        x = norm_and_mask(x,mask)
         coords.append(coord)
-        x = BatchNormalization(momentum=0.9)(x)
-        x = Multiply()([x,mask])
-        feats.append(x)
+        feat.append(x)
     
-    x = Concatenate()(feats+[x, etas_phis])
-    x = Multiply()([x,mask])
     
-    x = Dense(64,activation='elu',name='eta_sort')(x)
-    x = Dense(64,activation='elu',name='eta_sort2')(x)
-    x = Dense(64,activation='elu',name='pre_last_correction')(x)
-    x = BatchNormalization(momentum=0.9)(x)
+    x = Dense(64,activation='elu')(x)
+    x = Dense(64,activation='elu')(x)
+    x = norm_and_mask(x,mask)
+    x = Dense(64,activation='elu')(x)
+    x = norm_and_mask(x,mask)
+    
+    n_showers = AveragePoolVertices(keepdims=True)(x)
+    n_showers = Dense(64,activation='elu')(n_showers)
+    n_showers = Dense(1,activation=None)(n_showers)
+    
+    x = Dense(nregressions,activation=None)(x) 
+    x = Concatenate()([x, Inputs[0]])
     x = Multiply()([x,mask])
+    x = Dense(64,activation='elu',name='last_correction')(x)
     x = Dense(nregressions,activation=None, kernel_initializer='zeros')(x) 
-    #x = Clip(-0.5, 1.5) (x)
     x = Multiply()([x,mask])
     
-    x = Concatenate(name="concatlast", axis=-1)([x]+coords+[etas_phis])
+    x = Concatenate(name="concatlast", axis=-1)([x]+coords+[n_showers]+[etas_phis])
     predictions = [x]
     return Model(inputs=Inputs, outputs=predictions)
 
@@ -96,7 +97,7 @@ samplefile = sampledir+'/tuple_9Of50_n100.meta'
 def decay_function(aftern_batches):
     return aftern_batches# int(aftern_batches+5)
 
-plots_after_n_batch=5
+plots_after_n_batch=100
 use_event=5
 
 ppdts=[ plot_truth_pred_plus_coords_during_training(
@@ -142,7 +143,7 @@ ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
 from Losses import fraction_loss_eta_penalty, fraction_loss, fraction_loss_eta_penalty_card_pen, fraction_loss_noweight, fraction_loss_sorted, fraction_loss_sorted_all, DR_loss, simple_energy_loss
 
-from Losses import Indiv_DR_loss, fraction_loss_eta_penalty_distance_pen, fraction_loss_eta_penalty_sort_both
+from Losses import n_shower_loss,fraction_loss_eta_penalty_lin,fraction_loss_noweight, coordinate_loss, Indiv_DR_loss, fraction_loss_eta_penalty_distance_pen, fraction_loss_eta_penalty_sort_both
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
@@ -156,13 +157,13 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     #train.keras_model = apply_weights_where_possible(train.keras_model, m_weights)
     
     #for regression use a different loss, e.g. mean_squared_error
-train.compileModel(learningrate=5e-3,
-                   loss=fraction_loss_eta_penalty_distance_pen,#fraction_loss)
+train.compileModel(learningrate=1e-4,
+                   loss=n_shower_loss,#fraction_loss)
                    )#clipnorm=1) 
                   
 print(train.keras_model.summary())
 
-nbatch=45
+nbatch=30
 verbosity=2
 
 model,history = train.trainModel(nepochs=10, 
@@ -172,7 +173,7 @@ model,history = train.trainModel(nepochs=10,
                                  additional_callbacks=ppdts_callbacks)
 
 
-train.change_learning_rate(1e-4)
+train.change_learning_rate(5e-5)
 
 model,history = train.trainModel(nepochs=10+40, 
                                  batchsize=nbatch,

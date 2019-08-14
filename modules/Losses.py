@@ -6,7 +6,7 @@ import tensorflow as tf
 import keras
 import keras.backend as K
 
-from Loss_tools import sortFractions, deltaPhi, deltaR2, makeDR2Matrix, weightedCenter, makeDR2Matrix_SC_hits
+from Loss_tools import create_loss_dict,sortFractions, deltaPhi, deltaR2, makeDR2Matrix, weightedCenter, makeDR2Matrix_SC_hits
 
 
 
@@ -141,10 +141,13 @@ def simple_energy_loss( truth, pred):
     return _simple_energy_loss(r_energy, t_sigfrac, p_sigfrac)
     
 
-def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta=False, sort_pred_by_eta=False,
+def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., 
+                        sort_truth_by_eta=False, 
+                        sort_pred_by_eta=False,
                         eta_penalty=False,
                         card_penalty=False,
-                        distance_pen=False):
+                        distance_pen=False,
+                        focus_on_multi_showers=False):
     
     
     
@@ -182,6 +185,8 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     n_unmasked = tf.cast(tf.count_nonzero(r_energy, axis=1), dtype='float32')
     print(n_unmasked.shape)
     
+    n_true = tf.cast(tf.count_nonzero(tf.reduce_sum(t_sigfrac, axis=1), axis=1), dtype='float32')
+        
     #t_sigfrac, p_sigfrac : B x V x Fracs
     #r_energy             : B x V 
     #t_issc               : B x V  
@@ -208,8 +213,10 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     
     #penalty = tf.Print(penalty, [t_issc, r_energy], 't_issc, r_energy] ', summarize=200)
     ## weighting goes here
-    loss = 1. * sc_loss + 0.01 * rest_loss + 2. * penalty
+    loss = 2. * sc_loss + 0.0001 * rest_loss + 1. * penalty
     
+    if focus_on_multi_showers:
+        loss *= n_true
     
     
     if eta_penalty:
@@ -226,7 +233,7 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
         
         eta_penalty_val = tf.reduce_sum(diffsq, axis=1) / (tf.cast(tf.count_nonzero(diffsq, axis=1), dtype='float32')+K.epsilon())
         
-        loss = tf.reduce_mean(loss) +  tf.reduce_mean(eta_penalty_val)
+        loss = tf.reduce_mean(loss) +  0.1 * tf.reduce_mean(eta_penalty_val)
         
         loss   = tf.Print(loss,[tf.reduce_mean(loss), 
                             tf.reduce_mean(sc_loss),
@@ -249,7 +256,6 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
                             'loss, sc_loss, rest_loss, penalty, mean err(pred fracs) SC, mean err(pred fracs) Noise ')
     
     if card_penalty:
-        n_true = tf.cast(tf.count_nonzero(tf.reduce_sum(t_sigfrac, axis=1), axis=1), dtype='float32')
         n_pred = tf.reduce_max(p_sigfrac, axis=1)
         n_pred = tf.where(n_pred > 0.2, n_pred, tf.zeros_like(n_pred))
         n_pred = tf.cast(tf.count_nonzero(n_pred, axis=1), dtype='float32')
@@ -260,7 +266,7 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     if distance_pen:
         from Loss_tools import weightedCoordLoss
         last_four_coords= pred[:,:,tf.shape(pred)[2]-(2+4):tf.shape(pred)[2]-2]
-        coordloss = tf.reduce_mean(weightedCoordLoss(t_sigfrac, last_four_coords))
+        coordloss = tf.reduce_mean(weightedCoordLoss(t_sigfrac, r_energy, last_four_coords))
         loss += 10. * coordloss
         loss = tf.Print(loss,[coordloss, loss],'coordloss, total loss ')
         
@@ -269,7 +275,7 @@ def weighted_frac_loss( truth, pred, usesqrt, weightfactor=1., sort_truth_by_eta
     
 
 def fraction_loss_noweight( truth, pred):
-    return weighted_frac_loss(truth, pred, usesqrt=True,weightfactor=-1.)
+    return weighted_frac_loss(truth, pred, usesqrt=True,weightfactor=-1.,sort_truth_by_eta=True)
 global_loss_list['fraction_loss_noweight']=fraction_loss_noweight
     
 
@@ -296,6 +302,11 @@ def fraction_loss_eta_penalty( truth, pred):
 global_loss_list['fraction_loss_eta_penalty']=fraction_loss_eta_penalty
 
 
+def fraction_loss_eta_penalty_lin( truth, pred):
+    return weighted_frac_loss(truth, pred, usesqrt=False, eta_penalty=True, sort_truth_by_eta=True)
+global_loss_list['fraction_loss_eta_penalty_lin']=fraction_loss_eta_penalty_lin
+
+
 def fraction_loss_eta_penalty_distance_pen( truth, pred):
     return weighted_frac_loss(truth, pred, usesqrt=True, eta_penalty=True, sort_truth_by_eta=True,
                               distance_pen=True)
@@ -314,6 +325,35 @@ def fraction_loss_eta_penalty_card_pen( truth, pred):
 global_loss_list['fraction_loss_eta_penalty_card_pen']=fraction_loss_eta_penalty_card_pen
 
 
+
+def coordinate_loss(truth, pred):
+    from Loss_tools import weightedCoordLoss
+    
+    ldict = create_loss_dict(truth, pred)
+    '''
+    outputs:
+    
+    t_sigfrac, p_sigfrac : B x V x Fracs
+    r_energy             : B x V 
+    t_energy             : B x V x Fracs
+    t_sumenergy          : B x Fracs
+    t_n_rechits          : B 
+    r_eta                : B x V 
+    r_phi                : B x V 
+    t_issc               : B x V  
+    '''
+    
+    
+    last_four_coords= pred[:,:,tf.shape(pred)[2]-(2+4):tf.shape(pred)[2]-2]
+    
+    coordloss = weightedCoordLoss(ldict['t_sigfrac'], ldict['r_energy'], last_four_coords)
+    coordloss = tf.reduce_sum(coordloss, axis=1)/(tf.reduce_sum(ldict['r_energy'],axis=1)+K.epsilon())**2
+    coordloss = tf.Print(coordloss,[coordloss, ldict['t_n_rechits']],'coordloss, t_n_rechits ')
+    return  coordloss
+
+global_loss_list['coordinate_loss']=coordinate_loss
+
+   
 
 
 def DR_loss(truth, pred):
@@ -388,18 +428,29 @@ def Indiv_DR_loss(truth, pred):
     return loss
     
     
+def n_shower_loss(truth, pred):
+    ldict = create_loss_dict(truth, pred)
+    '''
+    outputs:
+    
+    t_sigfrac, p_sigfrac : B x V x Fracs
+    r_energy             : B x V 
+    t_energy             : B x V x Fracs
+    t_sumenergy          : B x Fracs
+    t_n_rechits          : B 
+    r_eta                : B x V 
+    r_phi                : B x V 
+    t_issc               : B x V
+    r_showers            : B 
+    t_showers            : B
+    '''
+    loss = (ldict['t_showers']-ldict['r_showers'])**2
+    loss = tf.reduce_mean(loss)
+    loss = tf.Print(loss,[loss, ldict['r_showers'], ldict['t_showers']], 'n_shower_loss, r, t ')
+    return loss
     
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+global_loss_list['n_shower_loss']=n_shower_loss
     
     
     
