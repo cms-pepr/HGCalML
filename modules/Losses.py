@@ -94,14 +94,6 @@ def _DR_loss( t_sigfrac, r_energy, p_sigfrac, etas, phis , scaling = 200.):
 
 
 
-def energy_weighting(e, usesqrt, weightfactor=1.):
-    e_in = e
-    if usesqrt:
-        e = tf.sqrt(tf.abs(e)+K.epsilon())
-    if weightfactor<=0:
-        e = tf.zeros_like(e)+1.
-    return tf.where(e_in>0, e, tf.zeros_like(e))
-
 
 def _simple_energy_loss(r_energy, t_sigfrac, p_sigfrac):
     
@@ -428,30 +420,10 @@ def Indiv_DR_loss(truth, pred):
     return loss
     
     
-def n_shower_loss(truth, pred):
-    ldict = create_loss_dict(truth, pred)
-    '''
-    outputs:
     
-    t_sigfrac, p_sigfrac : B x V x Fracs
-    r_energy             : B x V 
-    t_energy             : B x V x Fracs
-    t_sumenergy          : B x Fracs
-    t_n_rechits          : B 
-    r_eta                : B x V 
-    r_phi                : B x V 
-    t_issc               : B x V
-    r_showers            : B 
-    t_showers            : B
-    '''
-    loss = (ldict['t_showers']-ldict['r_showers'])**2
-    loss = tf.reduce_mean(loss)
-    loss = tf.Print(loss,[loss, ldict['r_showers'], ldict['t_showers']], 'n_shower_loss, r, t ')
-    return loss
-    
-    
+from Loss_implementations import *    
 global_loss_list['n_shower_loss']=n_shower_loss
-    
+global_loss_list['frac_loss']=frac_loss
     
     
 

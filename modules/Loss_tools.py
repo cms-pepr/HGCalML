@@ -7,7 +7,7 @@ import keras.backend as K
 def create_loss_dict(truth, pred):
     '''
     outputs:
-    
+    mask                 : B x V x 1
     t_sigfrac, p_sigfrac : B x V x Fracs
     r_energy             : B x V 
     t_energy             : B x V x Fracs
@@ -23,6 +23,9 @@ def create_loss_dict(truth, pred):
     t_sigfrac = truth[:,:,0:-1]
     p_sigfrac = pred[:,:,0:tf.shape(truth)[2]-1]
     r_energy  = truth[:,:,-1]
+    
+    mask = tf.where(r_energy>0., tf.zeros_like(r_energy)+1,tf.zeros_like(r_energy))
+    mask = tf.expand_dims(mask, axis=2)
 
     t_energy  = tf.expand_dims(r_energy, axis=2)*t_sigfrac
     t_sumenergy = tf.reduce_sum(t_energy, axis=1)
@@ -37,20 +40,31 @@ def create_loss_dict(truth, pred):
     t_showers = tf.cast(tf.count_nonzero(tf.reduce_sum(t_sigfrac, axis=1), axis=1), dtype='float32')
     
     
-    return    {'t_sigfrac'   : t_sigfrac,
+    return    {'mask'        : mask,
+               't_sigfrac'   : t_sigfrac,
                'p_sigfrac'   : p_sigfrac,
                'r_energy'    : r_energy,
                't_energy'    : t_energy,
                't_sumenergy' : t_sumenergy,
                't_n_rechits' : t_n_rechits,
-               'r_eta'       : pred[:,:,tf.shape(pred)[2]-2:tf.shape(pred)[2]-1],
-               'r_phi'       : pred[:,:,tf.shape(pred)[2]-1:tf.shape(pred)[2]],
+               'r_eta'       : tf.squeeze(pred[:,:,tf.shape(pred)[2]-2:tf.shape(pred)[2]-1],axis=-1),
+               'r_phi'       : tf.squeeze(pred[:,:,tf.shape(pred)[2]-1:tf.shape(pred)[2]]  ,axis=-1),
                't_issc'      : t_issc,
                'r_showers'   : r_showers,
                't_showers'   : t_showers
                }
     
 
+
+
+
+def energy_weighting(e, usesqrt, weightfactor=1.):
+    e_in = e
+    if usesqrt:
+        e = tf.sqrt(tf.abs(e)+K.epsilon())
+    if weightfactor<=0:
+        e = tf.zeros_like(e)+1.
+    return tf.where(e_in>0, e, tf.zeros_like(e))
 
 
 def sortFractions(fracs, energies, to_sort):
@@ -61,12 +75,11 @@ def sortFractions(fracs, energies, to_sort):
     to_sort    : B x V x 1
         
     '''
-    frac_energies   = energies*fracs
+    frac_energies   = energies*tf.abs(fracs)
     frac_sumenergy  = tf.reduce_sum(frac_energies, axis=1)
     
     #frac_energies    : B x V x Fracs
     #frac_sumenergy   : B x Fracs
-    
     weighted_to_sort = tf.reduce_sum(frac_energies * to_sort, axis=1)/(frac_sumenergy+K.epsilon())
     
     #set the zero entries to something big to make them appear at the end of the list
