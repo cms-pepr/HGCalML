@@ -27,6 +27,7 @@ class GravNet(keras.layers.Layer):
     def __init__(self, n_neighbours, n_dimensions, n_filters, n_propagate, name, 
                  also_coordinates=False, feature_dropout=-1, 
                  coordinate_kernel_initializer=keras.initializers.Orthogonal(),
+                 other_kernel_initializer='glorot_uniform',
                  fix_coordinate_space=False, 
                  masked_coordinate_offset=None,
                  **kwargs):
@@ -41,9 +42,9 @@ class GravNet(keras.layers.Layer):
         self.feature_dropout = feature_dropout
         self.masked_coordinate_offset = masked_coordinate_offset
         
-        self.input_feature_transform = keras.layers.Dense(n_propagate, name = name+'_FLR')
+        self.input_feature_transform = keras.layers.Dense(n_propagate, name = name+'_FLR', kernel_initializer=other_kernel_initializer)
         self.input_spatial_transform = keras.layers.Dense(n_dimensions, name = name+'_S', kernel_initializer=coordinate_kernel_initializer)
-        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh', name = name+'_Fout')
+        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh', name = name+'_Fout', kernel_initializer=other_kernel_initializer)
 
         self._sublayers = [self.input_feature_transform, self.input_spatial_transform, self.output_feature_transform]
         if fix_coordinate_space:
@@ -76,8 +77,6 @@ class GravNet(keras.layers.Layer):
                 raise Exception('GravNet: in mask mode, input must be list of input,mask')
             mask = x[1]
             x = x[0]
-            print('mask',mask.shape)
-            mask = tf.tile(mask, [1,1,tf.shape(x)[2]])
             
         features = self.input_feature_transform(x)
         
@@ -90,15 +89,21 @@ class GravNet(keras.layers.Layer):
             coordinates = x[:,:,0:self.n_dimensions]
             
         if self.masked_coordinate_offset is not None:
-            coordinates = tf.where(mask>0., coordinates, tf.zeros_like(coordinates)-self.masked_coordinate_offset)
+            sel_mask = tf.tile(mask, [1,1,tf.shape(coordinates)[2]])
+            coordinates = tf.where(sel_mask>0., coordinates, tf.zeros_like(coordinates)-self.masked_coordinate_offset)
 
         collected_neighbours = self.collect_neighbours(coordinates, features)
 
         updated_features = tf.concat([x, collected_neighbours], axis=-1)
+        output = self.output_feature_transform(updated_features)
+        
+        if self.masked_coordinate_offset is not None:
+            output *= mask
 
         if self.also_coordinates:
-            return [self.output_feature_transform(updated_features), coordinates]
-        return self.output_feature_transform(updated_features)
+            return [output, coordinates]
+        return output
+        
 
     def compute_output_shape(self, input_shape):
         if self.masked_coordinate_offset is not None:
