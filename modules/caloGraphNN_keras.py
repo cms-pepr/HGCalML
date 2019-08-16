@@ -29,6 +29,7 @@ class GravNet(keras.layers.Layer):
                  coordinate_kernel_initializer=keras.initializers.Orthogonal(),
                  other_kernel_initializer='glorot_uniform',
                  fix_coordinate_space=False, 
+                 coordinate_activation=None,
                  masked_coordinate_offset=None,
                  **kwargs):
         super(GravNet, self).__init__(**kwargs)
@@ -43,7 +44,7 @@ class GravNet(keras.layers.Layer):
         self.masked_coordinate_offset = masked_coordinate_offset
         
         self.input_feature_transform = keras.layers.Dense(n_propagate, name = name+'_FLR', kernel_initializer=other_kernel_initializer)
-        self.input_spatial_transform = keras.layers.Dense(n_dimensions, name = name+'_S', kernel_initializer=coordinate_kernel_initializer)
+        self.input_spatial_transform = keras.layers.Dense(n_dimensions, name = name+'_S', kernel_initializer=coordinate_kernel_initializer, activation=coordinate_activation)
         self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh', name = name+'_Fout', kernel_initializer=other_kernel_initializer)
 
         self._sublayers = [self.input_feature_transform, self.input_spatial_transform, self.output_feature_transform]

@@ -23,11 +23,11 @@ import os
 n_gravnet_layers=3 #+1
 n_coords=4
 
-nbatch=3*15
+nbatch=1*15
 
-plots_after_n_batch=50
+plots_after_n_batch=10
 use_event=5
-learningrate=1e-3
+learningrate=1e-5
 
 def norm_and_mask(x,mask):
     x = BatchNormalization(momentum=0.3)(x)
@@ -72,7 +72,7 @@ def gravnet_model(Inputs,nclasses,nregressions,feature_dropout=-1.):
                            name = 'gravnet_'+str(i),
                            also_coordinates=True,
                            feature_dropout=feature_dropout,
-                           masked_coordinate_offset=-10)([x,mask])
+                           masked_coordinate_offset=-10)([x,mask]) #shift+activation makes it impossible to mix real with zero-pad
         x = norm_and_mask(x,mask)
         coords.append(coord)
         feats.append(x)
@@ -91,10 +91,12 @@ def gravnet_model(Inputs,nclasses,nregressions,feature_dropout=-1.):
     x = Dense(nregressions,activation=None,name='dense_pre_fracs')(x) 
     x = Concatenate()([x, x_in])
     x = Dense(64,activation='elu',name='dense_last_correction')(x)
-    x = Dense(nregressions,activation=None, kernel_initializer='zeros',name='dense_fracs')(x) 
-    x = Multiply()([x,mask])
+    x = Dense(nregressions,activation=None,name='dense_fracs',
+              kernel_initializer = keras.initializers.RandomNormal(mean=0.0, stddev=0.01))(x) 
+    
     
     x = Concatenate(name="concatlast", axis=-1)([x]+coords+[n_showers]+[etas_phis])
+    x = Multiply()([x,mask])
     predictions = [x]
     return Model(inputs=Inputs, outputs=predictions)
 
@@ -151,9 +153,7 @@ ppdts=ppdts+[ plot_truth_pred_plus_coords_during_training(
 
 ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
-from Losses import frac_loss, fraction_loss_eta_penalty, fraction_loss, fraction_loss_eta_penalty_card_pen, fraction_loss_noweight, fraction_loss_sorted, fraction_loss_sorted_all, DR_loss, simple_energy_loss
-
-from Losses import n_shower_loss,fraction_loss_eta_penalty_lin,fraction_loss_noweight, coordinate_loss, Indiv_DR_loss, fraction_loss_eta_penalty_distance_pen, fraction_loss_eta_penalty_sort_both
+from Losses import fraction_loss_with_penalties_sort_pred
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
@@ -168,7 +168,7 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     
     #for regression use a different loss, e.g. mean_squared_error
 train.compileModel(learningrate=learningrate,
-                   loss=frac_loss,#fraction_loss)
+                   loss=fraction_loss_with_penalties_sort_pred,#fraction_loss)
                    clipnorm=1) 
                   
 print(train.keras_model.summary())

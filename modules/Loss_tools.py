@@ -144,25 +144,17 @@ def makeDR2Matrix(a_eta, a_phi, b_eta, b_phi):
     dim   = tf.shape(a_eta)[1]
     batch = tf.shape(a_eta)[0]
     
-    print('a_eta',a_eta.shape)
-    print('a_phi',a_phi.shape)
-    print('b_eta',b_eta.shape)
-    print('b_phi',b_phi.shape)
     
     a_eta = tf.tile(tf.expand_dims(a_eta, axis=2), [1,1,dim]) # B x M x M_same
-    print('a_eta 2',a_eta.shape)
     a_eta = tf.reshape(a_eta, [batch,-1])
     
     b_eta = tf.tile(tf.expand_dims(b_eta, axis=1), [1,dim,1]) # B x M_same x M
-    print('b_eta 2',b_eta.shape)
     b_eta = tf.reshape(b_eta, [batch,-1])
     
     a_phi = tf.tile(tf.expand_dims(a_phi, axis=2), [1,1,dim]) # B x M x M_same
-    print('a_phi 2',a_phi.shape)
     a_phi = tf.reshape(a_phi, [batch,-1])
     
     b_phi = tf.tile(tf.expand_dims(b_phi, axis=1), [1,dim,1]) # B x M_same x M
-    print('b_phi 2',b_phi.shape)
     b_phi = tf.reshape(b_phi, [batch,-1])
     
     dR2 = deltaR2(a_eta, a_phi, b_eta, b_phi)
