@@ -153,7 +153,7 @@ ppdts=ppdts+[ plot_truth_pred_plus_coords_during_training(
 
 ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
-from Losses import fraction_loss_with_penalties_sort_pred
+from Losses import fraction_loss_with_penalties_sort_pred,fraction_loss_with_penalties
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
@@ -168,8 +168,7 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
     
     #for regression use a different loss, e.g. mean_squared_error
 train.compileModel(learningrate=learningrate,
-                   loss=fraction_loss_with_penalties_sort_pred,#fraction_loss)
-                   clipnorm=1) 
+                   loss=fraction_loss_with_penalties) 
                   
 print(train.keras_model.summary())
 
