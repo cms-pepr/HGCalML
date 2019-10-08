@@ -50,13 +50,14 @@ def beta_pixel_clustercoords(truth, pred):
     cluster_distance_scale = 1.
     cluster_repulse_scale = 1.
     true_distance_threshold = 0.003
-    beta_threshold_width=.05 #where it is basically gone
+    beta_threshold_width=.01 #where it is basically gone
     beta_threshold = 0.85
     repulse_offset = 100.
     minimum_confidence = 1e-3
     conf_scaler = 5.
+    low_conf_scaler = .1
     exp_repulsion=True
-    repulsion_strength = 2.
+    repulsion_strength = 5.
     
     reshaping = (tf.shape(pred)[0],tf.shape(pred)[1]*tf.shape(pred)[2],-1)
     #make it all lists
@@ -122,15 +123,24 @@ def beta_pixel_clustercoords(truth, pred):
     #only where there is actually something useful
     conf_mean = tf.reduce_sum(max_conf_per_self,axis=1)/(tf.squeeze(n_vertex,axis=1)+K.epsilon())#mean_with_mask(n_vertex, max_conf_per_self , axis=1, addepsilon=addepsilon)
     
-    multi_conf_penalty = tf.reduce_sum(pred_confidence,axis=1)/(tf.squeeze(n_vertex,axis=1)+K.epsilon())
+    multi_conf_penalty = tf.reduce_sum((1.-beta_threshold)-
+                                       tf.clip_by_value(pred_confidence,0,(1.-beta_threshold)),
+                                       axis=1)/(tf.squeeze(n_vertex,axis=1)+K.epsilon())
+    
     
     import keras
     IDloss = keras.losses.categorical_crossentropy(true_ID, p_ID)
     print('IDloss',IDloss.shape)
+    #only consider highest confidence one per object
+    
+    #don't sale with CL here otherwise it creates a pressure on CL...
     IDloss *= (1./(conf_scaling + K.epsilon()) - 1.) * tf.squeeze(t_mask, axis=2)
     
     
-    beta_threshold_loss = tf.exp(- tf.abs(pred_confidence-beta_threshold)/(beta_threshold_width*2.)**2) 
+    beta_threshold_loss = tf.exp(- tf.abs(pred_confidence-beta_threshold)**2/(beta_threshold_width*2.)**2) 
+    beta_threshold_loss = tf.exp(- tf.abs(pred_confidence-(1.-beta_threshold))**2/(beta_threshold_width*2.)**2) 
+    inbetween = tf.math.logical_and(pred_confidence<beta_threshold, pred_confidence>(1.-beta_threshold))
+    beta_threshold_loss = tf.where(inbetween,tf.zeros_like(beta_threshold_loss)+1., beta_threshold_loss)
     beta_threshold_loss *= tf.squeeze(t_mask, axis=2)
     
     
@@ -141,17 +151,29 @@ def beta_pixel_clustercoords(truth, pred):
     
     above_threshold = tf.where(tf.squeeze(t_mask,axis=2)*pred_confidence>beta_threshold, tf.zeros_like(pred_confidence)+1,tf.zeros_like(pred_confidence))
     n_object_pred = tf.cast(tf.count_nonzero(above_threshold, axis=1), dtype='float32')
-    n_object_loss = (n_objects-n_object_pred)**2
+    n_object_loss = 0.*(n_objects-n_object_pred)**2
     print('n_object_loss',n_object_loss.shape)
     
     ##common part, masking done again here
     
-    cluster_loss =   repulsion_strength * cluster_coord_loss + 1. * self_distance_loss + .1*IDloss  + .1* beta_threshold_loss#+ 0.1 * multi_conf_penalty #+ 1e-3 * truth_pos_constraint
-    cluster_loss += 0.1 * true_pos_loss
+    cluster_loss =   repulsion_strength * cluster_coord_loss + 1. * self_distance_loss # + .1*IDloss  + .1 * beta_threshold_loss#+ 0.1 * multi_conf_penalty #+ 1e-3 * truth_pos_constraint
+    #cluster_loss += 0.1 * true_pos_loss
     print('cluster_loss',cluster_loss.shape)
     print('conf_scaling',conf_scaling.shape)
     cluster_loss *= tf.squeeze(t_mask, axis=2)
     cluster_loss = tf.reduce_sum(cluster_loss,axis=1)/(tf.squeeze(n_vertex,axis=1)+K.epsilon())
+    
+    ### sum(beta)_>betathreshold,same/max(beta)_same != 1
+    ### leave a bit of wiggle room between beta = 0 and beta = 0.1
+    ### by extra penalty term that requires sum(beta) (not sum maxmin beta) to be small
+    ### but with lower scaling than the normal conf_mean term
+    max_self_sum_loss = (conf_scaling_exp - 1.) * self_distance_mask * not_filled_mask
+    max_self_sum_loss = tf.where(max_self_sum_loss < (1.-beta_threshold), tf.zeros_like(max_self_sum_loss),max_self_sum_loss)
+    print('max_self_sum_loss',max_self_sum_loss.shape)
+    max_self_sum_loss = tf.reduce_sum(max_self_sum_loss, axis=-1) / (
+        K.epsilon() + tf.reduce_max(max_self_sum_loss,axis=-1)) - 1. #B x V
+    print('max_self_sum_loss',max_self_sum_loss.shape)
+    max_self_sum_loss = tf.reduce_sum(max_self_sum_loss,axis=1)/(tf.squeeze(n_vertex,axis=1)+K.epsilon())
     
     
     loss_per_batchelem = cluster_loss #+ 1. * pos_loss + 1. * E_loss + 0.01 * ID_loss
@@ -159,19 +181,20 @@ def beta_pixel_clustercoords(truth, pred):
     loss_per_batchelem = tf.Print(loss_per_batchelem,
                                   [tf.reduce_mean(mean_with_mask(n_vertex, cluster_coord_loss, axis=1)),
                                    tf.reduce_mean(mean_with_mask(n_vertex, self_distance_loss, axis=1)),
-                                   #tf.reduce_mean(0.1*multi_conf_penalty),
+                                   tf.reduce_mean(low_conf_scaler*multi_conf_penalty),
                                    #tf.reduce_mean(conf_mean),
                                    tf.reduce_mean(pred_confidence),
                                    tf.reduce_mean(IDloss),
-                                   tf.reduce_mean(beta_threshold_loss),
+                                   tf.reduce_mean(.1 * beta_threshold_loss),
                                    tf.reduce_mean(0.1 * true_pos_loss),
+                                   tf.reduce_mean(max_self_sum_loss)
                                    #tf.reduce_mean(mean_with_mask(n_vertex, conf_penalty, axis=1))
                                    ],
-                                   'cluster_coord_loss, self_distance_loss, pred_confidence, IDloss, beta_threshold_loss, true_pos_loss ')
+                                   'cluster_coord_loss, self_distance_loss, multi_conf_penalty, pred_confidence, IDloss, beta_threshold_loss, true_pos_loss , max_self_sum_loss')
     
     
 
-    loss = loss_per_batchelem + conf_scaler * conf_mean
+    loss = loss_per_batchelem + conf_scaler * conf_mean + low_conf_scaler* multi_conf_penalty
     loss = tf.reduce_mean( loss )
     loss = tf.Print(loss,[loss],'loss ')
     return loss

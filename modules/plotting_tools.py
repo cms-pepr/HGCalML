@@ -89,6 +89,28 @@ class base_plotter(object):
         
     def reset(self):
         plt.close()
+        
+class plotter_2d(base_plotter):
+    def __init__(self, output_file="", parallel=False, interactive=False):
+        base_plotter.__init__(self)
+        self.output_file=output_file
+        self.parallel=parallel
+        self.interactive=interactive
+        self.data=None
+        self.marker_scale=1.
+        
+    def plot2d(self, ax = None):
+        if not self._check_dimension(2):
+            print(self.data)
+            raise Exception("plot2d: no 2D data")
+        
+        x, y, z, e, c = self.data['x'], self.data['y'], self.data['z'], self.data['e'], self.data['c']
+
+        
+        ax.scatter(x=x, y=y, c=z)
+        
+        self.fig = None
+        return ax
 
 class plotter_3d(base_plotter):
     def __init__(self, output_file="", parallel=False, interactive=False):
@@ -250,7 +272,8 @@ class snapshot_movie_maker_Nplots(object):
     truth, prediction
     coordinatesA, coordinatesB
     '''
-    def __init__(self, output_file, nplots=4, glob_counter=0, ignore_existing_files=False):
+    def __init__(self, output_file, nplots=4, glob_counter=0, ignore_existing_files=False, 
+                 plottertype=plotter_fraction_colors):
         self.output_file=output_file
         os.system('mkdir -p '+output_file)
         self.tmp_out_prefix=output_file+'/tmp/'
@@ -259,7 +282,7 @@ class snapshot_movie_maker_Nplots(object):
         self.offset_counter=0
         if nplots>4:
             raise Exception("snapshot_movie_maker_Nplots: maximum 4 plots")
-        self.plotters=[plotter_fraction_colors( interactive=False ) for i in range(nplots)]
+        self.plotters=[plottertype( interactive=False ) for i in range(nplots)]
         for i in range(len(self.plotters)):
             self.plotters[i].gray_noise=True
         self.plot_data={}

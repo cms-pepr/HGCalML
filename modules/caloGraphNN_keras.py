@@ -31,6 +31,7 @@ class GravNet(keras.layers.Layer):
                  fix_coordinate_space=False, 
                  coordinate_activation=None,
                  masked_coordinate_offset=None,
+                 additional_message_passing=0,
                  **kwargs):
         super(GravNet, self).__init__(**kwargs)
 
@@ -42,6 +43,7 @@ class GravNet(keras.layers.Layer):
         self.also_coordinates = also_coordinates
         self.feature_dropout = feature_dropout
         self.masked_coordinate_offset = masked_coordinate_offset
+        self.additional_message_passing = additional_message_passing
         
         self.input_feature_transform = keras.layers.Dense(n_propagate, name = name+'_FLR', kernel_initializer=other_kernel_initializer)
         self.input_spatial_transform = keras.layers.Dense(n_dimensions, name = name+'_S', kernel_initializer=coordinate_kernel_initializer, activation=coordinate_activation)
@@ -52,7 +54,14 @@ class GravNet(keras.layers.Layer):
             self.input_spatial_transform = None
             self._sublayers = [self.input_feature_transform, self.output_feature_transform]
         
-        
+        self.message_passing_layers = []
+        for i in range(additional_message_passing):
+            self.message_passing_layers.append(
+                keras.layers.Dense(n_propagate, activation='elu', 
+                                   name = name+'_mp_'+str(i), kernel_initializer=other_kernel_initializer)
+                )
+        self._sublayers += self.message_passing_layers
+
 
     def build(self, input_shape):
         if self.masked_coordinate_offset is not None:
@@ -65,6 +74,17 @@ class GravNet(keras.layers.Layer):
         # tf.ragged FIXME?
         self.output_feature_transform.build((input_shape[0], input_shape[1], input_shape[2] + self.input_feature_transform.units * 2))
 
+        self.message_parsing_distance_weights=[]
+        for i in range(len(self.message_passing_layers)):
+            l = self.message_passing_layers[i]
+            l.build((input_shape[0], input_shape[1], input_shape[2] + self.n_propagate * 2))
+            d_weight = self.add_weight(name=self.name+'_mp_distance_weight_'+str(i), 
+                                      shape=(1,),
+                                      initializer='uniform',
+                                      constraint=keras.constraints.NonNeg() ,
+                                      trainable=True)
+            self.message_parsing_distance_weights.append(d_weight)
+
         for layer in self._sublayers:
             self._trainable_weights.extend(layer.trainable_weights)
             self._non_trainable_weights.extend(layer.non_trainable_weights)
@@ -73,16 +93,13 @@ class GravNet(keras.layers.Layer):
 
     def call(self, x):
         
+        mask = None
         if self.masked_coordinate_offset is not None:
             if not isinstance(x, list):
                 raise Exception('GravNet: in mask mode, input must be list of input,mask')
             mask = x[1]
             x = x[0]
             
-        features = self.input_feature_transform(x)
-        
-        if self.feature_dropout>0 and self.feature_dropout < 1:
-            features = keras.layers.Dropout(self.feature_dropout)(features)
         
         if self.input_spatial_transform is not None:
             coordinates = self.input_spatial_transform(x)
@@ -93,7 +110,7 @@ class GravNet(keras.layers.Layer):
             sel_mask = tf.tile(mask, [1,1,tf.shape(coordinates)[2]])
             coordinates = tf.where(sel_mask>0., coordinates, tf.zeros_like(coordinates)-self.masked_coordinate_offset)
 
-        collected_neighbours = self.collect_neighbours(coordinates, features)
+        collected_neighbours = self.collect_neighbours(coordinates, x, mask)
 
         updated_features = tf.concat([x, collected_neighbours], axis=-1)
         output = self.output_feature_transform(updated_features)
@@ -116,7 +133,7 @@ class GravNet(keras.layers.Layer):
         # tf.ragged FIXME? tf.shape() might do the trick already
         return (input_shape[0], input_shape[1], self.output_feature_transform.units)
 
-    def collect_neighbours(self, coordinates, features):
+    def collect_neighbours(self, coordinates, x, mask):
         
         # tf.ragged FIXME?
         # for euclidean_squared see caloGraphNN.py
@@ -124,7 +141,9 @@ class GravNet(keras.layers.Layer):
         ranked_distances, ranked_indices = tf.nn.top_k(-distance_matrix, self.n_neighbours)
 
         neighbour_indices = ranked_indices[:, :, 1:]
-
+        
+        features = self.input_feature_transform(x)
+        
         n_batches = tf.shape(features)[0]
         
         # tf.ragged FIXME? or could that work?
@@ -141,20 +160,35 @@ class GravNet(keras.layers.Layer):
         vertex_indices = tf.expand_dims(neighbour_indices, axis=3) # (B, V, N-1, 1)
         indices = tf.concat([batch_indices, vertex_indices], axis=-1)
     
-        neighbour_features = tf.gather_nd(features, indices) # (B, V, N-1, F)
     
         distance = -ranked_distances[:, :, 1:]
     
         weights = gauss_of_lin(distance * 10.)
         weights = tf.expand_dims(weights, axis=-1)
+        
     
-        # weight the neighbour_features
-        neighbour_features *= weights
-    
-        neighbours_max = tf.reduce_max(neighbour_features, axis=2)
-        neighbours_mean = tf.reduce_mean(neighbour_features, axis=2)
-    
-        return tf.concat([neighbours_max, neighbours_mean], axis=-1)
+        for i in range(len(self.message_passing_layers)+1):
+            if i:
+                features = self.message_passing_layers[i-1](tf.concat([features,x],axis=-1))
+                w=self.message_parsing_distance_weights[i-1]
+                weights = gauss_of_lin(w*distance)
+                weights = tf.expand_dims(weights, axis=-1)
+                
+            if self.feature_dropout>0 and self.feature_dropout < 1:
+                features = keras.layers.Dropout(self.feature_dropout)(features)
+                
+            neighbour_features = tf.gather_nd(features, indices) # (B, V, N-1, F)
+            # weight the neighbour_features
+            neighbour_features *= weights
+            
+            neighbours_max = tf.reduce_max(neighbour_features, axis=2)
+            neighbours_mean = tf.reduce_mean(neighbour_features, axis=2)
+            
+            features = tf.concat([neighbours_max, neighbours_mean], axis=-1)
+            if mask is not None:
+                features *= mask
+        
+        return features
 
     def get_config(self):
             config = {'n_neighbours': self.n_neighbours, 
@@ -164,7 +198,8 @@ class GravNet(keras.layers.Layer):
                       'name':self.name,
                       'also_coordinates': self.also_coordinates,
                       'feature_dropout' : self.feature_dropout,
-                      'masked_coordinate_offset'       : self.masked_coordinate_offset}
+                      'masked_coordinate_offset'       : self.masked_coordinate_offset,
+                      'additional_message_passing'    : self.additional_message_passing}
             base_config = super(GravNet, self).get_config()
             return dict(list(base_config.items()) + list(config.items()))
 

@@ -25,7 +25,7 @@ n_coords=4
 
 nbatch=1*15
 
-plots_after_n_batch=10
+plots_after_n_batch=50
 use_event=5
 learningrate=1e-5
 
@@ -112,26 +112,8 @@ def decay_function(aftern_batches):
     return aftern_batches# int(aftern_batches+5)
 
 
-ppdts=[ plot_truth_pred_plus_coords_during_training(
-               samplefile=samplefile,
-               output_file=train.outputDir+'/train_progress'+str(0),
-               use_event=use_event,
-               x_index = 5,
-               y_index = 6,
-               z_index = 7,
-               e_index = 0,
-               pred_fraction_end = 10,
-               transformed_x_index = 10, #10,
-               transformed_y_index = 11, #11+4*i,
-               transformed_z_index = 12, #12+4*i,
-               transformed_e_index = None,
-               cut_z='pos',
-               afternbatches=plots_after_n_batch,
-               on_epoch_end=False,
-               decay_function=decay_function
-               ) ]
 
-ppdts=ppdts+[ plot_truth_pred_plus_coords_during_training(
+ppdts=[ plot_truth_pred_plus_coords_during_training(
                samplefile=samplefile,
                output_file=train.outputDir+'/train_progress'+str(i+1),
                use_event=use_event,
@@ -148,8 +130,8 @@ ppdts=ppdts+[ plot_truth_pred_plus_coords_during_training(
                afternbatches=plots_after_n_batch,
                on_epoch_end=False,
                decay_function=decay_function
-               ) for i in range(n_coords-1) ]
-
+               ) for i in [n_gravnet_layers-1] ] #print only last
+ 
 
 ppdts_callbacks=[ppdts[i].callback for i in range(len(ppdts))]
 
