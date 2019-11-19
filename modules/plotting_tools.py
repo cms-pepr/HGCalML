@@ -161,8 +161,8 @@ class plotter_3d(base_plotter):
         size_scaling *= 40.
         
         #c = size_scaling #/=np.min(c)
-        ax.view_init(30, 130)
-        ax.scatter(xs=xs, ys=ys, zs=zs, c=c, s=self.marker_scale*size_scaling)
+        #ax.view_init(30, 130)
+        ax.scatter(xs, ys, zs, c=c, s=self.marker_scale*size_scaling, alpha=0.5)
         
         if self.interactive:
             plt.show()
@@ -227,14 +227,14 @@ class plotter_fraction_colors(plotter_3d):
         return marker_colors
                   
 class movie_maker(object):
-    def __init__(self, plotter, output_file, fullround=True, prefix="mm_", silent=True):
+    def __init__(self, plotter, output_file, fullround=True, prefix="mm_", silent=True, dpi=100):
         self.plotter=plotter
         self.prefix=prefix
         self.glob_counter=0.
         self.fullround=fullround
         self.output_file=output_file
         self.silent=silent
-       
+        self.dpi = dpi
         
     def make_movie(self):
         #return
@@ -252,7 +252,7 @@ class movie_maker(object):
             while angle_in>=360: angle_in-=360
             while angle_in<=-360: angle_in-=360
             ax.view_init(30, angle_in)
-            self.plotter.fig.savefig(outputname, dpi=300)
+            self.plotter.fig.savefig(outputname, dpi=self.dpi)
             #plt.close()
             
         from multiprocessing import Pool

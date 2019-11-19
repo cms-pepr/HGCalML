@@ -12,7 +12,7 @@ npixel=128
 
 
 def getCenterCoords(t1):
-    #yes, that is the format
+    #yes, that is the format - no, there is a bug in here!!!
     coords1a = (t1[0][1][0][1]+t1[0][1][0][0])/2.
     coords1b = (t1[0][1][1][1]+t1[0][1][1][0])/2.
     return coords1a, coords1b

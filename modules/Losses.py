@@ -111,3 +111,10 @@ def pixel_clustercoords(truth, pred):
 global_loss_list['pixel_clustercoords']=pixel_clustercoords
 
 
+def beta_coord_loss(truth, pred):
+    from betaLosses import coord_loss
+    return coord_loss(truth, pred)
+global_loss_list['beta_coord_loss']=beta_coord_loss
+
+
+
