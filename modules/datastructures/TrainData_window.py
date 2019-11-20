@@ -18,7 +18,9 @@ class TrainData_window(TrainData):
     ##### might be moved to DJC soon?, for now lives here
     
     def branchToFlatArray(self, b, returnRowSplits=False):
+        
         a = b.array()
+        nbatch = a.shape[0]
         if not returnRowSplits:
             return np.expand_dims(a.content, axis=1)
         
@@ -28,8 +30,8 @@ class TrainData_window(TrainData):
         #not super fast but ok fiven there aren't many events per file
         for i in range(nevents):
             rowsplits.append(rowsplits[-1] + a[i].shape[0])
-        
-        return np.expand_dims(a.content, axis=1), np.array(rowsplits)
+            
+        return np.expand_dims(a.content, axis=1), np.array(rowsplits, dtype=np.uint)
 
 
         

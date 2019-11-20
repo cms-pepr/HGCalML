@@ -10,8 +10,8 @@
 
 from DeepJetCore.training.training_base import training_base
 import keras
-from keras.models import Model
-from keras.layers import  Dense,Conv1D, Conv2D, BatchNormalization, Multiply, Concatenate #etc
+from keras import Model
+from keras.layers import  Dense,Conv1D, Conv2D, BatchNormalization, Multiply, Concatenate, Flatten
 from Layers import TransformCoordinates,AveragePoolVertices, GarNet, GravNet, GlobalExchange, CreateZeroMask, SortPredictionByEta, CenterPhi
 from DeepJetCore.DJCLayers import ScalarMultiply, Clip, SelectFeatures, Print
 
@@ -22,24 +22,29 @@ import tensorflow as tf
 def stupid_model(Inputs,feature_dropout=-1.):
     
     x = Inputs[0] #this is the self.x list from the TrainData data structure
+    rs = Inputs[1]
     
-    pred = Dense(1)(x)
+    print('x',x.shape)
+    print('rs',rs.shape)
+    x = Concatenate()([x,rs ])
+    x = Dense(1, name ="bla")(x)
+    x = Flatten()(x)
     
-    return Model(inputs=Inputs, outputs=pred)
+    return Model(inputs=Inputs, outputs=[x])
     
 
-train=training_base(testrun=False,resumeSilently=True,renewtokens=True)
+train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
 
 def dumb_loss(truth, pred):
+    print("called loss")
+    print(pred.shape)
+    print(truth.shape)
     return ( tf.reduce_mean(truth) - tf.reduce_mean(pred)  )**2
 
-if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
-
-    #for regression use the regression model
-    train.setModel(stupid_model,feature_dropout=-1)
+train.setModel(stupid_model,feature_dropout=-1)
     
 train.compileModel(learningrate=1e-3,
-                   loss=frac_loss,#fraction_loss)
+                   loss=dumb_loss,#fraction_loss)
                    clipnorm=1) 
                   
 print(train.keras_model.summary())
