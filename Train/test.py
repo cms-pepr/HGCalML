@@ -30,31 +30,28 @@ def stupid_model(Inputs,feature_dropout=-1.):
     x = Dense(1, name ="bla")(x)
     x = Flatten()(x)
     
-    return Model(inputs=Inputs, outputs=[x])
+    return Model(inputs=Inputs, outputs=[x, x]) #explicit row split passing
     
 
 train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
 
-def dumb_loss(truth, pred):
-    print("called loss")
-    print(pred.shape)
-    print(truth.shape)
-    return ( tf.reduce_mean(truth) - tf.reduce_mean(pred)  )**2
+
+from Losses import   sub_loss_nors, sub_loss_rs
 
 train.setModel(stupid_model,feature_dropout=-1)
     
 train.compileModel(learningrate=1e-3,
-                   loss=dumb_loss,#fraction_loss)
+                   loss=[sub_loss_nors,sub_loss_rs],#fraction_loss)
                    clipnorm=1) 
                   
 print(train.keras_model.summary())
 
-nbatch=10000 #this will be an upper limit on vertices per batch
+nbatch=100000 #this will be an upper limit on vertices per batch
 verbosity=1
 
-model,history = train.trainModel(nepochs=1, 
+model,history = train.trainModel(nepochs=5, 
                                  batchsize=nbatch,
-                                 checkperiod=10, # saves a checkpoint model every N epochs
+                                 checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity)
 
 

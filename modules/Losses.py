@@ -9,6 +9,40 @@ global_loss_list = {}
 
 import tensorflow as tf
 
+##### prototype for merging loss function
+
+
+def actual_loss(truth, pred, rowsplits): # just a dummy
+    print("called actual loss")
+    return 1.+( tf.reduce_mean(truth) + tf.reduce_mean(pred) + tf.reduce_mean(rowsplits) )**2
+
+subloss_passed_tensor=None
+
+def sub_loss_rs(truth, pred):#truth = rs, pred=same
+    global subloss_passed_tensor
+    if subloss_passed_tensor is not None: #passed_tensor is actual truth
+        return actual_loss(subloss_passed_tensor, pred, truth)
+    subloss_passed_tensor = truth #=rs
+    return  0.*tf.reduce_mean(pred)
+
+def sub_loss_nors(truth, pred):#truth = real truth, truth=same
+    global subloss_passed_tensor
+    if subloss_passed_tensor is not None: #passed_tensor is rs from other function
+        return actual_loss(truth, pred, subloss_passed_tensor)
+    subloss_passed_tensor = truth #=rs
+    return  0.*tf.reduce_mean(pred)
+
+
+
+global_loss_list['sub_loss_rs'] = sub_loss_rs
+global_loss_list['sub_loss_nors'] = sub_loss_nors
+
+
+
+
+
+######
+
 def fraction_loss_with_penalties(truth, pred):
     from Loss_implementations import frac_loss, good_frac_sum_loss, good_frac_range_loss
     fracloss = frac_loss(truth, pred) 
