@@ -86,7 +86,7 @@ class TrainData_window(TrainData):
         truth = np.concatenate([
         #    np.expand_dims(frs,axis=1),
         #    truthHitFractions        ,
-            np.array(truthHitAssignementIdx, dtype='float32')   , # 1
+            np.array(truthHitAssignementIdx, dtype='float32')   , # 0
             truthHitAssignedEnergies ,
             truthHitAssignedEtas     ,
             truthHitAssignedPhis     

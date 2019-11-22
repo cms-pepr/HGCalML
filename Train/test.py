@@ -18,6 +18,13 @@ from DeepJetCore.DJCLayers import ScalarMultiply, Clip, SelectFeatures, Print
 from tools import plot_pred_during_training, plot_truth_pred_plus_coords_during_training
 import tensorflow as tf
 
+'''
+ outdict['predBeta']       = pred[:,:,0]
+    outdict['predEnergy']     = pred[:,:,1]
+    outdict['predEta']        = pred[:,:,2]
+    outdict['predPhi']        = pred[:,:,3]
+    outdict['predCCoords']    = pred[:,:,4:]
+'''
 
 def stupid_model(Inputs,feature_dropout=-1.):
     
@@ -26,9 +33,14 @@ def stupid_model(Inputs,feature_dropout=-1.):
     
     print('x',x.shape)
     print('rs',rs.shape)
-    x = Concatenate()([x,rs ])
-    x = Dense(1, name ="bla")(x)
-    x = Flatten()(x)
+
+    beta    = Dense(1, activation='sigmoid', name ="predBeta")(x)
+    ener    = ScalarMultiply(10)(Dense(1, name ="predEnergy")(x))
+    eta     = Dense(1, name ="predEta")(x)
+    phi     = Dense(1, name ="predPhi")(x)
+    ccoords = Dense(2, name ="predCCoords")(x)
+    
+    pred = Concatenate()([beta, ener, eta, phi, ccoords])
     
     return Model(inputs=Inputs, outputs=[x, x]) #explicit row split passing
     
@@ -36,12 +48,12 @@ def stupid_model(Inputs,feature_dropout=-1.):
 train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
 
 
-from Losses import   sub_loss_nors, sub_loss_rs
+from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_loss, null_loss
 
 train.setModel(stupid_model,feature_dropout=-1)
     
 train.compileModel(learningrate=1e-3,
-                   loss=[sub_loss_nors,sub_loss_rs],#fraction_loss)
+                   loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
                    clipnorm=1) 
                   
 print(train.keras_model.summary())

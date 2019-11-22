@@ -10,33 +10,11 @@ global_loss_list = {}
 import tensorflow as tf
 
 ##### prototype for merging loss function
-
-
-def actual_loss(truth, pred, rowsplits): # just a dummy
-    print("called actual loss")
-    return 1.+( tf.reduce_mean(truth) + tf.reduce_mean(pred) + tf.reduce_mean(rowsplits) )**2
-
-subloss_passed_tensor=None
-
-def sub_loss_rs(truth, pred):#truth = rs, pred=same
-    global subloss_passed_tensor
-    if subloss_passed_tensor is not None: #passed_tensor is actual truth
-        return actual_loss(subloss_passed_tensor, pred, truth)
-    subloss_passed_tensor = truth #=rs
-    return  0.*tf.reduce_mean(pred)
-
-def sub_loss_nors(truth, pred):#truth = real truth, truth=same
-    global subloss_passed_tensor
-    if subloss_passed_tensor is not None: #passed_tensor is rs from other function
-        return actual_loss(truth, pred, subloss_passed_tensor)
-    subloss_passed_tensor = truth #=rs
-    return  0.*tf.reduce_mean(pred)
-
-
-
-global_loss_list['sub_loss_rs'] = sub_loss_rs
-global_loss_list['sub_loss_nors'] = sub_loss_nors
-
+from betaLosses import min_beta_loss_rowsplits , min_beta_loss_truth , pre_training_loss, null_loss
+global_loss_list['min_beta_loss_rowsplits'] = min_beta_loss_rowsplits
+global_loss_list['min_beta_loss_truth'] = min_beta_loss_truth
+global_loss_list['pre_training_loss'] = pre_training_loss
+global_loss_list['null_loss'] = null_loss
 
 
 
@@ -81,74 +59,3 @@ global_loss_list['fraction_loss_with_penalties_sort_pred']=fraction_loss_with_pe
 
 
 ####### for the 'pre'clustering tests
-
-def clusterloss(truth, pred):
-    from keras import losses
-    import keras.backend as K
-    
-    #truth: posx, posy, Efull, 3x ID
-    #pred:  3x linear, 3x softmax 
-    
-    true_pos = truth[:,:,0:2]
-    true_E   = truth[:,:,2:3]
-    
-    #true_E = tf.Print(true_E,[true_E],'true_E ')
-    
-    true_ID  = truth[:,:,3:6]
-    
-    n_vertex = tf.cast(tf.count_nonzero(true_E, axis=1), dtype='float32')
-    
-    pred_pos = pred[:,:,0:2]
-    pred_E   = pred[:,:,2:3]
-    pred_ID  = pred[:,:,3:6]
-    
-    pred_confidence = pred[:,:,6]
-    
-    pos_loss = tf.reduce_mean((true_pos-pred_pos)**2,axis=-1) * 24 * 24 / 4.
-    #norm to about 1 being one minimum distance, only 
-    
-    E_loss  = tf.reduce_mean((true_E - pred_E)**2,axis=-1) / (50.*50.)
-    
-    ID_loss = 0 #losses.categorical_crossentropy(true_ID, pred_ID)
-    
-    loss_per_vertex = 1. * pos_loss + 1. * E_loss + 0.01 * ID_loss
-    
-    # add the confidence somewhere.
-    loss_per_vertex /= ((1. - pred_confidence) + K.epsilon())
-    loss_per_vertex = tf.reduce_sum(loss_per_vertex, axis=-1) / (n_vertex+K.epsilon())
-    conf_sum = tf.reduce_sum((1. - pred_confidence),axis=-1) / (n_vertex+K.epsilon())
-    
-    loss = loss_per_vertex + 2. * conf_sum
-    
-    
-    return tf.reduce_mean(loss)
-    
-    
-global_loss_list['clusterloss']=clusterloss
-
-
-def dummyloss(truth, pred):
-    return tf.reduce_mean((tf.reduce_sum(pred,axis=-1)-tf.reduce_sum(truth,axis=-1))**2)
-    
-
-def clusterloss_clustercoords(truth, pred):
-    from betaLosses import beta_clusterloss_clustercoords
-    return beta_clusterloss_clustercoords(truth, pred)
-
-global_loss_list['clusterloss_clustercoords']=clusterloss_clustercoords
-
-
-def pixel_clustercoords(truth, pred):
-    from betaLosses import beta_pixel_clustercoords
-    return beta_pixel_clustercoords(truth, pred)
-    
-global_loss_list['pixel_clustercoords']=pixel_clustercoords
-
-
-def beta_coord_loss(truth, pred):
-    from betaLosses import coord_loss
-    return coord_loss(truth, pred)
-global_loss_list['beta_coord_loss']=beta_coord_loss
-
-
-
