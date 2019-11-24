@@ -2,7 +2,7 @@
 
 
 
-from DeepJetCore.TrainData import TrainData
+from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore.compiled.c_simpleArray import simpleArray
 import numpy as np
 import uproot
@@ -31,14 +31,18 @@ class TrainData_window(TrainData):
         for i in range(nevents):
             rowsplits.append(rowsplits[-1] + a[i].shape[0])
             
-        return np.expand_dims(a.content, axis=1), np.array(rowsplits, dtype=np.uint)
+        return np.expand_dims(a.content, axis=1), np.array(rowsplits, dtype='int64')
 
 
         
     def convertFromSourceFile(self, filename, weighterobjects, istraining):
         
+        fileTimeOut(filename, 10)#10 seconds for eos to recover 
+        
         tree = uproot.open(filename)["WindowNTupler/tree"]
         nevents = tree.numentries
+        
+        print("n entries: ",nevents )
         
         recHitEnergy , rs        = self.branchToFlatArray(tree["recHitEnergy"], True)
         recHitEta                = self.branchToFlatArray(tree["recHitEta"], False)
@@ -78,9 +82,11 @@ class TrainData_window(TrainData):
             recHitTime  
             ], axis=-1)
         
-        
         farr = simpleArray()
         farr.createFromNumpy(features, rs)
+        #farr.cout()
+        print("features",features.shape)
+        
         del features
         
         truth = np.concatenate([
@@ -96,6 +102,8 @@ class TrainData_window(TrainData):
         tarr = simpleArray()
         tarr.createFromNumpy(truth, rs)
         
+        print("truth",truth.shape)
+                
         return [farr],[tarr],[]
     
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
