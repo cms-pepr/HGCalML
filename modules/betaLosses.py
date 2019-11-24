@@ -183,16 +183,22 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     
     min_beta_loss = tf.RaggedTensor.from_row_splits(values=(1.-S)*1e2 + (S*(one_over_collected_sigma_j)), row_splits=C)
     
-    ##THIS IS WEIRD OUTPUT: SHOULD BE 0.5 everywhere (see line 109)
-    rep_loss = tf.Print(rep_loss,[min_beta_loss.values],'min_beta_loss ')
+   
     
     min_beta_loss = tf.RaggedTensor.from_row_splits(values=min_beta_loss, row_splits=row_splits)
     
     #this will be 0.5
     min_beta_loss = tf.reduce_min(min_beta_loss, axis=2)   
+    
+     ##THIS IS WEIRD OUTPUT: SHOULD BE 0.5 everywhere (see line 109)
+    rep_loss = tf.Print(rep_loss,[min_beta_loss.values],'min_beta_loss ')
+    
     min_beta_loss = tf.reduce_sum(min_beta_loss, axis=1)
     # Normalize
     min_beta_loss = min_beta_loss / (N_minus_N_noise+K.epsilon())
+    
+    
+    # this kicks in immediately for no reason! there is not gradient?!?
     min_beta_loss = killNan(min_beta_loss)
     # Mean over the batch dimension
     
