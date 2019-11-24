@@ -31,10 +31,14 @@ def stupid_model(Inputs,feature_dropout=-1.):
     x = Inputs[0] #this is the self.x list from the TrainData data structure
     rs = Inputs[1]
     
+    x = BatchNormalization()(x)
+    
     print('x',x.shape)
     print('rs',rs.shape)
+    
+    #x = Dense(16,activation='tanh')(x)
 
-    beta    = Dense(1, activation='sigmoid', name ="predBeta")(x)
+    beta    = Dense(1, activation='sigmoid', name ="predBeta",trainable=True)(x)
     ener    = ScalarMultiply(10)(Dense(1, name ="predEnergy")(x))
     eta     = Dense(1, name ="predEta")(x)
     phi     = Dense(1, name ="predPhi")(x)
@@ -42,7 +46,7 @@ def stupid_model(Inputs,feature_dropout=-1.):
     
     pred = Concatenate()([beta, ener, eta, phi, ccoords])
     
-    return Model(inputs=Inputs, outputs=[x, x]) #explicit row split passing
+    return Model(inputs=Inputs, outputs=[pred, pred]) #explicit row split passing
     
 
 train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
@@ -52,14 +56,14 @@ from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_lo
 
 train.setModel(stupid_model,feature_dropout=-1)
     
-train.compileModel(learningrate=1e-3,
+train.compileModel(learningrate=1e-10,
                    loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
-                   clipnorm=1) 
+                   clipnorm=0.001) 
                   
 print(train.keras_model.summary())
 
-nbatch=100000 #this will be an upper limit on vertices per batch
-verbosity=1
+nbatch=15000 #this will be an upper limit on vertices per batch
+verbosity=2
 
 model,history = train.trainModel(nepochs=5, 
                                  batchsize=nbatch,
