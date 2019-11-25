@@ -181,6 +181,7 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
 
     one_over_collected_sigma_i = tf.gather_nd(get_one_over_sigma(beta, beta_min), A)
     one_over_collected_sigma_j = tf.gather_nd(get_one_over_sigma(beta, beta_min), B)
+    beta_j = tf.gather_nd(beta, B)
 
     print("N_minus_N_noise",N_minus_N_noise)
     
@@ -215,11 +216,11 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     ## this one is NAN directly!
     
     S_r = tf.RaggedTensor.from_row_splits(values=(tf.RaggedTensor.from_row_splits(values = S , row_splits=C)), row_splits=row_splits)
-    is_not_same = tf.cast(tf.equal(tf.reduce_sum(S_r, axis=-1),0), tf.float64)
+    is_not_same = tf.cast(tf.equal(tf.reduce_sum(S_r, axis=-1),0), tf.float32)
     
     
     #make it a reduce max
-    min_beta_loss = (1.-S)*100.*(1./one_over_collected_sigma_j) + (S*(1./one_over_collected_sigma_j))
+    min_beta_loss = (1.-S)*100.*(1.-beta_j) + (S*(1.-beta_j))
     
    # min_beta_loss = (Snot)*100. + (S*(1./one_over_collected_sigma_j))
     
