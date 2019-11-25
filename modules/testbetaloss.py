@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 tf.enable_eager_execution()
 
-
+np.random.seed(0)
 
 row_splits = np.array([0,5,9,13,19]+[0]*13+[5], np.int)
 ccoords = np.random.normal(size=(19, 2))*2

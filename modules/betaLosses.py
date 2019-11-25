@@ -1,5 +1,5 @@
 
-
+from __future__ import print_function
 import tensorflow as tf
 import keras
 import keras.backend as K
@@ -64,7 +64,7 @@ def create_loss_dict(truth, pred):
 
 
 def killNan(a):
-    return tf.where(tf.is_nan(a), tf.zeros_like(a)+100., a)
+    return a #tf.where(tf.is_nan(a), tf.zeros_like(a)+100., a)
 
 def construct_ragged_matrices_indexing_tensors(row_splits):
     print('row_splits',row_splits)
@@ -80,17 +80,21 @@ def construct_ragged_matrices_indexing_tensors(row_splits):
     A = tf.cast(vector_range_within_batch_elements/vector_num_elements, tf.int64)[..., tf.newaxis]
     B = tf.math.floormod(vector_range_within_batch_elements,vector_num_elements)[..., tf.newaxis]
 
-
+    batch_offset = tf.gather_nd(row_splits, ai)
+    
+    A+=batch_offset[..., tf.newaxis]
+    B+=batch_offset[..., tf.newaxis]
+    
     C = tf.concat(([0], tf.cumsum(tf.gather_nd(sub, tf.ragged.row_splits_to_segment_ids(row_splits)[..., tf.newaxis]))), axis=0)
 
     '''
     A is like this:
-    [0 0 0 0 0 1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 0 0 0 0 1 1 1 1 2 2 2 2
+    [0 0 0 0 0 1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5!.. 0 0 0 1 1 1 1 2 2 2 2
      3 3 3 3 0 0 0 0 1 1 1 1 2 2 2 2 3 3 3 3 0 0 0 0 0 0 1 1 1 1 1 1 2 2 2 2 2
      2 3 3 3 3 3 3 4 4 4 4 4 4 5 5 5 5 5 5]
      
     B is like this:
-    [0 1 2 3 4 0 1 2 3 4 0 1 2 3 4 0 1 2 3 4 0 1 2 3 4 0 1 2 3 0 1 2 3 0 1 2 3
+    [0 1 2 3 4 0 1 2 3 4 0 1 2 3 4 0 1 2 3 4 0 1 2 3 4 5! 6! .. 1 2 3 0 1 2 3 0 1 2 3
      0 1 2 3 0 1 2 3 0 1 2 3 0 1 2 3 0 1 2 3 0 1 2 3 4 5 0 1 2 3 4 5 0 1 2 3 4
      5 0 1 2 3 4 5 0 1 2 3 4 5 0 1 2 3 4 5]
      
@@ -110,7 +114,7 @@ def printAsRagged(msg, S, C , row_splits):
     
 
 def get_one_over_sigma(beta, beta_min=1e-3):
-    return 0*(( 1. / (1. - beta + K.epsilon()) - 1.) + beta_min)+0.5
+    return (( 1. / (1. - beta + K.epsilon()) - 1.) + beta_min)
     
 
 def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-3,
@@ -128,11 +132,14 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     
     A,B,C = construct_ragged_matrices_indexing_tensors(row_splits)
 
+    print("A,B,C",A[:,0],B[:,0],C)
 
     # Jan's losses
     # S is given (I am just setting it to all ones)
     d_square = tf.reduce_sum((tf.gather_nd(ccoords, A) - tf.gather_nd(ccoords, B))**2, axis=-1)
 
+    printAsRagged("d_square", d_square, C, row_splits)
+    print("These values should ")
     # reate S and notS
     
     is_notnoise_matrix = (1-tf.gather_nd(is_noise, A))* (1-tf.gather_nd(is_noise, B))
@@ -143,24 +150,29 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     S    *= is_notnoise_matrix
     Snot *= is_notnoise_matrix
     
-    print('is_notnoise_matrix',is_notnoise_matrix)
-    print('S',S)
-    print('Snot',Snot)
+    printAsRagged("\nS\n",S,C,row_splits)
+    printAsRagged("\nSnot\n",Snot,C,row_splits)
+    printAsRagged("\nis_notnoise_matrix\n",is_notnoise_matrix,C,row_splits)
     
-    printAsRagged('S', S, C, row_splits)
-    printAsRagged('Snot', Snot, C, row_splits)
-    
+    # print("ABC\n", A[:,0], B[:,0], C,  row_splits)
     
     
     
-    S = tf.Print(S,[tf.shape(is_noise), tf.shape(S)], "S ")
+    
+   # S = tf.Print(S,[tf.shape(is_noise), tf.shape(S)], "S ")
 
     #now this is S and Snot as defined in the paper draft
 
     N_minus_N_noise = tf.RaggedTensor.from_row_splits(values=(1-is_noise), row_splits=row_splits)
-    N_minus_N_noise = tf.reduce_sum(N_minus_N_noise, axis=1)+K.epsilon() # seems wrong? reduce sum, also axis?
+    
+    print('preN_minus_N_noise',N_minus_N_noise)
+    printAsRagged("is_notnoise_matrix", is_notnoise_matrix, C, row_splits)
+    
+    N_minus_N_noise = tf.reduce_sum(N_minus_N_noise, axis=1) # seems wrong? reduce sum, also axis?
     N = tf.RaggedTensor.from_row_splits(values=(tf.zeros_like(is_noise)+1.), row_splits=row_splits)
     N = tf.reduce_sum(N, axis=1)+K.epsilon() # seems wrong? reduce sum, also axis?
+    
+    print("N",N)
     
     N_minus_N_noise = tf.Print(N_minus_N_noise, [N], 'N ',summarize=200)
 
@@ -170,7 +182,7 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     one_over_collected_sigma_i = tf.gather_nd(get_one_over_sigma(beta, beta_min), A)
     one_over_collected_sigma_j = tf.gather_nd(get_one_over_sigma(beta, beta_min), B)
 
-
+    print("N_minus_N_noise",N_minus_N_noise)
     
 
     attractive_loss = (S*d_square)*(one_over_collected_sigma_i*one_over_collected_sigma_j)
@@ -203,10 +215,11 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     ## this one is NAN directly!
     
     S_r = tf.RaggedTensor.from_row_splits(values=(tf.RaggedTensor.from_row_splits(values = S , row_splits=C)), row_splits=row_splits)
-    is_not_same = tf.cast(tf.equal(tf.reduce_sum(S_r, axis=-1),0), tf.float32)
+    is_not_same = tf.cast(tf.equal(tf.reduce_sum(S_r, axis=-1),0), tf.float64)
+    
     
     #make it a reduce max
-    min_beta_loss = (1.-S)*100. + (S*(1./one_over_collected_sigma_j))
+    min_beta_loss = (1.-S)*100.*(1./one_over_collected_sigma_j) + (S*(1./one_over_collected_sigma_j))
     
    # min_beta_loss = (Snot)*100. + (S*(1./one_over_collected_sigma_j))
     
@@ -216,7 +229,14 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     
     min_beta_loss = tf.reduce_min(min_beta_loss, axis=2) 
     
+    print("after reducemin\n",min_beta_loss)
+    print("is same\n", 1 - is_not_same)
     min_beta_loss *= (1-is_not_same)
+    n_withsame = tf.reduce_sum((1-is_not_same), axis=-1)
+    
+    print("n_withsame",n_withsame)
+    
+    #n_withsame = tf.Print(n_withsame,[n_withsame.values],'n_withsame ')
    
    # min_beta_loss *= tf.RaggedTensor.from_row_splits(values = (1 - is_noise), row_splits=row_splits)
     
@@ -224,10 +244,10 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     
     min_beta_losssum = tf.reduce_sum(min_beta_loss, axis=1)
     
-    rep_loss = tf.Print(rep_loss,[min_beta_losssum, N_minus_N_noise, min_beta_loss.values, min_beta_loss.row_splits],'min_beta_loss, N_minus_N_noise, min_beta_loss ', summarize=2000)
+    #rep_loss = tf.Print(rep_loss,[min_beta_losssum, N_minus_N_noise, min_beta_loss.values, min_beta_loss.row_splits],'min_beta_loss, N_minus_N_noise, min_beta_loss ', summarize=2000)
     
     # Normalize
-    min_beta_loss = min_beta_losssum / (N_minus_N_noise+K.epsilon())
+    min_beta_loss = min_beta_losssum / (n_withsame+K.epsilon())
     
     
     # this kicks in immediately for no reason! there is not gradient?!?
@@ -288,10 +308,10 @@ def full_min_beta_loss(truth, pred, rowsplits):
                           attractive_loss,
                           rep_loss,
                           100.* min_beta_loss,
-                          100*noise_loss,
+                          100 * noise_loss,
                           energy_loss,
                           pos_loss,
-                          tf.reduce_mean(onedivsigma)], 'loss , attractive_loss + rep_loss + 100.* min_beta_loss + 100*noise_loss + energy_loss + pos_loss, mean beta ')
+                          tf.reduce_mean(onedivsigma)], 'loss , attractive_loss + rep_loss + 100.* min_beta_loss + 100.* noise_loss + energy_loss + pos_loss, mean beta ')
     return loss
     
     
