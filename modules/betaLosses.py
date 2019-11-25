@@ -110,7 +110,7 @@ def printAsRagged(msg, S, C , row_splits):
     
 
 def get_one_over_sigma(beta, beta_min=1e-3):
-    return ( 1. / (1. - beta + K.epsilon()) - 1.) + beta_min
+    return 0*(( 1. / (1. - beta + K.epsilon()) - 1.) + beta_min)+0.5
     
 
 def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-3,
@@ -202,20 +202,23 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
     
     ## this one is NAN directly!
     
+    S_r = tf.RaggedTensor.from_row_splits(values=(tf.RaggedTensor.from_row_splits(values = S , row_splits=C)), row_splits=row_splits)
+    is_not_same = tf.cast(tf.equal(tf.reduce_sum(S_r, axis=-1),0), tf.float32)
+    
     #make it a reduce max
     min_beta_loss = (1.-S)*100. + (S*(1./one_over_collected_sigma_j))
-    printAsRagged('min_beta_loss', min_beta_loss, C, row_splits)
+    
+   # min_beta_loss = (Snot)*100. + (S*(1./one_over_collected_sigma_j))
+    
     min_beta_loss = tf.RaggedTensor.from_row_splits(values = min_beta_loss , row_splits=C)
-    
-    
     
     min_beta_loss = tf.RaggedTensor.from_row_splits(values = min_beta_loss, row_splits=row_splits)
     
-    
-    #this will be 0.5
     min_beta_loss = tf.reduce_min(min_beta_loss, axis=2) 
     
-    min_beta_loss *= tf.RaggedTensor.from_row_splits(values = (1. - is_noise), row_splits=row_splits)
+    min_beta_loss *= (1-is_not_same)
+   
+   # min_beta_loss *= tf.RaggedTensor.from_row_splits(values = (1 - is_noise), row_splits=row_splits)
     
      ##THIS IS WEIRD OUTPUT: SHOULD BE 0.5 everywhere (see line 109)
     
