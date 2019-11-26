@@ -298,7 +298,7 @@ def makePlot(feat,predicted,truth, plot_truth=True):
         pl.set_data(x[esel], y[esel], z[esel], e[esel], truth_fracs[esel])
     else:
         pl.set_data(x[esel], y[esel], z[esel], e[esel], pred_fracs[esel]) 
-        
+    pl.marker_scale = 2.
     pl.plot3d(ax=None) #this is a matplotlib ax object. Probably you'll need to create a figure and ax to add all the labels. Then add the ax object here to print into it
     pl.save_image()
 
