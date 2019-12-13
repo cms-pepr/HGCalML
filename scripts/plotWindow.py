@@ -9,11 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def selectEvent(rs, feat, truth, event):
-    rs = np.array(rs , dtype='int')
-    rs = rs[:rs[-1]]
-    print rs
     
-    print(feat.shape)
     #get event
     feat = feat[rs[event]:rs[event+1],...]
     
@@ -22,7 +18,7 @@ def selectEvent(rs, feat, truth, event):
 
 def makePlot(pfeat, ptruth, outfile, movie=False):
     
-    if e < 19: return
+    #if e < 19: return
     
     fig = plt.figure(figsize=(10,4))
     ax = [fig.add_subplot(1,2,1, projection='3d'), fig.add_subplot(1,2,2, projection='3d')]
@@ -34,10 +30,12 @@ def makePlot(pfeat, ptruth, outfile, movie=False):
     rechit_y = pfeat[:,6]
     rechit_z = pfeat[:,7]
     
-    truthasso = ptruth[:,1]
-    not_assigned = ptruth[:,1] < 0
+    truthasso = ptruth[:,0]
+    not_assigned = ptruth[:,0] < 0
     print('event', e)
     print('not assigned ',np.count_nonzero(not_assigned, axis=-1))
+    
+    
     
     rechit_nonoise = np.array(rechit_e)
     rechit_nonoise[not_assigned] = 0
@@ -68,11 +66,11 @@ def makePlot(pfeat, ptruth, outfile, movie=False):
         pl2 = plotter_3d(output_file=outdir+"/plot_noise")
         pl2.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_e , c =truthasso)
     
-        mm = movie_maker(pl2, output_file=outfile+"_mm_noise", silent=True)
+        mm = movie_maker(pl2, output_file=outfile+"_mm_noise", silent=False)
         mm.make_movie()
         
         pl2.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_nonoise , c =truthasso)
-        mm2 = movie_maker(pl2, output_file=outfile+"_mm_nonoise", silent=True)
+        mm2 = movie_maker(pl2, output_file=outfile+"_mm_nonoise", silent=False)
         mm2.make_movie()
     
 
@@ -93,11 +91,20 @@ os.system('mkdir -p '+outdir)
 
 
 td = TrainData()
-td.readFromFile(infile)
+if infile[-5:] == "djctd":
+    td.readFromFile(infile)
+else:
+    from datastructures import TrainData_window
+    td=TrainData_window()
+    td.readFromSourceFile(infile)
+    print("nelements",td.nElements())
 #td.skim(event)
-rs = td.x[0]
-feat = td.x[1]
-truth = td.y[0]
+feat_rs = td.transferFeatureListToNumpy()
+truth_rs = td.transferTruthListToNumpy()
+
+feat = feat_rs[0]
+rs = feat_rs[1][:,0]
+truth = truth_rs[0]
 
 for e in range(nevents):
     pfeat, ptruth = selectEvent(rs,feat,truth,e)

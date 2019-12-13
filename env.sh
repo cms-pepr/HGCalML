@@ -2,7 +2,7 @@
 #! /bin/bash
 
 
-#eval "$(/afs/cern.ch/work/j/jkiesele/public/conda_env/miniconda3/bin/conda shell.bash hook)"
+eval "$(/afs/cern.ch/work/j/jkiesele/public/conda_env/miniconda3/bin/conda shell.bash hook)"
 
 THISDIR=`pwd`
 cd /afs/cern.ch/work/j/jkiesele/public/conda_env/DeepJetCore

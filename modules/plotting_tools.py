@@ -113,14 +113,14 @@ class plotter_2d(base_plotter):
         return ax
 
 class plotter_3d(base_plotter):
-    def __init__(self, output_file="", parallel=False, interactive=False):
+    def __init__(self, output_file="", parallel=False, interactive=False, colorscheme = 'rainbow'):
         base_plotter.__init__(self)
         self.output_file=output_file
         self.parallel=parallel
         self.interactive=interactive
         self.data=None
         self.marker_scale=1.
-        
+        self.colorscheme=colorscheme
     
     
     def plot3d(self, e_scaling='sqrt', cut=None, ax=None):
@@ -159,6 +159,7 @@ class plotter_3d(base_plotter):
         #size_scaling = np.exp(size_scaling*5.)
         size_scaling /=  np.max(size_scaling)
         size_scaling *= 40.
+        cmap = cm.get_cmap(self.colorscheme)  # type: matplotlib.colors.ListedColormap
         
         #c = size_scaling #/=np.min(c)
         #ax.view_init(30, 130)

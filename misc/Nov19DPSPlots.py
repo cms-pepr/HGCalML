@@ -261,7 +261,7 @@ x_index = 5
 y_index = 6
 z_index = 7
 e_index = 0
-pred_fraction_end = 20
+pred_fraction_end = 10
 
 
 def predict():
@@ -292,8 +292,9 @@ def makePlot(feat,predicted,truth, plot_truth=True):
     esel = e>0 #remove padded zeros
     
     pl = plotter_fraction_colors(output_file = "test",interactive = True) #you might want to change that
+    pl.interactive=True
     truth_fracs = truth[:,0:-1]
-    
+    pred_fracs = pred[:,:pred_fraction_end]
     if plot_truth:
         pl.set_data(x[esel], y[esel], z[esel], e[esel], truth_fracs[esel])
     else:
@@ -304,3 +305,12 @@ def makePlot(feat,predicted,truth, plot_truth=True):
 
 f, p, t = predict()
 makePlot(f, p, t, True)
+makePlot(f, p, t, False)
+
+
+
+
+
+
+
+
