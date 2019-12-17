@@ -16,6 +16,7 @@ import os
 from multiprocessing import Pool
 import random
 import glob
+import copy
 
 def create_max_color_diff(col_list):
     ncol=len(col_list)
@@ -137,10 +138,10 @@ class plotter_3d(base_plotter):
             ax = fig.add_subplot(111, projection='3d')
         #switch for standard CMS coordinates
         
-        zs = np.reshape(x,[1,-1])
-        ys = np.reshape(y,[1,-1])
-        xs = np.reshape(z,[1,-1])
-        es = np.reshape(e,[1,-1])
+        zs = copy.deepcopy(np.reshape(x,[1,-1]))
+        ys = copy.deepcopy(np.reshape(y,[1,-1]))
+        xs = copy.deepcopy(np.reshape(z,[1,-1]))
+        es = copy.deepcopy(np.reshape(e,[1,-1]))
         #flattened_sigfrac = np.reshape(truth_list[0][:,:,:,0],[1,-1])
         #ax.set_axis_off()
         if e_scaling is not None and e_scaling == 'sqrt':
@@ -228,7 +229,7 @@ class plotter_fraction_colors(plotter_3d):
         return marker_colors
                   
 class movie_maker(object):
-    def __init__(self, plotter, output_file, fullround=True, prefix="mm_", silent=True, dpi=100):
+    def __init__(self, plotter, output_file, fullround=True, prefix="mm_", silent=True, dpi=100, axfunc=None):
         self.plotter=plotter
         self.prefix=prefix
         self.glob_counter=0.
@@ -236,12 +237,15 @@ class movie_maker(object):
         self.output_file=output_file
         self.silent=silent
         self.dpi = dpi
+        self.axfunc=axfunc
         
     def make_movie(self):
         #return
         was_interactive = self.plotter.interactive
         self.plotter.interactive = False
         ax = self.plotter.plot3d()
+        if self.axfunc is not None:
+            self.axfunc(ax)
         os.system('mkdir -p '+self.output_file)
         all_prefix=self.output_file+'/'+self.prefix+'_'
         self.glob_counter=0
