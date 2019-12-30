@@ -46,7 +46,7 @@ class RaggedConstructTensor(keras.layers.Layer):
 
 
 class RaggedGravNet(keras.layers.Layer):
-    def __init__(self, n_neighbours=40, n_dimensions=4, n_filters=32, n_propagate=8, name="gasdfasdfnad",
+    def __init__(self, n_neighbours=40, n_dimensions=4, n_filters=32, n_propagate=8, 
                  also_coordinates=False, feature_dropout=-1,
                  coordinate_kernel_initializer=keras.initializers.Orthogonal(),
                  other_kernel_initializer='glorot_uniform',
@@ -65,12 +65,12 @@ class RaggedGravNet(keras.layers.Layer):
         self.feature_dropout = feature_dropout
         self.additional_message_passing = additional_message_passing
 
-        self.input_feature_transform = keras.layers.Dense(n_propagate, name=name + '_FLR',
+        self.input_feature_transform = keras.layers.Dense(n_propagate, name=self.name + '_FLR',
                                                           kernel_initializer=other_kernel_initializer)
-        self.input_spatial_transform = keras.layers.Dense(n_dimensions, name=name + '_S',
+        self.input_spatial_transform = keras.layers.Dense(n_dimensions, name=self.name + '_S',
                                                           kernel_initializer=coordinate_kernel_initializer,
                                                           activation=coordinate_activation)
-        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh', name=name + '_Fout',
+        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh', name=self.name + '_Fout',
                                                            kernel_initializer=other_kernel_initializer)
 
         self._sublayers = [self.input_feature_transform, self.input_spatial_transform, self.output_feature_transform]
@@ -82,7 +82,7 @@ class RaggedGravNet(keras.layers.Layer):
         for i in range(additional_message_passing):
             self.message_passing_layers.append(
                 keras.layers.Dense(n_propagate, activation='elu',
-                                   name=name + '_mp_' + str(i), kernel_initializer=other_kernel_initializer)
+                                   name=self.name + '_mp_' + str(i), kernel_initializer=other_kernel_initializer)
             )
         self._sublayers += self.message_passing_layers
 
@@ -186,6 +186,81 @@ class RaggedGravNet(keras.layers.Layer):
                   'additional_message_passing': self.additional_message_passing}
         base_config = super(RaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+
+class RaggedGravNet_simple(tf.keras.layers.Layer):
+    def __init__(self, 
+                 n_neighbours, 
+                 n_dimensions, 
+                 n_filters, 
+                 n_propagate,**kwargs):
+        super(RaggedGravNet_simple, self).__init__(**kwargs)
+        
+        self.n_neighbours = n_neighbours
+        self.n_dimensions = n_dimensions
+        self.n_filters = n_filters
+        self.n_propagate = n_propagate
+        
+        self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
+        self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
+        self.output_feature_transform = tf.keras.layers.Dense(n_filters, activation='tanh')
+
+    def build(self, input_shapes):
+        
+        input_shape = input_shapes[0]
+        self.input_feature_transform.build(input_shape)
+        self.input_spatial_transform.build(input_shape)
+        
+        self.output_feature_transform.build((input_shape[0],  
+                                             input_shape[1] + self.input_feature_transform.units * 2))
+ 
+        super(RaggedGravNet_simple, self).build(input_shape)
+        
+    def call(self, inputs):
+        
+        x = inputs[0]
+        row_splits = inputs[1]
+        
+        coordinates = self.input_spatial_transform(x)
+        features = self.input_feature_transform(x)
+        collected_neighbours = self.collect_neighbours(coordinates, features, row_splits)
+        
+        updated_features = tf.concat([x, collected_neighbours], axis=-1)
+        return self.output_feature_transform(updated_features)
+    
+
+    def compute_output_shape(self, input_shapes):
+        input_shape = input_shapes[0]
+        return (input_shape[0], self.output_feature_transform.units)
+    
+    def collect_neighbours(self, coordinates, features, row_splits):
+        
+        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits, data=coordinates, add_splits=True) # [SV, N+1]
+        ragged_split_added_indices = ragged_split_added_indices[:,1:][..., tf.newaxis]  # [SV, N]
+
+        distance = tf.reduce_sum((coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices))**2, axis=-1)  # [SV, N]
+
+        weights = gauss_of_lin(distance * 10.)
+        weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
+        
+        neighbour_features = tf.gather_nd(features, ragged_split_added_indices)
+        neighbour_features *= weights
+        neighbours_max  = tf.reduce_max(neighbour_features, axis=1)
+        neighbours_mean = tf.reduce_mean(neighbour_features, axis=1)
+        
+        return tf.concat([neighbours_max, neighbours_mean], axis=-1)
+    
+    def get_config(self):
+        config = {'n_neighbours': self.n_neighbours, 
+                  'n_dimensions': self.n_dimensions, 
+                  'n_filters': self.n_filters, 
+                  'n_propagate': self.n_propagate}
+        base_config = super(RaggedGravNet_simple, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+
 
 
 class RaggedGlobalExchange(keras.layers.Layer):

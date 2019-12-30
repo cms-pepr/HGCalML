@@ -2,7 +2,7 @@ import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization
-from LayersRagged import RaggedConstructTensor, RaggedGravNet, RaggedGlobalExchange
+from LayersRagged import RaggedConstructTensor, RaggedGravNet, RaggedGlobalExchange, RaggedGravNet_simple
 from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
@@ -33,12 +33,14 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     x_data, x_row_splits = RaggedConstructTensor()([I_data, I_splits])
 
-    x_row_splits = tf.Print(x_row_splits, [x_row_splits], "Row splits from tensorflow")
+    #x_row_splits = tf.Print(x_row_splits, [x_row_splits], "Row splits from tensorflow",summarize=200)
 
-    coords = []
+    
     feats = []
 
     #TODO: Jan center phi and select features you may have to implement yourself. I am not sure about its format etc.
+
+    x_data = tf.Print(x_data,[tf.shape(x_data)],'x_data.shape ')
 
     x_basic = BatchNormalization(momentum=0.3)(x_data)  # mask_and_norm is just batch norm now
 
@@ -57,16 +59,11 @@ def gravnet_model(Inputs, feature_dropout=-1.):
         x = BatchNormalization()(x)
         x = Concatenate()([x_basic, x])
 
-        x, coord = RaggedGravNet(n_neighbours=n_neighbours,
+        x = RaggedGravNet_simple(n_neighbours=n_neighbours,
                            n_dimensions=4,
                            n_filters=n_filters,
                            n_propagate=n_propagate,
-                           additional_message_passing=passing_operations,
-                           name='gravnet_' + str(i),
-                           also_coordinates=True,
-                           feature_dropout=feature_dropout)([x, x_row_splits])
-        print(coord.shape)
-        coords.append(coord)
+                           name='gravnet_' + str(i))([x, x_row_splits])
         x = BatchNormalization()(x)
 
     x = Concatenate()([x_basic, x])
@@ -80,7 +77,14 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = BatchNormalization()(x)
     # x = Concatenate()([x, x_all]) # TODO: Jan check this
     x = Dense(64, activation='elu', name='last_correction')(x)
-    x = Dense(nregressions, activation=None, kernel_initializer='zeros')(x)
+    
+    beta = Dense(1, activation='sigmoid')(x)
+    energy = Dense(1, activation=None)(x)
+    eta = Dense(1, activation=None)(x)
+    phi = Dense(1, activation=None)(x)
+    ccoords = Dense(2, activation=None)(x)
+
+    x = Concatenate()([beta,energy,eta,phi,ccoords])
 
     # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
     predictions = x
@@ -96,19 +100,20 @@ train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
 
 from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_loss, null_loss
 
-train.setModel(gravnet_model,feature_dropout=-1)
+train.setModel(gravnet_model)
     
-train.compileModel(learningrate=1e-10,
+train.compileModel(learningrate=1e-3,
                    loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
-                   clipnorm=0.001) 
+                   ) #clipnorm=1.) 
 
 print(train.keras_model.summary())
 
-nbatch=1500 #this will be an upper limit on vertices per batch
+nbatch=150000#**2 #this will be an upper limit on vertices per batch
 verbosity=2
 
 model,history = train.trainModel(nepochs=5, 
                                  batchsize=nbatch,
+                                 batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity)
 
