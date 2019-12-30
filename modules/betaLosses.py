@@ -175,7 +175,7 @@ def get_neighbour_loss(nneighbours, ccoords, row_splits, beta, is_noise, cluster
     #minbeta = tf.where(minbeta > 1., tf.zeros_like(minbeta),minbeta) #just noise contributions
     
     #simplified:
-    minbeta = (1. - beta) * is_noise
+    minbeta =  (1. - beta) * (1. - is_noise)
     
     return tf.reduce_mean(attraction), tf.reduce_mean(repulsion), tf.reduce_mean(minbeta)
     #
