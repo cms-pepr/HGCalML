@@ -35,11 +35,11 @@ class TrainData_window(TrainData):
 
 
         
-    def convertFromSourceFile(self, filename, weighterobjects, istraining):
+    def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="WindowNTupler/tree"):
         
         fileTimeOut(filename, 10)#10 seconds for eos to recover 
         
-        tree = uproot.open(filename)["WindowNTupler/tree"]
+        tree = uproot.open(filename)[treename]
         nevents = tree.numentries
         
         print("n entries: ",nevents )
@@ -48,7 +48,7 @@ class TrainData_window(TrainData):
         recHitEta                = self.branchToFlatArray(tree["recHitEta"], False)
         recHitRelPhi             = self.branchToFlatArray(tree["recHitRelPhi"], False)
         recHitTheta              = self.branchToFlatArray(tree["recHitTheta"], False)
-        recHitMag                = self.branchToFlatArray(tree["recHitMag"], False)
+        recHitR                = self.branchToFlatArray(tree["recHitR"], False)
         recHitX                  = self.branchToFlatArray(tree["recHitX"], False)
         recHitY                  = self.branchToFlatArray(tree["recHitY"], False)
         recHitZ                  = self.branchToFlatArray(tree["recHitZ"], False)
@@ -58,10 +58,20 @@ class TrainData_window(TrainData):
         recHitPad                = self.branchToFlatArray(tree["recHitPad"], False)
         
         ## weird shape for this truthHitFractions        = self.branchToFlatArray(tree["truthHitFractions"], False)
-        truthHitAssignementIdx   = self.branchToFlatArray(tree["truthHitAssignementIdx"], False)   #1 (first is row splits)
-        truthHitAssignedEnergies = self.branchToFlatArray(tree["truthHitAssignedEnergies"], False)  #2
-        truthHitAssignedEtas     = self.branchToFlatArray(tree["truthHitAssignedEtas"], False)  #3
-        truthHitAssignedPhis     = self.branchToFlatArray(tree["truthHitAssignedPhis"], False)  #4
+        truthHitAssignementIdx   = self.branchToFlatArray(tree["truthHitAssignementIdx"], False)   #0 
+        truthHitAssignedEnergies = self.branchToFlatArray(tree["truthHitAssignedEnergies"], False)  #1
+        truthHitAssignedX     = self.branchToFlatArray(tree["truthHitAssignedX"], False)  #2
+        truthHitAssignedY     = self.branchToFlatArray(tree["truthHitAssignedY"], False)  #3
+        truthHitAssignedZ     = self.branchToFlatArray(tree["truthHitAssignedZ"], False)  #3
+        truthHitAssignedDirX   = self.branchToFlatArray(tree["truthHitAssignedDirX"], False)  #4
+        truthHitAssignedDirY   = self.branchToFlatArray(tree["truthHitAssignedDirY"], False)  #4
+        truthHitAssignedDirZ   = self.branchToFlatArray(tree["truthHitAssignedDirZ"], False)  #4
+        truthHitAssignedEta     = self.branchToFlatArray(tree["truthHitAssignedEta"], False)  #2
+        truthHitAssignedPhi     = self.branchToFlatArray(tree["truthHitAssignedPhi"], False)  #3
+        truthHitAssignedR       = self.branchToFlatArray(tree["truthHitAssignedR"], False)  #3
+        truthHitAssignedDirEta   = self.branchToFlatArray(tree["truthHitAssignedDirEta"], False)  #4
+        truthHitAssignedDirPhi   = self.branchToFlatArray(tree["truthHitAssignedDirPhi"], False)  #4
+        truthHitAssignedDirR    = self.branchToFlatArray(tree["truthHitAssignedDirR"], False)  #4
         ## weird shape for this truthHitAssignedPIDs     = self.branchToFlatArray(tree["truthHitAssignedPIDs"], False)
         #windowEta                =
         #windowPhi                =
@@ -75,7 +85,7 @@ class TrainData_window(TrainData):
             recHitEta   ,
             recHitRelPhi,
             recHitTheta ,
-            recHitMag   ,
+            recHitR   ,
             recHitX     ,
             recHitY     ,
             recHitZ     ,
@@ -94,8 +104,18 @@ class TrainData_window(TrainData):
         #    truthHitFractions        ,
             np.array(truthHitAssignementIdx, dtype='float32')   , # 0
             truthHitAssignedEnergies ,
-            truthHitAssignedEtas     ,
-            truthHitAssignedPhis     
+            truthHitAssignedX     ,
+            truthHitAssignedY,
+            truthHitAssignedZ,  #4
+            truthHitAssignedDirX,
+            truthHitAssignedDirY, #6
+            truthHitAssignedDirZ,
+            truthHitAssignedEta     ,
+            truthHitAssignedPhi,
+            truthHitAssignedR,  #10
+            truthHitAssignedDirEta,
+            truthHitAssignedDirPhi, #12
+            truthHitAssignedDirR
         #    truthHitAssignedPIDs    
             ], axis=-1)
         
