@@ -3,6 +3,7 @@
 import tensorflow as tf
 import keras
 import keras.backend as K
+from index_dicts import create_index_dict
 
 #factorise a bit
 
@@ -15,53 +16,7 @@ import keras.backend as K
 #
 
 def create_loss_dict(truth, pred):
-    '''
-    input features as
-    B x V x F
-    with F = colours
-    
-    truth as 
-    B x P x P x T
-    with T = [mask, true_posx, true_posy, ID_0, ID_1, ID_2, true_width, true_height, n_objects]
-    
-    all outputs in B x V x 1/F form except
-    n_active: B x 1
-    
-    
-    np.array(truthHitAssignementIdx, dtype='float32')   , # 1
-            truthHitAssignedEnergies ,
-            truthHitAssignedEtas     ,
-            truthHitAssignedPhis 
-            
-    recHitEnergy,
-            recHitEta   ,
-            recHitRelPhi,
-            recHitTheta ,
-            recHitMag   ,
-            recHitX     ,
-            recHitY     ,
-            recHitZ     ,
-            recHitTime  
-    
-    '''
-    outdict={}
-    #make it all lists
-    outdict['truthHitAssignementIdx']    =  truth[:,0]
-    outdict['truthIsNoise']              =  tf.where(truth[:,0] < -0.1, 
-                                                     tf.zeros_like(truth[:,0])+1, 
-                                                     tf.zeros_like(truth[:,0]))
-    outdict['truthHitAssignedEnergies']  =  truth[:,1]
-    outdict['truthHitAssignedEtas']      =  truth[:,8]
-    outdict['truthHitAssignedPhis']      =  truth[:,9]
-    
-    outdict['predBeta']       = pred[:,0]
-    outdict['predEnergy']     = pred[:,1]
-    outdict['predEta']        = pred[:,2]
-    outdict['predPhi']        = pred[:,3]
-    outdict['predCCoords']    = pred[:,4:]
-
-    return outdict
-
+    return create_index_dict(truth, pred)
 
 def killNan(a):
     return a
@@ -397,7 +352,7 @@ def full_min_beta_loss(truth, pred, rowsplits):
         (d['predEta'] - d['truthHitAssignedEtas'])**2 + \
         (d['predPhi'] - d['truthHitAssignedPhis'])**2 ))
     
-    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss + energy_loss + pos_loss
+    loss = attractive_loss + rep_loss +  min_beta_loss +  0.1*noise_loss + energy_loss + pos_loss
     loss = tf.Print(loss,[loss,
                           attractive_loss,
                           rep_loss,

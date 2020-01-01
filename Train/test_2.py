@@ -7,7 +7,7 @@ from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
 
-
+from ragged_callbacks import plotEventDuringTraining
 
 tf.compat.v1.disable_eager_execution()
 
@@ -23,7 +23,7 @@ passing_operations = 2
 def gravnet_model(Inputs, feature_dropout=-1.):
     nregressions=5
 
-    n_gravnet_layers = 4
+    n_gravnet_layers = 6
     # I_data = tf.keras.Input(shape=(num_features,), dtype="float32")
     # I_splits = tf.keras.Input(shape=(1,), dtype="int32")
 
@@ -40,7 +40,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     #TODO: Jan center phi and select features you may have to implement yourself. I am not sure about its format etc.
 
-    x_data = tf.Print(x_data,[tf.shape(x_data)],'x_data.shape ')
+    #x_data = tf.Print(x_data,[tf.shape(x_data)],'x_data.shape ')
 
     x_basic = BatchNormalization(momentum=0.3)(x_data)  # mask_and_norm is just batch norm now
 
@@ -110,12 +110,29 @@ print(train.keras_model.summary())
 
 nbatch=150000#**2 #this will be an upper limit on vertices per batch
 verbosity=2
+import os
+os.system('mkdir -p '+train.outputDir+"/event_2")
+plotEvent = plotEventDuringTraining(
+    outputfile=train.outputDir+"/event_2/sn",
+    samplefile="/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/ml.TestDataSet/Xmas19/windowntup_99.djctd",
+    after_n_batches=200,
+    batchsize=100000,
+    on_epoch_end=False,
+    use_event=2,
+    )
 
 model,history = train.trainModel(nepochs=5, 
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=verbosity)
+                                 verbose=verbosity,
+                                 additional_callbacks=[plotEvent])
 
-
+train.change_learning_rate(1e-4)
+model,history = train.trainModel(nepochs=5, 
+                                 batchsize=nbatch,
+                                 batchsize_use_sum_of_squares=False,
+                                 checkperiod=1, # saves a checkpoint model every N epochs
+                                 verbose=verbosity,
+                                 additional_callbacks=[plotEvent])
 
