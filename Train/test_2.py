@@ -1,7 +1,7 @@
 import tensorflow as tf
 # from K import Layer
 import numpy as np
-from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import BatchNormalization, Dropout
 from LayersRagged import RaggedConstructTensor, RaggedGravNet, RaggedGlobalExchange, RaggedGravNet_simple
 from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.training.training_base import training_base
@@ -42,7 +42,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     #x_data = tf.Print(x_data,[tf.shape(x_data)],'x_data.shape ')
 
-    x_basic = BatchNormalization(momentum=0.3)(x_data)  # mask_and_norm is just batch norm now
+    x_basic = BatchNormalization(momentum=0.9)(x_data)  # mask_and_norm is just batch norm now
 
 
     n_filters = 0
@@ -53,10 +53,11 @@ def gravnet_model(Inputs, feature_dropout=-1.):
         x = RaggedGlobalExchange()([x_data, x_row_splits])
 
         x = Dense(n_filters, activation='elu')(x)
-        x = BatchNormalization()(x)
+        x = BatchNormalization(momentum=0.9)(x)
         x = Dense(n_filters, activation='elu')(x)
+        x = Dropout(0.05)(x) #just some noise
         x = Dense(n_filters, activation='elu')(x)
-        x = BatchNormalization()(x)
+        x = BatchNormalization(momentum=0.9)(x)
         x = Concatenate()([x_basic, x])
 
         x = RaggedGravNet_simple(n_neighbours=n_neighbours,
@@ -64,17 +65,14 @@ def gravnet_model(Inputs, feature_dropout=-1.):
                            n_filters=n_filters,
                            n_propagate=n_propagate,
                            name='gravnet_' + str(i))([x, x_row_splits])
-        x = BatchNormalization()(x)
+        x = BatchNormalization(momentum=0.9)(x)
 
     x = Concatenate()([x_basic, x])
     x = Dense(n_filters, activation='elu')(x)
+    x = BatchNormalization(momentum=0.9)(x)
     x = Dense(n_filters, activation='elu')(x)
-    x = BatchNormalization()(x)
+    x = BatchNormalization(momentum=0.9)(x)
     x = Dense(n_filters, activation='elu')(x)
-    x = BatchNormalization()(x)
-
-    x = Dense(nregressions, activation=None)(x)
-    x = BatchNormalization()(x)
     # x = Concatenate()([x, x_all]) # TODO: Jan check this
     x = Dense(64, activation='elu', name='last_correction')(x)
     
@@ -102,37 +100,51 @@ from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_lo
 
 train.setModel(gravnet_model)
     
-train.compileModel(learningrate=1e-3,
+train.compileModel(learningrate=5e-3,
                    loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
 print(train.keras_model.summary())
 
-nbatch=150000#**2 #this will be an upper limit on vertices per batch
+nbatch=100000#**2 #this will be an upper limit on vertices per batch
 verbosity=2
 import os
-os.system('mkdir -p '+train.outputDir+"/event_2")
-plotEvent = plotEventDuringTraining(
-    outputfile=train.outputDir+"/event_2/sn",
-    samplefile="/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/ml.TestDataSet/Xmas19/windowntup_99.djctd",
-    after_n_batches=200,
-    batchsize=100000,
-    on_epoch_end=False,
-    use_event=2,
-    )
 
-model,history = train.trainModel(nepochs=5, 
+callbacks=[]
+for i in range(5):
+    plotoutdir=train.outputDir+"/event_"+str(i+2)
+    os.system('mkdir -p '+plotoutdir)
+    callbacks.append(
+        plotEventDuringTraining(
+            outputfile=plotoutdir+"/sn",
+            samplefile="/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/ml.TestDataSet/Xmas19/windowntup_99.djctd",
+            after_n_batches=200,
+            batchsize=100000,
+            on_epoch_end=False,
+            use_event=2+i)
+        )
+
+model,history = train.trainModel(nepochs=5+1, 
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
-                                 additional_callbacks=[plotEvent])
+                                 additional_callbacks=callbacks)
+
+train.change_learning_rate(1e-3)
+
+model,history = train.trainModel(nepochs=5+1, 
+                                 batchsize=nbatch,
+                                 batchsize_use_sum_of_squares=False,
+                                 checkperiod=1, # saves a checkpoint model every N epochs
+                                 verbose=verbosity,
+                                 additional_callbacks=callbacks)
 
 train.change_learning_rate(1e-4)
-model,history = train.trainModel(nepochs=5, 
+model,history = train.trainModel(nepochs=15+5+1, 
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
-                                 additional_callbacks=[plotEvent])
+                                 additional_callbacks=callbacks)
 

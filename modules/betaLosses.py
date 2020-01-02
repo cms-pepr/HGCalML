@@ -335,7 +335,7 @@ def full_min_beta_loss(truth, pred, rowsplits):
     #                                                       d['truthHitAssignementIdx'],
     #                                                       beta_min=beta_min)
     
-    attractive_loss, rep_loss, min_beta_loss = get_neighbour_loss(24,
+    attractive_loss, rep_loss, min_beta_loss = get_neighbour_loss(64,
                                                                   d['predCCoords'], 
                                                            rowsplits, 
                                                            d['predBeta'], 
@@ -346,18 +346,18 @@ def full_min_beta_loss(truth, pred, rowsplits):
     onedivsigma = get_one_over_sigma(d['predBeta'],beta_min)
     noise_loss  = tf.reduce_mean((d['truthIsNoise']*d['predBeta'])**2)
     
-    energy_loss = tf.reduce_mean(onedivsigma*(d['predEnergy'] - d['truthHitAssignedEnergies'])**2/(d['truthHitAssignedEnergies']+0.1))
+    energy_loss =  tf.reduce_mean(onedivsigma*(d['predEnergy'] - d['truthHitAssignedEnergies'])**2/(d['truthHitAssignedEnergies']+0.1))
     pos_loss = tf.reduce_mean(
         onedivsigma*(\
         (d['predEta'] - d['truthHitAssignedEtas'])**2 + \
         (d['predPhi'] - d['truthHitAssignedPhis'])**2 ))
     
-    loss = attractive_loss + rep_loss +  min_beta_loss +  0.1*noise_loss + energy_loss + pos_loss
+    loss = attractive_loss + rep_loss +  10.*min_beta_loss +  0.1*noise_loss + 0.1 * energy_loss + pos_loss
     loss = tf.Print(loss,[loss,
                           attractive_loss,
                           rep_loss,
-                          min_beta_loss,
-                          noise_loss,
+                          10*min_beta_loss,
+                          0.1*noise_loss,
                           energy_loss,
                           pos_loss,
                           tf.reduce_mean(onedivsigma)], 'loss , attractive_loss + rep_loss +  min_beta_loss + noise_loss + energy_loss + pos_loss, mean beta ')
