@@ -23,7 +23,7 @@ passing_operations = 2
 def gravnet_model(Inputs, feature_dropout=-1.):
     nregressions=5
 
-    n_gravnet_layers = 6
+    n_gravnet_layers = 4
     # I_data = tf.keras.Input(shape=(num_features,), dtype="float32")
     # I_splits = tf.keras.Input(shape=(1,), dtype="int32")
 
@@ -43,14 +43,14 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     #x_data = tf.Print(x_data,[tf.shape(x_data)],'x_data.shape ')
 
     x_basic = BatchNormalization(momentum=0.9)(x_data)  # mask_and_norm is just batch norm now
-
+    x = x_basic
 
     n_filters = 0
     for i in range(n_gravnet_layers):
         n_filters = 32 + 24 * i
         n_propagate = 8 + 8 * i
 
-        x = RaggedGlobalExchange()([x_data, x_row_splits])
+        x = RaggedGlobalExchange()([x, x_row_splits])
 
         x = Dense(n_filters, activation='elu')(x)
         x = BatchNormalization(momentum=0.9)(x)
@@ -58,7 +58,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
         x = Dropout(0.05)(x) #just some noise
         x = Dense(n_filters, activation='elu')(x)
         x = BatchNormalization(momentum=0.9)(x)
-        x = Concatenate()([x_basic, x])
+        #x = Concatenate()([x_basic, x])
 
         x = RaggedGravNet_simple(n_neighbours=n_neighbours,
                            n_dimensions=4,
@@ -67,7 +67,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
                            name='gravnet_' + str(i))([x, x_row_splits])
         x = BatchNormalization(momentum=0.9)(x)
 
-    x = Concatenate()([x_basic, x])
+    #x = Concatenate()([x_basic, x])
     x = Dense(n_filters, activation='elu')(x)
     x = BatchNormalization(momentum=0.9)(x)
     x = Dense(n_filters, activation='elu')(x)
@@ -100,13 +100,13 @@ from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_lo
 
 train.setModel(gravnet_model)
     
-train.compileModel(learningrate=5e-3,
+train.compileModel(learningrate=1e-3,
                    loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
 print(train.keras_model.summary())
 
-nbatch=100000#**2 #this will be an upper limit on vertices per batch
+nbatch=30000#**2 #this will be an upper limit on vertices per batch
 verbosity=2
 import os
 
@@ -124,14 +124,14 @@ for i in range(5):
             use_event=2+i)
         )
 
-model,history = train.trainModel(nepochs=5+1, 
+model,history = train.trainModel(nepochs=1, 
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,
                                  additional_callbacks=callbacks)
 
-train.change_learning_rate(1e-3)
+train.change_learning_rate(2e-4)
 
 model,history = train.trainModel(nepochs=5+1, 
                                  batchsize=nbatch,
@@ -141,7 +141,7 @@ model,history = train.trainModel(nepochs=5+1,
                                  additional_callbacks=callbacks)
 
 train.change_learning_rate(1e-4)
-model,history = train.trainModel(nepochs=15+5+1, 
+model,history = train.trainModel(nepochs=99+5+1, 
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
