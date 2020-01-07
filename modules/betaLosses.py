@@ -130,9 +130,86 @@ def get_neighbour_loss(nneighbours, ccoords, row_splits, beta, is_noise, cluster
     #minbeta = tf.where(minbeta > 1., tf.zeros_like(minbeta),minbeta) #just noise contributions
     
     #simplified:
-    minbeta =  (1. - beta) * (1. - is_noise)
+
+    print(beta)
+
+    print(is_noise)
+
+    cluster_asso = tf.squeeze(cluster_asso, axis=1)
+    print(cluster_asso)
+
+    # 0.1 trick as suggested by Jan
+    # +1 so noise gets converted to 0 - easier to deal with
+    cluster_asso_integer = tf.cast(cluster_asso+0.1, tf.int64) + 1
+    # Convert it into row splits
+    cluster_asso_integer = tf.RaggedTensor.from_row_splits(cluster_asso_integer, row_splits)
+
+    # Also convert betas into row splits
+    beta = tf.RaggedTensor.from_row_splits(beta, row_splits)
+
+
+    # Multiply row ids by a huge number and then add it so we do argmax within each batch element
+    sorting_tensor = cluster_asso_integer.values + cluster_asso_integer.value_rowids() * 40000000
+    sorting_tensor = tf.argsort(sorting_tensor)[..., tf.newaxis]
+
+    # Now the second dimension is sorted by shower index
+    ragged_tensor_beta_values = tf.RaggedTensor.from_row_splits(
+        tf.gather_nd(beta.values, indices=sorting_tensor), row_splits=row_splits)
+    ragged_tensor_shower_indices = tf.RaggedTensor.from_row_splits(
+        tf.gather_nd(cluster_asso_integer.values, indices=sorting_tensor), row_splits=row_splits)
+
+    # make row splits according to number of showers in each of the batch element
+    row_splits_secondary = tf.cumsum(tf.concat(([0], 1 + tf.reduce_max(ragged_tensor_shower_indices, axis=1)), axis=0))
+
+    additive = (row_splits_secondary[0:-1])[..., tf.newaxis]
+    ragged_tensor_shower_indices_across_all_batch_elements = ragged_tensor_shower_indices + additive
+
+    # ragged_tensor_shower_indices_across_all_batch_elements = tf.cast(ragged_tensor_shower_indices_across_all_batch_elements, tf.int32)
+
+
+    ragged_tensor_shower_indices_across_all_batch_elements = ragged_tensor_shower_indices_across_all_batch_elements.values
+
+    # showers_ragged_indices_only = tf.RaggedTensor.from_value_rowids(values=ragged_tensor_shower_indices.values,
+    #                                                                 value_rowids=ragged_tensor_shower_indices_across_all_batch_elements)
+    # ragged_tensor_shower_indices = tf.RaggedTensor.from_row_splits(values=showers_ragged_indices_only,
+    #                                                                row_splits=row_splits_secondary)
+
+    # TODO: Remove this
+    # ragged_tensor_shower_indices_across_all_batch_elements = tf.Print(ragged_tensor_shower_indices_across_all_batch_elements,[ragged_tensor_shower_indices_across_all_batch_elements],'shower indices', summarize=500)
+
+    showers_ragged_beta_values = tf.RaggedTensor.from_value_rowids(values=ragged_tensor_beta_values.values,
+                                                                   value_rowids=ragged_tensor_shower_indices_across_all_batch_elements)
+    ragged_tensor_beta_values = tf.RaggedTensor.from_row_splits(values=showers_ragged_beta_values,
+                                                                row_splits=row_splits_secondary)
+
+
+    # print(ragged_tensor_beta_values.shape)
+    # 0/0
+    #
+    # attraction = tf.Print(
+    #     attraction,
+    #     [ragged_tensor_beta_values[0].values], 'X', summarize=500)
+    # attraction = tf.Print(
+    #     attraction,
+    #     [ragged_tensor_beta_values[0].value_rowids()], 'Y', summarize=500)
+
+    ragged_tensor_beta_values = ragged_tensor_beta_values[:, 1:, :]
+
+    attraction = tf.Print(
+        attraction,
+        [ragged_tensor_beta_values[0].values], 'X', summarize=500)
+    attraction = tf.Print(
+        attraction,
+        [ragged_tensor_beta_values[0].value_rowids()], 'Y', summarize=500)
+    # attraction = tf.Print(
+    #     attraction,
+    #     [tf.reduce_max(ragged_tensor_beta_values[0], axis=-1).value_rowids()], 'reduced max i', summarize=500)
+
+    # beta = tf.reduce_mean(ragged_tensor_beta_values)
+    beta = tf.reduce_mean(1-tf.reduce_max(ragged_tensor_beta_values, axis=-1))
+    # minbeta =  (1. - beta) * (1. - is_noise)
     
-    return tf.reduce_mean(attraction), tf.reduce_mean(repulsion), tf.reduce_mean(minbeta)
+    return tf.reduce_mean(attraction), tf.reduce_mean(repulsion), beta
     #
     #
     #

@@ -106,30 +106,29 @@ train.compileModel(learningrate=5e-3,
 
 print(train.keras_model.summary())
 
-nbatch=100000#**2 #this will be an upper limit on vertices per batch
+nbatch=500#**2 #this will be an upper limit on vertices per batch
 verbosity=2
 import os
 
-callbacks=[]
-for i in range(5):
-    plotoutdir=train.outputDir+"/event_"+str(i+2)
-    os.system('mkdir -p '+plotoutdir)
-    callbacks.append(
-        plotEventDuringTraining(
-            outputfile=plotoutdir+"/sn",
-            samplefile="/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/ml.TestDataSet/Xmas19/windowntup_99.djctd",
-            after_n_batches=200,
-            batchsize=100000,
-            on_epoch_end=False,
-            use_event=2+i)
-        )
+# callbacks=[]
+# for i in range(1):
+#     plotoutdir=train.outputDir+"/event_"+str(i+2)
+#     os.system('mkdir -p '+plotoutdir)
+#     callbacks.append(
+#         plotEventDuringTraining(
+#             outputfile=plotoutdir+"/sn",
+#             samplefile="/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/ml.TestDataSet/Xmas19/windowntup_99.djctd",
+#             after_n_batches=200,
+#             batchsize=100000,
+#             on_epoch_end=False,
+#             use_event=2+i)
+#         )
 
 model,history = train.trainModel(nepochs=5+1, 
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=verbosity,
-                                 additional_callbacks=callbacks)
+                                 verbose=verbosity,)
 
 train.change_learning_rate(1e-3)
 
@@ -137,14 +136,12 @@ model,history = train.trainModel(nepochs=5+1,
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=verbosity,
-                                 additional_callbacks=callbacks)
+                                 verbose=verbosity,)
 
 train.change_learning_rate(1e-4)
 model,history = train.trainModel(nepochs=15+5+1, 
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=verbosity,
-                                 additional_callbacks=callbacks)
+                                 verbose=verbosity,)
 
