@@ -31,7 +31,7 @@ def stupid_model(Inputs,feature_dropout=-1.):
     x = Inputs[0] #this is the self.x list from the TrainData data structure
     rs = Inputs[1]
     
-    x = BatchNormalization()(x)
+    x = BatchNormalization(momentum=0.6)(x)
     
     print('x',x.shape)
     print('rs',rs.shape)
@@ -56,13 +56,13 @@ from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_lo
 
 train.setModel(stupid_model,feature_dropout=-1)
     
-train.compileModel(learningrate=1e-10,
+train.compileModel(learningrate=1e-3,
                    loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
-                   clipnorm=0.001) 
+                   clipnorm=1.) 
                   
 print(train.keras_model.summary())
 
-nbatch=15000 #this will be an upper limit on vertices per batch
+nbatch=8000 #this will be an upper limit on vertices per batch
 verbosity=2
 
 model,history = train.trainModel(nepochs=5, 
