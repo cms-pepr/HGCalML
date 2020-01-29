@@ -9,7 +9,10 @@ global_layers_list['GravNet']=GravNet
 global_layers_list['GarNet']=GarNet
 global_layers_list['weighted_sum_layer']=weighted_sum_layer
 
-
+from LayersRagged import *
+global_layers_list['RaggedGravNet_simple']=RaggedGravNet_simple 
+global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
+global_layers_list['RaggedConstructTensor']=RaggedConstructTensor
 
 from keras.layers import Layer
 import keras.backend as K
