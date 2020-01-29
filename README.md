@@ -2,7 +2,7 @@ HGCalML
 ===============================================================================
 
 Requirements
-  * DeepJetCore 2.1
+  * DeepJetCore 2.1 (``https://github.com/DL4Jets/DeepJetCore``)
   * DeepJetCore 2.1 container
   
 For CERN, a script to start the container in interactive mode can be found here:
