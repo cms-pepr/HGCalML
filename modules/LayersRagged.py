@@ -237,6 +237,8 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
     def collect_neighbours(self, coordinates, features, row_splits):
         
         ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits, data=coordinates, add_splits=True) # [SV, N+1]
+        
+        print(ragged_split_added_indices)
         ragged_split_added_indices = ragged_split_added_indices[:,1:][..., tf.newaxis]  # [SV, N]
 
         distance = tf.reduce_sum((coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices))**2, axis=-1)  # [SV, N]

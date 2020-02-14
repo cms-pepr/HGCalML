@@ -77,7 +77,7 @@ def makePlot(outfile,
     #copy properly
     
     
-    fig = plt.figure(figsize=(10,4))
+    fig = plt.figure(figsize=(20,8))
     ax = [fig.add_subplot(1,2,1, projection='3d'), fig.add_subplot(1,2,2, projection='3d')]
 
     
@@ -168,11 +168,11 @@ def makePlot(outfile,
         pl2 = plotter_3d(output_file=outdir+"/plot_noise")
         pl2.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_e , c =truthasso)
     
-        mm = movie_maker(pl2, output_file=outfile+"_mm_noise", silent=False, axfunc=addarrows)
-        mm.make_movie()
+        #mm = movie_maker(pl2, output_file=outfile+"_mm_noise", silent=False, axfunc=addarrows)
+        #mm.make_movie()
         
         pl2.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_nonoise , c =truthasso)
-        mm2 = movie_maker(pl2, output_file=outfile+"_mm_nonoise", silent=False, axfunc=addarrows, dpi=200)
+        mm2 = movie_maker(pl2, output_file=outfile+"_mm_nonoise", silent=False, axfunc=addarrows, dpi=600)
         mm2.make_movie()
     
 
