@@ -17,18 +17,15 @@ overfitting using the second model `overfitting-queen`.
 
 Source HGCal as you normally do and then:
 ```
-python training_eager.py --modeltype overfitting-queen
+python training_eager.py --trainid comparison_loss_both --modeltype dgcnn-alpha --shouldoverfit True
 ```
 
 Let it train for a while. It will save summaries and models to:
 ```
-$PWD/train_data/ID/summaries
-$PWD/train_data/ID/checkpoints
+$PWD/train_data/comparison_loss_both/summaries
+$PWD/train_data/comparison_loss_both/checkpoints
 
 ```
-
-It will create a unique ID (something like `e3a9a584ffe84c0ea26c5ca39c011af4`). Remember that you will need it for plotting it in jupyter.
-
 
 ## Plotting
 Open the jupyter notebook `visualizing.ipynb`. And rest is documented there!
@@ -36,11 +33,11 @@ Open the jupyter notebook `visualizing.ipynb`. And rest is documented there!
 
 ## Resuming training
 
-Use the following script:
+Use the same command:
 
 ```
-python training_eager.py --modeltype overfitting-queen --trainid e3a9a584ffe84c0ea26c5ca39c011af4
+python training_eager.py --trainid comparison_loss_both --modeltype dgcnn-alpha --shouldoverfit True
 ```
 
 
-Where `e3a9a584ffe84c0ea26c5ca39c011af4` is a training id generated before.
+Where `comparison_loss_both` is a training id generated before.

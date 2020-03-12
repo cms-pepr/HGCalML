@@ -180,6 +180,8 @@ def evaluate_loss_with_test_case(output_space, beta_values, labels_classes, row_
     # The segment below constructs two row splits so we can split by segments and then by clusters
     # Maximum number of clusters in each of the segments ∈ Z+^B
     M = tf.reduce_max(labels_classes_ragged_segments_only, axis=-1)+1
+
+
     running_sum_M_exclusive_without_last_element = tf.math.cumsum(M, exclusive=True)
     row_splits_inner = (labels_classes_ragged_segments_only + running_sum_M_exclusive_without_last_element[..., tf.newaxis]).values
     row_splits_inner = tf.cast(row_splits_inner, tf.int32)
@@ -269,10 +271,16 @@ def evaluate_loss_with_test_case(output_space, beta_values, labels_classes, row_
 
 
 
+
 def find_loss_values_naive(N, beta_values_ragged_segments_and_clusters, output_space_ragged_segments_and_clusters, labels_classes_ragged_segments_and_clusters, charge_values_ragged_segments_and_clusters):
 
     # Attractive loss
     b = beta_values_ragged_segments_and_clusters.shape[0]
+
+    print(beta_values_ragged_segments_and_clusters.shape)
+    print(output_space_ragged_segments_and_clusters.shape)
+    print(labels_classes_ragged_segments_and_clusters.shape)
+    print(charge_values_ragged_segments_and_clusters.shape)
 
 
     loss_values = []
@@ -283,6 +291,7 @@ def find_loss_values_naive(N, beta_values_ragged_segments_and_clusters, output_s
         output_space_ragged_clusters = output_space_ragged_segments_and_clusters[i]
         labels_classes_ragged_clusters = labels_classes_ragged_segments_and_clusters[i]
         charge_values_ragged_clusters = charge_values_ragged_segments_and_clusters[i]
+
 
         c = beta_values_ragged_clusters.shape[0]
 
@@ -295,22 +304,29 @@ def find_loss_values_naive(N, beta_values_ragged_segments_and_clusters, output_s
 
         stuff = []
         for k in range(c):
-            charqe_alpha_k_index = tf.argmax(beta_values_ragged_clusters[k])
-            indices.append(charqe_alpha_k_index)
-            max_charges.append(charge_values_ragged_clusters[k, charqe_alpha_k_index])
-            max_x.append(output_space_ragged_clusters[k, charqe_alpha_k_index])
+            if (beta_values_ragged_clusters[k].shape != (0,)):
+                charqe_alpha_k_index = tf.argmax(beta_values_ragged_clusters[k])
+                indices.append(charqe_alpha_k_index)
+                max_charges.append(charge_values_ragged_clusters[k, charqe_alpha_k_index])
+                max_x.append(output_space_ragged_clusters[k, charqe_alpha_k_index])
 
 
-            repulsive_loss_k = tf.maximum(0, 1 - tf.reduce_sum(tf.pow(max_x[k][tf.newaxis, ...] - output_space_ragged_clusters.values, 2), -1))
 
-            repulsive_loss_k = max_charges[k][tf.newaxis,...]*repulsive_loss_k
-            repulsive_loss_k = charge_values_ragged_clusters.values * repulsive_loss_k * tf.cast(tf.not_equal(labels_classes_ragged_clusters.values, k), tf.float32)
-            stuff.append(tf.not_equal(labels_classes_ragged_clusters.values, k)[..., tf.newaxis])
+                repulsive_loss_k = tf.maximum(0, 1 - tf.reduce_sum(tf.pow(max_x[k][tf.newaxis, ...] - output_space_ragged_clusters.values, 2), -1))
 
-            repulsive_loss_k = repulsive_loss_k * float(k != 0)
-            repulsive_loss_k = tf.reduce_sum(repulsive_loss_k)
+                repulsive_loss_k = max_charges[k][tf.newaxis,...]*repulsive_loss_k
+                repulsive_loss_k = charge_values_ragged_clusters.values * repulsive_loss_k * tf.cast(tf.not_equal(labels_classes_ragged_clusters.values, k), tf.float32)
+                stuff.append(tf.not_equal(labels_classes_ragged_clusters.values, k)[..., tf.newaxis])
+
+                repulsive_loss_k = repulsive_loss_k * float(k != 0)
+                repulsive_loss_k = tf.reduce_sum(repulsive_loss_k)
+            else:
+                repulsive_loss_k = 0
+                max_charges.append(0)
+                max_x.append([0,0])
 
             repulsive_losses.append(repulsive_loss_k)
+
 
         repulsive_losses = tf.convert_to_tensor(repulsive_losses)
         # if i==0:
@@ -339,7 +355,9 @@ def find_loss_values_naive(N, beta_values_ragged_segments_and_clusters, output_s
     return tf.reduce_mean(loss_values), tf.reduce_mean(loss_values_repulsive)
 
 
-def evaluate_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
+
+
+def evaluate_loss_old(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
     """
     ####################################################################################################################
     # Implements OBJECT CONDENSATION for ragged tensors
@@ -363,6 +381,7 @@ def evaluate_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0
 
 
     labels_classes = tf.cast(labels_classes, tf.int32)
+
 
     # Initially, the background is -1 we are just making it 0 instead
     labels_classes = labels_classes +1
@@ -411,7 +430,7 @@ def evaluate_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0
     highest_beta_x_ragged = tf.RaggedTensor.from_row_splits(highest_beta_x_ragged, row_splits_outer)
 
     # Convert betas to charge
-    charge_values_ragged_segments_and_clusters = tf.pow(tf.math.atan(beta_values_ragged_segments_and_clusters), 2) + Q_MIN
+    charge_values_ragged_segments_and_clusters = tf.pow(tf.math.atanh(beta_values_ragged_segments_and_clusters), 2) + Q_MIN
     charge_values_ragged_batch_segments = tf.RaggedTensor.from_row_splits(charge_values_ragged_segments_and_clusters.values.values, row_splits)
 
 
@@ -459,11 +478,16 @@ def evaluate_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0
     L_v = V_repulsive + V_attractive
 
 
+
     # TODO: Fix it to exclude the background
     # TODO: done but it hasn't been fully tested as of yet.
     # Test it again just to make sure
-    masque_pour_foreground_showers = tf.cast(tf.RaggedTensor.from_row_splits(max_values_indices_1!=0, row_splits_outer), tf.float32)
-    L_b_first_term = tf.reduce_mean(tf.reduce_sum((1-highest_beta_ragged)*masque_pour_foreground_showers, axis=-1)/tf.reduce_sum(masque_pour_foreground_showers), axis=0)
+    mask_for_foreground_showers = tf.cast(tf.RaggedTensor.from_row_splits(max_values_indices_1!=0, row_splits_outer), tf.float32)
+
+    # print("Vectorized", (1-highest_beta_ragged)*mask_for_foreground_showers)
+    temp = tf.reduce_sum((1-highest_beta_ragged)*mask_for_foreground_showers, axis=-1)/tf.reduce_sum(mask_for_foreground_showers, axis=-1)
+    L_b_first_term = tf.reduce_mean(tf.reduce_sum((1-highest_beta_ragged)*mask_for_foreground_showers, axis=-1)/tf.reduce_sum(mask_for_foreground_showers, axis=-1), axis=0)
+
 
 
     L_b_second_term = tf.reduce_sum(tf.cast(tf.equal(labels_classes_ragged_segments_only, 0), tf.float32)*beta_values_ragged_segments_only, axis=-1)
@@ -476,7 +500,7 @@ def evaluate_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0
 
     loss = S_B*L_b_second_term + L_b_first_term + L_v
 
-    parts = (float(L_b_first_term.numpy()), float(L_b_second_term.numpy()), float(V_attractive.numpy()), float(V_repulsive.numpy()))
+    parts = (float(V_attractive.numpy()), float(V_repulsive.numpy()), float(L_b_first_term.numpy()), float(L_b_second_term.numpy()))
     return loss, parts
 
 
@@ -484,3 +508,114 @@ def remove_zero_length_elements_from_ragged_tensors(row_splits):
     lengths = row_splits[1:] - row_splits[:-1]
     row_splits = tf.concat(([0], tf.cumsum(tf.gather_nd(lengths, tf.where(tf.not_equal(lengths, 0))))), axis=0)
     return row_splits
+
+
+
+def object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
+    """
+    ####################################################################################################################
+    # Implements OBJECT CONDENSATION for ragged tensors
+    # For more, look into the paper
+    # https://arxiv.org/pdf/2002.03605.pdf
+    ####################################################################################################################
+
+    :param output_space: the clustering space (float32)
+    :param beta_values: beta values (float 32)
+    :param labels_classes: Labels: -1 for background [0 - num clusters) for foreground clusters
+    :param row_splits: row splits to construct ragged tensor such that it separates all the batch elements
+    :param Q_MIN: Q_min hyper parameter
+    :param S_B: s_b hyper parameter
+    :return:
+    """
+
+    labels_classes += 1
+
+    batch_size = len(row_splits) - 1
+
+    V_att = tf.constant(0., tf.float32)
+    V_rep = tf.constant(0., tf.float32)
+
+    L_beta_f = tf.constant(0., tf.float32)
+    L_beta_s = tf.constant(0., tf.float32)
+
+
+    for b in range(0, batch_size):
+        x_s = output_space[row_splits[b]:row_splits[b + 1]]
+        classes_s = labels_classes[row_splits[b]:row_splits[b + 1]]
+        beta_s = beta_values[row_splits[b]:row_splits[b + 1]]
+        num_vertices = tf.cast(row_splits[b + 1] - row_splits[b], tf.float32)
+
+        q_s = tf.math.pow(tf.math.atanh(beta_s),2) + Q_MIN
+
+        instance_ids, _ = tf.unique(tf.reshape(classes_s, (-1,)))
+        instance_ids = instance_ids[instance_ids != 0]
+        instance_ids = tf.sort(instance_ids)
+
+        V_att_segment = tf.constant(0., tf.float32)
+        V_rep_segment = tf.constant(0., tf.float32)
+        L_beta_f_segment = tf.constant(0., tf.float32)
+
+
+        beta_maxs = []
+
+        for id in instance_ids:
+            in_mask = classes_s == id
+            beta_this_instance = beta_s[in_mask]
+            q_this_instance = q_s[in_mask]
+            x_this_instance = x_s[in_mask]
+
+            h = tf.argmax(q_this_instance)
+            x_max = x_this_instance[h]
+            q_max = q_this_instance[h]
+            beta_max = beta_this_instance[h]
+
+            V_attractive = tf.reduce_sum(tf.pow(x_this_instance - x_max, 2), axis=-1) * q_max * q_this_instance
+            V_attractive = tf.reduce_sum(V_attractive)
+            V_att_segment += V_attractive
+
+            rep_mask = classes_s != id
+            x_other_instances = x_s[rep_mask]
+            q_other_instances = q_s[rep_mask]
+
+            V_repulsive = tf.maximum(0, 1 - tf.reduce_sum(tf.pow(x_other_instances - x_max, 2), axis=-1)) * q_max * q_other_instances
+            V_repulsive = tf.reduce_sum(V_repulsive)
+            V_rep_segment += V_repulsive
+            L_beta_f_segment += 1 - beta_max
+
+            beta_maxs.append(float(beta_max.numpy()))
+
+        L_beta_f_segment = L_beta_f_segment / float(len(instance_ids))
+
+        betas_noise = beta_s[classes_s==0]
+        if len(betas_noise) > 0:
+            L_beta_s_segment = tf.reduce_mean(betas_noise) * S_B
+        else:
+            L_beta_s_segment = tf.constant(0., tf.float32)
+
+        L_beta_f += L_beta_f_segment
+        L_beta_s += L_beta_s_segment
+
+        V_att += V_att_segment / num_vertices
+        V_rep += V_rep_segment / num_vertices
+
+    batch_size = batch_size
+    V_att = V_att / batch_size
+    V_rep = V_rep / batch_size
+    L_beta_s = L_beta_s / batch_size
+    L_beta_f = L_beta_f / batch_size
+
+    losses = float(V_att.numpy()), float(V_rep.numpy()), float(L_beta_f.numpy()), float(L_beta_s.numpy())
+
+
+    return V_att*10 + V_rep*10 + L_beta_s + L_beta_f, losses
+
+
+
+
+
+
+
+
+
+
+
