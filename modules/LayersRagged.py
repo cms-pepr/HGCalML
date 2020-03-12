@@ -21,16 +21,18 @@ class RaggedConstructTensor(keras.layers.Layer):
         self.num_features = -1
 
     def build(self, input_shape):
-        data_shape = input_shape[0]
-        row_splits_shape = input_shape[1]
-
-        # assert (data_shape[0]== row_splits_shape[0])
-        self.num_features = data_shape[1]
         super(RaggedConstructTensor, self).build(input_shape)
 
     def call(self, x):
         x_data = x[0]
         x_row_splits = x[1]
+
+        data_shape = x_data.shape
+        # assert (data_shape[0]== row_splits_shape[0])
+        self.num_features = data_shape[1]
+
+        if len(x_row_splits.shape) == 2:
+            x_row_splits = x_row_splits[:,0]
 
         row_splits = tf.reshape(x_row_splits, (-1,))
         batch_size_plus_1 = tf.cast(row_splits[-1], tf.int32)
@@ -288,4 +290,87 @@ class RaggedGlobalExchange(keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         data_input_shape = input_shape[0]
         return None, data_input_shape[1]*2
+
+
+
+class RaggedEdgeConvLayer(keras.layers.Layer):
+
+    def __init__(self, num_neighbors=30,
+                          mpl_layers=[64, 64, 64],
+                          aggregation_function=tf.reduce_max, edge_activation=None, **kwargs):
+        super(RaggedEdgeConvLayer, self).__init__(**kwargs)
+
+        self.num_neighbors = num_neighbors
+        self.aggregation_function = aggregation_function
+        self.edge_activation=edge_activation
+
+
+        dense_layers = []
+        for f in mpl_layers:
+            dense_layers+= [tf.keras.layers.Dense(f, activation=tf.nn.relu)]
+
+        self.mpl_layers = dense_layers
+
+
+
+    def compute_output_shape(self, input_shape):
+        data_input_shape = input_shape[0]
+        return (data_input_shape[0], self.mpl_layers[-1])
+
+
+
+    def call(self, x):
+
+        vertices_in, rowsplits = x
+        rowsplits = tf.cast(rowsplits, tf.int32)
+
+        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.num_neighbors+1), row_splits=rowsplits,
+                                                          data=vertices_in, add_splits=True)  # [SV, N+1]
+        ragged_split_added_indices = ragged_split_added_indices[:, 1:][..., tf.newaxis]  # [SV, N]
+
+        neighbor_space = tf.gather_nd(vertices_in, ragged_split_added_indices)
+
+
+        expanded_trans_space = tf.expand_dims(vertices_in, axis=1)
+        expanded_trans_space = tf.tile(expanded_trans_space, [1, self.num_neighbors, 1])
+        diff = expanded_trans_space - neighbor_space
+        edge = tf.concat([expanded_trans_space, diff], axis=-1)
+
+
+        for f in self.mpl_layers:
+            edge = f(edge)
+
+        if self.edge_activation is not None:
+            edge = self.edge_activation(edge)
+
+
+
+        vertex_out = self.aggregation_function(edge, axis=1)
+
+        return vertex_out
+
+        0/0
+
+        print(vertices_in.shape)
+        0/0
+        trans_space = vertices_in
+        indexing, _ = indexing_tensor(trans_space, self.num_neighbors)
+        # change indexing to be not self-referential
+        neighbour_space = tf.gather_nd(vertices_in, indexing)
+
+        expanded_trans_space = tf.expand_dims(trans_space, axis=2)
+        expanded_trans_space = tf.tile(expanded_trans_space, [1, 1, self.num_neighbors, 1])
+
+        diff = expanded_trans_space - neighbour_space
+        edge = tf.concat([expanded_trans_space, diff], axis=-1)
+
+        for f in self.mpl_layers:
+            edge = tf.layers.dense(edge, f, activation=tf.nn.relu)
+
+        if self.edge_activation is not None:
+            edge = self.edge_activation(edge)
+
+        vertex_out = self.aggregation_function(edge, axis=2)
+
+        return vertex_out
 
