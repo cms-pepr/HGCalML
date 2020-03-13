@@ -419,9 +419,9 @@ def null_loss(truth, pred):
 
 def full_min_beta_loss(truth, pred, rowsplits):
     
-    print('truth',truth)
-    print('pred',pred)
-    print('rowsplits',rowsplits)
+    #print('truth',truth)
+    #print('pred',pred)
+    #print('rowsplits',rowsplits)
     
     rowsplits = tf.cast(rowsplits, tf.int64)#just for first loss evaluation from stupid keras
     
@@ -472,7 +472,8 @@ def min_beta_loss_rowsplits(truth, pred):
     if subloss_passed_tensor is not None: #passed_tensor is actual truth
         temptensor=subloss_passed_tensor
         subloss_passed_tensor=None
-        print('calling min_beta_loss_rowsplits')
+        #print('nbatch',temptensor.shape[0])
+        #print('calling min_beta_loss_rowsplits', temptensor)
         return full_min_beta_loss(temptensor, pred, truth)
         
     subloss_passed_tensor = truth #=rs
@@ -484,7 +485,7 @@ def min_beta_loss_truth(truth, pred):
     if subloss_passed_tensor is not None: #passed_tensor is rs from other function
         temptensor=subloss_passed_tensor
         subloss_passed_tensor=None
-        print('calling min_beta_loss_truth')
+        #print('calling min_beta_loss_truth', temptensor)
         return full_min_beta_loss(truth, pred, temptensor)
 
     subloss_passed_tensor = truth #=rs

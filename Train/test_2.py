@@ -6,6 +6,7 @@ import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
 from LayersRagged import RaggedConstructTensor, RaggedGravNet, RaggedGlobalExchange, RaggedGravNet_simple
 from tensorflow.keras.layers import Dense, Concatenate
+from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
 
@@ -22,14 +23,10 @@ num_vertices = 1000
 n_neighbours = 40
 passing_operations = 2
 
-class simple_model(tf.keras.models.Model):
-    def __init__(self,keras_inputs,stuff=1):
+class simple_model(DJCKerasModel):
+    def __init__(self,stuff=1):
         
-        print(keras_inputs[0].shape)
-        
-        super(simple_model, self).__init__(dynamic=False)
-        
-        self.inshapes=[i.shape for i in keras_inputs]
+        super(simple_model, self).__init__()
         
         self.dense = Dense(128)
         
@@ -39,8 +36,14 @@ class simple_model(tf.keras.models.Model):
         self.phi     = Dense(1, activation=None)
         self.ccoords = Dense(2, activation=None)
         
+        self.ncalls=0
+        
     def call(self, Inputs):
-        print(Inputs)
+        #print(Inputs)
+        
+        print('call ',self.ncalls)
+        self.ncalls+=1
+        
         x = self.dense(Inputs[0])
         
         x = Concatenate()([
@@ -52,9 +55,27 @@ class simple_model(tf.keras.models.Model):
         
         return [x,x]
         
-    def build(self,input_shapes):
-        super(simple_model,self).build(self.inshapes)
+
+def ser_simple_model(Inputs):
     
+    
+    x = Dense(128)(Inputs[0])
+    
+    beta    = Dense(1, activation='sigmoid') (x) 
+    energy  = Dense(1, activation=None)      (x) 
+    eta     = Dense(1, activation=None)      (x) 
+    phi     = Dense(1, activation=None)      (x) 
+    ccoords = Dense(2, activation=None)      (x) 
+
+    x = Concatenate()([
+        beta    ,
+        energy  ,
+        eta     ,
+        phi     ,
+        ccoords ])
+        
+    return Model(inputs=Inputs, outputs=[x,x])
+
 
 def gravnet_model(Inputs, feature_dropout=-1.):
     nregressions=5
@@ -129,24 +150,23 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     
 
-train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
+train=training_base(testrun=True,resumeSilently=True,renewtokens=False)
 
 
 from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_loss, null_loss
 
-train.setModel(simple_model)
+#train.setDJCKerasModel(simple_model)
+train.setModel(ser_simple_model)
 #train.keras_model.dynamic=True
-train.keras_model.build(None)
 train.compileModel(learningrate=1e-3,
                    loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
 
 print(train.keras_model.summary())
-train.keras_model.run_eagerly = True
 
 
-nbatch=30000#**2 #this will be an upper limit on vertices per batch
+nbatch=300000#**2 #this will be an upper limit on vertices per batch
 
 verbosity=2
 import os
@@ -164,17 +184,30 @@ import os
 #             on_epoch_end=False,
 #             use_event=2+i)
 #         )
+#train.saveModel("testmodel.h5")
+
+#train.loadModel("TESTTF115_4/testmodel.h5")
+
+print(train.keras_model.summary())
+#exit()
 
 model,history = train.trainModel(nepochs=1, 
+                                 run_eagerly=True,
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,)
 
+
+
+
+exit()
+
 train.change_learning_rate(2e-4)
 
 model,history = train.trainModel(nepochs=5+1, 
                                  batchsize=nbatch,
+                                 run_eagerly=True,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,)
@@ -182,6 +215,7 @@ model,history = train.trainModel(nepochs=5+1,
 train.change_learning_rate(1e-4)
 model,history = train.trainModel(nepochs=99+5+1, 
                                  batchsize=nbatch,
+                                 run_eagerly=True,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=verbosity,)
