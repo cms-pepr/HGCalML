@@ -20,6 +20,26 @@ num_vertices = 1000
 n_neighbours = 40
 passing_operations = 2
 
+def simple_model(Inputs, feature_dropout=-1.):
+    
+    x = Inputs[0]
+    x = Dense(128)(x)
+    beta = Dense(1, activation='sigmoid')(x)
+    energy = Dense(1, activation=None)(x)
+    eta = Dense(1, activation=None)(x)
+    phi = Dense(1, activation=None)(x)
+    ccoords = Dense(2, activation=None)(x)
+
+    x = Concatenate()([beta,energy,eta,phi,ccoords])
+
+    # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
+    predictions = x
+
+    # outputs = tf.tuple([predictions, x_row_splits])
+
+    return Model(inputs=Inputs, outputs=[predictions, predictions])
+    
+
 def gravnet_model(Inputs, feature_dropout=-1.):
     nregressions=5
 
@@ -98,7 +118,7 @@ train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
 
 from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_loss, null_loss
 
-train.setModel(gravnet_model)
+train.setModel(simple_model)
     
 train.compileModel(learningrate=1e-3,
                    loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)

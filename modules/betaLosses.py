@@ -471,6 +471,7 @@ def min_beta_loss_rowsplits(truth, pred):
     global subloss_passed_tensor
     if subloss_passed_tensor is not None: #passed_tensor is actual truth
         return full_min_beta_loss(subloss_passed_tensor, pred, truth)
+        subloss_passed_tensor=None
     subloss_passed_tensor = truth #=rs
     return  0.*tf.reduce_mean(pred)
 
@@ -479,6 +480,7 @@ def min_beta_loss_truth(truth, pred):
     global subloss_passed_tensor
     if subloss_passed_tensor is not None: #passed_tensor is rs from other function
         return full_min_beta_loss(truth, pred, subloss_passed_tensor)
+        subloss_passed_tensor=None
     subloss_passed_tensor = truth #=rs
     return  0.*tf.reduce_mean(pred)
 
