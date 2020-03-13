@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import tensorflow as tf
 # from K import Layer
 import numpy as np
@@ -9,7 +11,7 @@ from tensorflow.keras import Model
 
 from ragged_callbacks import plotEventDuringTraining
 
-tf.compat.v1.disable_eager_execution()
+#tf.compat.v1.disable_eager_execution()
 
 
 
@@ -20,24 +22,38 @@ num_vertices = 1000
 n_neighbours = 40
 passing_operations = 2
 
-def simple_model(Inputs, feature_dropout=-1.):
-    
-    x = Inputs[0]
-    x = Dense(128)(x)
-    beta = Dense(1, activation='sigmoid')(x)
-    energy = Dense(1, activation=None)(x)
-    eta = Dense(1, activation=None)(x)
-    phi = Dense(1, activation=None)(x)
-    ccoords = Dense(2, activation=None)(x)
-
-    x = Concatenate()([beta,energy,eta,phi,ccoords])
-
-    # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
-    predictions = x
-
-    # outputs = tf.tuple([predictions, x_row_splits])
-
-    return Model(inputs=Inputs, outputs=[predictions, predictions])
+class simple_model(tf.keras.models.Model):
+    def __init__(self,keras_inputs,stuff=1):
+        
+        print(keras_inputs[0].shape)
+        
+        super(simple_model, self).__init__(dynamic=False)
+        
+        self.inshapes=[i.shape for i in keras_inputs]
+        
+        self.dense = Dense(128)
+        
+        self.beta    = Dense(1, activation='sigmoid')
+        self.energy  = Dense(1, activation=None)
+        self.eta     = Dense(1, activation=None)
+        self.phi     = Dense(1, activation=None)
+        self.ccoords = Dense(2, activation=None)
+        
+    def call(self, Inputs):
+        print(Inputs)
+        x = self.dense(Inputs[0])
+        
+        x = Concatenate()([
+        self.beta    (x),
+        self.energy  (x),
+        self.eta     (x),
+        self.phi     (x),
+        self.ccoords (x)])
+        
+        return [x,x]
+        
+    def build(self,input_shapes):
+        super(simple_model,self).build(self.inshapes)
     
 
 def gravnet_model(Inputs, feature_dropout=-1.):
@@ -119,12 +135,15 @@ train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
 from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_loss, null_loss
 
 train.setModel(simple_model)
-    
+#train.keras_model.dynamic=True
+train.keras_model.build(None)
 train.compileModel(learningrate=1e-3,
                    loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
+
 print(train.keras_model.summary())
+train.keras_model.run_eagerly = True
 
 
 nbatch=30000#**2 #this will be an upper limit on vertices per batch
