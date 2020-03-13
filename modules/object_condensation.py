@@ -511,7 +511,7 @@ def remove_zero_length_elements_from_ragged_tensors(row_splits):
 
 
 
-def object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
+def indiv_object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
     """
     ####################################################################################################################
     # Implements OBJECT CONDENSATION for ragged tensors
@@ -607,10 +607,13 @@ def object_condensation_loss(output_space, beta_values, labels_classes, row_spli
     losses = float(V_att.numpy()), float(V_rep.numpy()), float(L_beta_f.numpy()), float(L_beta_s.numpy())
 
 
+    return V_att, V_rep, L_beta_s, L_beta_f, losses
+
+def object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
+    V_att, V_rep, L_beta_s, L_beta_f, losses = indiv_object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN, S_B)
+    
     return V_att*10 + V_rep*10 + L_beta_s + L_beta_f, losses
-
-
-
+    
 
 
 

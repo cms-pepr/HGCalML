@@ -23,38 +23,6 @@ num_vertices = 1000
 n_neighbours = 40
 passing_operations = 2
 
-class simple_model(DJCKerasModel):
-    def __init__(self,stuff=1):
-        
-        super(simple_model, self).__init__()
-        
-        self.dense = Dense(128)
-        
-        self.beta    = Dense(1, activation='sigmoid')
-        self.energy  = Dense(1, activation=None)
-        self.eta     = Dense(1, activation=None)
-        self.phi     = Dense(1, activation=None)
-        self.ccoords = Dense(2, activation=None)
-        
-        self.ncalls=0
-        
-    def call(self, Inputs):
-        #print(Inputs)
-        
-        print('call ',self.ncalls)
-        self.ncalls+=1
-        
-        x = self.dense(Inputs[0])
-        
-        x = Concatenate()([
-        self.beta    (x),
-        self.energy  (x),
-        self.eta     (x),
-        self.phi     (x),
-        self.ccoords (x)])
-        
-        return [x,x]
-        
 
 def ser_simple_model(Inputs):
     
@@ -153,22 +121,22 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 train=training_base(testrun=True,resumeSilently=True,renewtokens=False)
 
 
-from Losses import min_beta_loss_rowsplits, min_beta_loss_truth, pre_training_loss, null_loss
+from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 
 #train.setDJCKerasModel(simple_model)
 train.setModel(ser_simple_model)
 #train.keras_model.dynamic=True
 train.compileModel(learningrate=1e-3,
-                   loss=[min_beta_loss_truth,min_beta_loss_rowsplits],#fraction_loss)
+                   loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
 
 print(train.keras_model.summary())
 
 
-nbatch=300000#**2 #this will be an upper limit on vertices per batch
+nbatch=100000#**2 #this will be an upper limit on vertices per batch
 
-verbosity=2
+verbosity=1
 import os
 
 # callbacks=[]
@@ -188,7 +156,6 @@ import os
 
 #train.loadModel("TESTTF115_4/testmodel.h5")
 
-print(train.keras_model.summary())
 #exit()
 
 model,history = train.trainModel(nepochs=1, 

@@ -417,42 +417,33 @@ def pre_training_loss(truth, pred):
 def null_loss(truth, pred):
     return 0*tf.reduce_mean(pred)+0*tf.reduce_mean(truth)
 
-def full_min_beta_loss(truth, pred, rowsplits):
+from LayersRagged import RaggedConstructTensor
+ragged_constructor=RaggedConstructTensor()
+def full_obj_cond_loss(truth, pred, rowsplits):
     
-    #print('truth',truth)
-    #print('pred',pred)
-    #print('rowsplits',rowsplits)
+    if truth.shape[0] is None: 
+        return tf.constant(0., tf.float32)
     
+    from object_condensation import indiv_object_condensation_loss
+
     rowsplits = tf.cast(rowsplits, tf.int64)#just for first loss evaluation from stupid keras
     
-    beta_min = 1e-2
-    
+
     d = create_loss_dict(truth, pred)
-    #attractive_loss, rep_loss, min_beta_loss= get_arb_loss(d['predCCoords'], 
-    #                                                       rowsplits, 
-    #                                                       d['predBeta'], 
-    #                                                       d['truthIsNoise'], 
-    #                                                       d['truthHitAssignementIdx'],
-    #                                                       beta_min=beta_min)
     
-    attractive_loss, rep_loss, min_beta_loss = 0,0,0 #get_neighbour_loss(64,
-    #                                                              d['predCCoords'], 
-    #                                                       rowsplits, 
-    #                                                       d['predBeta'], 
-    #                                                       d['truthIsNoise'], 
-    #                                                       d['truthHitAssignementIdx'],
-    #                                                       beta_min=beta_min)
+    classes, row_splits = d['truthHitAssignementIdx'], rowsplits[ : rowsplits[-1,0],0]
     
-    onedivsigma = get_one_over_sigma(d['predBeta'],beta_min)
-    noise_loss  = tf.reduce_mean((d['truthIsNoise']*d['predBeta'])**2)
+    attractive_loss, rep_loss, min_beta_loss, noise_loss, _ = indiv_object_condensation_loss(d['predCCoords'], 
+                                                                                             d['predBeta'], 
+                                                                                             classes, 
+                                                                                             row_splits, 
+                                                                                             Q_MIN=1, 
+                                                                                             S_B=1.)
     
-    energy_loss =  tf.reduce_mean(onedivsigma*(d['predEnergy'] - d['truthHitAssignedEnergies'])**2/(d['truthHitAssignedEnergies']+0.1))
-    pos_loss = 0 #tf.reduce_mean(
-    #    onedivsigma*(\
-    #    (d['predEta'] - d['truthHitAssignedEtas'])**2 + \
-    #    (d['predPhi'] - d['truthHitAssignedPhis'])**2 ))
     
-    loss = attractive_loss + rep_loss +  10.*min_beta_loss +  0.1*noise_loss + 0.0001 * energy_loss + 0.0001 * pos_loss
+    
+    print(attractive_loss, rep_loss, min_beta_loss, noise_loss)
+    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss 
     #loss = tf.Print(loss,[loss,
     #                     attractive_loss,
     #                     rep_loss,
@@ -467,26 +458,26 @@ def full_min_beta_loss(truth, pred, rowsplits):
     
     
 subloss_passed_tensor=None
-def min_beta_loss_rowsplits(truth, pred):
+def obj_cond_loss_rowsplits(truth, pred):
     global subloss_passed_tensor
+    print('>>>>>>>>>>> nbatch',truth.shape[0])
     if subloss_passed_tensor is not None: #passed_tensor is actual truth
         temptensor=subloss_passed_tensor
         subloss_passed_tensor=None
-        #print('nbatch',temptensor.shape[0])
         #print('calling min_beta_loss_rowsplits', temptensor)
-        return full_min_beta_loss(temptensor, pred, truth)
+        return full_obj_cond_loss(temptensor, pred, truth)
         
     subloss_passed_tensor = truth #=rs
     return  0.*tf.reduce_mean(pred)
 
 
-def min_beta_loss_truth(truth, pred):
+def obj_cond_loss_truth(truth, pred):
     global subloss_passed_tensor
     if subloss_passed_tensor is not None: #passed_tensor is rs from other function
         temptensor=subloss_passed_tensor
         subloss_passed_tensor=None
         #print('calling min_beta_loss_truth', temptensor)
-        return full_min_beta_loss(truth, pred, temptensor)
+        return full_obj_cond_loss(truth, pred, temptensor)
 
     subloss_passed_tensor = truth #=rs
     return  0.*tf.reduce_mean(pred)

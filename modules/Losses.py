@@ -10,9 +10,9 @@ global_loss_list = {}
 import tensorflow as tf
 
 ##### prototype for merging loss function
-from betaLosses import min_beta_loss_rowsplits , min_beta_loss_truth , pre_training_loss, null_loss
-global_loss_list['min_beta_loss_rowsplits'] = min_beta_loss_rowsplits
-global_loss_list['min_beta_loss_truth'] = min_beta_loss_truth
+from betaLosses import obj_cond_loss_rowsplits , obj_cond_loss_truth , pre_training_loss, null_loss
+global_loss_list['obj_cond_loss_truth'] = obj_cond_loss_truth
+global_loss_list['obj_cond_loss_rowsplits'] = obj_cond_loss_rowsplits
 global_loss_list['pre_training_loss'] = pre_training_loss
 global_loss_list['null_loss'] = null_loss
 
