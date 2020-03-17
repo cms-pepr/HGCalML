@@ -510,7 +510,7 @@ def remove_zero_length_elements_from_ragged_tensors(row_splits):
     return row_splits
 
 
-
+@tf.function
 def indiv_object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
     """
     ####################################################################################################################
@@ -538,6 +538,7 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
     L_beta_f = tf.constant(0., tf.float32)
     L_beta_s = tf.constant(0., tf.float32)
 
+    beta_values = tf.clip_by_value(beta_values, 0, 1.-1e-5)
 
     for b in range(0, batch_size):
         x_s = output_space[row_splits[b]:row_splits[b + 1]]
@@ -556,8 +557,9 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
         L_beta_f_segment = tf.constant(0., tf.float32)
 
 
-        beta_maxs = []
+        #beta_maxs = []
 
+        #possibly this could be vectorised in a simple straight-forward way
         for id in instance_ids:
             in_mask = classes_s == id
             beta_this_instance = beta_s[in_mask]
@@ -566,10 +568,11 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
 
             h = tf.argmax(q_this_instance)
             x_max = x_this_instance[h]
+            
             q_max = q_this_instance[h]
             beta_max = beta_this_instance[h]
 
-            V_attractive = tf.reduce_sum(tf.pow(x_this_instance - x_max, 2), axis=-1) * q_max * q_this_instance
+            V_attractive = tf.reduce_sum((x_this_instance - x_max)**2,axis=-1) * q_max * q_this_instance
             V_attractive = tf.reduce_sum(V_attractive)
             V_att_segment += V_attractive
 
@@ -577,12 +580,12 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
             x_other_instances = x_s[rep_mask]
             q_other_instances = q_s[rep_mask]
 
-            V_repulsive = tf.maximum(0, 1 - tf.reduce_sum(tf.pow(x_other_instances - x_max, 2), axis=-1)) * q_max * q_other_instances
+            V_repulsive = tf.maximum(0., 1. - tf.reduce_sum((x_other_instances - x_max)**2, axis=-1)) * q_max * q_other_instances
             V_repulsive = tf.reduce_sum(V_repulsive)
             V_rep_segment += V_repulsive
             L_beta_f_segment += 1 - beta_max
 
-            beta_maxs.append(float(beta_max.numpy()))
+            #beta_maxs.append(float(beta_max.numpy()))
 
         L_beta_f_segment = L_beta_f_segment / float(len(instance_ids))
 
@@ -595,24 +598,24 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
         L_beta_f += L_beta_f_segment
         L_beta_s += L_beta_s_segment
 
-        V_att += V_att_segment / num_vertices
-        V_rep += V_rep_segment / num_vertices
+        V_att += V_att_segment / (num_vertices + 1e-5)
+        V_rep += V_rep_segment / (num_vertices + 1e-5)
 
-    batch_size = batch_size
-    V_att = V_att / batch_size
-    V_rep = V_rep / batch_size
-    L_beta_s = L_beta_s / batch_size
-    L_beta_f = L_beta_f / batch_size
-
-    losses = float(V_att.numpy()), float(V_rep.numpy()), float(L_beta_f.numpy()), float(L_beta_s.numpy())
+    batch_size = float(batch_size)
+    V_att = V_att / (batch_size + 1e-5)
+    V_rep = V_rep / (batch_size + 1e-5)
+    L_beta_s = L_beta_s / (batch_size + 1e-5)
+    L_beta_f = L_beta_f / (batch_size + 1e-5)
 
 
-    return V_att, V_rep, L_beta_s, L_beta_f, losses
+    return V_att, V_rep, L_beta_s, L_beta_f
 
 def object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
-    V_att, V_rep, L_beta_s, L_beta_f, losses = indiv_object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN, S_B)
+    V_att, V_rep, L_beta_s, L_beta_f  = indiv_object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN, S_B)
     
-    return V_att*10 + V_rep*10 + L_beta_s + L_beta_f, losses
+    losses = float(V_att.numpy()), float(V_rep.numpy()), float(L_beta_f.numpy()), float(L_beta_s.numpy())
+    
+    return V_att + V_rep + L_beta_s + L_beta_f, losses
     
 
 
