@@ -126,7 +126,7 @@ from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 #train.setDJCKerasModel(simple_model)
 train.setModel(ser_simple_model)
 #train.keras_model.dynamic=True
-train.compileModel(learningrate=1e-3,
+train.compileModel(learningrate=1e-2,
                    loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
@@ -134,9 +134,9 @@ train.compileModel(learningrate=1e-3,
 print(train.keras_model.summary())
 
 
-nbatch=100000#**2 #this will be an upper limit on vertices per batch
+nbatch=50000#**2 #this will be an upper limit on vertices per batch
 
-verbosity=1
+verbosity=2
 import os
 
 # callbacks=[]

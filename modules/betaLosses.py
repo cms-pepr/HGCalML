@@ -433,7 +433,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     
     classes, row_splits = d['truthHitAssignementIdx'], rowsplits[ : rowsplits[-1,0],0]
     
-    attractive_loss, rep_loss, min_beta_loss, noise_loss, _ = indiv_object_condensation_loss(d['predCCoords'], 
+    attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss(d['predCCoords'], 
                                                                                              d['predBeta'], 
                                                                                              classes, 
                                                                                              row_splits, 
@@ -442,7 +442,10 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     
     
     
-    print(attractive_loss, rep_loss, min_beta_loss, noise_loss)
+    print('attractive_loss',attractive_loss.numpy(), 
+          'rep_loss', rep_loss.numpy(), 
+          'min_beta_loss', min_beta_loss.numpy(), 
+          'noise_loss' , noise_loss.numpy())
     loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss 
     #loss = tf.Print(loss,[loss,
     #                     attractive_loss,
@@ -460,7 +463,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
 subloss_passed_tensor=None
 def obj_cond_loss_rowsplits(truth, pred):
     global subloss_passed_tensor
-    print('>>>>>>>>>>> nbatch',truth.shape[0])
+    #print('>>>>>>>>>>> nbatch',truth.shape[0])
     if subloss_passed_tensor is not None: #passed_tensor is actual truth
         temptensor=subloss_passed_tensor
         subloss_passed_tensor=None

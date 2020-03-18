@@ -5,6 +5,8 @@ cd $HGCALML
 git submodule init
 git submodule update
 
+rm -f $HGCALML/modules/ragged_knn_kernel.so
+rm -rf  $HGCALML/RaggedKnn/cub-1.8.0 $HGCALML/RaggedKnn/cub
 #compile submodule
 cd RaggedKnn && \
     git checkout 6214a261129417f41089b9373d1c0c9acc0d2ca5 && \

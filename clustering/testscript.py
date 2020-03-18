@@ -1,4 +1,5 @@
 import tensorflow as tf
+import setGPU
 import numpy as np
 import matplotlib.pyplot as plt
 from object_condensation import object_condensation_loss
@@ -62,6 +63,7 @@ row_splits = tf.convert_to_tensor([0, n_points])
 row_splits = tf.cast(row_splits, tf.int32)
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 plt.scatter(px, py, s=2, c=classes, cmap=plt.get_cmap('Dark2'))
+#exit()
 plt.show()
 def save_plot_to_file(it, clustering_values, classes, input, lovasz):
     plt.cla()

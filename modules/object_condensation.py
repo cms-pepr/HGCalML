@@ -510,7 +510,54 @@ def remove_zero_length_elements_from_ragged_tensors(row_splits):
     return row_splits
 
 
+#make this parallel over all instance ids
 @tf.function
+def _instance_loss(id,
+                   x_s, classes_s, beta_s, num_vertices, q_s, 
+                   V_att_segment, V_rep_segment, L_beta_f_segment):
+    
+    
+    in_mask = classes_s == id
+    beta_this_instance = beta_s[in_mask]
+    q_this_instance = q_s[in_mask]
+    x_this_instance = x_s[in_mask]
+
+    h = tf.argmax(q_this_instance)
+    x_max = x_this_instance[h]
+    
+    q_max = q_this_instance[h]
+    beta_max = beta_this_instance[h]
+
+    V_attractive = tf.reduce_sum((x_this_instance - x_max)**2,axis=-1) * q_max * q_this_instance
+    V_attractive = tf.reduce_sum(V_attractive)
+    V_att_segment += V_attractive
+
+    rep_mask = classes_s != id
+    x_other_instances = x_s[rep_mask]
+    q_other_instances = q_s[rep_mask]
+
+    V_repulsive = tf.maximum(0., 1. - tf.reduce_sum((x_other_instances - x_max)**2, axis=-1)) * q_max * q_other_instances
+    V_repulsive = tf.reduce_sum(V_repulsive)
+    V_rep_segment += V_repulsive
+    L_beta_f_segment += 1. - beta_max
+        
+    
+    return V_att_segment, V_rep_segment, L_beta_f_segment
+
+#@tf.function
+def _instance_loop(instance_ids,
+                   x_s, classes_s, beta_s, num_vertices, q_s, 
+                   V_att_segment, V_rep_segment, L_beta_f_segment):
+    
+    for i in tf.range(instance_ids.shape[0]):
+        id = instance_ids[i]
+        V_att_segment, V_rep_segment, L_beta_f_segment = _instance_loss(id,
+               x_s, classes_s, beta_s, num_vertices, q_s, 
+               V_att_segment, V_rep_segment, L_beta_f_segment)
+        
+    return V_att_segment, V_rep_segment, L_beta_f_segment
+
+#@tf.function
 def indiv_object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
     """
     ####################################################################################################################
@@ -530,7 +577,7 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
 
     labels_classes += 1
 
-    batch_size = len(row_splits) - 1
+    batch_size = row_splits.shape[0] - 1
 
     V_att = tf.constant(0., tf.float32)
     V_rep = tf.constant(0., tf.float32)
@@ -540,7 +587,7 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
 
     beta_values = tf.clip_by_value(beta_values, 0, 1.-1e-5)
 
-    for b in range(0, batch_size):
+    for b in tf.range(batch_size):
         x_s = output_space[row_splits[b]:row_splits[b + 1]]
         classes_s = labels_classes[row_splits[b]:row_splits[b + 1]]
         beta_s = beta_values[row_splits[b]:row_splits[b + 1]]
@@ -558,34 +605,43 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
 
 
         #beta_maxs = []
+        
+        #for id in instance_ids:
+        #    V_att_segment, V_rep_segment, L_beta_f_segment = _instance_loss(id,
+        #           x_s, classes_s, beta_s, num_vertices, q_s, 
+        #           V_att_segment, V_rep_segment, L_beta_f_segment)
+        
+        V_att_segment, V_rep_segment, L_beta_f_segment = _instance_loop(instance_ids,
+                   x_s, classes_s, beta_s, num_vertices, q_s, 
+                   V_att_segment, V_rep_segment, L_beta_f_segment)
 
         #possibly this could be vectorised in a simple straight-forward way
-        for id in instance_ids:
-            in_mask = classes_s == id
-            beta_this_instance = beta_s[in_mask]
-            q_this_instance = q_s[in_mask]
-            x_this_instance = x_s[in_mask]
-
-            h = tf.argmax(q_this_instance)
-            x_max = x_this_instance[h]
-            
-            q_max = q_this_instance[h]
-            beta_max = beta_this_instance[h]
-
-            V_attractive = tf.reduce_sum((x_this_instance - x_max)**2,axis=-1) * q_max * q_this_instance
-            V_attractive = tf.reduce_sum(V_attractive)
-            V_att_segment += V_attractive
-
-            rep_mask = classes_s != id
-            x_other_instances = x_s[rep_mask]
-            q_other_instances = q_s[rep_mask]
-
-            V_repulsive = tf.maximum(0., 1. - tf.reduce_sum((x_other_instances - x_max)**2, axis=-1)) * q_max * q_other_instances
-            V_repulsive = tf.reduce_sum(V_repulsive)
-            V_rep_segment += V_repulsive
-            L_beta_f_segment += 1 - beta_max
-
-            #beta_maxs.append(float(beta_max.numpy()))
+        #for id in instance_ids:
+        #    in_mask = classes_s == id
+        #    beta_this_instance = beta_s[in_mask]
+        #    q_this_instance = q_s[in_mask]
+        #    x_this_instance = x_s[in_mask]
+        #
+        #    h = tf.argmax(q_this_instance)
+        #    x_max = x_this_instance[h]
+        #    
+        #    q_max = q_this_instance[h]
+        #    beta_max = beta_this_instance[h]
+        #
+        #    V_attractive = tf.reduce_sum((x_this_instance - x_max)**2,axis=-1) * q_max * q_this_instance
+        #    V_attractive = tf.reduce_sum(V_attractive)
+        #    V_att_segment += V_attractive
+        #
+        #    rep_mask = classes_s != id
+        #    x_other_instances = x_s[rep_mask]
+        #    q_other_instances = q_s[rep_mask]
+        #
+        #    V_repulsive = tf.maximum(0., 1. - tf.reduce_sum((x_other_instances - x_max)**2, axis=-1)) * q_max * q_other_instances
+        #    V_repulsive = tf.reduce_sum(V_repulsive)
+        #    V_rep_segment += V_repulsive
+        #    L_beta_f_segment += 1 - beta_max
+        #
+        #    #beta_maxs.append(float(beta_max.numpy()))
 
         L_beta_f_segment = L_beta_f_segment / float(len(instance_ids))
 
