@@ -16,14 +16,6 @@ from ragged_callbacks import plotEventDuringTraining
 
 
 
-
-num_features = 3
-num_vertices_times_batch = 10000
-num_vertices = 1000
-n_neighbours = 40
-passing_operations = 2
-
-
 def ser_simple_model(Inputs):
     
     
@@ -48,7 +40,7 @@ def ser_simple_model(Inputs):
 def gravnet_model(Inputs, feature_dropout=-1.):
     nregressions=5
 
-    n_gravnet_layers = 4
+    
     # I_data = tf.keras.Input(shape=(num_features,), dtype="float32")
     # I_splits = tf.keras.Input(shape=(1,), dtype="int32")
 
@@ -57,49 +49,35 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
 
     x_data, x_row_splits = RaggedConstructTensor()([I_data, I_splits])
-
-    #x_row_splits = tf.Print(x_row_splits, [x_row_splits], "Row splits from tensorflow",summarize=200)
-
+  
     
-    feats = []
-
-    #TODO: Jan center phi and select features you may have to implement yourself. I am not sure about its format etc.
-
-    #x_data = tf.Print(x_data,[tf.shape(x_data)],'x_data.shape ')
-
-    x_basic = BatchNormalization(momentum=0.9)(x_data)  # mask_and_norm is just batch norm now
+    x_basic = BatchNormalization(momentum=0.6)(x_data)  # mask_and_norm is just batch norm now
     x = x_basic
 
     n_filters = 0
+    n_gravnet_layers = 6
+    feat=[]
     for i in range(n_gravnet_layers):
-        n_filters = 32 + 24 * i
-        n_propagate = 8 + 8 * i
+        n_filters = 128
+        n_propagate = 64
 
         x = RaggedGlobalExchange()([x, x_row_splits])
-
-        x = Dense(n_filters, activation='elu')(x)
-        x = BatchNormalization(momentum=0.9)(x)
-        x = Dense(n_filters, activation='elu')(x)
-        x = Dropout(0.05)(x) #just some noise
-        x = Dense(n_filters, activation='elu')(x)
-        x = BatchNormalization(momentum=0.9)(x)
-        #x = Concatenate()([x_basic, x])
-
-        x = RaggedGravNet_simple(n_neighbours=n_neighbours,
+        x = Dense(64, activation='elu')(x)
+        x = Dense(64, activation='elu')(x)
+        x = Dense(64, activation='elu')(x)
+        x = BatchNormalization(momentum=0.6)(x)
+        x = RaggedGravNet_simple(n_neighbours=20,
                            n_dimensions=4,
                            n_filters=n_filters,
                            n_propagate=n_propagate,
                            name='gravnet_' + str(i))([x, x_row_splits])
-        x = BatchNormalization(momentum=0.9)(x)
+        x = BatchNormalization(momentum=0.6)(x)
+        feat.append(Dense(32, activation='elu')(x))
 
-    #x = Concatenate()([x_basic, x])
-    x = Dense(n_filters, activation='elu')(x)
-    x = BatchNormalization(momentum=0.9)(x)
-    x = Dense(n_filters, activation='elu')(x)
-    x = BatchNormalization(momentum=0.9)(x)
-    x = Dense(n_filters, activation='elu')(x)
-    # x = Concatenate()([x, x_all]) # TODO: Jan check this
-    x = Dense(64, activation='elu', name='last_correction')(x)
+    x = Concatenate()(feat)
+    x = Dense(64, activation='elu')(x)
+    x = Dense(64, activation='elu')(x)
+    x = Dense(64, activation='elu')(x)
     
     beta = Dense(1, activation='sigmoid')(x)
     energy = Dense(1, activation=None)(x)
@@ -118,15 +96,15 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     
 
-train=training_base(testrun=True,resumeSilently=True,renewtokens=False)
+train=training_base(testrun=False,resumeSilently=True,renewtokens=False)
 
 
 from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 
 #train.setDJCKerasModel(simple_model)
-train.setModel(ser_simple_model)
+train.setModel(gravnet_model)#ser_simple_model)
 #train.keras_model.dynamic=True
-train.compileModel(learningrate=1e-2,
+train.compileModel(learningrate=1e-3,
                    loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
@@ -134,24 +112,25 @@ train.compileModel(learningrate=1e-2,
 print(train.keras_model.summary())
 
 
-nbatch=50000#**2 #this will be an upper limit on vertices per batch
+nbatch=60000#**2 #this will be an upper limit on vertices per batch
 
 verbosity=2
 import os
 
-# callbacks=[]
-# for i in range(1):
-#     plotoutdir=train.outputDir+"/event_"+str(i+2)
-#     os.system('mkdir -p '+plotoutdir)
-#     callbacks.append(
-#         plotEventDuringTraining(
-#             outputfile=plotoutdir+"/sn",
-#             samplefile="/eos/cms/store/cmst3/group/hgcal/CMG_studies/hgcalsim/ml.TestDataSet/Xmas19/windowntup_99.djctd",
-#             after_n_batches=200,
-#             batchsize=100000,
-#             on_epoch_end=False,
-#             use_event=2+i)
-#         )
+samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
+callbacks=[]
+for i in range(1):
+    plotoutdir=train.outputDir+"/event_"+str(i+2)
+    os.system('mkdir -p '+plotoutdir)
+    callbacks.append(
+        plotEventDuringTraining(
+            outputfile=plotoutdir+"/sn",
+            samplefile=samplepath,
+            after_n_batches=2,
+            batchsize=100000,
+            on_epoch_end=False,
+            use_event=2+i)
+        )
 #train.saveModel("testmodel.h5")
 
 #train.loadModel("TESTTF115_4/testmodel.h5")
@@ -163,7 +142,8 @@ model,history = train.trainModel(nepochs=1,
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=verbosity,)
+                                 verbose=verbosity,
+                                 additional_callbacks=callbacks)
 
 
 

@@ -437,11 +437,11 @@ def full_obj_cond_loss(truth, pred, rowsplits):
                                                                                              d['predBeta'], 
                                                                                              classes, 
                                                                                              row_splits, 
-                                                                                             Q_MIN=1, 
+                                                                                             Q_MIN=1., 
                                                                                              S_B=1.)
     
     
-    
+    #energy_loss = 
     print('attractive_loss',attractive_loss.numpy(), 
           'rep_loss', rep_loss.numpy(), 
           'min_beta_loss', min_beta_loss.numpy(), 

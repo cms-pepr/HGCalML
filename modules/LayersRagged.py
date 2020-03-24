@@ -23,6 +23,7 @@ class RaggedConstructTensor(keras.layers.Layer):
     def build(self, input_shape):
         super(RaggedConstructTensor, self).build(input_shape)
 
+    
     def call(self, x):
         x_data = x[0]
         x_row_splits = x[1]
@@ -113,7 +114,8 @@ class RaggedGravNet(keras.layers.Layer):
             self._non_trainable_weights.extend(layer.non_trainable_weights)
 
         super(RaggedGravNet, self).build(input_shape)
-
+    
+    
     def call(self, inputs):
 
         x = inputs[0]
@@ -218,7 +220,8 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
                                              input_shape[1] + self.input_feature_transform.units * 2))
  
         super(RaggedGravNet_simple, self).build(input_shape)
-        
+       
+     
     def call(self, inputs):
         
         x = inputs[0]
@@ -240,7 +243,7 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         
         ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits, data=coordinates, add_splits=True) # [SV, N+1]
         
-        print(ragged_split_added_indices)
+        #print(ragged_split_added_indices)
         ragged_split_added_indices = ragged_split_added_indices[:,1:][..., tf.newaxis]  # [SV, N]
 
         distance = tf.reduce_sum((coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices))**2, axis=-1)  # [SV, N]
@@ -279,6 +282,7 @@ class RaggedGlobalExchange(keras.layers.Layer):
         self.num_features = data_shape[1]
         super(RaggedGlobalExchange, self).build(input_shape)
 
+    
     def call(self, x):
         x_data, x_row_splits = x[0], x[1]
         rt = tf.RaggedTensor.from_row_splits(values=x_data, row_splits=x_row_splits)  # [B, {V}, F]

@@ -42,9 +42,19 @@ class plotEventDuringTraining(PredictCallback):
                                          feats['recHitZ'])
         
         
+        angle_in=counter+80.
+        while angle_in>=360: angle_in-=360
+        while angle_in<=-360: angle_in-=360
+        ax[0].view_init(30, angle_in)
+        
+        
         plt.tight_layout()
         fig.savefig(self.outputfile+str(counter)+".pdf")
-        plt.close()
+        fig.clear()
+        plt.close(fig)
+        plt.clf()
+        plt.cla()
+        plt.close() 
 
         
         

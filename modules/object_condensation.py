@@ -511,6 +511,7 @@ def remove_zero_length_elements_from_ragged_tensors(row_splits):
 
 
 #make this parallel over all instance ids
+#use implementation in SOR repo
 @tf.function
 def _instance_loss(id,
                    x_s, classes_s, beta_s, num_vertices, q_s, 
@@ -544,18 +545,135 @@ def _instance_loss(id,
     
     return V_att_segment, V_rep_segment, L_beta_f_segment
 
+
+#create a few with fixed number and then make an if statement selecting the right one
 #@tf.function
-def _instance_loop(instance_ids,
-                   x_s, classes_s, beta_s, num_vertices, q_s, 
-                   V_att_segment, V_rep_segment, L_beta_f_segment):
+
+
+
+#bucket this guy with padded inputs maybe?
+#@tf.function
+def _parametrised_instance_loop(max_instances,
+                                instance_ids,
+                                no_noise_mask,
+                                x_s, 
+                                classes_s, 
+                                beta_s, 
+                                q_s):
     
-    for i in tf.range(instance_ids.shape[0]):
-        id = instance_ids[i]
-        V_att_segment, V_rep_segment, L_beta_f_segment = _instance_loss(id,
-               x_s, classes_s, beta_s, num_vertices, q_s, 
-               V_att_segment, V_rep_segment, L_beta_f_segment)
+    #get an idea of all the shapes
+    
+    # K      print('instance_ids',tf.shape(instance_ids))
+    # V x 2  print('x_s',tf.shape(x_s))
+    # V      print('classes_s',tf.shape(classes_s))
+    # V      print('beta_s',tf.shape(beta_s))
+    # 0      print('num_vertices',tf.shape(num_vertices))
+    # V      print('q_s',tf.shape(q_s))
+    # V      no_noise_mask
+    
+    # move to convention of at least one feature axis
+    
+    def gather_for_obj_from_vert(v_prop,ids):
+        return tf.gather_nd(tf.tile(tf.expand_dims(v_prop,axis=0),[kalpha.shape[0],1,1]) ,ids,batch_dims=1)
+    
+    
+
+    # instance ids > 0, do not include noise
+    # classes_s is 0 for noise
+    #create Mki: V x K matrix
+    M = tf.expand_dims(instance_ids, axis=1) - tf.expand_dims(classes_s,axis=0)
+    M = tf.where(tf.abs(M)<0.1, tf.zeros_like(M)+1., tf.zeros_like(M))
+    # K x V
+    #print('M',M.shape)
+    
+    # if padding is applied, otherwise it's clear that it's an object
+    is_obj_k   = tf.reduce_max(M, axis=1) 
+    # K
+    #print('is_obj_k',is_obj_k.shape)
+    Nobj = tf.reduce_sum(is_obj_k,axis=0)
+    #print('Nobj',Nobj.shape)
+    
+    Ntotal = tf.cast(tf.shape(beta_s)[0],dtype='float32')
+    
+    kalpha = tf.argmax(M* tf.expand_dims(no_noise_mask*beta_s,axis=0), axis=1)
+    kalpha = tf.expand_dims(kalpha, axis=1)
+    # K x 1
+    #print('kalpha',kalpha.shape)
+    
+    #gather everything
+    q_kalpha = gather_for_obj_from_vert(tf.expand_dims(q_s,axis=1),kalpha) # tf.gather_nd(tf.tile(tf.expand_dims(q_s,axis=0),[Nobj,1]) ,kalpha,batch_dims=1) # K x 1
+    #q_kalpha = tf.expand_dims(q_kalpha, axis=1) # K x 1 x 1
+    #print('q_kalpha',q_kalpha.shape)
+    
+    beta_kalpha = gather_for_obj_from_vert(tf.expand_dims(beta_s,axis=1),kalpha)
+    beta_kalpha = tf.expand_dims(beta_kalpha, axis=1) # K x 1 x 1
+    #print('beta_kalpha',beta_kalpha.shape)
+    
+    x_kalpha = gather_for_obj_from_vert(x_s ,kalpha)
+    x_kalpha = tf.expand_dims(x_kalpha, axis=1) # K x 1 x 2
+    #print('x_kalpha',x_kalpha.shape)
+    x_s = tf.expand_dims(x_s,axis=0)
+    #print('x_s',x_s.shape)
+    
+    distance  = tf.sqrt(tf.reduce_sum( (x_kalpha-x_s)**2, axis=-1 )+1e-6) #K x V , d (tf.sqrt(0)) problem
+    #print('distance',distance)
+    
+    F_att = q_kalpha * tf.expand_dims(q_s,axis=0) * distance**2 * M #K x V 
+    #print('F_att',F_att.shape)
+    F_att = is_obj_k * tf.reduce_sum(F_att, axis=1) #K
+    #print('F_att',F_att.shape)
+    L_att = tf.reduce_sum(F_att, axis=0) / (Ntotal +1e-6)
+    #print('L_att',L_att.shape)
+    
+    F_rep = q_kalpha * tf.expand_dims(q_s,axis=0) * tf.nn.relu(1. - distance) * (1. - M)  #K x V 
+    F_rep = is_obj_k * tf.reduce_sum(F_rep, axis=1) #K
+    L_rep = tf.reduce_sum(F_rep, axis=0) / (Ntotal +1e-6)
+    
+    #check broadcasting here
+    L_beta = tf.reduce_sum(is_obj_k * (1-tf.squeeze(tf.squeeze(beta_kalpha, axis=1),axis=1))) / (Nobj +1e-6)
+    
+    n_noise = tf.reduce_sum((1.-no_noise_mask))
+    L_suppnoise = tf.reduce_sum( (1.-no_noise_mask)*beta_s , axis=0) / (n_noise +1e-6)
+
+    #print(L_att, L_rep, L_beta, L_suppnoise)
+    #return V_att_segment, V_rep_segment, L_beta_f_segment
+    return L_att, L_rep, L_beta, L_suppnoise
+
+
+def padded_parallel_instance_loop(instance_ids,
+                                no_noise_mask,
+                                x_s, 
+                                classes_s, 
+                                beta_s, 
+                                q_s):
+    
+    #check length, pad add to predefined tf.function
+    #get an idea of all the shapes
+    
+    # K      print('instance_ids',tf.shape(instance_ids))
+    # V x 2  print('x_s',tf.shape(x_s))
+    # V      print('classes_s',tf.shape(classes_s))
+    # V      print('beta_s',tf.shape(beta_s))
+    # V      print('q_s',tf.shape(q_s))
+    # V      no_noise_mask
+    
+    #we just need to pad instance_ids with -1
+    #
+    #  still doesn't allow for tf function unfortunately
+    return _parametrised_instance_loop(tf.shape(instance_ids)[0], instance_ids, no_noise_mask, x_s,  classes_s, beta_s, q_s)
+    
+    
+    for count in [20,40,80,100,200]:
+        if(tf.shape(instance_ids)[0] <= count):
+            if(tf.shape(instance_ids)[0] < count):
+                instance_ids = tf.pad(instance_ids, [[0, 20-tf.shape(instance_ids)[0]]], mode='CONSTANT', constant_values=-1)
+            return _parametrised_instance_loop(count, instance_ids, no_noise_mask, x_s,  classes_s, beta_s, q_s)
+    
+
+    return _parametrised_instance_loop(tf.shape(instance_ids)[0], instance_ids, no_noise_mask, x_s,  classes_s, beta_s, q_s)
+    
         
-    return V_att_segment, V_rep_segment, L_beta_f_segment
+    
 
 #@tf.function
 def indiv_object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
@@ -593,69 +711,31 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
         beta_s = beta_values[row_splits[b]:row_splits[b + 1]]
         num_vertices = tf.cast(row_splits[b + 1] - row_splits[b], tf.float32)
 
-        q_s = tf.math.pow(tf.math.atanh(beta_s),2) + Q_MIN
+        q_s = tf.math.atanh(beta_s)**2 + Q_MIN
 
         instance_ids, _ = tf.unique(tf.reshape(classes_s, (-1,)))
-        instance_ids = instance_ids[instance_ids != 0]
-        instance_ids = tf.sort(instance_ids)
+        
+        instance_ids = tf.where(instance_ids<0.1, tf.zeros_like(instance_ids)-1.,instance_ids)
+        #instance_ids = tf.sort(instance_ids) #why?
 
-        V_att_segment = tf.constant(0., tf.float32)
-        V_rep_segment = tf.constant(0., tf.float32)
-        L_beta_f_segment = tf.constant(0., tf.float32)
-
-
+        no_noise_mask = tf.where(classes_s>0.1, tf.zeros_like(classes_s)+1., tf.zeros_like(classes_s))
         #beta_maxs = []
         
-        #for id in instance_ids:
-        #    V_att_segment, V_rep_segment, L_beta_f_segment = _instance_loss(id,
-        #           x_s, classes_s, beta_s, num_vertices, q_s, 
-        #           V_att_segment, V_rep_segment, L_beta_f_segment)
+        V_att_segment, V_rep_segment, L_beta_f_segment, L_beta_s_segment = _parametrised_instance_loop(
+            tf.shape(instance_ids)[0],
+            instance_ids, 
+            no_noise_mask,
+                   x_s, 
+                   classes_s, 
+                   beta_s, 
+                   q_s)
+
         
-        V_att_segment, V_rep_segment, L_beta_f_segment = _instance_loop(instance_ids,
-                   x_s, classes_s, beta_s, num_vertices, q_s, 
-                   V_att_segment, V_rep_segment, L_beta_f_segment)
-
-        #possibly this could be vectorised in a simple straight-forward way
-        #for id in instance_ids:
-        #    in_mask = classes_s == id
-        #    beta_this_instance = beta_s[in_mask]
-        #    q_this_instance = q_s[in_mask]
-        #    x_this_instance = x_s[in_mask]
-        #
-        #    h = tf.argmax(q_this_instance)
-        #    x_max = x_this_instance[h]
-        #    
-        #    q_max = q_this_instance[h]
-        #    beta_max = beta_this_instance[h]
-        #
-        #    V_attractive = tf.reduce_sum((x_this_instance - x_max)**2,axis=-1) * q_max * q_this_instance
-        #    V_attractive = tf.reduce_sum(V_attractive)
-        #    V_att_segment += V_attractive
-        #
-        #    rep_mask = classes_s != id
-        #    x_other_instances = x_s[rep_mask]
-        #    q_other_instances = q_s[rep_mask]
-        #
-        #    V_repulsive = tf.maximum(0., 1. - tf.reduce_sum((x_other_instances - x_max)**2, axis=-1)) * q_max * q_other_instances
-        #    V_repulsive = tf.reduce_sum(V_repulsive)
-        #    V_rep_segment += V_repulsive
-        #    L_beta_f_segment += 1 - beta_max
-        #
-        #    #beta_maxs.append(float(beta_max.numpy()))
-
-        L_beta_f_segment = L_beta_f_segment / float(len(instance_ids))
-
-        betas_noise = beta_s[classes_s==0]
-        if len(betas_noise) > 0:
-            L_beta_s_segment = tf.reduce_mean(betas_noise) * S_B
-        else:
-            L_beta_s_segment = tf.constant(0., tf.float32)
-
         L_beta_f += L_beta_f_segment
         L_beta_s += L_beta_s_segment
 
-        V_att += V_att_segment / (num_vertices + 1e-5)
-        V_rep += V_rep_segment / (num_vertices + 1e-5)
+        V_att += V_att_segment 
+        V_rep += V_rep_segment
 
     batch_size = float(batch_size)
     V_att = V_att / (batch_size + 1e-5)
