@@ -47,6 +47,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     I_data = Inputs[0]
     I_splits = tf.cast(Inputs[1], tf.int32)
 
+    
 
     x_data, x_row_splits = RaggedConstructTensor()([I_data, I_splits])
   
@@ -104,7 +105,7 @@ from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 #train.setDJCKerasModel(simple_model)
 train.setModel(gravnet_model)#ser_simple_model)
 #train.keras_model.dynamic=True
-train.compileModel(learningrate=1e-3,
+train.compileModel(learningrate=3e-3,
                    loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
@@ -112,7 +113,7 @@ train.compileModel(learningrate=1e-3,
 print(train.keras_model.summary())
 
 
-nbatch=60000#**2 #this will be an upper limit on vertices per batch
+nbatch=10000#**2 #this will be an upper limit on vertices per batch
 
 verbosity=2
 import os
@@ -126,7 +127,7 @@ for i in range(1):
         plotEventDuringTraining(
             outputfile=plotoutdir+"/sn",
             samplefile=samplepath,
-            after_n_batches=2,
+            after_n_batches=50,
             batchsize=100000,
             on_epoch_end=False,
             use_event=2+i)

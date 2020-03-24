@@ -442,11 +442,12 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     
     
     #energy_loss = 
-    print('attractive_loss',attractive_loss.numpy(), 
+    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss 
+    print('loss',loss.numpy(), 
+          'attractive_loss',attractive_loss.numpy(), 
           'rep_loss', rep_loss.numpy(), 
           'min_beta_loss', min_beta_loss.numpy(), 
           'noise_loss' , noise_loss.numpy())
-    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss 
     #loss = tf.Print(loss,[loss,
     #                     attractive_loss,
     #                     rep_loss,

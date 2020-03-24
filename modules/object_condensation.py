@@ -660,6 +660,7 @@ def padded_parallel_instance_loop(instance_ids,
     #we just need to pad instance_ids with -1
     #
     #  still doesn't allow for tf function unfortunately
+    
     return _parametrised_instance_loop(tf.shape(instance_ids)[0], instance_ids, no_noise_mask, x_s,  classes_s, beta_s, q_s)
     
     
@@ -667,14 +668,15 @@ def padded_parallel_instance_loop(instance_ids,
         if(tf.shape(instance_ids)[0] <= count):
             if(tf.shape(instance_ids)[0] < count):
                 instance_ids = tf.pad(instance_ids, [[0, 20-tf.shape(instance_ids)[0]]], mode='CONSTANT', constant_values=-1)
-            return _parametrised_instance_loop(count, instance_ids, no_noise_mask, x_s,  classes_s, beta_s, q_s)
+            maxinst = tf.convert_to_tensor(count, dtype=tf.int64)
+            return _parametrised_instance_loop(maxinst, instance_ids, no_noise_mask, x_s,  classes_s, beta_s, q_s)
     
 
     return _parametrised_instance_loop(tf.shape(instance_ids)[0], instance_ids, no_noise_mask, x_s,  classes_s, beta_s, q_s)
     
         
     
-
+counter=0
 #@tf.function
 def indiv_object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
     """
@@ -692,6 +694,8 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
     :param S_B: s_b hyper parameter
     :return:
     """
+    global counter
+    #print("started call ",counter, "batch size", len(output_space))
 
     labels_classes += 1
 
@@ -714,6 +718,10 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
         q_s = tf.math.atanh(beta_s)**2 + Q_MIN
 
         instance_ids, _ = tf.unique(tf.reshape(classes_s, (-1,)))
+        
+        if len(instance_ids) < 1:
+            print("Warning >>>>NO INSTANCES IN WINDOW<<<< (just a warning though)")
+            continue
         
         instance_ids = tf.where(instance_ids<0.1, tf.zeros_like(instance_ids)-1.,instance_ids)
         #instance_ids = tf.sort(instance_ids) #why?
@@ -743,6 +751,8 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
     L_beta_s = L_beta_s / (batch_size + 1e-5)
     L_beta_f = L_beta_f / (batch_size + 1e-5)
 
+    #print("finished call ",counter)
+    counter+=1
 
     return V_att, V_rep, L_beta_s, L_beta_f
 
