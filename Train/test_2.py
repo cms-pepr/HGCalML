@@ -11,6 +11,7 @@ from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
 
 from ragged_callbacks import plotEventDuringTraining
+from DeepJetCore.DJCLayers import ScalarMultiply
 
 #tf.compat.v1.disable_eager_execution()
 
@@ -51,23 +52,24 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     x_data, x_row_splits = RaggedConstructTensor()([I_data, I_splits])
   
+    input_features = x_data #these are going to be passed through for the loss
     
     x_basic = BatchNormalization(momentum=0.6)(x_data)  # mask_and_norm is just batch norm now
     x = x_basic
 
     n_filters = 0
     n_gravnet_layers = 6
-    feat=[]
+    feat=[x_basic]
     for i in range(n_gravnet_layers):
-        n_filters = 128
-        n_propagate = 64
+        n_filters = 96
+        n_propagate = 32
 
         x = RaggedGlobalExchange()([x, x_row_splits])
         x = Dense(64, activation='elu')(x)
         x = Dense(64, activation='elu')(x)
         x = Dense(64, activation='elu')(x)
         x = BatchNormalization(momentum=0.6)(x)
-        x = RaggedGravNet_simple(n_neighbours=20,
+        x = RaggedGravNet_simple(n_neighbours=80,
                            n_dimensions=4,
                            n_filters=n_filters,
                            n_propagate=n_propagate,
@@ -76,17 +78,19 @@ def gravnet_model(Inputs, feature_dropout=-1.):
         feat.append(Dense(32, activation='elu')(x))
 
     x = Concatenate()(feat)
-    x = Dense(64, activation='elu')(x)
+    x = Dense(128, activation='elu')(x)
     x = Dense(64, activation='elu')(x)
     x = Dense(64, activation='elu')(x)
     
     beta = Dense(1, activation='sigmoid')(x)
-    energy = Dense(1, activation=None)(x)
+    energy = ScalarMultiply(100.) (Dense(1, activation=None)(x))
     eta = Dense(1, activation=None)(x)
     phi = Dense(1, activation=None)(x)
     ccoords = Dense(2, activation=None)(x)
+    
+    print('input_features',input_features.shape)
 
-    x = Concatenate()([beta,energy,eta,phi,ccoords])
+    x = Concatenate()([input_features, beta,energy,eta,phi,ccoords])
 
     # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
     predictions = x
@@ -105,7 +109,7 @@ from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 #train.setDJCKerasModel(simple_model)
 train.setModel(gravnet_model)#ser_simple_model)
 #train.keras_model.dynamic=True
-train.compileModel(learningrate=3e-3,
+train.compileModel(learningrate=1e-4,
                    loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits],#fraction_loss)
                    ) #clipnorm=1.) 
 
@@ -113,21 +117,21 @@ train.compileModel(learningrate=3e-3,
 print(train.keras_model.summary())
 
 
-nbatch=10000#**2 #this will be an upper limit on vertices per batch
+nbatch=30000#**2 #this will be an upper limit on vertices per batch
 
 verbosity=2
 import os
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
 callbacks=[]
-for i in range(1):
+for i in range(4):
     plotoutdir=train.outputDir+"/event_"+str(i+2)
     os.system('mkdir -p '+plotoutdir)
     callbacks.append(
         plotEventDuringTraining(
             outputfile=plotoutdir+"/sn",
             samplefile=samplepath,
-            after_n_batches=50,
+            after_n_batches=100,
             batchsize=100000,
             on_epoch_end=False,
             use_event=2+i)
@@ -138,7 +142,7 @@ for i in range(1):
 
 #exit()
 
-model,history = train.trainModel(nepochs=1, 
+model,history = train.trainModel(nepochs=10, 
                                  run_eagerly=True,
                                  batchsize=nbatch,
                                  batchsize_use_sum_of_squares=False,

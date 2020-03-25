@@ -76,12 +76,20 @@ def selectEvent(rs, feat, truth, event):
 
 
 def make_cluster_coordinates_plot(plt, ax, 
-                                  truthHitAssignementIdx, #[ V ]
-                                  predBeta,               #[ V ]
+                                  truthHitAssignementIdx, #[ V ] or [ V x 1 ]
+                                  predBeta,               #[ V ] or [ V x 1 ]
                                   predCCoords,            #[ V x 2 ]
                                 ):
     
     #data = create_index_dict(truth,pred,usetf=False)
+    
+    if len(truthHitAssignementIdx.shape)>1:
+        truthHitAssignementIdx = np.array(truthHitAssignementIdx[:,0])
+    if len(predBeta.shape)>1:
+        predBeta = np.array(predBeta[:,0])
+    
+    if np.max(predBeta)>1.:
+        raise ValueError("make_cluster_coordinates_plot: at least one beta value is above 1. Check your model!")
     
     ax.set_aspect(aspect=1.)
     #print(truthHitAssignementIdx)
@@ -93,16 +101,16 @@ def make_cluster_coordinates_plot(plt, ax,
     alphas[alphas<0.01] = 0.01
     alphas = np.expand_dims(alphas, axis=1)
     
-    #print(alphas.shape)
-
     rgba_cols = np.concatenate([rgbcolor,alphas],axis=-1)
     
     sorting = np.reshape(np.argsort(alphas, axis=0), [-1])
     
     
     ax.scatter(predCCoords[:,0][sorting],
-                  predCCoords[:,1][sorting],
-                  c=rgba_cols[sorting])
+              predCCoords[:,1][sorting],
+              c=rgba_cols[sorting])
+    
+    
     
 
 def make_original_truth_shower_plot(plt, ax,
@@ -113,6 +121,18 @@ def make_original_truth_shower_plot(plt, ax,
                                     recHitZ):
     
     
+    if len(truthHitAssignementIdx.shape)>1:
+        truthHitAssignementIdx = np.array(truthHitAssignementIdx[:,0])
+    if len(recHitEnergy.shape)>1:
+        recHitEnergy = np.array(recHitEnergy[:,0])
+    if len(recHitX.shape)>1:
+        recHitX = np.array(recHitX[:,0])
+    if len(recHitY.shape)>1:
+        recHitY = np.array(recHitY[:,0])
+    if len(recHitZ.shape)>1:
+        recHitZ = np.array(recHitZ[:,0])
+        
+        
     pl = plotter_3d(output_file="/tmp/plot")#will be ignored
     rgbcolor = plt.get_cmap('hsv')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
     rgbcolor[truthHitAssignementIdx<0]=[0.92,0.92,0.92]

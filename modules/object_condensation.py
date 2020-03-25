@@ -695,7 +695,7 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
     :return:
     """
     global counter
-    #print("started call ",counter, "batch size", len(output_space))
+    print("started call ",counter, "batch size", len(output_space))
 
     labels_classes += 1
 
@@ -751,7 +751,7 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
     L_beta_s = L_beta_s / (batch_size + 1e-5)
     L_beta_f = L_beta_f / (batch_size + 1e-5)
 
-    #print("finished call ",counter)
+    print("finished call ",counter)
     counter+=1
 
     return V_att, V_rep, L_beta_s, L_beta_f

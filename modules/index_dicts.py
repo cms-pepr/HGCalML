@@ -17,17 +17,19 @@ def create_feature_dict(feat):
     recHitTime  
     '''
     outdict={}
-    outdict['recHitEnergy']  = feat[:,0] 
-    outdict['recHitEta']     = feat[:,1] 
-    outdict['recHitRelPhi']  = feat[:,2] 
-    outdict['recHitTheta']   = feat[:,3] 
-    outdict['recHitR']       = feat[:,4] 
-    outdict['recHitX']       = feat[:,5] 
-    outdict['recHitY']       = feat[:,6] 
-    outdict['recHitZ']       = feat[:,7] 
-    outdict['recHitTime']    = feat[:,8] 
+    outdict['recHitEnergy']  = feat[:,0:1] 
+    outdict['recHitEta']     = feat[:,1:2] 
+    outdict['recHitRelPhi']  = feat[:,2:3] 
+    outdict['recHitTheta']   = feat[:,3:4] 
+    outdict['recHitR']       = feat[:,4:5] 
+    outdict['recHitX']       = feat[:,5:6] 
+    outdict['recHitY']       = feat[:,6:7] 
+    outdict['recHitZ']       = feat[:,7:8] 
+    outdict['recHitTime']    = feat[:,8:9] 
     return outdict
     
+feature_length=9
+
 
 def create_index_dict(truth, pred, usetf=True):
     '''
@@ -52,23 +54,38 @@ def create_index_dict(truth, pred, usetf=True):
     '''
     outdict={}
     #make it all lists
-    outdict['truthHitAssignementIdx']    =  truth[:,0]
+    outdict['truthHitAssignementIdx']    =  truth[:,0:1]
     if usetf:
-        outdict['truthIsNoise']              =  tf.where(truth[:,0] < -0.1, 
-                                                     tf.zeros_like(truth[:,0])+1, 
-                                                     tf.zeros_like(truth[:,0]))
+        outdict['truthIsNoise']              =  tf.where(truth[:,0:1] < -0.1, 
+                                                     tf.zeros_like(truth[:,0:1])+1, 
+                                                     tf.zeros_like(truth[:,0:1]))
+        
     else:
-        outdict['truthIsNoise']              =  np.where(truth[:,0] < -0.1, 
-                                                     np.zeros_like(truth[:,0])+1, 
-                                                     np.zeros_like(truth[:,0]))
-    outdict['truthHitAssignedEnergies']  =  truth[:,1]
-    outdict['truthHitAssignedEtas']      =  truth[:,8]
-    outdict['truthHitAssignedPhis']      =  truth[:,9]
+        outdict['truthIsNoise']              =  np.where(truth[:,0:1] < -0.1, 
+                                                     np.zeros_like(truth[:,0:1])+1, 
+                                                     np.zeros_like(truth[:,0:1]))
+    outdict['truthNoNoise'] = 1. - outdict['truthIsNoise']
+    outdict['truthHitAssignedEnergies']  =  truth[:,1:2]
+    outdict['truthHitAssignedEtas']      =  truth[:,8:9]
+    outdict['truthHitAssignedPhis']      =  truth[:,9:10]
     
-    outdict['predBeta']       = pred[:,0]
-    outdict['predEnergy']     = pred[:,1]
-    outdict['predEta']        = pred[:,2]
-    outdict['predPhi']        = pred[:,3]
-    outdict['predCCoords']    = pred[:,4:]
+    outdict['predBeta']       = pred[:,0:1]
+    outdict['predEnergy']     = pred[:,1:2]
+    outdict['predEta']        = pred[:,2:3]
+    outdict['predPhi']        = pred[:,3:4]
+    outdict['predCCoords']    = pred[:,4:6]
 
     return outdict
+
+pred_length=6
+
+
+def split_feat_pred(pred):
+    '''
+    returns features, prediction
+    '''
+    return pred[...,:feature_length], pred[...,feature_length:]
+    
+    
+    
+

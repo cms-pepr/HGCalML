@@ -3,7 +3,8 @@ from __future__ import print_function
 import tensorflow as tf
 import keras
 import keras.backend as K
-from index_dicts import create_index_dict
+from index_dicts import create_index_dict, split_feat_pred, create_feature_dict
+
 
 #factorise a bit
 
@@ -413,6 +414,10 @@ def pre_training_loss(truth, pred):
     return pos_loss
     
     
+def beta_weighted_truth_mean(l_in, d, beta_scaling):#l_in  V x 1
+    l_in = tf.reduce_sum(beta_scaling*d['truthNoNoise']*l_in, axis=0)#  1
+    den =  tf.reduce_sum(d['truthNoNoise']*beta_scaling, axis=0) + 1e-5# 1
+    return l_in/den    
     
 def null_loss(truth, pred):
     return 0*tf.reduce_mean(pred)+0*tf.reduce_mean(truth)
@@ -428,26 +433,43 @@ def full_obj_cond_loss(truth, pred, rowsplits):
 
     rowsplits = tf.cast(rowsplits, tf.int64)#just for first loss evaluation from stupid keras
     
-
+    feat,pred = split_feat_pred(pred)
     d = create_loss_dict(truth, pred)
+    feat = create_feature_dict(feat)
+    #print('feat',feat.shape)
     
-    classes, row_splits = d['truthHitAssignementIdx'], rowsplits[ : rowsplits[-1,0],0]
+    classes, row_splits = d['truthHitAssignementIdx'][...,0], rowsplits[ : rowsplits[-1,0],0]
     
-    attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss(d['predCCoords'], 
-                                                                                             d['predBeta'], 
+    attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss(d['predCCoords'], #
+                                                                                             d['predBeta'][...,0],  #remove last 1 dim
                                                                                              classes, 
                                                                                              row_splits, 
-                                                                                             Q_MIN=1., 
+                                                                                             Q_MIN=.5, 
                                                                                              S_B=1.)
     
+    beta_scaling = tf.math.atanh(tf.clip_by_value( d['predBeta'], 0., 1. - 1e-5))**2 #avoid nans
     
-    #energy_loss = 
-    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss 
+    #energy loss. For particles other than muons, the highest energy hits contribute with about 1% of the total energy
+    energy_diff = (1. + d['predEnergy'])*feat['recHitEnergy'] - d['truthHitAssignedEnergies']
+    energy_loss = beta_weighted_truth_mean( energy_diff**2, d, beta_scaling)
+    
+    etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
+    phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
+    pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
+    pos_offs = tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
+    position_loss = beta_weighted_truth_mean( pos_offs, d, beta_scaling)
+    
+    
+    
+    # neglect energy loss almost fully
+    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + 0.0001* energy_loss + 1.*  position_loss
     print('loss',loss.numpy(), 
           'attractive_loss',attractive_loss.numpy(), 
           'rep_loss', rep_loss.numpy(), 
           'min_beta_loss', min_beta_loss.numpy(), 
-          'noise_loss' , noise_loss.numpy())
+          'noise_loss' , noise_loss.numpy(),
+          'sqrt(energy_loss)', tf.sqrt(energy_loss).numpy(), 
+          'sqrt(position_loss)' , tf.sqrt(position_loss).numpy())
     #loss = tf.Print(loss,[loss,
     #                     attractive_loss,
     #                     rep_loss,
