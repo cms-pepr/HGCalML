@@ -58,24 +58,27 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = x_basic
 
     n_filters = 0
-    n_gravnet_layers = 6
+    n_gravnet_layers = 5
     feat=[x_basic]
     for i in range(n_gravnet_layers):
-        n_filters = 96
-        n_propagate = 32
+        n_filters = 128
+        n_propagate = 64
+        n_neighbours=200
+        if i%2:
+            n_neighbours=40
 
         x = RaggedGlobalExchange()([x, x_row_splits])
         x = Dense(64, activation='elu')(x)
         x = Dense(64, activation='elu')(x)
         x = Dense(64, activation='elu')(x)
         x = BatchNormalization(momentum=0.6)(x)
-        x = RaggedGravNet_simple(n_neighbours=80,
+        x = RaggedGravNet_simple(n_neighbours=n_neighbours,
                            n_dimensions=4,
                            n_filters=n_filters,
                            n_propagate=n_propagate,
                            name='gravnet_' + str(i))([x, x_row_splits])
         x = BatchNormalization(momentum=0.6)(x)
-        feat.append(Dense(32, activation='elu')(x))
+        feat.append(Dense(48, activation='elu')(x))
 
     x = Concatenate()(feat)
     x = Dense(128, activation='elu')(x)
@@ -117,7 +120,7 @@ train.compileModel(learningrate=1e-4,
 print(train.keras_model.summary())
 
 
-nbatch=30000#**2 #this will be an upper limit on vertices per batch
+nbatch=15000#**2 #this will be an upper limit on vertices per batch
 
 verbosity=2
 import os

@@ -2,12 +2,12 @@ HGCalML
 ===============================================================================
 
 Requirements
-  * DeepJetCore 2.1 (``https://github.com/DL4Jets/DeepJetCore``)
-  * DeepJetCore 2.1 container
+  * DeepJetCore 2.3 (``https://github.com/DL4Jets/DeepJetCore``)
+  * DeepJetCore 2.3 container (or latest version in general)
   
-For CERN, a script to start the container in interactive mode can be found here:
+For CERN, a script to start the latest container in interactive mode can be found here:
 
-``/eos/home-j/jkiesele/singularity/run_deepjetcore2.1.sh``
+``/eos/home-j/jkiesele/singularity/run_deepjetcore2.sh``
 
 
 Setup
