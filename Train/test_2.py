@@ -113,8 +113,8 @@ from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 train.setModel(gravnet_model)#ser_simple_model)
 #train.keras_model.dynamic=True
 train.compileModel(learningrate=1e-4,
-                   loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits],#fraction_loss)
-                   ) #clipnorm=1.) 
+                   loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits])
+####### do not use metrics here - keras problem in TF 2.2rc0
 
 
 print(train.keras_model.summary())

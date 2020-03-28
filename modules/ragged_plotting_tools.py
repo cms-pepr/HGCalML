@@ -65,13 +65,9 @@ def collectoverthresholds(data,
 def selectEvent(rs, feat, truth, event):
     rs = np.array(rs , dtype='int')
     rs = rs[:rs[-1]]
-    print rs
-    
-    print(feat.shape)
-    #get event
+
     feat = feat[rs[event]:rs[event+1],...]
-    
-    print(feat.shape)
+  
     return feat, truth[rs[event]:rs[event+1],...]
 
 
