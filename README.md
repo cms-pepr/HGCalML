@@ -14,7 +14,7 @@ Setup
 ===========
 
 ```
-git clone https://github.com/cms-pepr/HGCalML
+git clone  --recurse-submodules  https://github.com/cms-pepr/HGCalML
 cd HGCalML
 source env.sh #every time
 ./setup.sh #just once
