@@ -9,7 +9,6 @@ rm -f $HGCALML/modules/ragged_knn_kernel.so
 rm -rf  $HGCALML/RaggedKnn/cub-1.8.0 $HGCALML/RaggedKnn/cub
 #compile submodule
 cd RaggedKnn && \
-    git checkout 6214a261129417f41089b9373d1c0c9acc0d2ca5 && \
     wget https://codeload.github.com/NVlabs/cub/zip/1.8.0 -O cub.zip && \
     unzip cub.zip && \
     mv cub-1.8.0 cub &&\
