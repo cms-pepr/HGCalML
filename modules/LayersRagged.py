@@ -2,6 +2,7 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from rknn_op import rknn_ragged, rknn_op
 from caloGraphNN import gauss_of_lin
+import uuid
 
 
 class RaggedConstructTensor(keras.layers.Layer):
@@ -192,76 +193,84 @@ class RaggedGravNet(keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
-
 class RaggedGravNet_simple(tf.keras.layers.Layer):
-    def __init__(self, 
-                 n_neighbours, 
-                 n_dimensions, 
-                 n_filters, 
-                 n_propagate,**kwargs):
+    def __init__(self,
+                 n_neighbours,
+                 n_dimensions,
+                 n_filters,
+                 n_propagate, **kwargs):
         super(RaggedGravNet_simple, self).__init__(**kwargs)
-        
+
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
         self.n_filters = n_filters
         self.n_propagate = n_propagate
-        
-        self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
-        self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
-        self.output_feature_transform = tf.keras.layers.Dense(n_filters, activation='tanh')
+
+
+        # with tf.variable_scope(self.name+"/1/") as scope:
+        self.input_feature_transform = tf.keras.layers.Dense(n_propagate, name=uuid.uuid4().hex)
+
+        # with tf.variable_scope(self.name+"/2/") as scope:
+        self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions, name=uuid.uuid4().hex)
+
+        # with tf.variable_scope(self.name+"/3/") as scope:
+        self.output_feature_transform = tf.keras.layers.Dense(n_filters, activation='tanh', name=uuid.uuid4().hex)
 
     def build(self, input_shapes):
-        
         input_shape = input_shapes[0]
-        self.input_feature_transform.build(input_shape)
-        self.input_spatial_transform.build(input_shape)
-        
-        self.output_feature_transform.build((input_shape[0],  
+
+        with tf.name_scope(self.name+"/1/"):
+            self.input_feature_transform.build(input_shape)
+
+        with tf.name_scope(self.name + "/2/"):
+            self.input_spatial_transform.build(input_shape)
+
+        with tf.name_scope(self.name+"/3/"):
+            self.output_feature_transform.build((input_shape[0],
                                              input_shape[1] + self.input_feature_transform.units * 2))
- 
+
         super(RaggedGravNet_simple, self).build(input_shape)
-       
-     
+
     def call(self, inputs):
-        
         x = inputs[0]
         row_splits = inputs[1]
-        
+
         coordinates = self.input_spatial_transform(x)
         features = self.input_feature_transform(x)
         collected_neighbours = self.collect_neighbours(coordinates, features, row_splits)
-        
+
         updated_features = tf.concat([x, collected_neighbours], axis=-1)
         return self.output_feature_transform(updated_features)
-    
 
     def compute_output_shape(self, input_shapes):
         input_shape = input_shapes[0]
         return (input_shape[0], self.output_feature_transform.units)
-    
-    def collect_neighbours(self, coordinates, features, row_splits):
-        
-        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits, data=coordinates, add_splits=True) # [SV, N+1]
-        
-        #print(ragged_split_added_indices)
-        ragged_split_added_indices = ragged_split_added_indices[:,1:][..., tf.newaxis]  # [SV, N]
 
-        distance = tf.reduce_sum((coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices))**2, axis=-1)  # [SV, N]
+    def collect_neighbours(self, coordinates, features, row_splits):
+        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits,
+                                                          data=coordinates, add_splits=True)  # [SV, N+1]
+
+        # print(ragged_split_added_indices)
+        ragged_split_added_indices = ragged_split_added_indices[:, 1:][..., tf.newaxis]  # [SV, N]
+
+        distance = tf.reduce_sum(
+            (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices)) ** 2,
+            axis=-1)  # [SV, N]
 
         weights = gauss_of_lin(distance * 10.)
         weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
-        
+
         neighbour_features = tf.gather_nd(features, ragged_split_added_indices)
         neighbour_features *= weights
-        neighbours_max  = tf.reduce_max(neighbour_features, axis=1)
+        neighbours_max = tf.reduce_max(neighbour_features, axis=1)
         neighbours_mean = tf.reduce_mean(neighbour_features, axis=1)
-        
+
         return tf.concat([neighbours_max, neighbours_mean], axis=-1)
-    
+
     def get_config(self):
-        config = {'n_neighbours': self.n_neighbours, 
-                  'n_dimensions': self.n_dimensions, 
-                  'n_filters': self.n_filters, 
+        config = {'n_neighbours': self.n_neighbours,
+                  'n_dimensions': self.n_dimensions,
+                  'n_filters': self.n_filters,
                   'n_propagate': self.n_propagate}
         base_config = super(RaggedGravNet_simple, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
