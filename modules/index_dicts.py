@@ -68,7 +68,12 @@ def create_index_dict(truth, pred, usetf=True):
     outdict['truthHitAssignedEnergies']  =  truth[:,1:2]
     outdict['truthHitAssignedEtas']      =  truth[:,8:9]
     outdict['truthHitAssignedPhis']      =  truth[:,9:10]
-    
+
+    # New
+    outdict['truthRechitsSum']      =  truth[:,16:17]
+    outdict['truthRealEnergy']      =  truth[:,15:16]
+    outdict['truthIsSpectator']      =  truth[:,14:15]
+
     outdict['predBeta']       = pred[:,0:1]
     outdict['predEnergy']     = pred[:,1:2]
     outdict['predEta']        = pred[:,2:3]
