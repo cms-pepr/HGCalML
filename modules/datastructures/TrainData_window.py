@@ -6,6 +6,7 @@ from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore.compiled.c_simpleArray import simpleArray
 import numpy as np
 import uproot
+from numba import jit
 
 
 class TrainData_window(TrainData):
@@ -60,6 +61,30 @@ class TrainData_window(TrainData):
         except Exception as e:
             return False
         return True
+
+    @jit
+    def findRechitsSum(self, showerIdx, recHitEnergy, rs):
+
+        # print(rs)
+
+        # 0/0
+
+        rechitEnergySums = []
+
+        for i in range(len(rs)-1):
+            ishowerIdx = showerIdx[rs[i]:rs[i+1]]
+            irechitEnergy = recHitEnergy[rs[i]:rs[i+1]]
+
+            uniques = np.unique(ishowerIdx)
+
+            irechitEnergySums = np.zeros_like(irechitEnergy)
+            for s in uniques:
+                energySum = np.sum(irechitEnergy[ishowerIdx==s])
+                irechitEnergySums[ishowerIdx==s] = energySum
+
+            rechitEnergySums.append(irechitEnergySums)
+
+        return np.concatenate(rechitEnergySums, axis=0)
     
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, onlytruth, treename="WindowNTupler/tree"):
         
@@ -105,9 +130,17 @@ class TrainData_window(TrainData):
         ## weird shape for this truthHitAssignedPIDs     = self.branchToFlatArray(tree["truthHitAssignedPIDs"], False)
         #windowEta                =
         #windowPhi                =
-        
-        
-        
+
+
+        # For calculating spectators
+        rechitsSum = self.findRechitsSum(truthHitAssignementIdx, recHitEnergy, rs)
+        notSpectators = np.logical_or(np.greater(recHitEnergy, 0.01 * rechitsSum), np.less(np.abs(recHitZ), 330))
+
+        # If truth shower energy < 5% of sum of rechits, assign rechits sum to it instead
+        truthShowerEnergies  = truthHitAssignedEnergies.copy()
+        truthShowerEnergies[rechitsSum<0.25*truthHitAssignedEnergies] = rechitsSum[rechitsSum<0.25*truthHitAssignedEnergies]
+
+
         #rs = self.padRowsplits(rs, recHitEnergy.shape[0], nevents)
         
         features = np.concatenate([
@@ -128,12 +161,13 @@ class TrainData_window(TrainData):
         print("features",features.shape)
         
         del features
+
         
         truth = np.concatenate([
         #    np.expand_dims(frs,axis=1),
         #    truthHitFractions        ,
             np.array(truthHitAssignementIdx, dtype='float32')   , # 0
-            truthHitAssignedEnergies ,
+            truthShowerEnergies ,
             truthHitAssignedX     ,
             truthHitAssignedY,
             truthHitAssignedZ,  #4
@@ -145,7 +179,10 @@ class TrainData_window(TrainData):
             truthHitAssignedR,  #10
             truthHitAssignedDirEta,
             truthHitAssignedDirPhi, #12
-            truthHitAssignedDirR
+            truthHitAssignedDirR,
+            np.logical_not(notSpectators),
+            truthHitAssignedEnergies,
+            rechitsSum,
         #    truthHitAssignedPIDs    
             ], axis=-1)
         
