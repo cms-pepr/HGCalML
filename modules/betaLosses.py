@@ -429,7 +429,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     if truth.shape[0] is None: 
         return tf.constant(0., tf.float32)
     
-    from object_condensation import indiv_object_condensation_loss
+    from object_condensation import indiv_object_condensation_loss_2
 
     rowsplits = tf.cast(rowsplits, tf.int64)#just for first loss evaluation from stupid keras
     
@@ -437,13 +437,16 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     d = create_loss_dict(truth, pred)
     feat = create_feature_dict(feat)
     #print('feat',feat.shape)
+
+    truthIsSpectator = d['truthIsSpectator'][:, 0]
     
     classes, row_splits = d['truthHitAssignementIdx'][...,0], rowsplits[ : rowsplits[-1,0],0]
     
-    attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss(d['predCCoords'], #
+    attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss_2(d['predCCoords'], #
                                                                                              d['predBeta'][...,0],  #remove last 1 dim
                                                                                              classes, 
-                                                                                             row_splits, 
+                                                                                             row_splits,
+                                                                                             truthIsSpectator,
                                                                                              Q_MIN=.5, 
                                                                                              S_B=1.)
     
