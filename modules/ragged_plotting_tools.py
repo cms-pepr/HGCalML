@@ -76,7 +76,7 @@ def createRandomizedColors(basemap,seed=0):
     vals = np.linspace(0,1,256)
     np.random.seed(seed)
     np.random.shuffle(vals)
-    cmap = plt.cm.colors.ListedColormap(cmap(vals))
+    return plt.cm.colors.ListedColormap(cmap(vals))
 
 
 def make_cluster_coordinates_plot(plt, ax, 
@@ -117,6 +117,7 @@ def make_cluster_coordinates_plot(plt, ax,
     
     ax.scatter(predCCoords[:,0][sorting],
               predCCoords[:,1][sorting],
+              s=.25*matplotlib.rcParams['lines.markersize'] ** 2,
               c=rgba_cols[sorting])
     
     

@@ -9,9 +9,11 @@ import matplotlib.pyplot as plt
 class plotEventDuringTraining(PredictCallback): 
     def __init__(self, 
                  outputfile,
+                 cycle_colors=False,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)
         self.outputfile=outputfile
+        self.cycle_colors=cycle_colors
         if self.td.nElements()>1:
             raise ValueError("plotEventDuringTraining: only one event allowed")
         
@@ -31,7 +33,11 @@ class plotEventDuringTraining(PredictCallback):
             data = create_index_dict(truth, pred, usetf=False)
             feats = create_feature_dict(feat)
             
-            cmap = createRandomizedColors('jet',seed=truth.shape[0])
+            seed = truth.shape[0]
+            if self.cycle_colors:
+                seed += counter
+            
+            cmap = createRandomizedColors('jet',seed=seed)
             
             make_cluster_coordinates_plot(plt, ax[1], 
                                           data['truthHitAssignementIdx'], #[ V  x 1] or [ V ]
