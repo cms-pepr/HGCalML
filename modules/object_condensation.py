@@ -814,7 +814,7 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
         beta_s = beta_s[spectators_s==0]
 
         if len(x_s) == 0:
-            print("Warning >>>>NO SPECTATORS IN THIS SEGMENT<<<< (just a warning though)")
+            print("Warning >>>>NO TRUTH ASSOCIATED VERTICES IN THIS SEGMENT<<<< (just a warning though)")
             continue
 
 

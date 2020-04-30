@@ -6,6 +6,7 @@ import numpy as np
 from plotting_tools import base_plotter, plotter_3d
 from index_dicts import create_index_dict
 from numba import jit
+import math
 
 '''
 Everything here assumes non flattened format:
@@ -44,7 +45,7 @@ def collectoverthresholds(data,
                           beta_threshold, distance_threshold):
     
     betas   = np.reshape(data['predBeta'], [data['predBeta'].shape[0], -1])
-    ccoords = np.reshape(data['predCCoords'], [data['predCCoords'].shape[0], -1, data['predCCoords'].shape[3]])
+    ccoords = np.reshape(data['predCCoords'], [data['predCCoords'].shape[0], -1, data['predCCoords'].shape[2]])
     
     sorting = np.argsort(-betas, axis=1)
     
@@ -70,11 +71,20 @@ def selectEvent(rs, feat, truth, event):
   
     return feat, truth[rs[event]:rs[event+1],...]
 
+def createRandomizedColors(basemap,seed=0):
+    cmap = plt.get_cmap(basemap)
+    vals = np.linspace(0,1,256)
+    np.random.seed(seed)
+    np.random.shuffle(vals)
+    cmap = plt.cm.colors.ListedColormap(cmap(vals))
+
 
 def make_cluster_coordinates_plot(plt, ax, 
                                   truthHitAssignementIdx, #[ V ] or [ V x 1 ]
                                   predBeta,               #[ V ] or [ V x 1 ]
                                   predCCoords,            #[ V x 2 ]
+                                  beta_threshold=0.4, distance_threshold=0.8,
+                                  cmap=None
                                 ):
     
     #data = create_index_dict(truth,pred,usetf=False)
@@ -89,7 +99,10 @@ def make_cluster_coordinates_plot(plt, ax,
     
     ax.set_aspect(aspect=1.)
     #print(truthHitAssignementIdx)
-    rgbcolor = plt.get_cmap('hsv')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
+    if cmap is None:
+        rgbcolor = plt.get_cmap('prism')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
+    else:
+        rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
     rgbcolor[truthHitAssignementIdx<0]=[0.98,0.98,0.98]
     #print(rgbcolor)
     #print(rgbcolor.shape)
@@ -98,13 +111,31 @@ def make_cluster_coordinates_plot(plt, ax,
     alphas = np.expand_dims(alphas, axis=1)
     
     rgba_cols = np.concatenate([rgbcolor,alphas],axis=-1)
+    rgb_cols = np.concatenate([rgbcolor,np.zeros_like(alphas+1.)],axis=-1)
     
     sorting = np.reshape(np.argsort(alphas, axis=0), [-1])
-    
     
     ax.scatter(predCCoords[:,0][sorting],
               predCCoords[:,1][sorting],
               c=rgba_cols[sorting])
+    
+    
+    if beta_threshold < 0. or beta_threshold > 1 or distance_threshold<0:
+        return
+    
+    data = {'predBeta': np.expand_dims(np.expand_dims(predBeta,axis=-1),axis=0),
+            'predCCoords': np.expand_dims(predCCoords,axis=0)}
+    
+    
+    #run the inference part
+    identified = collectoverthresholds(data,beta_threshold,distance_threshold)[0,:,0] #V
+    
+    
+    ax.scatter(predCCoords[:,0][identified],
+              predCCoords[:,1][identified],
+              s=2.*matplotlib.rcParams['lines.markersize'] ** 2,
+              c='#000000',#rgba_cols[identified],
+              marker='+')
     
     
     
@@ -114,7 +145,8 @@ def make_original_truth_shower_plot(plt, ax,
                                     recHitEnergy, 
                                     recHitX,
                                     recHitY,
-                                    recHitZ):
+                                    recHitZ,
+                                    cmap=None):
     
     
     if len(truthHitAssignementIdx.shape)>1:
@@ -130,7 +162,10 @@ def make_original_truth_shower_plot(plt, ax,
         
         
     pl = plotter_3d(output_file="/tmp/plot")#will be ignored
-    rgbcolor = plt.get_cmap('hsv')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
+    if cmap is None:
+        rgbcolor = plt.get_cmap('prism')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
+    else:
+        rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
     rgbcolor[truthHitAssignementIdx<0]=[0.92,0.92,0.92]
     
     pl.set_data(x = recHitX , y=recHitY   , z=recHitZ, e=recHitEnergy , c =rgbcolor)

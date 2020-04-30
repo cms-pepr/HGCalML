@@ -199,7 +199,11 @@ class TrainData_window(TrainData):
       
       
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
+        print("hello")
         pass
+    
+    def bla(self):
+        print("hello")
     
 
 

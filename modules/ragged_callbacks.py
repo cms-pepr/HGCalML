@@ -1,6 +1,6 @@
 
 
-from ragged_plotting_tools import make_cluster_coordinates_plot, make_original_truth_shower_plot
+from ragged_plotting_tools import make_cluster_coordinates_plot, make_original_truth_shower_plot, createRandomizedColors
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 from index_dicts import create_index_dict, create_feature_dict, split_feat_pred
 import matplotlib.pyplot as plt
@@ -31,18 +31,21 @@ class plotEventDuringTraining(PredictCallback):
             data = create_index_dict(truth, pred, usetf=False)
             feats = create_feature_dict(feat)
             
+            cmap = createRandomizedColors('jet',seed=truth.shape[0])
             
             make_cluster_coordinates_plot(plt, ax[1], 
                                           data['truthHitAssignementIdx'], #[ V  x 1] or [ V ]
                                           data['predBeta'],               #[ V  x 1] or [ V ]
-                                          data['predCCoords'])
+                                          data['predCCoords'],
+                                          cmap=cmap)
             
             make_original_truth_shower_plot(plt, ax[0], 
                                             data['truthHitAssignementIdx'],                      
                                              feats['recHitEnergy'], 
                                              feats['recHitX'],
                                              feats['recHitY'],
-                                             feats['recHitZ'])
+                                             feats['recHitZ'],
+                                             cmap=cmap)
             
             angle_in=counter+80.
             while angle_in>=360: angle_in-=360
