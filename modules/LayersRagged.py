@@ -195,11 +195,14 @@ class RaggedGravNet(keras.layers.Layer):
 
 class RaggedGravNet_simple(tf.keras.layers.Layer):
     def __init__(self,
-                 n_neighbours,
-                 n_dimensions,
-                 n_filters,
-                 n_propagate, **kwargs):
+                 n_neighbours: int,
+                 n_dimensions: int,
+                 n_filters: int,
+                 n_propagate: int, 
+                 **kwargs):
         super(RaggedGravNet_simple, self).__init__(**kwargs)
+
+        assert n_neighbours > 1
 
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
@@ -207,14 +210,14 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         self.n_propagate = n_propagate
 
 
-        # with tf.variable_scope(self.name+"/1/") as scope:
-        self.input_feature_transform = tf.keras.layers.Dense(n_propagate, name=uuid.uuid4().hex)
+        with tf.name_scope(self.name+"/1/"):
+            self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
 
-        # with tf.variable_scope(self.name+"/2/") as scope:
-        self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions, name=uuid.uuid4().hex)
+        with tf.name_scope(self.name+"/2/"):
+            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
 
-        # with tf.variable_scope(self.name+"/3/") as scope:
-        self.output_feature_transform = tf.keras.layers.Dense(n_filters, activation='tanh', name=uuid.uuid4().hex)
+        with tf.name_scope(self.name+"/3/"):
+            self.output_feature_transform = tf.keras.layers.Dense(n_filters, activation='tanh')
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]
@@ -257,7 +260,7 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
             (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices)) ** 2,
             axis=-1)  # [SV, N]
 
-        weights = gauss_of_lin(distance * 10.)
+        weights = gauss_of_lin(distance * 10.+1e-5)
         weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
 
         neighbour_features = tf.gather_nd(features, ragged_split_added_indices)

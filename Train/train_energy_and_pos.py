@@ -28,7 +28,7 @@ from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 
 train.loadModel(ptm.get_model_path("shah_rukh_apr30_2020.h5"))
 
-train.compileModel(learningrate=1e-5,
+train.compileModel(learningrate=1e-4,
                    loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits])
 
 
@@ -51,7 +51,7 @@ for i in range(5):
             outputfile=plotoutdir + "/sn",
             samplefile=samplepath,
             cycle_colors=False,
-            after_n_batches=200,
+            after_n_batches=100,
             batchsize=100000,
             on_epoch_end=False,
             use_event= i)
@@ -61,6 +61,7 @@ for i in range(5):
 
 
 
+train.change_learning_rate(1e-5)
 print("It should save now")
 model, history = train.trainModel(nepochs=10,
                                   run_eagerly=True,

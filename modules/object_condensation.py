@@ -798,7 +798,7 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
     L_beta_f = tf.constant(0., tf.float32)
     L_beta_s = tf.constant(0., tf.float32)
 
-    beta_values = tf.clip_by_value(beta_values, 0, 1. - 1e-5)
+    beta_values = tf.clip_by_value(beta_values, 0. + 1e-5, 1. - 1e-5)
 
     for b in tf.range(batch_size):
         x_s = output_space[row_splits[b]:row_splits[b + 1]]

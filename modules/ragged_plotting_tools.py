@@ -83,7 +83,7 @@ def make_cluster_coordinates_plot(plt, ax,
                                   truthHitAssignementIdx, #[ V ] or [ V x 1 ]
                                   predBeta,               #[ V ] or [ V x 1 ]
                                   predCCoords,            #[ V x 2 ]
-                                  beta_threshold=0.4, distance_threshold=0.8,
+                                  beta_threshold=0.2, distance_threshold=0.8,
                                   cmap=None
                                 ):
     
@@ -138,7 +138,7 @@ def make_cluster_coordinates_plot(plt, ax,
               c='#000000',#rgba_cols[identified],
               marker='+')
     
-    
+    return identified
     
 
 def make_original_truth_shower_plot(plt, ax,
@@ -172,4 +172,94 @@ def make_original_truth_shower_plot(plt, ax,
     pl.set_data(x = recHitX , y=recHitY   , z=recHitZ, e=recHitEnergy , c =rgbcolor)
     pl.marker_scale=2.
     pl.plot3d(ax=ax)
+    
+    
+def make_eta_phi_projection_truth_plot(plt, ax,
+                                    truthHitAssignementIdx,                      
+                                    recHitEnergy, 
+                                    recHitEta,
+                                    recHitPhi,
+                                    predEta,
+                                    predPhi,
+                                    truthEta,
+                                    truthPhi,
+                                    truthEnergy,
+                                    predBeta,               #[ V ] or [ V x 1 ]
+                                    predCCoords,            #[ V x 2 ]
+                                    beta_threshold=0.2, distance_threshold=0.8,
+                                    cmap=None,
+                                    identified=None):
+    
+    if len(truthHitAssignementIdx.shape)>1:
+        truthHitAssignementIdx = np.array(truthHitAssignementIdx[:,0])
+    if len(recHitEnergy.shape)>1:
+        recHitEnergy = np.array(recHitEnergy[:,0])
+    if len(recHitEta.shape)>1:
+        recHitEta = np.array(recHitEta[:,0])
+    if len(recHitPhi.shape)>1:
+        recHitPhi = np.array(recHitPhi[:,0])
+    if len(predEta.shape)>1:
+        predEta = np.array(predEta[:,0])
+    if len(predPhi.shape)>1:
+        predPhi = np.array(predPhi[:,0])
+    if len(truthEta.shape)>1:
+        truthEta = np.array(truthEta[:,0])
+    if len(truthPhi.shape)>1:
+        truthPhi = np.array(truthPhi[:,0])
+    if len(truthEnergy.shape)>1:
+        truthEnergy = np.array(truthEnergy[:,0])
+        
+        
+    if len(truthHitAssignementIdx.shape)>1:
+        truthHitAssignementIdx = np.array(truthHitAssignementIdx[:,0])
+    if len(predBeta.shape)>1:
+        predBeta = np.array(predBeta[:,0])
+        
+    
+
+    ax.set_aspect(aspect=1.)
+    #print(truthHitAssignementIdx)
+    if cmap is None:
+        rgbcolor = plt.get_cmap('prism')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
+    else:
+        rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
+
+    size_scaling = np.log(recHitEnergy+1)+0.1
+    size_scaling /=  np.max(size_scaling)
+
+    ax.scatter(recHitPhi,
+              recHitEta,
+              s=.25*size_scaling,
+              c=rgbcolor)
+     
+    _, truth_idxs = np.unique(truthHitAssignementIdx,return_index=True)
+    
+    truth_size_scaling=np.log(truthEnergy[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0] +1.)+0.1
+    truth_size_scaling /=  np.max(truth_size_scaling)
+    
+    ax.scatter(truthPhi[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0],
+              truthEta[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0],
+              s=100.*truth_size_scaling,
+              c=rgbcolor[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0],
+              marker='x')
+    
+    
+    if beta_threshold < 0. or beta_threshold > 1 or distance_threshold<0:
+        return
+    
+    data = {'predBeta': np.expand_dims(np.expand_dims(predBeta,axis=-1),axis=0),
+            'predCCoords': np.expand_dims(predCCoords,axis=0)}
+       
+    #run the inference part
+    if identified is None:
+        identified = collectoverthresholds(data,beta_threshold,distance_threshold)[0,:,0] #V
+    
+    
+    ax.scatter(predPhi[identified],
+              predEta[identified],
+              s=2.*matplotlib.rcParams['lines.markersize'] ** 2,
+              c='#000000',#rgba_cols[identified],
+              marker='+')
+    
+    
         
