@@ -573,7 +573,8 @@ def _parametrised_instance_loop(max_instances,
                                 x_s,
                                 classes_s,
                                 beta_s,
-                                q_s):
+                                q_s,
+                                extra_beta_weights=None):
     # get an idea of all the shapes
 
     # K      print('instance_ids',tf.shape(instance_ids))
@@ -641,8 +642,13 @@ def _parametrised_instance_loop(max_instances,
     F_rep = is_obj_k * tf.reduce_sum(F_rep, axis=1)  # K
     L_rep = tf.reduce_sum(F_rep, axis=0) / (Ntotal + 1e-6)
 
+    weights_ka = 1.
+    if extra_beta_weights is not None:
+        weights_ka = gather_for_obj_from_vert(tf.expand_dims(extra_beta_weights,axis=1),kalpha)
+        weights_ka = tf.squeeze(weights_ka ,axis=1)
+
     # check broadcasting here
-    L_beta = tf.reduce_sum(is_obj_k * (1 - tf.squeeze(tf.squeeze(beta_kalpha, axis=1), axis=1))) / (Nobj + 1e-6)
+    L_beta = tf.reduce_sum(weights_ka* is_obj_k * (1 - tf.squeeze(tf.squeeze(beta_kalpha, axis=1), axis=1))) / (Nobj + 1e-6)
 
     n_noise = tf.reduce_sum((1. - no_noise_mask))
     L_suppnoise = tf.reduce_sum((1. - no_noise_mask) * beta_s, axis=0) / (n_noise + 1e-6)
@@ -769,7 +775,8 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
     return V_att, V_rep, L_beta_s, L_beta_f
 
 
-def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, row_splits, spectators, Q_MIN=0.1, S_B=1):
+def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, row_splits, spectators, Q_MIN=0.1, S_B=1,
+                                     energyweights=None):
     """
     ####################################################################################################################
     # Implements OBJECT CONDENSATION for ragged tensors
@@ -804,6 +811,11 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
         x_s = output_space[row_splits[b]:row_splits[b + 1]]
         classes_s = labels_classes[row_splits[b]:row_splits[b + 1]]
         beta_s = beta_values[row_splits[b]:row_splits[b + 1]]
+        e_weights = 1.
+        if energyweights is not None:
+            e_weights = energyweights[row_splits[b]:row_splits[b + 1]]
+        
+        # e_weights not used for now!
         #num_vertices = tf.cast(row_splits[b + 1] - row_splits[b], tf.float32)
 
         spectators_s = spectators[row_splits[b]:row_splits[b + 1]]
@@ -812,13 +824,16 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
         x_s = x_s[spectators_s==0]
         classes_s = classes_s[spectators_s==0]
         beta_s = beta_s[spectators_s==0]
-
+        if energyweights is not None:
+            e_weights = e_weights[spectators_s==0]
+            
         if len(x_s) == 0:
             print("Warning >>>>NO TRUTH ASSOCIATED VERTICES IN THIS SEGMENT<<<< (just a warning though)")
             continue
 
 
-        q_s = tf.math.atanh(beta_s) ** 2 + Q_MIN
+        q_s = e_weights * ( tf.math.atanh(beta_s) ** 2 + Q_MIN ) 
+        #scaling per instance! just changes instance weighting towards high energy particles
 
         instance_ids, _ = tf.unique(tf.reshape(classes_s, (-1,)))
 
@@ -839,7 +854,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
             x_s,
             classes_s,
             beta_s,
-            q_s)
+            q_s,
+            e_weights)
 
 
         L_beta_f += L_beta_f_segment

@@ -4,7 +4,7 @@ import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from LayersRagged import RaggedConstructTensor, RaggedGravNet, RaggedGlobalExchange, RaggedGravNet_simple
+from LayersRagged import RaggedConstructTensor, RaggedGravNet, RaggedGlobalExchange, RaggedGravNet_simple, RaggedGravNet, GraphShapeFilters, RaggedNeighborBuilder
 from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -19,35 +19,12 @@ from ragged_callbacks import plotEventDuringTraining
 from DeepJetCore.DJCLayers import ScalarMultiply
 
 
+import pretrained_models as ptm
 # tf.compat.v1.disable_eager_execution()
 
 
-
-def ser_simple_model(Inputs):
-    x = Dense(128)(Inputs[0])
-
-    beta = Dense(1, activation='sigmoid')(x)
-    energy = Dense(1, activation=None)(x)
-    eta = Dense(1, activation=None)(x)
-    phi = Dense(1, activation=None)(x)
-    ccoords = Dense(2, activation=None)(x)
-
-    x = Concatenate()([
-        beta,
-        energy,
-        eta,
-        phi,
-        ccoords])
-
-    return Model(inputs=Inputs, outputs=[x, x])
-
-
 def gravnet_model(Inputs, feature_dropout=-1.):
-    nregressions = 5
-
-    # I_data = tf.keras.Input(shape=(num_features,), dtype="float32")
-    # I_splits = tf.keras.Input(shape=(1,), dtype="int32")
-
+    
     I_data = Inputs[0]
     I_splits = tf.cast(Inputs[1], tf.int32)
 
@@ -59,37 +36,55 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = x_basic
 
     n_filters = 0
-    n_gravnet_layers = 5
+    n_gravnet_layers = 4
     feat = [x_basic]
     for i in range(n_gravnet_layers):
-        n_filters = 128
-        n_propagate = 64
-        n_neighbours = 200
-        if i % 2:
-            n_neighbours = 40
+        
+        n_filters = [32,64,64]
+        n_propagate = 32
+        n_neighbours = 128
+        n_dimensions = 4
 
         x = RaggedGlobalExchange()([x, x_row_splits])
         x = Dense(64, activation='elu')(x)
-        x = Dense(64, activation='elu')(x)
-        x = Dense(64, activation='elu')(x)
-        x = BatchNormalization(momentum=0.6)(x)
-        x = RaggedGravNet_simple(n_neighbours=n_neighbours,
-                                 n_dimensions=4,
+        x_o = BatchNormalization(momentum=0.6)(x)
+        
+        x,idcs,coords = RaggedGravNet(n_neighbours=n_neighbours,
+                                 n_dimensions=n_dimensions,
                                  n_filters=n_filters,
                                  n_propagate=n_propagate,
-                                 name='gravnet_' + str(i))([x, x_row_splits])
-        x = BatchNormalization(momentum=0.6)(x)
-        feat.append(Dense(48, activation='elu')(x))
+                                 return_idx_and_space=True,
+                                 name='gravnet_' + str(i))([x_o, x_row_splits])
+          
+          
+        neigh_coords = RaggedNeighborBuilder()([coords,idcs])
+        shape_x_o = Dense(4, activation='elu')(x_o)  
+        neigh_feat =   RaggedNeighborBuilder()([shape_x_o,idcs])
+        x = Concatenate()([x, GraphShapeFilters(
+                                n_filters=32,
+                                n_moments=3,
+                              )( [neigh_coords, neigh_feat] )
+                           ])  
+        x = Dense(64, activation='elu')(x)  
+        x = Dense(32, activation='elu')(x)                   
+        feat.append(x)
 
     x = Concatenate()(feat)
     x = Dense(128, activation='elu')(x)
+    x = BatchNormalization(momentum=0.6)(x)
+    x = Dense(64, activation='elu')(x)
     x = Dense(64, activation='elu')(x)
     x = Dense(64, activation='elu')(x)
 
     beta = Dense(1, activation='sigmoid')(x)
-    energy = ScalarMultiply(100.)(Dense(1, activation=None)(x))
-    eta = Dense(1, activation=None)(x)
-    phi = Dense(1, activation=None)(x)
+    
+    energy_a = ScalarMultiply(1.)(Dense(1, activation='relu')(x))
+    energy_b = ScalarMultiply(10.)(Dense(1, activation='relu')(x))
+    energy_c = ScalarMultiply(100.)(Dense(1, activation='relu')(x))
+    energy = Dense(1, activation=None)(Concatenate()([energy_a,energy_b,energy_c,]))
+    
+    eta = Dense(1, activation=None,kernel_initializer='zeros')(x)
+    phi = Dense(1, activation=None,kernel_initializer='zeros')(x)
     ccoords = Dense(2, activation=None)(x)
 
     print('input_features', input_features.shape)
@@ -108,43 +103,49 @@ train = training_base(testrun=False, resumeSilently=True, renewtokens=False)
 
 from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 
-# optimizer = Adam(lr=1e-4)
-# train.setCustomOptimizer(optimizer)
+if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
-# train.setDJCKerasModel(simple_model)
-train.setModel(gravnet_model)  # ser_simple_model)
-# train.keras_model.dynamic=True
-train.compileModel(learningrate=1e-4,
+    #for regression use the regression model
+    train.setModel(gravnet_model)
+    
+    #for regression use a different loss, e.g. mean_squared_error
+    train.compileModel(learningrate=3e-5,
                    loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits])
-####### do not use metrics here - keras problem in TF 2.2rc0
+ 
+    
+
+train.change_learning_rate(5e-4)
 
 
 print(train.keras_model.summary())
 
-nbatch = 15000  # **2 #this will be an upper limit on vertices per batch
+#exit()
+
+nbatch = 25000  # **2 #this will be an upper limit on vertices per batch
 
 verbosity = 2
 import os
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
 callbacks = []
-for i in range(10):
-    plotoutdir = train.outputDir + "/event_" + str(i + 2)
+for i in range(5):
+    plotoutdir = train.outputDir + "/event_" + str(i)
     os.system('mkdir -p ' + plotoutdir)
     callbacks.append(
         plotEventDuringTraining(
             outputfile=plotoutdir + "/sn",
             samplefile=samplepath,
-            after_n_batches=300,
+            cycle_colors=False,
+            after_n_batches=100,
             batchsize=100000,
             on_epoch_end=False,
-            use_event=2 + i)
+            use_event= i)
     )
-
 
 
 from configSaver import copyModules
 copyModules(train.outputDir)
+
 
 print("It should save now")
 model, history = train.trainModel(nepochs=10,
@@ -158,7 +159,6 @@ model, history = train.trainModel(nepochs=10,
 
 exit()
 
-train.change_learning_rate(2e-4)
 
 model, history = train.trainModel(nepochs=5 + 1,
                                   batchsize=nbatch,

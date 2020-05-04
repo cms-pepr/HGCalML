@@ -428,11 +428,13 @@ def batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling):
 
 #this needs to be per ragged batch! same for spectators   
 #but we're in eager so whatever 
-def beta_weighted_truth_mean(l_in, d, row_splits, beta_scaling):#l_in  V x 1
+def beta_weighted_truth_mean(l_in, d, row_splits, beta_scaling, is_not_spectator=None):#l_in  V x 1
     
     batch_size = row_splits.shape[0] - 1
     out = tf.constant(0., tf.float32)
     istruth = d['truthNoNoise']
+    if is_not_spectator is not None:
+        istruth *= is_not_spectator
     
     for b in tf.range(batch_size):
         b_beta_scaling = beta_scaling[row_splits[b]:row_splits[b + 1]]
@@ -488,27 +490,31 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     
     classes, row_splits = d['truthHitAssignementIdx'][...,0], rowsplits[ : rowsplits[-1,0],0]
     
+    energyweights = d['truthHitAssignedEnergies']
+    energyweights = tf.math.log(0.1 * energyweights + 1.)*0. + 1.
+    
     attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss_2(d['predCCoords'], #
                                                                                              d['predBeta'][...,0],  #remove last 1 dim
                                                                                              classes, 
                                                                                              row_splits,
                                                                                              truthIsSpectator,
-                                                                                             Q_MIN=.1, 
-                                                                                             S_B=1.)
+                                                                                             Q_MIN=.5, 
+                                                                                             S_B=1.,
+                                                                                             energyweights=energyweights[...,0])
     
     beta_scaling = tf.math.atanh(tf.clip_by_value( d['predBeta'], 1e-5, 1. - 1e-5))**2 #avoid nans
     
     #energy loss. For particles other than muons, the highest energy hits contribute with about 1% of the total energy
-    energy_diff = (d['predEnergy'])*feat['recHitEnergy'] - d['truthHitAssignedEnergies']
-    energy_loss = beta_weighted_truth_mean((1.-d['truthIsSpectator']) * 
-                                           energy_diff**2/(d['truthHitAssignedEnergies']**2+5), d,row_splits, beta_scaling)
+    energy_diff = (d['predEnergy'] - d['truthHitAssignedEnergies'])
+    energy_loss = beta_weighted_truth_mean(energyweights *  
+                                           energy_diff**2/(d['truthHitAssignedEnergies']**2+5), d,row_splits, beta_scaling, (1.-d['truthIsSpectator']) )
     
 
     etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
     pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
-    pos_offs = tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
-    position_loss = 100.* beta_weighted_truth_mean((1.-d['truthIsSpectator']) * pos_offs, d,row_splits, beta_scaling)
+    pos_offs =  tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
+    position_loss = 500.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
     
     
     spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)

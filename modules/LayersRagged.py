@@ -49,155 +49,13 @@ class RaggedConstructTensor(keras.layers.Layer):
         return [(None, self.num_features), (None,)]
 
 
-class RaggedGravNet(keras.layers.Layer):
-    def __init__(self, n_neighbours=40, n_dimensions=4, n_filters=32, n_propagate=8, 
-                 also_coordinates=False, feature_dropout=-1,
-                 coordinate_kernel_initializer=keras.initializers.Orthogonal(),
-                 other_kernel_initializer='glorot_uniform',
-                 fix_coordinate_space=False,
-                 coordinate_activation=None,
-                 additional_message_passing=0,
-                 **kwargs):
-        super(RaggedGravNet, self).__init__(**kwargs)
-
-        self.n_neighbours = n_neighbours
-        self.n_dimensions = n_dimensions
-        self.n_filters = n_filters
-        self.n_propagate = n_propagate
-        # self.name = name TODO: Jan this doesnt work for me
-        self.also_coordinates = also_coordinates
-        self.feature_dropout = feature_dropout
-        self.additional_message_passing = additional_message_passing
-
-        self.input_feature_transform = keras.layers.Dense(n_propagate, name=self.name + '_FLR',
-                                                          kernel_initializer=other_kernel_initializer)
-        self.input_spatial_transform = keras.layers.Dense(n_dimensions, name=self.name + '_S',
-                                                          kernel_initializer=coordinate_kernel_initializer,
-                                                          activation=coordinate_activation)
-        self.output_feature_transform = keras.layers.Dense(n_filters, activation='tanh', name=self.name + '_Fout',
-                                                           kernel_initializer=other_kernel_initializer)
-
-        self._sublayers = [self.input_feature_transform, self.input_spatial_transform, self.output_feature_transform]
-        if fix_coordinate_space:
-            self.input_spatial_transform = None
-            self._sublayers = [self.input_feature_transform, self.output_feature_transform]
-
-        self.message_passing_layers = []
-        for i in range(additional_message_passing):
-            self.message_passing_layers.append(
-                keras.layers.Dense(n_propagate, activation='elu',
-                                   name=self.name + '_mp_' + str(i), kernel_initializer=other_kernel_initializer)
-            )
-        self._sublayers += self.message_passing_layers
-
-    def build(self, input_shapes):
-        input_shape = input_shapes[0]
-
-        self.input_feature_transform.build(input_shape)
-        if self.input_spatial_transform is not None:
-            self.input_spatial_transform.build(input_shape)
-
-        self.output_feature_transform.build((input_shape[0], input_shape[1] + self.input_feature_transform.units * 2))
-
-        self.message_parsing_distance_weights = []
-        for i in range(len(self.message_passing_layers)):
-            l = self.message_passing_layers[i]
-            l.build((input_shape[0], input_shape[1] + self.n_propagate * 2))
-            d_weight = self.add_weight(name=self.name + '_mp_distance_weight_' + str(i),
-                                       shape=(1,),
-                                       initializer='uniform',
-                                       constraint=keras.constraints.NonNeg(),
-                                       trainable=True)
-            self.message_parsing_distance_weights.append(d_weight)
-
-        for layer in self._sublayers:
-            self._trainable_weights.extend(layer.trainable_weights)
-            self._non_trainable_weights.extend(layer.non_trainable_weights)
-
-        super(RaggedGravNet, self).build(input_shape)
-    
-    
-    def call(self, inputs):
-
-        x = inputs[0]
-        row_splits = inputs[1]
-
-        mask = None
-
-        if self.input_spatial_transform is not None:
-            coordinates = self.input_spatial_transform(x)
-        else:
-            coordinates = x[:, :, 0:self.n_dimensions]
-
-        collected_neighbours = self.collect_neighbours(coordinates, x, row_splits)
-
-        updated_features = tf.concat([x, collected_neighbours], axis=-1)
-        output = self.output_feature_transform(updated_features)
-
-
-        if self.also_coordinates:
-            return [output, coordinates]
-        return output
-
-    def compute_output_shape(self, input_shapes):
-        input_shape = input_shapes[0]
-
-        if self.also_coordinates:
-            return [(input_shape[0], self.output_feature_transform.units),
-                    (input_shape[0], self.n_dimensions)]
-
-        return (input_shape[0], self.output_feature_transform.units)
-
-    def collect_neighbours(self, coordinates, x, row_splits):
-        features = self.input_feature_transform(x) # [SV, F]
-
-        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits, data=coordinates, add_splits=True) # [SV, N+1]
-        ragged_split_added_indices = ragged_split_added_indices[:,1:][..., tf.newaxis]  # [SV, N]
-
-        distance = tf.reduce_sum((coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices))**2, axis=-1)  # [SV, N]
-
-        weights = gauss_of_lin(distance * 10.)
-        weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
-
-        for i in range(len(self.message_passing_layers) + 1):
-            if i:
-                features = self.message_passing_layers[i - 1](tf.concat([features, x], axis=-1))  # [SV, G]
-                w = self.message_parsing_distance_weights[i - 1]  # [??]
-                weights = gauss_of_lin(w * distance) # [SV, N]
-                weights = tf.expand_dims(weights, axis=-1) # [SV, N, 1]
-
-            if self.feature_dropout > 0 and self.feature_dropout < 1:
-                features = keras.layers.Dropout(self.feature_dropout)(features)
-
-            neighbour_features = tf.gather_nd(features, ragged_split_added_indices) # [SV, N, F]
-            # weight the neighbour_features
-            neighbour_features *= weights  # [SV, N, F]
-
-            neighbours_max = tf.reduce_max(neighbour_features, axis=1)  # [SV, F]
-            neighbours_mean = tf.reduce_mean(neighbour_features, axis=1)  # [SV, F]
-
-            features = tf.concat([neighbours_max, neighbours_mean], axis=-1)  # [SV, 2F]
-
-        return features
-
-    def get_config(self):
-        config = {'n_neighbours': self.n_neighbours,
-                  'n_dimensions': self.n_dimensions,
-                  'n_filters': self.n_filters,
-                  'n_propagate': self.n_propagate,
-                  'name': self.name,
-                  'also_coordinates': self.also_coordinates,
-                  'feature_dropout': self.feature_dropout,
-                  'additional_message_passing': self.additional_message_passing}
-        base_config = super(RaggedGravNet, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 class RaggedGravNet_simple(tf.keras.layers.Layer):
     def __init__(self,
                  n_neighbours: int,
                  n_dimensions: int,
-                 n_filters: int,
+                 n_filters,
                  n_propagate: int, 
                  **kwargs):
         super(RaggedGravNet_simple, self).__init__(**kwargs)
@@ -206,9 +64,14 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
 
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
+        
+        if not isinstance(n_filters, list):
+            n_filters=[n_filters]
+        
         self.n_filters = n_filters
         self.n_propagate = n_propagate
 
+        self.return_indices = False
 
         with tf.name_scope(self.name+"/1/"):
             self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
@@ -216,8 +79,10 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         with tf.name_scope(self.name+"/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
 
-        with tf.name_scope(self.name+"/3/"):
-            self.output_feature_transform = tf.keras.layers.Dense(n_filters, activation='tanh')
+        self.output_feature_transform=[]
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
+                self.output_feature_transform.append(tf.keras.layers.Dense(self.n_filters[i], activation='tanh'))
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]
@@ -228,9 +93,17 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform.build(input_shape)
 
-        with tf.name_scope(self.name+"/3/"):
-            self.output_feature_transform.build((input_shape[0],
-                                             input_shape[1] + self.input_feature_transform.units * 2))
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
+                n_nodes = 0
+                if not i:
+                    n_nodes = input_shape[1] + self.input_feature_transform.units * 2
+                else:
+                    n_nodes = input_shape[1] + self.output_feature_transform[i-1].units*2
+                self.output_feature_transform[i].build((input_shape[0],
+                                             n_nodes))
+
+        
 
         super(RaggedGravNet_simple, self).build(input_shape)
 
@@ -240,30 +113,44 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
 
         coordinates = self.input_spatial_transform(x)
         features = self.input_feature_transform(x)
-        collected_neighbours = self.collect_neighbours(coordinates, features, row_splits)
+        
+        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits)
 
-        updated_features = tf.concat([x, collected_neighbours], axis=-1)
-        return self.output_feature_transform(updated_features)
+        for t in self.output_feature_transform:
+            collected_neighbours = self.collect_neighbours(features, neighbour_indices, weights)
+            features = tf.concat([x, collected_neighbours], axis=-1)
+            features = t(features)
+        if self.return_indices:
+            shapes = self.compute_output_shape(inputs)
+            return features, tf.reshape(neighbour_indices,(-1,)+shapes[1])
+        else:
+            return features
 
     def compute_output_shape(self, input_shapes):
         input_shape = input_shapes[0]
-        return (input_shape[0], self.output_feature_transform.units)
-
-    def collect_neighbours(self, coordinates, features, row_splits):
+        if self.return_indices:
+            return (self.output_feature_transform[-1].units,), (self.n_neighbours-1,1)
+        else:
+            return (self.output_feature_transform[-1].units[-1],)
+    
+    def compute_neighbours_and_weights(self, coordinates, row_splits):
         ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits,
                                                           data=coordinates, add_splits=True)  # [SV, N+1]
 
-        # print(ragged_split_added_indices)
         ragged_split_added_indices = ragged_split_added_indices[:, 1:][..., tf.newaxis]  # [SV, N]
 
         distance = tf.reduce_sum(
-            (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices)) ** 2,
+            (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices)) ** 2,
             axis=-1)  # [SV, N]
 
         weights = gauss_of_lin(distance * 10.+1e-5)
         weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
+        return ragged_split_added_indices,weights 
+        
 
-        neighbour_features = tf.gather_nd(features, ragged_split_added_indices)
+    def collect_neighbours(self, features, neighbour_indices, weights):
+
+        neighbour_features = tf.gather_nd(features, neighbour_indices)
         neighbour_features *= weights
         neighbours_max = tf.reduce_max(neighbour_features, axis=1)
         neighbours_mean = tf.reduce_mean(neighbour_features, axis=1)
@@ -276,6 +163,136 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
                   'n_filters': self.n_filters,
                   'n_propagate': self.n_propagate}
         base_config = super(RaggedGravNet_simple, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+class RaggedGravNet(tf.keras.layers.Layer):
+    def __init__(self,
+                 n_neighbours: int,
+                 n_dimensions: int,
+                 n_filters,
+                 n_propagate: int, 
+                 return_indices = False,
+                 return_idx_and_space = False,
+                 **kwargs):
+        super(RaggedGravNet, self).__init__(**kwargs)
+
+        assert n_neighbours > 1
+
+        self.n_neighbours = n_neighbours
+        self.n_dimensions = n_dimensions
+        
+        if not isinstance(n_filters, list):
+            n_filters=[n_filters]
+        
+        self.n_filters = n_filters
+        self.n_propagate = n_propagate
+
+        self.return_indices = return_indices
+        self.return_idx_and_space = return_idx_and_space
+        if return_idx_and_space:
+            self.return_indices = True
+
+        with tf.name_scope(self.name+"/1/"):
+            self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
+
+        with tf.name_scope(self.name+"/2/"):
+            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
+
+        self.output_feature_transform=[]
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
+                self.output_feature_transform.append(tf.keras.layers.Dense(self.n_filters[i], activation='tanh'))
+
+    def build(self, input_shapes):
+        input_shape = input_shapes[0]
+
+        with tf.name_scope(self.name+"/1/"):
+            self.input_feature_transform.build(input_shape)
+
+        with tf.name_scope(self.name + "/2/"):
+            self.input_spatial_transform.build(input_shape)
+
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
+                n_nodes = 0
+                if not i:
+                    n_nodes = input_shape[1] + self.input_feature_transform.units * 2
+                else:
+                    n_nodes = input_shape[1] + self.output_feature_transform[i-1].units*2
+                self.output_feature_transform[i].build((input_shape[0],
+                                             n_nodes))
+
+        
+
+        super(RaggedGravNet, self).build(input_shape)
+
+    def call(self, inputs):
+        x = inputs[0]
+        row_splits = inputs[1]
+
+        coordinates = self.input_spatial_transform(x)
+        in_features = self.input_feature_transform(x)
+        features = in_features
+        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits)
+
+        orig_neighbours = None
+        for t in self.output_feature_transform:
+            collected_neighbours = self.collect_neighbours(features, neighbour_indices, weights)
+            features = tf.concat([x, collected_neighbours], axis=-1)
+            features = t(features)
+            
+        if self.return_indices:
+            shapes = self.compute_output_shape(inputs)
+            if self.return_idx_and_space:
+                return features, tf.reshape(neighbour_indices,(-1,)+shapes[1]), coordinates
+            else:
+                return features, tf.reshape(neighbour_indices,(-1,)+shapes[1])
+        else:
+            return features
+
+    def compute_output_shape(self, input_shapes):
+        input_shape = input_shapes[0]
+        if self.return_indices:
+            if self.return_idx_and_space:
+                return (self.output_feature_transform[-1].units,), (self.n_neighbours-1,1), (self.n_dimensions,)
+            else:
+                return (self.output_feature_transform[-1].units,), (self.n_neighbours-1,1)
+        else:
+            return (self.output_feature_transform[-1].units[-1],)
+    
+    def compute_neighbours_and_weights(self, coordinates, row_splits):
+        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits,
+                                                          data=coordinates, add_splits=True)  # [SV, N+1]
+
+        ragged_split_added_indices = ragged_split_added_indices[:, 1:][..., tf.newaxis]  # [SV, N]
+
+        distance = tf.reduce_sum(
+            (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices)) ** 2,
+            axis=-1)  # [SV, N]
+
+        weights = gauss_of_lin(distance * 10.+1e-5)
+        weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
+        return ragged_split_added_indices,weights 
+        
+
+    def collect_neighbours(self, features, neighbour_indices, weights):
+
+        neighbour_features = tf.gather_nd(features, neighbour_indices)
+        neighbour_features *= weights
+        neighbours_max = tf.reduce_max(neighbour_features, axis=1)
+        neighbours_mean = tf.reduce_mean(neighbour_features, axis=1)
+
+        return tf.concat([neighbours_max, neighbours_mean], axis=-1)
+
+    def get_config(self):
+        config = {'n_neighbours': self.n_neighbours,
+                  'n_dimensions': self.n_dimensions,
+                  'n_filters': self.n_filters,
+                  'n_propagate': self.n_propagate,
+                  'return_indices': self.return_indices,
+                  'return_idx_and_space': self.return_idx_and_space}
+        base_config = super(RaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
 
@@ -305,7 +322,7 @@ class RaggedGlobalExchange(keras.layers.Layer):
 
     def compute_output_shape(self, input_shape):
         data_input_shape = input_shape[0]
-        return None, data_input_shape[1]*2
+        return (data_input_shape[0], data_input_shape[1]*2)
 
 
 
@@ -389,4 +406,182 @@ class RaggedEdgeConvLayer(keras.layers.Layer):
         vertex_out = self.aggregation_function(edge, axis=2)
 
         return vertex_out
+    
+    
+def unique_with_inverse(x):
+    y, idx = tf.unique(x)
+    num_segments = tf.shape(y)[0]
+    num_elems = tf.shape(x)[0]
+    return y, tf.math.unsorted_segment_min(tf.range(num_elems), idx, num_segments)
+      
+class RaggedVertexEater(keras.layers.Layer):
+    '''
+    reduces a set of neighbours (sum(V) x N x F) to a unique set of maximum activation vertices
+    inputs : data (sum(V) x N x F), row splits (TF format)
+    outputs: data (sum(V') x F , new row splits, remaining indices (as in sum(V)) to reconstruct original vertices (to be used with scatted_nd)
+    '''
+    def __init__(self, **kwargs):
+        super(RaggedVertexEater, self).__init__(**kwargs)
+
+    def call(self, x):
+        
+        x_data, row_splits = x[0], x[1]
+        maxed = tf.reduce_max(x_data, axis=1) #sum(V) x F
+        
+        #for keras compile
+        if row_splits.shape[0] is None:
+            return maxed, row_splits, tf.range(0)
+        
+        batch_size = row_splits.shape[0] - 1
+        
+        new_rs = [int(0)]
+        all_idcs = []
+        rs_idcs =[]
+        for b in tf.range(batch_size):
+            n_u, idx = unique_with_inverse(tf.reduce_sum(maxed[row_splits[b]:row_splits[b + 1]],axis=1)) #unique only works on 1D
+            idx = tf.cast(idx,dtype='int64')
+            all_idcs.append(idx + tf.cast(row_splits[b],dtype='int64'))
+            new_rs.append(new_rs[-1] + n_u.shape[0] )
+            
+        #print('new_rs',new_rs, all_idcs)
+        all_idcs = tf.concat(all_idcs,axis=0)
+        all_idcs,_ = tf.unique(all_idcs)
+        all_idcs = tf.expand_dims(all_idcs,axis=1)
+        all_idcs = tf.cast(all_idcs,dtype='int64')
+        
+        new_rs = tf.convert_to_tensor(new_rs)
+        
+        new_d = tf.gather_nd(maxed, all_idcs)
+        
+        shapes = self.compute_output_shape(x)
+        #return new_d, new_rs, all_idcs
+        return new_d,new_rs,all_idcs # tf.reshape(new_d, (-1,)+shapes[0]), tf.reshape(new_rs, (-1,)), tf.reshape(all_idcs, (-1,)+shapes[2])
+
+    def compute_output_shape(self, input_shape):
+        data_input_shape = input_shape[0]
+        rs_input_shape = input_shape[1]
+        return ( data_input_shape[1],), (None,), (1,) 
+
+
+class RaggedNeighborBuilder(keras.layers.Layer):
+    def __init__(self,  **kwargs):
+        super(RaggedNeighborBuilder, self).__init__(**kwargs)
+    
+    def call(self, x):
+        data, indices = x
+        self_data = tf.expand_dims(data,axis=1) # sum(V) c 1 x F
+        return tf.concat([self_data,tf.gather_nd(data, indices)],axis=1)
+        
+    def compute_output_shape(self, input_shape):
+        dshape = input_shape[0]
+        idcsshape = input_shape[1]
+        return ( idcsshape[1]+1, dshape[1])
+        
+   
+    
+    
+class VertexScatterer(keras.layers.Layer):
+    '''
+    reduces a set of neighbours (sum(V) x N x F) to a unique set of maximum activation vertices
+    inputs : data (sum(V) x N x F), row splits (TF format)
+    outputs: data (sum(V') x F , new row splits, remaining indices (as in sum(V)) to reconstruct original vertices (to be used with scatted_nd)
+    '''
+    def __init__(self, **kwargs):
+        super(VertexScatterer, self).__init__(**kwargs)
+
+    def call(self, x):
+        
+        x_data, scatter_idcs, protoshape = x[0], x[1], x[2]
+        if protoshape.shape[0] is None:
+            return x_data 
+        
+        scatter_idcs = tf.cast(scatter_idcs,dtype='int64')
+        shape = tf.cast(tf.shape(protoshape),dtype='int64')
+        
+        tf.print('scattering', x_data.shape, 'to', shape)
+        
+        return tf.scatter_nd(indices=scatter_idcs, updates=x_data, shape=shape)
+
+    def compute_output_shape(self, input_shape):
+        data_input_shape = input_shape[0]
+        return data_input_shape
+
+
+    
+class GraphShapeFilters(keras.layers.Layer):
+    '''
+    '''
+    def __init__(self, 
+                 n_filters: int,
+                 n_moments: int,
+                 **kwargs):
+        super(GraphShapeFilters, self).__init__(**kwargs)
+        
+        self.n_filters = n_filters
+        self.n_moments = n_moments
+        
+        assert n_moments > 0 and n_moments < 4
+        assert n_filters > 0
+        
+
+    
+    def call(self, x): #takes space and feature dims in sum(V) x N x F_all format, interprets parts differently
+        
+        space = x[0]# [:,:,:self.n_space]
+        feat = x[1] #[:,:,self.n_space:self.n_shape_features+self.n_space] #sum(V) x N x F
+        
+        #distances
+        distances = space - space[:,0:1,:] #sum(V) x N x S
+        distances = tf.expand_dims(distances, axis=2) #sum(V) x N x 1 x S
+        
+        feat = tf.expand_dims(feat, axis=3)  #sum(V) x N x F x 1
+        feat_sum = tf.reduce_sum(feat, axis=1) #sum(V) x F x 1 , for norm
+        
+        mean = 1. / (feat_sum + 1e-6) * tf.reduce_sum(distances*feat, axis=1) # sum(V) x F x S
+        exp_mean = tf.expand_dims(mean, axis=1) # sum(V) x 1 x F x S
+        
+        all_moments = mean
+        
+        if self.n_moments > 1:
+            var = 1. / (feat_sum + 1e-6) * tf.reduce_sum((distances - exp_mean)**2 *feat, axis=1) # sum(V) x F x S
+            all_moments = tf.concat([all_moments, var],axis=-1)
+        if self.n_moments > 2:
+            skew = 1. / (feat_sum + 1e-6) * tf.reduce_sum((distances - exp_mean)**3 *feat, axis=1) # sum(V) x F x S
+            all_moments = tf.concat([all_moments, skew],axis=-1)
+        
+ 
+        shaped = tf.reshape(all_moments, [-1, self.n_moments*self.n_space*self.n_shape_features])
+        shaped = tf.tile(shaped, [1,self.n_filters])
+        
+        shaped = tf.nn.bias_add(shaped, self.expected_moments, data_format='N...C')
+        
+        active = 1 / (1000.*shaped**2 + 0.2) #better gradient for large delta than exp
+        #tf.print(tf.reduce_mean(active), tf.reduce_max(active), tf.reduce_min(active))
+        return  active
+
+    
+    def build(self, input_shapes):
+        
+        self.n_space = input_shapes[0][-1] 
+        self.n_shape_features = input_shapes[1][-1] 
+        
+        with tf.name_scope(self.name+"/1/"):
+            self.expected_moments = self.add_weight(shape=(self.n_filters*self.n_moments*self.n_space*self.n_shape_features,),
+                                        initializer=keras.initializers.RandomNormal(mean=0.0, stddev=1.),
+                                        name='expected_moments')
+        
+    
+        super(GraphShapeFilters, self).build(input_shapes)
+
+    def compute_output_shape(self, input_shapes):
+        n_space = input_shapes[0][-1] 
+        n_shape_features = input_shapes[1][-1] 
+        return (self.n_moments * n_space* n_shape_features, )
+    
+    
+    def get_config(self):
+        config = {'n_filters': self.n_filters,
+                  'n_moments': self.n_moments}
+        base_config = super(GraphShapeFilters, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
