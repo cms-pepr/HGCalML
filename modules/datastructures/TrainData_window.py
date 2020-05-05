@@ -7,6 +7,7 @@ from DeepJetCore.compiled.c_simpleArray import simpleArray
 import numpy as np
 import uproot
 from numba import jit
+import ROOT
 
 #@jit(nopython=True)   
 def _findRechitsSum(showerIdx, recHitEnergy, rs):
@@ -15,6 +16,9 @@ def _findRechitsSum(showerIdx, recHitEnergy, rs):
 
     for i in range(len(rs)-1):
         ishowerIdx = showerIdx[rs[i]:rs[i+1]]
+        ishowerIdx = np.where(ishowerIdx<0,ishowerIdx-0.2,ishowerIdx)
+        ishowerIdx += 0.1
+        ishowerIdx = np.array(ishowerIdx,dtype='int64')
         irechitEnergy = recHitEnergy[rs[i]:rs[i+1]]
 
         uniques = np.unique(ishowerIdx)
@@ -81,6 +85,10 @@ class TrainData_window(TrainData):
         try:
             fileTimeOut(filename, 2)
             tree = uproot.open(filename)["WindowNTupler/tree"]
+            f=ROOT.TFile.Open(filename)
+            t=f.Get("WindowNTupler/tree")
+            if t.GetEntries() < 1:
+                raise ValueError("")
         except Exception as e:
             return False
         return True

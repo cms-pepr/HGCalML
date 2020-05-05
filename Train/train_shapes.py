@@ -40,7 +40,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     feat = [x_basic]
     for i in range(n_gravnet_layers):
         
-        n_filters = [32,64,64]
+        n_filters = [32,64]
         n_propagate = 32
         n_neighbours = 128
         n_dimensions = 4
@@ -81,6 +81,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     energy_a = ScalarMultiply(1.)(Dense(1, activation='relu')(x))
     energy_b = ScalarMultiply(10.)(Dense(1, activation='relu')(x))
     energy_c = ScalarMultiply(100.)(Dense(1, activation='relu')(x))
+    
     energy = Dense(1, activation=None)(Concatenate()([energy_a,energy_b,energy_c,]))
     
     eta = Dense(1, activation=None,kernel_initializer='zeros')(x)
@@ -114,14 +115,14 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
  
     
 
-train.change_learning_rate(5e-4)
+train.change_learning_rate(1e-4)
 
 
 print(train.keras_model.summary())
 
 #exit()
 
-nbatch = 25000  # **2 #this will be an upper limit on vertices per batch
+nbatch = 10000  # **2 #this will be an upper limit on vertices per batch
 
 verbosity = 2
 import os

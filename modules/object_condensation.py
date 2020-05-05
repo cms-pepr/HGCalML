@@ -651,7 +651,9 @@ def _parametrised_instance_loop(max_instances,
     L_beta = tf.reduce_sum(weights_ka* is_obj_k * (1 - tf.squeeze(tf.squeeze(beta_kalpha, axis=1), axis=1))) / (Nobj + 1e-6)
 
     n_noise = tf.reduce_sum((1. - no_noise_mask))
-    L_suppnoise = tf.reduce_sum((1. - no_noise_mask) * beta_s, axis=0) / (n_noise + 1e-6)
+    L_suppnoise = L_beta*0.
+    if n_noise > 0:
+        L_suppnoise = tf.reduce_sum((1. - no_noise_mask) * beta_s, axis=0) / (n_noise + 1e-6)
 
     # print(L_att, L_rep, L_beta, L_suppnoise)
     # return V_att_segment, V_rep_segment, L_beta_f_segment
@@ -857,6 +859,11 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
             q_s,
             e_weights)
 
+        L_beta_f_segment = tf.where(tf.math.is_nan(L_beta_f_segment), 0., L_beta_f_segment)
+        L_beta_s_segment = tf.where(tf.math.is_nan(L_beta_s_segment), 0., L_beta_s_segment)
+        
+        V_att_segment = tf.where(tf.math.is_nan(V_att_segment), 0., V_att_segment)
+        V_rep_segment = tf.where(tf.math.is_nan(V_rep_segment), 0., V_rep_segment)
 
         L_beta_f += L_beta_f_segment
         L_beta_s += L_beta_s_segment

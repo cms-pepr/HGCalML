@@ -537,16 +537,20 @@ class GraphShapeFilters(keras.layers.Layer):
         feat = tf.expand_dims(feat, axis=3)  #sum(V) x N x F x 1
         feat_sum = tf.reduce_sum(feat, axis=1) #sum(V) x F x 1 , for norm
         
-        mean = 1. / (feat_sum + 1e-6) * tf.reduce_sum(distances*feat, axis=1) # sum(V) x F x S
+        #clip
+        feat_sum = tf.where(tf.math.logical_and(feat_sum <  1e-5, feat_sum >=0), 1e-5, feat_sum)
+        feat_sum = tf.where(tf.math.logical_and(feat_sum > -1e-5, feat_sum <=0), -1e-5, feat_sum)
+        
+        mean = 1. / (feat_sum) * tf.reduce_sum(distances*feat, axis=1) # sum(V) x F x S
         exp_mean = tf.expand_dims(mean, axis=1) # sum(V) x 1 x F x S
         
         all_moments = mean
         
         if self.n_moments > 1:
-            var = 1. / (feat_sum + 1e-6) * tf.reduce_sum((distances - exp_mean)**2 *feat, axis=1) # sum(V) x F x S
+            var = 1. / (feat_sum) * tf.reduce_sum((distances - exp_mean)**2 *feat, axis=1) # sum(V) x F x S
             all_moments = tf.concat([all_moments, var],axis=-1)
         if self.n_moments > 2:
-            skew = 1. / (feat_sum + 1e-6) * tf.reduce_sum((distances - exp_mean)**3 *feat, axis=1) # sum(V) x F x S
+            skew = 1. / (feat_sum) * tf.reduce_sum((distances - exp_mean)**3 *feat, axis=1) # sum(V) x F x S
             all_moments = tf.concat([all_moments, skew],axis=-1)
         
  
@@ -555,7 +559,7 @@ class GraphShapeFilters(keras.layers.Layer):
         
         shaped = tf.nn.bias_add(shaped, self.expected_moments, data_format='N...C')
         
-        active = 1 / (1000.*shaped**2 + 0.2) #better gradient for large delta than exp
+        active =  1. / (100.* tf.abs(shaped) + 0.2)  #tf.math.exp(-10.*tf.abs(shaped)) #better gradient for large delta than gaus
         #tf.print(tf.reduce_mean(active), tf.reduce_max(active), tf.reduce_min(active))
         return  active
 

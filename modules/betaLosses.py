@@ -421,7 +421,7 @@ def batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling):
     
     
     t_l_in = tf.reduce_sum(b_beta_scaling*b_istruth*b_l_in)#  1
-    t_den =  tf.reduce_sum(b_istruth*b_beta_scaling)# 1
+    t_den =  tf.reduce_sum(b_istruth*b_beta_scaling) + 1e-9# 1
     t_den = tf.where(t_den==0, 1e-6, t_den)
     return t_l_in/t_den
 
@@ -440,7 +440,8 @@ def beta_weighted_truth_mean(l_in, d, row_splits, beta_scaling, is_not_spectator
         b_beta_scaling = beta_scaling[row_splits[b]:row_splits[b + 1]]
         b_istruth = istruth[row_splits[b]:row_splits[b + 1]]
         b_l_in = l_in[row_splits[b]:row_splits[b + 1]]
-
+        if tf.reduce_max(b_istruth) == 0:
+            continue
         out += batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling)
     
     out /= float(batch_size)+1e-5
@@ -448,7 +449,7 @@ def beta_weighted_truth_mean(l_in, d, row_splits, beta_scaling, is_not_spectator
 
 def batch_spectator_penalty(isspect,beta):
     out = tf.reduce_sum(isspect * beta )
-    out /= tf.reduce_sum(isspect)+1e-5
+    out /= tf.reduce_sum(isspect)+1e-3
     return out
 
 def spectator_penalty(d,row_splits):
@@ -462,7 +463,7 @@ def spectator_penalty(d,row_splits):
         out += batch_spectator_penalty(isspect[row_splits[b]:row_splits[b + 1]],
                                        beta[row_splits[b]:row_splits[b + 1]])
     
-    out /= float(batch_size)+1e-5
+    out /= float(batch_size)+1e-3
     return out
     
 def null_loss(truth, pred):
@@ -498,11 +499,11 @@ def full_obj_cond_loss(truth, pred, rowsplits):
                                                                                              classes, 
                                                                                              row_splits,
                                                                                              truthIsSpectator,
-                                                                                             Q_MIN=.5, 
+                                                                                             Q_MIN=.75, 
                                                                                              S_B=1.,
                                                                                              energyweights=energyweights[...,0])
     
-    beta_scaling = tf.math.atanh(tf.clip_by_value( d['predBeta'], 1e-5, 1. - 1e-5))**2 #avoid nans
+    beta_scaling = tf.math.atanh(tf.clip_by_value( d['predBeta'], 1e-3, 1. - 1e-3))**2 #avoid nans
     
     #energy loss. For particles other than muons, the highest energy hits contribute with about 1% of the total energy
     energy_diff = (d['predEnergy'] - d['truthHitAssignedEnergies'])
@@ -514,16 +515,26 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
     pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
     pos_offs =  tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
-    position_loss = 500.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
+    position_loss = 100.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
     
     
     spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
     
     min_beta_loss*=1.
     
+    attractive_loss = tf.where(tf.math.is_nan(attractive_loss),0,attractive_loss)
+    rep_loss = tf.where(tf.math.is_nan(rep_loss),0,rep_loss)
+    min_beta_loss = tf.where(tf.math.is_nan(min_beta_loss),0,min_beta_loss)
+    noise_loss = tf.where(tf.math.is_nan(noise_loss),0,noise_loss)
+    energy_loss = tf.where(tf.math.is_nan(energy_loss),0,energy_loss)
+    position_loss = tf.where(tf.math.is_nan(position_loss),0,position_loss)
+    spectator_beta_penalty = tf.where(tf.math.is_nan(spectator_beta_penalty),0,spectator_beta_penalty)
+    
+    energy_loss *= 0.0000001
     
     # neglect energy loss almost fully
     loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss +  position_loss + spectator_beta_penalty
+    
     print('loss',loss.numpy(), 
           'attractive_loss',attractive_loss.numpy(), 
           'rep_loss', rep_loss.numpy(), 
@@ -533,16 +544,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
           'sqrt(energy_loss)', tf.sqrt(energy_loss).numpy(), 
           '(position_loss)' , position_loss.numpy(),
           'spectator_beta_penalty', spectator_beta_penalty.numpy())
-    #loss = tf.Print(loss,[loss,
-    #                     attractive_loss,
-    #                     rep_loss,
-    #
-    #                     10*min_beta_loss,
-    #                     0.1*noise_loss,
-    #                     energy_loss,
-    #                     pos_loss,
-    #                     tf.reduce_mean(onedivsigma)], 'loss , attractive_loss + rep_loss +  min_beta_loss + noise_loss + energy_loss + pos_loss, mean beta ')
-    #
+    
     return loss
     
     
