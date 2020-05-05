@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import DeepJetCore
 import os
@@ -21,6 +21,7 @@ def toXYZ(rho,eta,phi):
     else:
         z = 0
     return x,y,z
+
 
 
 

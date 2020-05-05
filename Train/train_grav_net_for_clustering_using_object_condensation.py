@@ -143,6 +143,8 @@ for i in range(10):
 
 
 
+from configSaver import copyModules
+copyModules(train.outputDir)
 
 print("It should save now")
 model, history = train.trainModel(nepochs=10,

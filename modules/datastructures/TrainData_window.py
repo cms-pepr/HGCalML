@@ -7,8 +7,35 @@ from DeepJetCore.compiled.c_simpleArray import simpleArray
 import numpy as np
 import uproot
 from numba import jit
+import ROOT
 
+#@jit(nopython=True)   
+def _findRechitsSum(showerIdx, recHitEnergy, rs):
 
+    rechitEnergySums = []
+
+    for i in range(len(rs)-1):
+        ishowerIdx = showerIdx[rs[i]:rs[i+1]]
+        ishowerIdx = np.where(ishowerIdx<0,ishowerIdx-0.2,ishowerIdx)
+        ishowerIdx += 0.1
+        ishowerIdx = np.array(ishowerIdx,dtype='int64')
+        irechitEnergy = recHitEnergy[rs[i]:rs[i+1]]
+
+        uniques = np.unique(ishowerIdx)
+
+        irechitEnergySums = np.zeros_like(irechitEnergy)
+        for j in range(len(uniques)):
+            s=uniques[j]
+            energySum = np.sum(irechitEnergy[ishowerIdx==s])
+            irechitEnergySums[ishowerIdx==s] = energySum
+
+        rechitEnergySums.append(irechitEnergySums)
+    return rechitEnergySums
+    
+
+def findRechitsSum(showerIdx, recHitEnergy, rs):
+    return np.concatenate(_findRechitsSum(showerIdx, recHitEnergy, rs), axis=0)
+    
 class TrainData_window(TrainData):
     def __init__(self):
         TrainData.__init__(self)
@@ -58,33 +85,15 @@ class TrainData_window(TrainData):
         try:
             fileTimeOut(filename, 2)
             tree = uproot.open(filename)["WindowNTupler/tree"]
+            f=ROOT.TFile.Open(filename)
+            t=f.Get("WindowNTupler/tree")
+            if t.GetEntries() < 1:
+                raise ValueError("")
         except Exception as e:
             return False
         return True
 
-    @jit
-    def findRechitsSum(self, showerIdx, recHitEnergy, rs):
-
-        # print(rs)
-
-        # 0/0
-
-        rechitEnergySums = []
-
-        for i in range(len(rs)-1):
-            ishowerIdx = showerIdx[rs[i]:rs[i+1]]
-            irechitEnergy = recHitEnergy[rs[i]:rs[i+1]]
-
-            uniques = np.unique(ishowerIdx)
-
-            irechitEnergySums = np.zeros_like(irechitEnergy)
-            for s in uniques:
-                energySum = np.sum(irechitEnergy[ishowerIdx==s])
-                irechitEnergySums[ishowerIdx==s] = energySum
-
-            rechitEnergySums.append(irechitEnergySums)
-
-        return np.concatenate(rechitEnergySums, axis=0)
+    
     
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, onlytruth, treename="WindowNTupler/tree"):
         
@@ -133,7 +142,7 @@ class TrainData_window(TrainData):
 
 
         # For calculating spectators
-        rechitsSum = self.findRechitsSum(truthHitAssignementIdx, recHitEnergy, rs)
+        rechitsSum = findRechitsSum(truthHitAssignementIdx, recHitEnergy, rs)
         notSpectators = np.logical_or(np.greater(recHitEnergy, 0.01 * rechitsSum), np.less(np.abs(recHitZ), 330))
 
         # If truth shower energy < 5% of sum of rechits, assign rechits sum to it instead
@@ -199,7 +208,11 @@ class TrainData_window(TrainData):
       
       
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
+        print("hello")
         pass
+    
+    def bla(self):
+        print("hello")
     
 
 

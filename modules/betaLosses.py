@@ -407,23 +407,72 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
 
 
 def pre_training_loss(truth, pred):
+    feat,pred = split_feat_pred(pred)
     d = create_loss_dict(truth, pred)
-    pos_loss = tf.reduce_mean((\
-        (d['predEta'] - d['truthHitAssignedEtas'])**2 + \
-        (d['predPhi'] - d['truthHitAssignedPhis'])**2 ))
-    return pos_loss
+    feat = create_feature_dict(feat)
+    
+    etadiff = (d['predCCoords'][:,0:1]+feat['recHitEta']  -   d['truthHitAssignedEtas'])**2
+    phidiff = (d['predCCoords'][:,1:2]+feat['recHitRelPhi'] - d['truthHitAssignedPhis'])**2
+    
+    return tf.reduce_mean(etadiff+phidiff)
     
     
-def beta_weighted_truth_mean(l_in, d, beta_scaling):#l_in  V x 1
-    l_in = tf.reduce_sum(beta_scaling*d['truthNoNoise']*l_in, axis=0)#  1
-    den =  tf.reduce_sum(d['truthNoNoise']*beta_scaling, axis=0) + 1e-5# 1
-    return l_in/den    
+def batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling):
+    
+    
+    t_l_in = tf.reduce_sum(b_beta_scaling*b_istruth*b_l_in)#  1
+    t_den =  tf.reduce_sum(b_istruth*b_beta_scaling) + 1e-9# 1
+    t_den = tf.where(t_den==0, 1e-6, t_den)
+    return t_l_in/t_den
+
+
+#this needs to be per ragged batch! same for spectators   
+#but we're in eager so whatever 
+def beta_weighted_truth_mean(l_in, d, row_splits, beta_scaling, is_not_spectator=None):#l_in  V x 1
+    
+    batch_size = row_splits.shape[0] - 1
+    out = tf.constant(0., tf.float32)
+    istruth = d['truthNoNoise']
+    if is_not_spectator is not None:
+        istruth *= is_not_spectator
+    
+    for b in tf.range(batch_size):
+        b_beta_scaling = beta_scaling[row_splits[b]:row_splits[b + 1]]
+        b_istruth = istruth[row_splits[b]:row_splits[b + 1]]
+        b_l_in = l_in[row_splits[b]:row_splits[b + 1]]
+        if tf.reduce_max(b_istruth) == 0:
+            continue
+        out += batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling)
+    
+    out /= float(batch_size)+1e-5
+    return out
+
+def batch_spectator_penalty(isspect,beta):
+    out = tf.reduce_sum(isspect * beta )
+    out /= tf.reduce_sum(isspect)+1e-3
+    return out
+
+def spectator_penalty(d,row_splits):
+    
+    batch_size = row_splits.shape[0] - 1
+    out = tf.constant(0., tf.float32)
+    isspect = d['truthIsSpectator']
+    beta = d['predBeta']
+    
+    for b in tf.range(batch_size):
+        out += batch_spectator_penalty(isspect[row_splits[b]:row_splits[b + 1]],
+                                       beta[row_splits[b]:row_splits[b + 1]])
+    
+    out /= float(batch_size)+1e-3
+    return out
     
 def null_loss(truth, pred):
     return 0*tf.reduce_mean(pred)+0*tf.reduce_mean(truth)
 
 from LayersRagged import RaggedConstructTensor
 ragged_constructor=RaggedConstructTensor()
+
+
 def full_obj_cond_loss(truth, pred, rowsplits):
     
     if truth.shape[0] is None: 
@@ -442,47 +491,60 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     
     classes, row_splits = d['truthHitAssignementIdx'][...,0], rowsplits[ : rowsplits[-1,0],0]
     
+    energyweights = d['truthHitAssignedEnergies']
+    energyweights = tf.math.log(0.1 * energyweights + 1.)*0. + 1.
+    
     attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss_2(d['predCCoords'], #
                                                                                              d['predBeta'][...,0],  #remove last 1 dim
                                                                                              classes, 
                                                                                              row_splits,
                                                                                              truthIsSpectator,
-                                                                                             Q_MIN=.5, 
-                                                                                             S_B=1.)
+                                                                                             Q_MIN=.75, 
+                                                                                             S_B=1.,
+                                                                                             energyweights=energyweights[...,0])
     
-    beta_scaling = tf.math.atanh(tf.clip_by_value( d['predBeta'], 0., 1. - 1e-5))**2 #avoid nans
+    beta_scaling = tf.math.atanh(tf.clip_by_value( d['predBeta'], 1e-3, 1. - 1e-3))**2 #avoid nans
     
     #energy loss. For particles other than muons, the highest energy hits contribute with about 1% of the total energy
-    energy_diff = (1. + d['predEnergy'])*feat['recHitEnergy'] - d['truthHitAssignedEnergies']
-    energy_loss = beta_weighted_truth_mean( energy_diff**2, d, beta_scaling)
+    energy_diff = (d['predEnergy'] - d['truthHitAssignedEnergies'])
+    energy_loss = beta_weighted_truth_mean(energyweights *  
+                                           energy_diff**2/(d['truthHitAssignedEnergies']**2+5), d,row_splits, beta_scaling, (1.-d['truthIsSpectator']) )
     
+
     etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
     pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
-    pos_offs = tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
-    position_loss = beta_weighted_truth_mean( pos_offs, d, beta_scaling)
+    pos_offs =  tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
+    position_loss = 100.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
     
     
+    spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
+    
+    min_beta_loss*=1.
+    
+    attractive_loss = tf.where(tf.math.is_nan(attractive_loss),0,attractive_loss)
+    rep_loss = tf.where(tf.math.is_nan(rep_loss),0,rep_loss)
+    min_beta_loss = tf.where(tf.math.is_nan(min_beta_loss),0,min_beta_loss)
+    noise_loss = tf.where(tf.math.is_nan(noise_loss),0,noise_loss)
+    energy_loss = tf.where(tf.math.is_nan(energy_loss),0,energy_loss)
+    position_loss = tf.where(tf.math.is_nan(position_loss),0,position_loss)
+    spectator_beta_penalty = tf.where(tf.math.is_nan(spectator_beta_penalty),0,spectator_beta_penalty)
+    
+    energy_loss *= 0.0000001
     
     # neglect energy loss almost fully
-    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + 0.0001* energy_loss + 1.*  position_loss
+    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss +  position_loss + spectator_beta_penalty
+    
     print('loss',loss.numpy(), 
           'attractive_loss',attractive_loss.numpy(), 
           'rep_loss', rep_loss.numpy(), 
           'min_beta_loss', min_beta_loss.numpy(), 
           'noise_loss' , noise_loss.numpy(),
+          '(energy_loss)', energy_loss.numpy(), 
           'sqrt(energy_loss)', tf.sqrt(energy_loss).numpy(), 
-          'sqrt(position_loss)' , tf.sqrt(position_loss).numpy())
-    #loss = tf.Print(loss,[loss,
-    #                     attractive_loss,
-    #                     rep_loss,
-    #
-    #                     10*min_beta_loss,
-    #                     0.1*noise_loss,
-    #                     energy_loss,
-    #                     pos_loss,
-    #                     tf.reduce_mean(onedivsigma)], 'loss , attractive_loss + rep_loss +  min_beta_loss + noise_loss + energy_loss + pos_loss, mean beta ')
-    #
+          '(position_loss)' , position_loss.numpy(),
+          'spectator_beta_penalty', spectator_beta_penalty.numpy())
+    
     return loss
     
     
@@ -511,6 +573,30 @@ def obj_cond_loss_truth(truth, pred):
     subloss_passed_tensor = truth #=rs
     return  0.*tf.reduce_mean(pred)
 
+
+def pretrain_obj_cond_loss_rowsplits(truth, pred):
+    global subloss_passed_tensor
+    #print('>>>>>>>>>>> nbatch',truth.shape[0])
+    if subloss_passed_tensor is not None: #passed_tensor is actual truth
+        temptensor=subloss_passed_tensor
+        subloss_passed_tensor=None
+        #print('calling min_beta_loss_rowsplits', temptensor)
+        return pre_training_loss(temptensor, pred)
+        
+    subloss_passed_tensor = truth #=rs
+    return  0.*tf.reduce_mean(pred)
+
+
+def pretrain_obj_cond_loss_truth(truth, pred):
+    global subloss_passed_tensor
+    if subloss_passed_tensor is not None: #passed_tensor is rs from other function
+        temptensor=subloss_passed_tensor
+        subloss_passed_tensor=None
+        #print('calling min_beta_loss_truth', temptensor)
+        return pre_training_loss(truth, pred)
+
+    subloss_passed_tensor = truth #=rs
+    return  0.*tf.reduce_mean(pred)
 
 
 

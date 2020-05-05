@@ -11,8 +11,13 @@ global_layers_list['weighted_sum_layer']=weighted_sum_layer
 
 from LayersRagged import *
 global_layers_list['RaggedGravNet_simple']=RaggedGravNet_simple 
+global_layers_list['RaggedGravNet']=RaggedGravNet
 global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 global_layers_list['RaggedConstructTensor']=RaggedConstructTensor
+global_layers_list['GraphShapeFilters']=GraphShapeFilters
+global_layers_list['VertexScatterer']=VertexScatterer
+global_layers_list['RaggedNeighborBuilder']=RaggedNeighborBuilder
+global_layers_list['RaggedVertexEater']=RaggedVertexEater
 
 from keras.layers import Layer
 import keras.backend as K
