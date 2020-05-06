@@ -421,7 +421,7 @@ def batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling):
     
     
     t_l_in = tf.reduce_sum(b_beta_scaling*b_istruth*b_l_in)#  1
-    t_den =  tf.reduce_sum(b_istruth*b_beta_scaling) + 1e-9# 1
+    t_den =  tf.reduce_sum(b_istruth*b_beta_scaling) # 1
     t_den = tf.where(t_den==0, 1e-6, t_den)
     return t_l_in/t_den
 
@@ -472,6 +472,17 @@ def null_loss(truth, pred):
 from LayersRagged import RaggedConstructTensor
 ragged_constructor=RaggedConstructTensor()
 
+class _obj_cond_config(object):
+    def __init__(self):
+        self.energy_loss_weight = 1.
+        self.use_energy_weights = False
+        self.q_min = 0.5
+        self.no_beta_norm = False
+        self.potential_scaling = 1.
+        self.s_b = 1.
+
+
+config = _obj_cond_config()
 
 def full_obj_cond_loss(truth, pred, rowsplits):
     
@@ -492,16 +503,24 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     classes, row_splits = d['truthHitAssignementIdx'][...,0], rowsplits[ : rowsplits[-1,0],0]
     
     energyweights = d['truthHitAssignedEnergies']
-    energyweights = tf.math.log(0.1 * energyweights + 1.)*0. + 1.
+    energyweights = tf.math.log(0.1 * energyweights + 1.)*0.
+    
+    if not config.use_energy_weights:
+        energyweights *= 0.
+    energyweights += 1.
     
     attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss_2(d['predCCoords'], #
                                                                                              d['predBeta'][...,0],  #remove last 1 dim
                                                                                              classes, 
                                                                                              row_splits,
                                                                                              truthIsSpectator,
-                                                                                             Q_MIN=.75, 
-                                                                                             S_B=1.,
-                                                                                             energyweights=energyweights[...,0])
+                                                                                             Q_MIN=config.q_min, 
+                                                                                             S_B=config.s_b,
+                                                                                             energyweights=energyweights[...,0],
+                                                                                             no_beta_norm=config.no_beta_norm)
+    
+    attractive_loss *= config.potential_scaling
+    rep_loss *= config.potential_scaling
     
     beta_scaling = tf.math.atanh(tf.clip_by_value( d['predBeta'], 1e-3, 1. - 1e-3))**2 #avoid nans
     
@@ -515,12 +534,13 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
     pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
     pos_offs =  tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
-    position_loss = 100.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
+    position_loss = 500.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
     
     
     spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
     
     min_beta_loss*=1.
+    energy_loss *= config.energy_loss_weight
     
     attractive_loss = tf.where(tf.math.is_nan(attractive_loss),0,attractive_loss)
     rep_loss = tf.where(tf.math.is_nan(rep_loss),0,rep_loss)
@@ -530,7 +550,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     position_loss = tf.where(tf.math.is_nan(position_loss),0,position_loss)
     spectator_beta_penalty = tf.where(tf.math.is_nan(spectator_beta_penalty),0,spectator_beta_penalty)
     
-    energy_loss *= 0.0000001
+    #energy_loss *= 0.0000001
     
     # neglect energy loss almost fully
     loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss +  position_loss + spectator_beta_penalty
