@@ -80,6 +80,8 @@ def create_index_dict(truth, pred, usetf=True):
     outdict['predPhi']        = pred[:,3:4]
     outdict['predCCoords']    = pred[:,4:6]
 
+    outdict['predAdditional'] = pred[:,6:]
+
     return outdict
 
 pred_length=6

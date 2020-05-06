@@ -174,6 +174,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  n_propagate: int, 
                  return_indices = False,
                  return_idx_and_space = False,
+                 calculate_moments = False,
                  **kwargs):
         super(RaggedGravNet, self).__init__(**kwargs)
 
@@ -181,6 +182,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
+        self.calculate_moments = calculate_moments
         
         if not isinstance(n_filters, list):
             n_filters=[n_filters]
@@ -215,11 +217,16 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         for i in range(len(self.n_filters)):
             with tf.name_scope(self.name+"/"+str(i+3)+"/"):
-                n_nodes = 0
+                n_feat = 0
                 if not i:
-                    n_nodes = input_shape[1] + self.input_feature_transform.units * 2
+                    n_feat = self.input_feature_transform.units 
                 else:
-                    n_nodes = input_shape[1] + self.output_feature_transform[i-1].units*2
+                    n_feat = self.output_feature_transform[i-1].units
+                if self.calculate_moments:
+                    n_feat = n_feat*2 + n_feat* 3
+                else:
+                    n_feat = n_feat * 2
+                n_nodes = n_feat + input_shape[1]
                 self.output_feature_transform[i].build((input_shape[0],
                                              n_nodes))
 
@@ -234,11 +241,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
         coordinates = self.input_spatial_transform(x)
         in_features = self.input_feature_transform(x)
         features = in_features
-        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits)
+        neighbour_indices, weights, distances = self.compute_neighbours_and_weights(coordinates, row_splits)
 
         orig_neighbours = None
         for t in self.output_feature_transform:
-            collected_neighbours = self.collect_neighbours(features, neighbour_indices, weights)
+            collected_neighbours = self.collect_neighbours(features, neighbour_indices, weights,distances)
             features = tf.concat([x, collected_neighbours], axis=-1)
             features = t(features)
             
@@ -255,35 +262,45 @@ class RaggedGravNet(tf.keras.layers.Layer):
         input_shape = input_shapes[0]
         if self.return_indices:
             if self.return_idx_and_space:
-                return (self.output_feature_transform[-1].units,), (self.n_neighbours-1,1), (self.n_dimensions,)
+                return (self.output_feature_transform[-1].units,), (self.n_neighbours,1), (self.n_dimensions,)
             else:
-                return (self.output_feature_transform[-1].units,), (self.n_neighbours-1,1)
+                return (self.output_feature_transform[-1].units,), (self.n_neighbours,1)
         else:
             return (self.output_feature_transform[-1].units[-1],)
     
     def compute_neighbours_and_weights(self, coordinates, row_splits):
-        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits,
+        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours+1), row_splits=row_splits,
                                                           data=coordinates, add_splits=True)  # [SV, N+1]
 
         ragged_split_added_indices = ragged_split_added_indices[:, 1:][..., tf.newaxis]  # [SV, N]
 
-        distance = tf.reduce_sum(
-            (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices)) ** 2,
-            axis=-1)  # [SV, N]
+        simple_distance = (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices))
 
-        weights = gauss_of_lin(distance * 10.+1e-5)
+        rot_distance = tf.reduce_sum(
+             simple_distance** 2,
+             axis=-1)  # [SV, N]
+
+        weights = gauss_of_lin(rot_distance * 10.+1e-5)
         weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
-        return ragged_split_added_indices,weights 
+        return ragged_split_added_indices,weights, simple_distance
         
 
-    def collect_neighbours(self, features, neighbour_indices, weights):
-
-        neighbour_features = tf.gather_nd(features, neighbour_indices)
-        neighbour_features *= weights
-        neighbours_max = tf.reduce_max(neighbour_features, axis=1)
-        neighbours_mean = tf.reduce_mean(neighbour_features, axis=1)
-
-        return tf.concat([neighbours_max, neighbours_mean], axis=-1)
+    def collect_neighbours(self, features, neighbour_indices, weights, distances):
+ 
+ 
+        neighbour_features = tf.gather_nd(features, neighbour_indices) # sum(V) x N x F
+        weighted_neighbour_features = neighbour_features * weights
+        neighbours_max = tf.reduce_max(weighted_neighbour_features, axis=1)
+        neighbours_mean = tf.reduce_mean(weighted_neighbour_features, axis=1)
+        all = [neighbours_max, neighbours_mean]
+        
+        if self.calculate_moments:
+            # sum(V) x N x F
+            _, w_feat = tf.nn.moments(weighted_neighbour_features, axes = 1)
+            nw_mean, nw_var = tf.nn.moments(neighbour_features, axes = 1)
+            all += [w_feat, nw_mean, nw_var]
+                    
+        return tf.concat(all, axis=-1)
 
     def get_config(self):
         config = {'n_neighbours': self.n_neighbours,
@@ -291,7 +308,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
                   'n_filters': self.n_filters,
                   'n_propagate': self.n_propagate,
                   'return_indices': self.return_indices,
-                  'return_idx_and_space': self.return_idx_and_space}
+                  'return_idx_and_space': self.return_idx_and_space,
+                  'calculate_moments':self.calculate_moments}
         base_config = super(RaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -463,6 +481,31 @@ class RaggedVertexEater(keras.layers.Layer):
         return ( data_input_shape[1],), (None,), (1,) 
 
 
+class RaggedNeighborIndices(keras.layers.Layer):
+    def __init__(self, k,  **kwargs):
+        super(RaggedNeighborIndices, self).__init__(**kwargs)
+        self.k = k
+        
+        assert self.k > 2
+        
+    def call(self, x):
+        assert isinstance(x, list)
+        x_space, row_splits = x[0], x[1]
+        row_splits = tf.cast(row_splits, tf.int32)
+        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.k), row_splits=row_splits,
+                                                          data=x_space, add_splits=True)  # [SV, N+1]
+        ragged_split_added_indices = ragged_split_added_indices[:, :][..., tf.newaxis]  # [SV, N]
+        return ragged_split_added_indices
+
+    def compute_output_shape(self, input_shape): 
+        return (self.k,1)
+    
+    def get_config(self):
+        config = {'k': self.k}
+        base_config = super(RaggedNeighborIndices, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
 class RaggedNeighborBuilder(keras.layers.Layer):
     def __init__(self,  **kwargs):
         super(RaggedNeighborBuilder, self).__init__(**kwargs)
@@ -507,6 +550,87 @@ class VertexScatterer(keras.layers.Layer):
         return data_input_shape
 
 
+class GraphFunctionFilters(keras.layers.Layer):
+    '''
+    similar to shape filters, but instead of moments assume basic functions
+    works because of space transformations
+    
+    input: sum(V) x N x F 
+    
+    features will be normalised w.r.t. first, central input vertex
+    applies Nf functions independently in + and -: exp(c x^2) (p: 2*c)
+    and evaluates compatibility as chi2-like measure
+    something like 1 / (chi^2 + epsilon)
+    
+    output: sum(V) x F x S x 2*Nf
+    
+    as opposed to GraphShapeFilters: sum(V) x F x S x 3*Nf
+    
+    make this more generic by outputting sum(V) x F x S * n*Nf
+    '''
+    def __init__(self, 
+                 n_filters: int,
+                 **kwargs):
+        
+        super(GraphFunctionFilters, self).__init__(**kwargs)
+        assert n_filters>0
+        self.n_filters = n_filters
+        
+    def call(self, x): #takes space and feature dims in sum(V) x N x F_all format, interprets parts differently
+        
+        assert isinstance(x, list)
+        
+        space = x[0]# [:,:,:self.n_space]
+        feat = x[1]
+
+        #distances
+        distances = space - space[:,0:1,:] #sum(V) x N x S
+        distances = tf.expand_dims(tf.expand_dims(distances, axis=2),axis=4) #sum(V) x N x 1 x S x 1
+        
+        feat = tf.expand_dims(tf.expand_dims(feat, axis=3),axis=4)  #sum(V) x N x F x 1 x 1
+        norm_feat = feat[:,0:1,...] #sum(V) x 1 x F x 1 x 1
+        
+        function_form_plus  = norm_feat * tf.math.exp(self.scalers[:,:,:,0,...] *  distances**2) - feat
+        function_form_minus = norm_feat * tf.math.exp(self.scalers[:,:,:,1,...] *  distances**2) - feat
+        
+        function_diff = tf.where(distances>=0,function_form_plus,function_form_minus)
+        #sum(V) x N x F x S x Nf
+        function_diff = tf.reduce_sum(function_diff, axis=1)
+        #sum(V) x F x S x Nf
+        function_diff = tf.reshape(function_diff, (-1,function_diff.shape[1],function_diff.shape[2]*function_diff.shape[3]))
+        #sum(V) x F x S * Nf
+        
+        return function_diff
+        
+        
+        
+    
+    def build(self, input_shapes):
+
+        self.n_space = input_shapes[0][-1] 
+        self.n_shape_features = input_shapes[1][-1] 
+        
+        with tf.name_scope(self.name+"/1/"):
+            self.scalers = self.add_weight(shape=(2*self.n_filters*self.n_space,),
+                                            initializer=keras.initializers.RandomNormal(mean=0.0, stddev=1.),
+                                            name='scaler')
+            self.scalers = tf.reshape(self.scalers, [1,1,1,2, self.n_space, self.n_filters])
+        
+        super(GraphFunctionFilters, self).build(input_shapes)
+        
+        
+        
+    def compute_output_shape(self, input_shapes):
+        n_space = input_shapes[0][-1] 
+        n_shape_features = input_shapes[1][-1] 
+        return (n_shape_features, self.n_filters * self.n_space, )
+    
+    
+    def get_config(self):
+        config = {'n_filters': self.n_filters}
+        base_config = super(GraphFunctionFilters, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))    
+    
     
 class GraphShapeFilters(keras.layers.Layer):
     '''
@@ -514,13 +638,19 @@ class GraphShapeFilters(keras.layers.Layer):
     def __init__(self, 
                  n_filters: int,
                  n_moments: int,
+                 direct_output : bool = True,
                  **kwargs):
         super(GraphShapeFilters, self).__init__(**kwargs)
         
+        if direct_output:
+            n_filters = 1
+            
         self.n_filters = n_filters
         self.n_moments = n_moments
+        self.direct_output = direct_output
         
-        assert n_moments > 0 and n_moments < 4
+        
+        assert n_moments > 0 and n_moments < 5
         assert n_filters > 0
         
 
@@ -538,8 +668,8 @@ class GraphShapeFilters(keras.layers.Layer):
         feat_sum = tf.reduce_sum(feat, axis=1) #sum(V) x F x 1 , for norm
         
         #clip
-        feat_sum = tf.where(tf.math.logical_and(feat_sum <  1e-5, feat_sum >=0), 1e-5, feat_sum)
-        feat_sum = tf.where(tf.math.logical_and(feat_sum > -1e-5, feat_sum <=0), -1e-5, feat_sum)
+        feat_sum = tf.where(tf.math.logical_and(feat_sum <  1e-3, feat_sum >=0),  1e-3, feat_sum)
+        feat_sum = tf.where(tf.math.logical_and(feat_sum > -1e-3, feat_sum <=0), -1e-3, feat_sum)
         
         mean = 1. / (feat_sum) * tf.reduce_sum(distances*feat, axis=1) # sum(V) x F x S
         exp_mean = tf.expand_dims(mean, axis=1) # sum(V) x 1 x F x S
@@ -548,17 +678,25 @@ class GraphShapeFilters(keras.layers.Layer):
         
         if self.n_moments > 1:
             var = 1. / (feat_sum) * tf.reduce_sum((distances - exp_mean)**2 *feat, axis=1) # sum(V) x F x S
+            var = tf.math.sqrt(var + 1e-4) #get to same unit
             all_moments = tf.concat([all_moments, var],axis=-1)
         if self.n_moments > 2:
             skew = 1. / (feat_sum) * tf.reduce_sum((distances - exp_mean)**3 *feat, axis=1) # sum(V) x F x S
+            skew = tf.math.pow(skew, 1./3.) #this might be resource intense
             all_moments = tf.concat([all_moments, skew],axis=-1)
+        if self.n_moments > 3:
+            mom4  = 1. / (feat_sum) * tf.reduce_sum((distances - exp_mean)**4 *feat, axis=1)
+            mom4 = tf.math.sqrt(tf.math.sqrt(mom4 +1e-6) +1e-6)
+            all_moments = tf.concat([all_moments, mom4],axis=-1)
         
- 
-        shaped = tf.reshape(all_moments, [-1, self.n_moments*self.n_space*self.n_shape_features])
-        shaped = tf.tile(shaped, [1,self.n_filters])
+        #maybe leave feature here and then process space*moments first. "this has an x shape in feature bla)
+        shaped = tf.reshape(all_moments, [-1, self.n_shape_features, self.n_moments*self.n_space])
         
-        shaped = tf.nn.bias_add(shaped, self.expected_moments, data_format='N...C')
+        if self.direct_output:
+            return shaped
         
+        shaped = tf.tile(shaped, [1,self.n_filters])   
+        shaped = tf.nn.bias_add(shaped, self.expected_moments, data_format='N...C')     
         active =  1. / (100.* tf.abs(shaped) + 0.2)  #tf.math.exp(-10.*tf.abs(shaped)) #better gradient for large delta than gaus
         #tf.print(tf.reduce_mean(active), tf.reduce_max(active), tf.reduce_min(active))
         return  active
@@ -568,24 +706,25 @@ class GraphShapeFilters(keras.layers.Layer):
         
         self.n_space = input_shapes[0][-1] 
         self.n_shape_features = input_shapes[1][-1] 
-        
-        with tf.name_scope(self.name+"/1/"):
-            self.expected_moments = self.add_weight(shape=(self.n_filters*self.n_moments*self.n_space*self.n_shape_features,),
-                                        initializer=keras.initializers.RandomNormal(mean=0.0, stddev=1.),
-                                        name='expected_moments')
-        
+        if not self.direct_output:
+            with tf.name_scope(self.name+"/1/"):
+                self.expected_moments = self.add_weight(shape=(self.n_filters*self.n_moments*self.n_space,),
+                                            initializer=keras.initializers.RandomNormal(mean=0.0, stddev=1.),
+                                            name='expected_moments')
+            
     
         super(GraphShapeFilters, self).build(input_shapes)
 
     def compute_output_shape(self, input_shapes):
         n_space = input_shapes[0][-1] 
         n_shape_features = input_shapes[1][-1] 
-        return (self.n_moments * n_space* n_shape_features, )
+        return (n_shape_features, self.n_moments * self.n_space, )
     
     
     def get_config(self):
         config = {'n_filters': self.n_filters,
-                  'n_moments': self.n_moments}
+                  'n_moments': self.n_moments,
+                  'direct_output': self.direct_output}
         base_config = super(GraphShapeFilters, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 

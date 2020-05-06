@@ -574,7 +574,8 @@ def _parametrised_instance_loop(max_instances,
                                 classes_s,
                                 beta_s,
                                 q_s,
-                                extra_beta_weights=None):
+                                extra_beta_weights=None,
+                                no_beta_norm=False):
     # get an idea of all the shapes
 
     # K      print('instance_ids',tf.shape(instance_ids))
@@ -648,7 +649,9 @@ def _parametrised_instance_loop(max_instances,
         weights_ka = tf.squeeze(weights_ka ,axis=1)
 
     # check broadcasting here
-    L_beta = tf.reduce_sum(weights_ka* is_obj_k * (1 - tf.squeeze(tf.squeeze(beta_kalpha, axis=1), axis=1))) / (Nobj + 1e-6)
+    L_beta = tf.reduce_sum(weights_ka* is_obj_k * (1 - tf.squeeze(tf.squeeze(beta_kalpha, axis=1), axis=1)))
+    if not no_beta_norm:
+        L_beta /= (Nobj + 1e-6)
 
     n_noise = tf.reduce_sum((1. - no_noise_mask))
     L_suppnoise = L_beta*0.
@@ -778,7 +781,8 @@ def indiv_object_condensation_loss(output_space, beta_values, labels_classes, ro
 
 
 def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, row_splits, spectators, Q_MIN=0.1, S_B=1,
-                                     energyweights=None):
+                                     energyweights=None,
+                                     no_beta_norm=False):
     """
     ####################################################################################################################
     # Implements OBJECT CONDENSATION for ragged tensors
@@ -857,7 +861,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
             classes_s,
             beta_s,
             q_s,
-            e_weights)
+            e_weights,
+            no_beta_norm)
 
         L_beta_f_segment = tf.where(tf.math.is_nan(L_beta_f_segment), 0., L_beta_f_segment)
         L_beta_s_segment = tf.where(tf.math.is_nan(L_beta_s_segment), 0., L_beta_s_segment)
