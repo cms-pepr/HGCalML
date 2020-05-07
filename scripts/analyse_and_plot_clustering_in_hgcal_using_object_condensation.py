@@ -71,8 +71,13 @@ def find_uniques_from_betas(betas, coords, dist_threshold):
 
 found_truth_energies_energies = []
 found_truth_energies_found = []
+
+
+beta_threshold = 0.1
+
 def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment):
     global  iii, num_predicted_showers, num_real_showers, num_fakes_g, num_found_g, num_missed_g, found_truth_energies_energies, found_truth_energies_found
+    global beta_threshold
 
     iii+=1
     uniques = tf.unique(classes_this_segment)[0].numpy()
@@ -81,7 +86,7 @@ def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment,
 
     beta_all = pred_this_segment[:, -6]
     is_spectator = np.logical_not(y_this_segment[:, 14])
-    is_spectator = np.logical_and(is_spectator, beta_all>0.1)
+    is_spectator = np.logical_and(is_spectator, beta_all>beta_threshold)
     is_spectator = np.logical_and(is_spectator, classes_this_segment>=0)
 
 
@@ -408,11 +413,15 @@ def main(files, pdfpath):
 
 
 if __name__ == '__main__':
+    global beta_threshold
     parser = argparse.ArgumentParser(
         'Analyse predictions from object condensation and plot relevant results')
     parser.add_argument('output', help='Output directory with .bin.gz files (all will be analysed) or a text file containing lest of those which are to be analysed')
     parser.add_argument('-p', help='Path of the pdf file. Otherwise will be produced in the output directory.', default='')
+    parser.add_argument('-b', help='Beta threshold', default='0.1')
     args = parser.parse_args()
+
+    beta_threshold = beta_threshold*0 + float(args.b)
 
     files_to_be_tested = []
     pdfpath = ''
