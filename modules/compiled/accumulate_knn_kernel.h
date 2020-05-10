@@ -16,6 +16,7 @@ struct AccumulateKnnOpFunctor {
             const int *d_idxs,
 
             float *d_out_feat,
+            int *d_out_maxidxs,
 
             int n_vert,
             int n_neigh,

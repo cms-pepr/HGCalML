@@ -1,4 +1,4 @@
-#define GOOGLE_CUDA 1
+//#define GOOGLE_CUDA 1
 
 
 #if GOOGLE_CUDA
@@ -26,6 +26,7 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
           const int *d_idxs,
 
           float *d_out_feat,
+          int *d_out_maxidxs,
 
           int n_vert,
           int n_neigh,

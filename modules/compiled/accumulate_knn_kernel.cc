@@ -6,8 +6,11 @@
 
 #include "tensorflow/core/framework/op_kernel.h"
 #include "accumulate_knn_kernel.h"
-#include <queue>
+#include "helpers.h"
+#include <string> //size_t, just for helper function
+#include <cmath>
 
+#include <iostream> //remove later DEBUG FIXME
 
 namespace tensorflow {
     typedef Eigen::ThreadPoolDevice CPUDevice;
@@ -16,20 +19,14 @@ namespace tensorflow {
 
     namespace functor {
 
-        // Redefinition
-        struct combined {
-            int index;
-            float distance;
-        };
-        class combinedcomparator {
-        public:
-            int operator() (const combined& p1, const combined& p2)
-            {
-                return p1.distance < p2.distance;
-            }
-        };
 
-        // CPU specialization null
+
+        float distanceWeight(float distsq){
+            if(!distsq)return 1;
+            return exp(-10.* distsq);
+        }
+
+        // CPU specialization
         template<typename dummy>
         struct AccumulateKnnOpFunctor<CPUDevice, dummy> {
             void operator()(const CPUDevice &d,
@@ -39,6 +36,7 @@ namespace tensorflow {
                     const int *d_idxs,
 
                     float *d_out_feat,
+                    int *d_out_maxidxs,
 
                     int n_vert,
                     int n_neigh,
@@ -49,8 +47,42 @@ namespace tensorflow {
 
                     int n_moments) {
 
-                //CPU implementation
 
+                for (size_t i_v = 0; i_v < n_vert; i_v++) {
+
+                    for(size_t i_f=0;i_f<n_feat;i_f++){
+                        float t_mean = 0;
+                        float t_max = 0;
+                        int max_i_n = 0;
+
+                        for(size_t i_n=0;i_n<n_neigh;i_n++){
+                            size_t nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+                            float vnf = d_feat[I2D(nidx,i_f,n_feat)];
+                            float distsq = 0;
+
+                            for(size_t i_c=0;i_c<n_coords;i_c++){
+                                float vic = d_coord[I2D(i_v,i_c,n_coords)];
+                                float vnc = d_coord[I2D(nidx,i_c,n_coords)];
+                                distsq += (vic-vnc)*(vic-vnc);
+                            }
+                            float wfeat = vnf * distanceWeight(distsq);
+                            t_mean += wfeat;
+                            if(wfeat > t_max){
+                                max_i_n = i_n;
+                                t_max = wfeat;
+                            }
+                        }
+                        t_mean /= (float)n_neigh;
+
+                        d_out_maxidxs[I2D(i_v,i_f,n_feat)] = max_i_n; //just used for gradient
+                        d_out_feat[I2D(i_v,i_f,n_out_feat)] = t_mean;
+                        d_out_feat[I2D(i_v,i_f+n_feat,n_out_feat)] = t_max;
+
+                        //moments in n_coords x n_neigh loop here {}
+
+                    }
+
+                }
             }
         };
 
@@ -70,7 +102,7 @@ namespace tensorflow {
 
 
                 int n_vert = d_coord_tensor.dim_size(0);
-                int n_neigh = d_idxs_tensor.dim_size(1);// CHECK!
+                int n_neigh = d_idxs_tensor.dim_size(1);
                 int n_coords = d_coord_tensor.dim_size(1);
                 int n_feat = d_feat_tensor.dim_size(1);
 
@@ -88,12 +120,20 @@ namespace tensorflow {
                 Tensor *output_tensor = NULL;
                 OP_REQUIRES_OK(context, context->allocate_output(0, outputShape, &output_tensor));
 
+                TensorShape outputShape_max_idxs;
+                outputShape_max_idxs.AddDim(n_vert);
+                outputShape_max_idxs.AddDim(n_feat);
+
+                Tensor *output_max_idxs_tensor = NULL;
+                OP_REQUIRES_OK(context, context->allocate_output(1, outputShape_max_idxs, &output_max_idxs_tensor));
+
                 AccumulateKnnOpFunctor<Device, int>()(
                         context->eigen_device<Device>(),
                         d_coord_tensor.flat<float>().data(),
                         d_feat_tensor.flat<float>().data(),
                         d_idxs_tensor.flat<int>().data(),
                         output_tensor->flat<float>().data(),
+                        output_max_idxs_tensor->flat<int>().data(),
                         n_vert,
                         n_neigh,
                         n_coords,

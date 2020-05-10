@@ -4,11 +4,13 @@
 using namespace tensorflow;
 
 
-REGISTER_OP("accumulate_knn")
+REGISTER_OP("AccumulateKnn")
     .Attr("n_moments: int")
     .Input("coords: float32")
     .Input("features: float32")
-    .Output("out_features: float32");
+    .Input("indices: int32")
+    .Output("out_features: float32")
+    .Output("out_max_idxs: int32");
 
 
 
