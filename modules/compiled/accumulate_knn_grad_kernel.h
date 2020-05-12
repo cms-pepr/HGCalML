@@ -1,4 +1,4 @@
-
+#include "accumulate_knn_kernel.h"
 #ifndef ACCUMULATE_KNN_GRAD_KERNEL_H
 #define ACCUMULATE_KNN_GRAD_KERNEL_H
 

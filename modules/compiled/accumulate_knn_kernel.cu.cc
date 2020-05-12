@@ -12,14 +12,13 @@
 #include <cuda_runtime_api.h>
 #include "cuda_helpers.h"
 
-
 namespace tensorflow {
 namespace functor {
 
 __device__
 float gpu_distanceWeight(float distsq){
     if(!distsq)return 1;
-    return exp(-1.* distsq); //uses cuda built in exp
+    return expf(-1.*ACCUMULATE_KNN_EXPONENT* distsq); //uses cuda built in exp
 }
 
 __global__
@@ -57,12 +56,18 @@ void acc_knn_kernel(const float *d_coord,
 
     //CUDA implementation
 
-
+    size_t i_v =  blockIdx.x * blockDim.x + threadIdx.x;
+    if(i_v >= n_vert)
+        return;
     //fully independent per i_v, no races
-    for(const auto i_v: grid_stride_range(0,n_vert))
-        //for (size_t i_v = 0; i_v < n_vert; i_v++) {
+
+    //scales mildly up to about 10k vertices, and then linearly
+
+//    for(const auto i_v: grid_stride_range(0,n_vert)){
+    //  for (size_t i_v = 0; i_v < n_vert; i_v++) {
 
         for(size_t i_f=0;i_f<n_feat;i_f++){
+//          for(const auto i_f: grid_stride_range_y(0,n_feat)){
             float t_mean = 0;
             float t_max = 0;
             int max_i_n_gidx = 0;
@@ -72,7 +77,7 @@ void acc_knn_kernel(const float *d_coord,
                 float vnf = d_feat[I2D(nidx,i_f,n_feat)];
                 float distsq = 0;
 
-                for(size_t i_c=0;i_c<n_coords;i_c++){
+                for(size_t i_c=0;i_c<n_coords;i_c++){//this is about a factor of 2 w.r.t. TF
                     float vic = d_coord[I2D(i_v,i_c,n_coords)];
                     float vnc = d_coord[I2D(nidx,i_c,n_coords)];
                     distsq += (vic-vnc)*(vic-vnc);
@@ -93,6 +98,8 @@ void acc_knn_kernel(const float *d_coord,
             //moments in n_coords x n_neigh loop here {}
 
         }
+
+ //  }
 
 }
 
@@ -123,9 +130,19 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
 
             int n_moments) {
 
-std::cout << ">>>>>>>>>RUNNING ON GPU" << std::endl;
+       // int gridsize=56;
+      //  int blocksize=768;
+      //  int numSMs = d.getNumCudaMultiProcessors();
 
-        acc_knn_kernel<<<n_vert, 256>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
+        //just simple 1 thread per vertex
+        dim3 grid(n_vert/256+1);
+        dim3 block(256);
+        //just some default optimisation for now
+      //  cudaOccupancyMaxPotentialBlockSize(&gridsize,&blocksize,acc_knn_kernel);
+
+     //   std::cout << "opt grid" << gridsize << " opt block " << blocksize << " numSM " << numSMs << std::endl;
+
+        acc_knn_kernel<<<grid, block>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
                 n_vert,n_neigh,n_coords,n_feat,n_out_feat,n_moments);
 
     }

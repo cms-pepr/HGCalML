@@ -17,19 +17,19 @@ typedef Eigen::GpuDevice GPUDevice;
 namespace functor {
 
 
-float distanceWeight(float distsq, float expscaler=1.){
+float distanceWeight(float distsq){
     if(!distsq)return 1;
-    return exp(-expscaler* distsq);
+    return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
 }
 
-float distWeightD(const float *d_coord, size_t i, size_t j, size_t n_coords, float expscaler){
+float distWeightD(const float *d_coord, size_t i, size_t j, size_t n_coords){
     float distsq=0;
     for(size_t i_c=0;i_c<n_coords;i_c++){
         float xic = d_coord[I2D(i,i_c,n_coords)];
         float xkc = d_coord[I2D(j,  i_c,n_coords)];
         distsq += (xic-xkc)*(xic-xkc);
     }
-    return distanceWeight(distsq,expscaler);
+    return distanceWeight(distsq);
 }
 
 float delta(int k, int m){
@@ -63,8 +63,6 @@ struct AccumulateKnnGradOpFunctor<CPUDevice, dummy> {
 
         //CPU implementation
 
-        float expscaler=1;  //FIXME
-
         //set zero
         for (size_t i_v = 0; i_v < n_vert; i_v++){
             for (size_t i_f = 0; i_f < n_feat; i_f++)
@@ -90,7 +88,7 @@ struct AccumulateKnnGradOpFunctor<CPUDevice, dummy> {
                     float vnc = d_coord[I2D(m_v,i_c,n_coords)];
                     distsq_im += (vic-vnc)*(vic-vnc);
                 }
-                float weight_im = distanceWeight(distsq_im,expscaler);
+                float weight_im = distanceWeight(distsq_im);
 
                 for (size_t nu_f = 0; nu_f < n_feat; nu_f++){
 
@@ -114,22 +112,28 @@ struct AccumulateKnnGradOpFunctor<CPUDevice, dummy> {
                     for (size_t b_f = 0; b_f < n_feat; b_f++){
                         float thisfeat_mean_contr = 0;
                         float thisfeat_max_contr = 0;
+
+                        // m_v == k && m_v != i_v
+                        // m_v != k && m_v == i_v (*= -1)
+                        //
+
                         for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
-
                             size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
+                            float ddelta = delta(m_v,k) - delta(m_v,i_v);
+                            if(!ddelta)
+                                continue;
 
-                            float wik = distWeightD(d_coord,i_v,k,n_coords,expscaler);
+                            float wik = distWeightD(d_coord,i_v,k,n_coords);
 
                             float distsq_ik=0;
                             float diknu= d_coord[I2D(i_v,nu_c,n_coords)] - d_coord[I2D(k,  nu_c,n_coords)];
 
-                            //resolve delta here once works
                             thisfeat_mean_contr +=  wik * d_feat[I2D(k, b_f, n_feat)] * diknu
-                                    * (delta(m_v,k) - delta(m_v,i_v));
+                                    * ddelta;
 
                             if(k == d_max_feat_indices[I2D(i_v,b_f,n_feat)] ){
                                 thisfeat_max_contr += wik * d_feat[I2D(k, b_f, n_feat)] * diknu
-                                        * (delta(m_v,k) - delta(m_v,i_v));
+                                        * ddelta;
                             }
 
                         }
@@ -143,8 +147,8 @@ struct AccumulateKnnGradOpFunctor<CPUDevice, dummy> {
                         //max part here? probably...
 
                     }
-                    d_out_grad_coords[I2D(m_v, nu_c, n_coords)] += 2. * expscaler/(float) n_neigh * mean_contrib +
-                            2 * expscaler * maxcontr;
+                    d_out_grad_coords[I2D(m_v, nu_c, n_coords)] += 2. * ACCUMULATE_KNN_EXPONENT/(float) n_neigh * mean_contrib +
+                            2 * ACCUMULATE_KNN_EXPONENT * maxcontr;
                 }
             }
         }

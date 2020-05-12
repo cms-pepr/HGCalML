@@ -21,7 +21,7 @@ namespace functor {
 
 float distanceWeight(float distsq){
     if(!distsq)return 1;
-    return exp(-1.* distsq);
+    return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
 }
 
 // CPU specialization
