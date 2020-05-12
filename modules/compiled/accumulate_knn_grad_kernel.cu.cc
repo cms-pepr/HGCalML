@@ -43,15 +43,15 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
         //CUDA implementation
 
 
-  }
+    }
 };
 
 
 
 template struct AccumulateKnnGradOpFunctor<GPUDevice, int>;
 
-}
-}
+}//functor
+}//tensorflow
 
 
 #endif  // GOOGLE_CUDA

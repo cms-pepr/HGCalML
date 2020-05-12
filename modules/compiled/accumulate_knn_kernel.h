@@ -3,7 +3,6 @@
 #define ACCUMULATE_KNN_KERNEL_H
 
 namespace tensorflow {
-
 namespace functor {
 
 template<typename Device, typename dummy>
@@ -30,7 +29,6 @@ struct AccumulateKnnOpFunctor {
 
 
 }  // namespace functor
-
 }  // namespace tensorflow
 
 #endif //ACCUMULATE_KNN_KERNEL_H

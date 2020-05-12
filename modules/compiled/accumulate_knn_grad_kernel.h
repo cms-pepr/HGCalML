@@ -3,9 +3,7 @@
 #define ACCUMULATE_KNN_GRAD_KERNEL_H
 
 namespace tensorflow {
-
 namespace functor {
-
 
 template<typename Device, typename dummy>
 struct AccumulateKnnGradOpFunctor {
@@ -32,7 +30,6 @@ struct AccumulateKnnGradOpFunctor {
 };
 
 }  // namespace functor
-
 }  // namespace tensorflow
 
 #endif //ACCUMULATE_KNN_GRAD_KERNEL_H

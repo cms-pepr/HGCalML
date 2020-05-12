@@ -19,37 +19,37 @@ typedef Eigen::GpuDevice GPUDevice;
 
 template <typename dummy>
 struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
-  void operator()(const GPUDevice& d,
+    void operator()(const GPUDevice& d,
 
-          const float *d_coord,
-          const float *d_feat,
-          const int *d_idxs,
+            const float *d_coord,
+            const float *d_feat,
+            const int *d_idxs,
 
-          float *d_out_feat,
-          int *d_out_maxidxs,
+            float *d_out_feat,
+            int *d_out_maxidxs,
 
-          int n_vert,
-          int n_neigh,
-          int n_coords,
-          int n_feat,
+            int n_vert,
+            int n_neigh,
+            int n_coords,
+            int n_feat,
 
-          int n_out_feat,
+            int n_out_feat,
 
-          int n_moments) {
-
-
-      //CUDA implementation
+            int n_moments) {
 
 
-  }
+        //CUDA implementation
+
+
+    }
 };
 
 
 
 template struct AccumulateKnnOpFunctor<GPUDevice, int>;
 
-}
-}
+}//functor
+}//tensorflow
 
 
 #endif  // GOOGLE_CUDA
