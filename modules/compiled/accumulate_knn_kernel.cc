@@ -23,7 +23,7 @@ namespace tensorflow {
 
         float distanceWeight(float distsq){
             if(!distsq)return 1;
-            return exp(-10.* distsq);
+            return exp(-1.* distsq);
         }
 
         // CPU specialization
@@ -53,7 +53,7 @@ namespace tensorflow {
                     for(size_t i_f=0;i_f<n_feat;i_f++){
                         float t_mean = 0;
                         float t_max = 0;
-                        int max_i_n = 0;
+                        int max_i_n_gidx = 0;
 
                         for(size_t i_n=0;i_n<n_neigh;i_n++){
                             size_t nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
@@ -68,13 +68,13 @@ namespace tensorflow {
                             float wfeat = vnf * distanceWeight(distsq);
                             t_mean += wfeat;
                             if(wfeat > t_max){
-                                max_i_n = i_n;
+                                max_i_n_gidx = nidx;
                                 t_max = wfeat;
                             }
                         }
                         t_mean /= (float)n_neigh;
 
-                        d_out_maxidxs[I2D(i_v,i_f,n_feat)] = max_i_n; //just used for gradient
+                        d_out_maxidxs[I2D(i_v,i_f,n_feat)] = max_i_n_gidx; //just used for gradient
                         d_out_feat[I2D(i_v,i_f,n_out_feat)] = t_mean;
                         d_out_feat[I2D(i_v,i_f+n_feat,n_out_feat)] = t_max;
 
