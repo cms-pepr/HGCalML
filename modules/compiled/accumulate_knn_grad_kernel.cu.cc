@@ -21,9 +21,9 @@ typedef Eigen::GpuDevice GPUDevice;
 __device__
 float gpu_grad_distanceWeight(float distsq){
     if(!distsq)return 1;
-  //  const float cutoffsq = -log(0.01)/ACCUMULATE_KNN_EXPONENT;
-  //  if(distsq>cutoff)
-  //      return 0;
+    //  const float cutoffsq = -log(0.01)/ACCUMULATE_KNN_EXPONENT;
+    //  if(distsq>cutoff)
+    //      return 0;
     return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
 }
 __device__
@@ -36,10 +36,10 @@ float gpu_distWeightD(const float *d_coord, size_t i, size_t j, size_t n_coords)
         float xic = d_coord[I2D(i,i_c,n_coords)];
         float xkc = d_coord[I2D(j,  i_c,n_coords)];
 
-     //  if(fabs(xic-xkc) > cutoff){ //opt
-     //      distsq = cutoff*cutoff;
-     //      break;
-     //  }
+        //  if(fabs(xic-xkc) > cutoff){ //opt
+        //      distsq = cutoff*cutoff;
+        //      break;
+        //  }
 
         distsq += (xic-xkc)*(xic-xkc);
     }
@@ -136,10 +136,13 @@ void acc_knn_gradkernel_coordinates(const float *d_grad_from_out_features,
     if(i_v >= n_vert)
         return;
 
+    size_t nu_c= blockIdx.y * blockDim.y + threadIdx.y;
+    if(nu_c >= n_coords)
+        return;
     //set zero
     // for (size_t i_v = 0; i_v < n_vert; i_v++){
-    for(size_t nu_c=0;nu_c<n_coords;nu_c++)
-        d_out_grad_coords[I2D(i_v,nu_c,n_coords)] = 0;
+    //  for(size_t nu_c=0;nu_c<n_coords;nu_c++)
+    d_out_grad_coords[I2D(i_v,nu_c,n_coords)] = 0;
     //  }
 
 
@@ -153,55 +156,55 @@ void acc_knn_gradkernel_coordinates(const float *d_grad_from_out_features,
 
         size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
 
-        for(size_t nu_c = 0; nu_c < n_coords; nu_c++){
+        //     for(size_t nu_c = 0; nu_c < n_coords; nu_c++){
 
-            float mean_contrib = 0;
-            float maxcontr = 0;
+        float mean_contrib = 0;
+        float maxcontr = 0;
 
-            //  for (size_t b_f = 0; b_f < n_feat; b_f++){
-            //  float thisfeat_mean_contr = 0;
-            // float thisfeat_max_contr = 0;
+        //  for (size_t b_f = 0; b_f < n_feat; b_f++){
+        //  float thisfeat_mean_contr = 0;
+        // float thisfeat_max_contr = 0;
 
-            // m_v == k && m_v != i_v
-            // m_v != k && m_v == i_v (*= -1)
-            //
+        // m_v == k && m_v != i_v
+        // m_v != k && m_v == i_v (*= -1)
+        //
 
-            for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
-                size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
-                float ddelta = gpu_delta(m_v,k) - gpu_delta(m_v,i_v);
-                if(!ddelta)
-                    continue;
+        for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
+            size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
+            float ddelta = gpu_delta(m_v,k) - gpu_delta(m_v,i_v);
+            if(!ddelta)
+                continue;
 
-                float diknu= d_coord[I2D(i_v,nu_c,n_coords)] - d_coord[I2D(k,  nu_c,n_coords)];
-                //if(fabs(diknu)<0.01)continue;
+            float diknu= d_coord[I2D(i_v,nu_c,n_coords)] - d_coord[I2D(k,  nu_c,n_coords)];
+            //if(fabs(diknu)<0.01)continue;
 
-                //possible improvement: if fabs(diknu) <  0.05 or > 0.5 continue (will be absorbed by diknu * exp(-10 *...))
-                // less than 5% contribution
-                // the whole contribution can never exceed about 0.15 * in_feature (for s=10)..
+            //possible improvement: if fabs(diknu) <  0.05 or > 0.5 continue (will be absorbed by diknu * exp(-10 *...))
+            // less than 5% contribution
+            // the whole contribution can never exceed about 0.15 * in_feature (for s=10)..
 
-                float wik = gpu_distWeightD(d_coord,i_v,k,n_coords);
-                //if(fabs(wik * diknu)< 0.002) continue;
+            float wik = gpu_distWeightD(d_coord,i_v,k,n_coords);
+            //if(fabs(wik * diknu)< 0.002) continue;
 
-                for (size_t b_f = 0; b_f < n_feat; b_f++){
+            for (size_t b_f = 0; b_f < n_feat; b_f++){
 
-                    mean_contrib +=  wik * d_feat[I2D(k, b_f, n_feat)] * diknu
+                mean_contrib +=  wik * d_feat[I2D(k, b_f, n_feat)] * diknu
+                        * ddelta * d_grad_from_out_features[I2D(i_v, b_f, n_grad_from_out_feat)];
+
+                if(k == d_max_feat_indices[I2D(i_v,b_f,n_feat)] ){
+                    maxcontr += wik * d_feat[I2D(k, b_f, n_feat)] * diknu
                             * ddelta * d_grad_from_out_features[I2D(i_v, b_f, n_grad_from_out_feat)];
-
-                    if(k == d_max_feat_indices[I2D(i_v,b_f,n_feat)] ){
-                        maxcontr += wik * d_feat[I2D(k, b_f, n_feat)] * diknu
-                                * ddelta * d_grad_from_out_features[I2D(i_v, b_f, n_grad_from_out_feat)];
-                    }
-
                 }
 
-
             }
-            float add = 2. * ACCUMULATE_KNN_EXPONENT/(float) n_neigh * mean_contrib +
-                    2 * ACCUMULATE_KNN_EXPONENT * maxcontr;
-            //ATOMIC this is slow..
-            atomicAdd( &d_out_grad_coords[I2D(m_v, nu_c, n_coords)], add);
+
+
         }
+        float add = 2. * ACCUMULATE_KNN_EXPONENT/(float) n_neigh * mean_contrib +
+                2 * ACCUMULATE_KNN_EXPONENT * maxcontr;
+        //ATOMIC this is slow..
+        atomicAdd( &d_out_grad_coords[I2D(m_v, nu_c, n_coords)], add);
     }
+    //  }
     //}
 }
 
@@ -227,6 +230,7 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
 
             int n_moments) {
 
+        //Ti1080 has 768 blocks
 
         dim3 fgrid(n_vert/96+1, n_feat/8 +1);
         dim3 fblock(96,8);
@@ -237,8 +241,8 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
                 n_vert,n_neigh,n_coords,n_feat,n_grad_from_out_feat,n_moments);
 
 
-        dim3 cgrid(n_vert/256+1);
-        dim3 cblock(256);
+        dim3 cgrid(n_vert/192+1, n_coords/4+1);
+        dim3 cblock(192,4);
 
         acc_knn_gradkernel_coordinates<<<cgrid, cblock>>>(d_grad_from_out_features,d_coord,d_feat,d_max_feat_indices,
                 d_neigh_indices,d_out_grad_coords,d_out_grad_features,
