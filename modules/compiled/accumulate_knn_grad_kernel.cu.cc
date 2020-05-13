@@ -21,14 +21,26 @@ typedef Eigen::GpuDevice GPUDevice;
 __device__
 float gpu_grad_distanceWeight(float distsq){
     if(!distsq)return 1;
+  //  const float cutoffsq = -log(0.01)/ACCUMULATE_KNN_EXPONENT;
+  //  if(distsq>cutoff)
+  //      return 0;
     return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
 }
 __device__
 float gpu_distWeightD(const float *d_coord, size_t i, size_t j, size_t n_coords){
+
+    const float cutoff = sqrt(-log(0.01)/ACCUMULATE_KNN_EXPONENT);//cut off at 1% contribution
+
     float distsq=0;
     for(size_t i_c=0;i_c<n_coords;i_c++){
         float xic = d_coord[I2D(i,i_c,n_coords)];
         float xkc = d_coord[I2D(j,  i_c,n_coords)];
+
+     //  if(fabs(xic-xkc) > cutoff){ //opt
+     //      distsq = cutoff*cutoff;
+     //      break;
+     //  }
+
         distsq += (xic-xkc)*(xic-xkc);
     }
     return gpu_grad_distanceWeight(distsq);
@@ -89,6 +101,7 @@ void acc_knn_gradkernel(const float *d_grad_from_out_features,
         }
         float weight_im = gpu_grad_distanceWeight(distsq_im);
 
+        //if weight_im > some number?
         for (size_t nu_f = 0; nu_f < n_feat; nu_f++){
 
             float contrib=0;
@@ -109,40 +122,41 @@ void acc_knn_gradkernel(const float *d_grad_from_out_features,
             float mean_contrib = 0;
             float maxcontr = 0;
 
-            for (size_t b_f = 0; b_f < n_feat; b_f++){
-                float thisfeat_mean_contr = 0;
-                float thisfeat_max_contr = 0;
+            //  for (size_t b_f = 0; b_f < n_feat; b_f++){
+            //  float thisfeat_mean_contr = 0;
+            // float thisfeat_max_contr = 0;
 
-                // m_v == k && m_v != i_v
-                // m_v != k && m_v == i_v (*= -1)
-                //
+            // m_v == k && m_v != i_v
+            // m_v != k && m_v == i_v (*= -1)
+            //
 
-                for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
-                    size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
-                    float ddelta = gpu_delta(m_v,k) - gpu_delta(m_v,i_v);
-                    if(!ddelta)
-                        continue;
+            for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
+                size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
+                float ddelta = gpu_delta(m_v,k) - gpu_delta(m_v,i_v);
+                if(!ddelta)
+                    continue;
 
-                    float wik = gpu_distWeightD(d_coord,i_v,k,n_coords);
+                float diknu= d_coord[I2D(i_v,nu_c,n_coords)] - d_coord[I2D(k,  nu_c,n_coords)];
+                //if(fabs(diknu)<0.01)continue;
 
-                    float distsq_ik=0;
-                    float diknu= d_coord[I2D(i_v,nu_c,n_coords)] - d_coord[I2D(k,  nu_c,n_coords)];
+                //possible improvement: if fabs(diknu) <  0.05 or > 0.5 continue (will be absorbed by diknu * exp(-10 *...))
+                // less than 5% contribution
+                // the whole contribution can never exceed about 0.15 * in_feature (for s=10)..
 
-                    thisfeat_mean_contr +=  wik * d_feat[I2D(k, b_f, n_feat)] * diknu
-                            * ddelta;
+                float wik = gpu_distWeightD(d_coord,i_v,k,n_coords);
+                //if(fabs(wik * diknu)< 0.002) continue;
+
+                for (size_t b_f = 0; b_f < n_feat; b_f++){
+
+                    mean_contrib +=  wik * d_feat[I2D(k, b_f, n_feat)] * diknu
+                            * ddelta * d_grad_from_out_features[I2D(i_v, b_f, n_grad_from_out_feat)];
 
                     if(k == d_max_feat_indices[I2D(i_v,b_f,n_feat)] ){
-                        thisfeat_max_contr += wik * d_feat[I2D(k, b_f, n_feat)] * diknu
-                                * ddelta;
+                        maxcontr += wik * d_feat[I2D(k, b_f, n_feat)] * diknu
+                                * ddelta * d_grad_from_out_features[I2D(i_v, b_f, n_grad_from_out_feat)];
                     }
 
                 }
-
-                mean_contrib +=  thisfeat_mean_contr *
-                        d_grad_from_out_features[I2D(i_v, b_f, n_grad_from_out_feat)];
-
-                maxcontr += thisfeat_max_contr*
-                        d_grad_from_out_features[I2D(i_v, b_f, n_grad_from_out_feat)];
 
 
             }
