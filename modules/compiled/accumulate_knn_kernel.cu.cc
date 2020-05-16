@@ -142,6 +142,8 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
       //  int numSMs = d.getNumCudaMultiProcessors();
 
         //just simple 1 thread per vertex
+
+        //for GTX1080, also make some opt for V100
         dim3 grid(n_vert/64+1,n_feat/12+1);
         dim3 block(64,12);
         //just some default optimisation for now

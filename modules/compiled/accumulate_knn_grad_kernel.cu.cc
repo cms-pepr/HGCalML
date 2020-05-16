@@ -20,14 +20,14 @@ typedef Eigen::GpuDevice GPUDevice;
 
 __device__
 float gpu_grad_distanceWeight(float distsq){
-    if(!distsq)return 1;
+   // if(!distsq)return 1;
     //  const float cutoffsq = -log(0.01)/ACCUMULATE_KNN_EXPONENT;
     //  if(distsq>cutoff)
     //      return 0;
-    return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
+    return expf(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
 }
 __device__
-float gpu_distWeightD(const float *d_coord, size_t i, size_t j, size_t n_coords){
+inline float gpu_distWeightD(const float *d_coord, size_t i, size_t j, size_t n_coords){
 
     const float cutoff = sqrt(-log(0.01)/ACCUMULATE_KNN_EXPONENT);//cut off at 1% contribution
 

@@ -24,7 +24,19 @@ import pretrained_models as ptm
 
 train = training_base(testrun=False, resumeSilently=True, renewtokens=False)
 
+
+from betaLosses import config as loss_config
+
+loss_config.energy_loss_weight = 1.
+loss_config.use_energy_weights = False
+loss_config.q_min = 0.5
+loss_config.no_beta_norm = False
+loss_config.potential_scaling = 3.
+loss_config.s_b = 1.
+
+
 from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
+
 
 train.loadModel(ptm.get_model_path("shah_rukh_apr30_2020.h5"))
 
@@ -51,7 +63,7 @@ for i in range(5):
             outputfile=plotoutdir + "/sn",
             samplefile=samplepath,
             cycle_colors=False,
-            after_n_batches=100,
+            after_n_batches=500,
             batchsize=100000,
             on_epoch_end=False,
             use_event= i)

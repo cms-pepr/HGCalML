@@ -1,4 +1,4 @@
-import setGPU #enable GPU
+#import setGPU #enable GPU
 
 import tensorflow as tf
 import numpy as np
@@ -219,15 +219,21 @@ def test_uniform_test():#self):
     #t_newop.gradient(meanmax, feats)
     #t_newop.gradient(meanmax, coords)
     
-def run_extended_benchmark(gradient=False):
+def run_extended_benchmark(gradient=False, v100=True):
     #nvert  = [1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500,10000]
-    nvert  = [int(i*1000/2+1000) for i in range(30)]
+    
+    vertmulti = 1000
+    if v100:
+        vertmulti = 2000
+    nvert  = [int(i*vertmulti/2+1000) for i in range(30)]
     nneigh = [int(25*i)+25 for i in range(0,10)]
     nfeat  = [int(32*i)+32 for i in range(0,10)]
     
     d_nfeat = 100
     d_nneigh = 100
     d_nvert = 10000
+    if v100:
+        d_nvert = 25000
     
     tf_times = []
     op_times = []
@@ -244,7 +250,7 @@ def run_extended_benchmark(gradient=False):
     plt.plot(nvert,op_times,color='green',label="custom",marker='o')
     plt.plot(tfx,tf_times,color='orange',label="TF",marker='o')
     plt.xlabel("# vertices")
-    plt.ylabel("s")
+    plt.ylabel("time")
     #plt.yscale('log')
     plt.legend()
     if gradient:
@@ -267,7 +273,7 @@ def run_extended_benchmark(gradient=False):
     plt.plot(nneigh,op_times,color='green',label="custom",marker='o')
     plt.plot(tfx,tf_times,color='orange',label="TF",marker='o')
     plt.xlabel("# neighbours")
-    plt.ylabel("s")
+    plt.ylabel("time")
     plt.legend()
     if gradient:
         plt.savefig("benchmark_grad_nneigh.pdf")
@@ -289,7 +295,7 @@ def run_extended_benchmark(gradient=False):
     plt.plot(nfeat,op_times,color='green',label="custom",marker='o')
     plt.plot(tfx,tf_times,color='orange',label="TF",marker='o')
     plt.xlabel("# features")
-    plt.ylabel("s")
+    plt.ylabel("time")
     plt.legend()
     if gradient:
         plt.savefig("benchmark_grad_nfeat.pdf")

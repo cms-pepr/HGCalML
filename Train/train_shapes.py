@@ -190,7 +190,6 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
  
     
 
-train.change_learning_rate(1e-5)
 
 
 print(train.keras_model.summary())
@@ -223,6 +222,7 @@ from configSaver import copyModules
 copyModules(train.outputDir)
 
 
+train.change_learning_rate(1e-6)
 print("It should save now")
 model, history = train.trainModel(nepochs=10,
                                   run_eagerly=True,
