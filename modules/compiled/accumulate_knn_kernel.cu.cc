@@ -17,7 +17,7 @@ namespace functor {
 
 __device__
 float gpu_distanceWeight(float distsq){
-    if(!distsq)return 1;
+  // keep in sync  if(!distsq)return 1;
     return expf(-1.*ACCUMULATE_KNN_EXPONENT* distsq); //uses cuda built in exp
 }
 
@@ -59,6 +59,11 @@ void acc_knn_kernel(const float *d_coord,
     size_t i_v =  blockIdx.x * blockDim.x + threadIdx.x;
     if(i_v >= n_vert)
         return;
+
+
+    size_t i_f =  blockIdx.y * blockDim.y + threadIdx.y;
+    if(i_f >= n_feat)
+        return;
     //fully independent per i_v, no races
 
     //scales mildly up to about 10k vertices, and then linearly
@@ -66,7 +71,7 @@ void acc_knn_kernel(const float *d_coord,
 //    for(const auto i_v: grid_stride_range(0,n_vert)){
     //  for (size_t i_v = 0; i_v < n_vert; i_v++) {
 
-        for(size_t i_f=0;i_f<n_feat;i_f++){
+  //      for(size_t i_f=0;i_f<n_feat;i_f++){
 //          for(const auto i_f: grid_stride_range_y(0,n_feat)){
             float t_mean = 0;
             float t_max = 0;
@@ -97,9 +102,11 @@ void acc_knn_kernel(const float *d_coord,
 
             //moments in n_coords x n_neigh loop here {}
 
-        }
+   //     }
 
  //  }
+
+    __syncthreads(); //might not be needed
 
 }
 
@@ -135,8 +142,8 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
       //  int numSMs = d.getNumCudaMultiProcessors();
 
         //just simple 1 thread per vertex
-        dim3 grid(n_vert/256+1);
-        dim3 block(256);
+        dim3 grid(n_vert/64+1,n_feat/12+1);
+        dim3 block(64,12);
         //just some default optimisation for now
       //  cudaOccupancyMaxPotentialBlockSize(&gridsize,&blocksize,acc_knn_kernel);
 
