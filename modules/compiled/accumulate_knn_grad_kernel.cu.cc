@@ -51,7 +51,8 @@ float gpu_delta(int k, int m){
     return 0;
 }
 __global__
-void acc_knn_gradkernel_features(const float *d_grad_from_out_features,
+void acc_knn_gradkernel_features(
+        const float *d_grad_from_out_features,
         const float *d_coord,
         const float *d_feat, // sum(V) x F
         const int *d_max_feat_indices,
@@ -79,7 +80,7 @@ void acc_knn_gradkernel_features(const float *d_grad_from_out_features,
         return;
     }
     //  for (size_t nu_f = 0; nu_f < n_feat; nu_f++)
-    d_out_grad_features[I2D(i_v, nu_f, n_feat)] = 0;
+  //  d_out_grad_features[I2D(i_v, nu_f, n_feat)] = 0;
 
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
@@ -142,7 +143,7 @@ void acc_knn_gradkernel_coordinates(const float *d_grad_from_out_features,
     //set zero
     // for (size_t i_v = 0; i_v < n_vert; i_v++){
     //  for(size_t nu_c=0;nu_c<n_coords;nu_c++)
-    d_out_grad_coords[I2D(i_v,nu_c,n_coords)] = 0;
+   // d_out_grad_coords[I2D(i_v,nu_c,n_coords)] = 0;
     //  }
 
 
@@ -236,9 +237,20 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
         dim3 fblock(96,8);
 
 
-        acc_knn_gradkernel_features<<<fgrid, fblock>>>(d_grad_from_out_features,d_coord,d_feat,d_max_feat_indices,
-                d_neigh_indices,d_out_grad_coords,d_out_grad_features,
-                n_vert,n_neigh,n_coords,n_feat,n_grad_from_out_feat,n_moments);
+        acc_knn_gradkernel_features<<<fgrid, fblock>>>(
+                d_grad_from_out_features,
+                d_coord,
+                d_feat,
+                d_max_feat_indices,
+                d_neigh_indices,
+                d_out_grad_coords,
+                d_out_grad_features,
+                n_vert,
+                n_neigh,
+                n_coords,
+                n_feat,
+                n_grad_from_out_feat,
+                n_moments);
 
 
         dim3 cgrid(n_vert/192+1, n_coords/4+1);
