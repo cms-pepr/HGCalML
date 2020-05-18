@@ -44,7 +44,7 @@ def _AccumulateKnnGrad(op, grad, gradmaxidxs):
 _accknn_nd_op = tf.load_op_library('accumulate_knn_nd.so')
 _accknn_nd_grad_op = tf.load_op_library('accumulate_knn_nd_grad.so')
 
-def AccumulateKnnNd(coords,  features, indices, n_moments):
+def AccumulateKnnNd(coords,  features, indices, n_moments=0):
     return _accknn_nd_op.AccumulateKnnNd(n_moments=n_moments, coords=coords,  features=features, indices=indices)
 
 

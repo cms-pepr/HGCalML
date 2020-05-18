@@ -3,7 +3,8 @@ import tensorflow.keras as keras
 from rknn_op import rknn_ragged, rknn_op
 from caloGraphNN import gauss_of_lin
 import uuid
-
+from select_knn_op import SelectKnn
+from accknn_op import AccumulateKnnNd
 
 class RaggedConstructTensor(keras.layers.Layer):
     """
@@ -311,6 +312,79 @@ class RaggedGravNet(tf.keras.layers.Layer):
                   'return_idx_and_space': self.return_idx_and_space,
                   'calculate_moments':self.calculate_moments}
         base_config = super(RaggedGravNet, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+class FusedRaggedGravNet(tf.keras.layers.Layer):
+    def __init__(self,
+                 n_neighbours: int,
+                 n_dimensions: int,
+                 n_filters,
+                 n_propagate: int, 
+                 **kwargs):
+        super(FusedRaggedGravNet, self).__init__(**kwargs)
+
+        assert n_neighbours > 1
+
+        self.n_neighbours = n_neighbours
+        self.n_dimensions = n_dimensions
+    
+        self.n_filters = n_filters
+        self.n_propagate = n_propagate
+
+        with tf.name_scope(self.name+"/1/"):
+            self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
+
+        with tf.name_scope(self.name+"/2/"):
+            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
+
+        with tf.name_scope(self.name+"/3/"):
+            self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='elu')
+
+    def build(self, input_shapes):
+        input_shape = input_shapes[0]
+
+        with tf.name_scope(self.name + "/1/"):
+            self.input_feature_transform.build(input_shape)
+
+        with tf.name_scope(self.name + "/2/"):
+            self.input_spatial_transform.build(input_shape)
+
+        with tf.name_scope(self.name + "/3/"):
+            n_nodes = self.input_feature_transform.units*2*self.input_spatial_transform.units + input_shape[1]
+            self.output_feature_transform.build((input_shape[0],n_nodes))
+
+        
+        super(FusedRaggedGravNet, self).build(input_shape)
+
+    def call(self, inputs):
+        
+        x = inputs[0]
+        row_splits = inputs[1]
+
+        coordinates = self.input_spatial_transform(x)
+        in_features = self.input_feature_transform(x)
+        
+        indices  = SelectKnn(self.n_neighbours, coordinates,  row_splits)
+        
+        features,_ = AccumulateKnnNd(coordinates,  in_features, indices)
+        features = tf.reshape(features, [-1,self.input_feature_transform.units * 2 * self.input_spatial_transform.units])
+        features = tf.concat([x, features], axis=-1)
+        features = self.output_feature_transform(features)
+        
+        return features
+
+    def compute_output_shape(self, input_shapes):
+        input_shape = input_shapes[0]
+        return (self.output_feature_transform.units[-1],)
+    
+
+    def get_config(self):
+        config = {'n_neighbours': self.n_neighbours,
+                  'n_dimensions': self.n_dimensions,
+                  'n_filters': self.n_filters,
+                  'n_propagate': self.n_propagate,}
+        base_config = super(FusedRaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
 

@@ -33,7 +33,7 @@ def euclidean_squared(A, B):
 
 def createData(nvert,ncoords):
     coords = tf.constant( np.random.rand(nvert,ncoords) ,dtype='float32')
-    row_splits = tf.constant( [0,  nvert] ,dtype='int32')
+    row_splits = tf.constant( [0,  int(nvert/2), nvert] ,dtype='int32')
     return coords, row_splits
 
 
@@ -55,7 +55,7 @@ def tf_implt(K, coords, row_splits):
 
 
 
-coords, row_splits = createData(18000, 4)
+coords, row_splits = createData(8000, 4)
 
 K = 200
 print('launching custom')

@@ -480,6 +480,7 @@ class _obj_cond_config(object):
         self.no_beta_norm = False
         self.potential_scaling = 1.
         self.s_b = 1.
+        self.position_scaling = 1.
 
 
 config = _obj_cond_config()
@@ -534,7 +535,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
     pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
     pos_offs =  tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
-    position_loss = 500.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
+    position_loss = config.position_scaling*500.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
     
     
     spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
