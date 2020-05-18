@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from select_knn_op import SelectKnn
 
 
 def makeIndices(nvert,nneigh):
@@ -36,7 +37,7 @@ class Benchmarker(object):
         feats  = tf.constant( np.random.rand(nvert,nfeat) ,dtype='float32')
         row_splits = tf.constant( [0, nvert] ,dtype='int32')
         
-        indices = makeIndices(nvert,nneigh)
+        indices = SelectKnn(K=nneigh, coords=coords, row_splits=row_splits)
         
         if not dogradient:
             #each gets one dry run to compile
@@ -104,14 +105,15 @@ class Benchmarker(object):
         coords = tf.constant( np.random.rand(nvert,ncoords) ,dtype='float32')
         feats  = tf.constant( np.random.rand(nvert,nfeat) ,dtype='float32')
         row_splits = tf.constant( [0, nvert] ,dtype='int32')
-        
-        indices = makeIndices(nvert, nneigh)
-        
+        print('building indices')
+        indices = SelectKnn(K=nneigh, coords=coords, row_splits=row_splits)
+        print('process custom op')
         op_time = 0
         t0 = time.time()
         with tf.GradientTape(persistent=True,watch_accessed_variables=True) as t_newop:
             t_newop.watch(coords)
             t_newop.watch(feats)
+            print('execute')
             meanmax = self.customimpl( coords=coords,  features=feats, indices=indices)
             t1 = time.time()
             op_time= t1 - t0
@@ -132,6 +134,7 @@ class Benchmarker(object):
             
         tf_feat_grad = None
         tf_coord_grad = None
+        print('process TF op')
         t0 = time.time()
         with tf.GradientTape(persistent=True) as t_tfop:
             t_tfop.watch(coords)

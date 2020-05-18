@@ -44,10 +44,10 @@ bm = Benchmarker(tf_impl, custom_impl,"GravNet_ND")
 bm.debugout=False
 print('checking TF versus custom for same results')
 for i in range(30):
-    print('nvert',5+10*i, 'nfeat',32+i, 'nneigh',2+i)
-    bm.difference( nvert = 5+10*i, nfeat = 32+i, nneigh = 2+10*i, ncoords = 8, onlyForward=True)   
+    print('nvert',5+10*i, 'nfeat',32+2*i, 'nneigh',2+10*i)
+    bm.difference( nvert = 5+10*i, nfeat = 32+2*i, nneigh = 2+10*i, ncoords = 4, onlyForward=False)   
 
-#exit()
+exit()
 print('checking TF versus custom for performance')
 v100=True
 vertmulti = 1000

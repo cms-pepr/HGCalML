@@ -106,7 +106,7 @@ void acc_knn_kernel(const float *d_coord,
 
  //  }
 
-    __syncthreads(); //might not be needed
+  //  __syncthreads(); //might not be needed
 
 }
 
@@ -151,7 +151,7 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
 
      //   std::cout << "opt grid" << gridsize << " opt block " << blocksize << " numSM " << numSMs << std::endl;
 
-        acc_knn_kernel<<<grid, block>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
+        acc_knn_kernel<<<grid, block, 0, d.stream()>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
                 n_vert,n_neigh,n_coords,n_feat,n_out_feat,n_moments);
 
     }

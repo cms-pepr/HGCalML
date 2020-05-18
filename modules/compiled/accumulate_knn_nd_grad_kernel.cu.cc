@@ -88,7 +88,7 @@ void acc_knn_nd_gradkernel_features(
 
     }
 
-    __syncthreads();
+   // __syncthreads();
 
 }
 
@@ -167,7 +167,7 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
         atomicAdd( &d_out_grad_coords[I2D(m_v, nu_c, n_coords)], add);
     }
 
-    __syncthreads();
+   // __syncthreads();
 
 }
 
@@ -223,6 +223,7 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
             const int n_grad_from_out_feat,
             const int n_moments) {
 
+
         //Ti1080 has 768 blocks
         //zero out in threads
         dim3 fgridz(n_vert/32+1, n_feat/16+1);
@@ -236,13 +237,17 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
 
         acc_knn_nd_zero_coordinates<<<fgridzc , fblockzc>>> (d_out_grad_coords, n_vert, n_coords);
 
+
+        cudaDeviceSynchronize();
+
+
         dim3 fgrid(n_vert/32+1, n_feat/4+1 ,n_coords/4+1);
         dim3 fblock(32,4,4);
 
 
 
 
-        acc_knn_nd_gradkernel_features<<<fgrid, fblock>>>(
+        acc_knn_nd_gradkernel_features<<<fgrid, fblock, 0, d.stream()>>>(
                 d_grad_from_out_features,
                 d_coord,
                 d_feat,
@@ -257,7 +262,7 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
                 n_grad_from_out_feat,
                 n_moments);
 
-        acc_knn_nd_gradkernel_coordinates<<<fgrid, fblock>>>(
+        acc_knn_nd_gradkernel_coordinates<<<fgrid, fblock, 0, d.stream()>>>(
                 d_grad_from_out_features,
                 d_coord,
                 d_feat,
@@ -272,6 +277,7 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
                 n_grad_from_out_feat,
                 n_moments);
 
+        cudaDeviceSynchronize();
     }
 };
 

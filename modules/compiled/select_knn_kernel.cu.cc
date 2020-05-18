@@ -30,15 +30,14 @@ float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_
 
 
 __device__
-int searchLargestDistance(int i_v, int* d_indices, int n_neigh, const float * d_coord, int n_coords, float& maxdist){
+int searchLargestDistance(int i_v, float* d_dist, int n_neigh, float& maxdist){
 
     maxdist=0;
     int maxidx=0;
     if(n_neigh < 2)
         return maxidx;
     for(size_t n=1;n<n_neigh;n++){ //0 is self
-        size_t gidx = d_indices[I2D(i_v,n,n_neigh)];
-        float distsq = calculateDistance(i_v,gidx,d_coord,n_coords);
+        float distsq = d_dist[I2D(i_v,n,n_neigh)];
         if(distsq > maxdist){
             maxdist = distsq;
             maxidx = n;
@@ -53,6 +52,7 @@ void select_knn_kernel(
         const float *d_coord,
         const int* d_row_splits,
         int *d_indices,
+        float *d_dist,
 
         const int n_vert,
         const int n_neigh,
@@ -67,7 +67,7 @@ void select_knn_kernel(
 
     const size_t i_v =  blockIdx.x * blockDim.x + threadIdx.x + start_vert;
     if(i_v >= end_vert)
-        return;
+        return;//this will be a problem with actual RS
 
 
     d_indices[I2D(i_v,0,n_neigh)] = i_v;
@@ -83,6 +83,7 @@ void select_knn_kernel(
         float distsq = calculateDistance(i_v,j_v,d_coord,n_coords);
         if(nfilled<n_neigh){
             d_indices[I2D(i_v,nfilled,n_neigh)] = j_v;
+            d_dist[I2D(i_v,nfilled,n_neigh)] = distsq;
             if(distsq > maxdistsq){
                 maxdistsq = distsq;
                 maxidx_local = nfilled;
@@ -93,8 +94,9 @@ void select_knn_kernel(
         if(distsq < maxdistsq){
             //replace former max
             d_indices[I2D(i_v,maxidx_local,n_neigh)] = j_v;
+            d_dist[I2D(i_v,maxidx_local,n_neigh)] = distsq;
             //search new max
-            maxidx_local = searchLargestDistance(i_v,d_indices,n_neigh,d_coord,n_coords,maxdistsq);
+            maxidx_local = searchLargestDistance(i_v,d_dist,n_neigh,maxdistsq);
         }
     }
 
@@ -111,6 +113,7 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
             const float *d_coord,
             const int* d_row_splits,
             int *d_indices,
+            float *d_dist,
 
             const int n_vert,
             const int n_neigh,
@@ -123,21 +126,27 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
         // rest of the code understands.. maybe -1?
 
         //just loop over n_rs, in a realistic setting these shouldn't be more than a handful entries
-        for(size_t j_rs=0;j_rs<n_rs;j_rs++){
 
-            dim3 numblocks(n_vert/256+1);
-            dim3 threadsperblock(256);
+        for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){ //n_rs-1 important!
 
-            gpu::select_knn_kernel<<<numblocks, threadsperblock >>>(
+
+            dim3 numblocks(n_vert/32+1);
+            dim3 threadsperblock(32);
+
+            gpu::select_knn_kernel<<<numblocks, threadsperblock, 0, d.stream() >>>(
                     d_coord,
                     d_row_splits,
                     d_indices,
+                    d_dist,
 
                     n_vert,
                     n_neigh,
                     n_coords,
 
                     j_rs);
+
+            cudaDeviceSynchronize();
+
         }
     }
 

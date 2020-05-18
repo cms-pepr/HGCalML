@@ -237,7 +237,7 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
         dim3 fblock(96,8);
 
 
-        acc_knn_gradkernel_features<<<fgrid, fblock>>>(
+        acc_knn_gradkernel_features<<<fgrid, fblock, 0,  d.stream()>>>(
                 d_grad_from_out_features,
                 d_coord,
                 d_feat,
@@ -256,7 +256,7 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
         dim3 cgrid(n_vert/192+1, n_coords/4+1);
         dim3 cblock(192,4);
 
-        acc_knn_gradkernel_coordinates<<<cgrid, cblock>>>(d_grad_from_out_features,d_coord,d_feat,d_max_feat_indices,
+        acc_knn_gradkernel_coordinates<<<cgrid, cblock, 0,  d.stream()>>>(d_grad_from_out_features,d_coord,d_feat,d_max_feat_indices,
                 d_neigh_indices,d_out_grad_coords,d_out_grad_features,
                 n_vert,n_neigh,n_coords,n_feat,n_grad_from_out_feat,n_moments);
 

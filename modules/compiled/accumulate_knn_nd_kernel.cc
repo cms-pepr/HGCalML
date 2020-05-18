@@ -96,6 +96,7 @@ public:
 
     void Compute(OpKernelContext *context) override {
 
+
         const Tensor &d_coord_tensor = context->input(0);
         const Tensor &d_feat_tensor = context->input(1);
         const Tensor &d_idxs_tensor = context->input(2);
@@ -128,6 +129,7 @@ public:
 
         Tensor *output_max_idxs_tensor = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, outputShape_max_idxs, &output_max_idxs_tensor));
+
 
         AccumulateKnnNdOpFunctor<Device, int>()(
                 context->eigen_device<Device>(),

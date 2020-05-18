@@ -13,6 +13,7 @@ struct SelectKnnOpFunctor {
             const float *d_coord,
             const int* d_row_splits,
             int *d_indices,
+            float *d_dist,
 
             const int n_vert,
             const int n_neigh,

@@ -42,15 +42,14 @@ void coutVector(size_t i_v,  int* d_indices, int n_neigh, const float * d_coord,
 }
 
 
-int searchLargestDistance(int i_v, int* d_indices, int n_neigh, const float * d_coord, int n_coords, float& maxdist){
+int searchLargestDistance(int i_v, float* d_dist, int n_neigh, float& maxdist){
 
     maxdist=0;
     int maxidx=0;
     if(n_neigh < 2)
         return maxidx;
     for(size_t n=1;n<n_neigh;n++){ //0 is self
-        size_t gidx = d_indices[I2D(i_v,n,n_neigh)];
-        float distsq = calculateDistance(i_v,gidx,d_coord,n_coords);
+        float distsq = d_dist[I2D(i_v,n,n_neigh)];
         if(distsq > maxdist){
             maxdist = distsq;
             maxidx = n;
@@ -67,6 +66,7 @@ struct SelectKnnOpFunctor<CPUDevice, dummy> {
             const float *d_coord,
             const int* d_row_splits,
             int *d_indices,
+            float *d_dist,
 
             const int n_vert,
             const int n_neigh,
@@ -99,6 +99,7 @@ struct SelectKnnOpFunctor<CPUDevice, dummy> {
                     float distsq = calculateDistance(i_v,j_v,d_coord,n_coords);
                     if(nfilled<n_neigh){
                         d_indices[I2D(i_v,nfilled,n_neigh)] = j_v;
+                        d_dist[I2D(i_v,nfilled,n_neigh)] = distsq;
                         if(distsq > maxdistsq){
                             maxdistsq = distsq;
                             maxidx_local = nfilled;
@@ -109,8 +110,9 @@ struct SelectKnnOpFunctor<CPUDevice, dummy> {
                     if(distsq < maxdistsq){
                         //replace former max
                         d_indices[I2D(i_v,maxidx_local,n_neigh)] = j_v;
+                        d_dist[I2D(i_v,maxidx_local,n_neigh)] = distsq;
                         //search new max
-                        maxidx_local = searchLargestDistance(i_v,d_indices,n_neigh,d_coord,n_coords,maxdistsq);
+                        maxidx_local = searchLargestDistance(i_v,d_dist,n_neigh,maxdistsq);
                     }
                 }
             }//vert
@@ -143,6 +145,8 @@ public:
         Tensor *output_tensor = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(0, outputShape, &output_tensor));
 
+        Tensor *output_distances = NULL;
+        OP_REQUIRES_OK(context, context->allocate_output(1, outputShape, &output_distances));
 
 
         SelectKnnOpFunctor<Device, int>()(
@@ -151,6 +155,7 @@ public:
                 d_coord_tensor.flat<float>().data(),
                 d_rs_tensor.flat<int>().data(),
                 output_tensor->flat<int>().data(),
+                output_distances->flat<float>().data(),
 
                 n_vert,
                 K_,

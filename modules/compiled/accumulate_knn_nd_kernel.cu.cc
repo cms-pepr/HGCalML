@@ -97,7 +97,7 @@ void acc_knn_nd_kernel(const float *d_coord,
     d_out_feat[I3D(i_v,i_f+n_feat,i_c,n_out_feat,n_coords)] = t_max;
 
 
-    __syncthreads(); //might not be needed
+   // __syncthreads(); //might not be needed
 
 }
 
@@ -143,9 +143,10 @@ struct AccumulateKnnNdOpFunctor<GPUDevice, dummy> {
 
      //   std::cout << "opt grid" << gridsize << " opt block " << blocksize << " numSM " << numSMs << std::endl;
 
-        acc_knn_nd_kernel<<<numblocks, threadsperblock>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
+        acc_knn_nd_kernel<<<numblocks, threadsperblock, 0, d.stream()>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
                 n_vert,n_neigh,n_coords,n_feat,n_out_feat,n_moments);
 
+        cudaDeviceSynchronize();
     }
 
 };
