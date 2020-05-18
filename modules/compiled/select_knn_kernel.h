@@ -11,11 +11,14 @@ struct SelectKnnOpFunctor {
             const Device &d,
 
             const float *d_coord,
+            const int* d_row_splits,
             int *d_indices,
 
             const int n_vert,
             const int n_neigh,
-            const int n_coords
+            const int n_coords,
+
+            const int n_rs
             );
 };
 
