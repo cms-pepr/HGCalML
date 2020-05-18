@@ -65,7 +65,7 @@ void acc_knn_nd_gradkernel_features(
     float vic = d_coord[I2D(i_v,i_c,n_coords)];
 
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
-
+        __syncthreads();
         size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
 
         float vnc = d_coord[I2D(m_v,i_c,n_coords)];
@@ -88,7 +88,7 @@ void acc_knn_nd_gradkernel_features(
 
     }
 
-   // __syncthreads();
+    __syncthreads();
 
 }
 
@@ -140,6 +140,7 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
         size_t max_for_iv = d_max_feat_indices[I3D(i_v, b_f, nu_c, n_feat,n_coords)];
 
         for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
+            __syncthreads();
 
             size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
 
@@ -167,7 +168,7 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
         atomicAdd( &d_out_grad_coords[I2D(m_v, nu_c, n_coords)], add);
     }
 
-   // __syncthreads();
+    __syncthreads();
 
 }
 
@@ -261,6 +262,8 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
                 n_feat,
                 n_grad_from_out_feat,
                 n_moments);
+
+        cudaDeviceSynchronize();
 
         acc_knn_nd_gradkernel_coordinates<<<fgrid, fblock, 0, d.stream()>>>(
                 d_grad_from_out_features,

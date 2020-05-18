@@ -66,11 +66,22 @@ void select_knn_kernel(
     const size_t end_vert = d_row_splits[j_rs+1];
 
     const size_t i_v =  blockIdx.x * blockDim.x + threadIdx.x + start_vert;
-    if(i_v >= end_vert)
+    if(i_v >= end_vert || i_v>=n_vert)
         return;//this will be a problem with actual RS
 
-
     d_indices[I2D(i_v,0,n_neigh)] = i_v;
+
+    //protection against n_vert<n_neigh
+    size_t nvert_in_row = end_vert - start_vert;
+    size_t max_neighbours = n_neigh;
+    //set default to self
+    if(nvert_in_row<n_neigh){
+        max_neighbours=nvert_in_row;
+        for(size_t n=1;n<n_neigh;n++)
+            d_indices[I2D(i_v,n,n_neigh)] = i_v;
+    }
+
+    __syncthreads();
 
     size_t nfilled=1;
     size_t maxidx_local=0;
@@ -81,7 +92,7 @@ void select_knn_kernel(
             continue;
         //fill up
         float distsq = calculateDistance(i_v,j_v,d_coord,n_coords);
-        if(nfilled<n_neigh){
+        if(nfilled<max_neighbours){
             d_indices[I2D(i_v,nfilled,n_neigh)] = j_v;
             d_dist[I2D(i_v,nfilled,n_neigh)] = distsq;
             if(distsq > maxdistsq){
@@ -99,6 +110,7 @@ void select_knn_kernel(
             maxidx_local = searchLargestDistance(i_v,d_dist,n_neigh,maxdistsq);
         }
     }
+    __syncthreads();
 
 }
 }
@@ -148,6 +160,7 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
             cudaDeviceSynchronize();
 
         }
+        cudaDeviceSynchronize();
     }
 
 };

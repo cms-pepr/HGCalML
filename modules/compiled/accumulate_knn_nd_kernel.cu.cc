@@ -88,6 +88,7 @@ void acc_knn_nd_kernel(const float *d_coord,
             max_i_n_gidx = nidx;
             t_max = wfeat;
         }
+        __syncthreads();
     }
 
     t_mean /= (float)n_neigh;

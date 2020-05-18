@@ -153,7 +153,7 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
 
         acc_knn_kernel<<<grid, block, 0, d.stream()>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
                 n_vert,n_neigh,n_coords,n_feat,n_out_feat,n_moments);
-
+        cudaDeviceSynchronize();
     }
 
 };

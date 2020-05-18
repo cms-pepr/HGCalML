@@ -259,7 +259,7 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
         acc_knn_gradkernel_coordinates<<<cgrid, cblock, 0,  d.stream()>>>(d_grad_from_out_features,d_coord,d_feat,d_max_feat_indices,
                 d_neigh_indices,d_out_grad_coords,d_out_grad_features,
                 n_vert,n_neigh,n_coords,n_feat,n_grad_from_out_feat,n_moments);
-
+        cudaDeviceSynchronize();
     }
 };
 
