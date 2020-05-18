@@ -8,6 +8,21 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
+def makeIndices(nvert,nneigh):
+    all = []
+    for i in range(nvert):
+        a = np.array([],dtype='int32')
+        while len(a) < nneigh-1:
+            a = np.random.choice(nvert, nneigh-1, replace=False)
+            a = a[a != i]
+        a = np.concatenate([np.array([i],dtype='int32'),a],axis=-1)
+        a = np.expand_dims(a, axis=0)
+        all.append(a)
+        
+    
+    return np.concatenate(all,axis=0)
+
+
 class Benchmarker(object):
     def __init__(self, tf_implementation, custom_implementation, name):
         self.tfimp=tf_implementation
@@ -21,7 +36,7 @@ class Benchmarker(object):
         feats  = tf.constant( np.random.rand(nvert,nfeat) ,dtype='float32')
         row_splits = tf.constant( [0, nvert] ,dtype='int32')
         
-        indices, _ = rknn_op.RaggedKnn(num_neighbors=nneigh, row_splits=row_splits, data=coords, add_splits=False)
+        indices = makeIndices(nvert,nneigh)
         
         if not dogradient:
             #each gets one dry run to compile
@@ -90,7 +105,7 @@ class Benchmarker(object):
         feats  = tf.constant( np.random.rand(nvert,nfeat) ,dtype='float32')
         row_splits = tf.constant( [0, nvert] ,dtype='int32')
         
-        indices, _ = rknn_op.RaggedKnn(num_neighbors=nneigh, row_splits=row_splits, data=coords, add_splits=False)
+        indices = makeIndices(nvert, nneigh)
         
         op_time = 0
         t0 = time.time()

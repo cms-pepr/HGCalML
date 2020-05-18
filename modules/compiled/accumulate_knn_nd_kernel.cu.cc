@@ -56,15 +56,15 @@ void acc_knn_nd_kernel(const float *d_coord,
 
     //CUDA implementation
 
-    size_t i_v =  blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t i_v =  blockIdx.x * blockDim.x + threadIdx.x;
     if(i_v >= n_vert)
         return;
 
-    size_t i_f =  blockIdx.y * blockDim.y + threadIdx.y;
+    const size_t i_f =  blockIdx.y * blockDim.y + threadIdx.y;
     if(i_f >= n_feat)
         return;
 
-    size_t i_c =  blockIdx.z * blockDim.z + threadIdx.z;
+    const size_t i_c =  blockIdx.z * blockDim.z + threadIdx.z;
     if(i_c >= n_coords)
         return;
 
@@ -136,14 +136,14 @@ struct AccumulateKnnNdOpFunctor<GPUDevice, dummy> {
 
 
         //for GTX1080, also make some opt for V100
-        dim3 grid(n_vert/32+1, n_feat/6+1, n_coords/4+1);
-        dim3 block(32,6,4);
+        dim3 numblocks(n_vert/32+1, n_feat/4+1, n_coords/4+1);
+        dim3 threadsperblock(32,4,4);//32,4,4
         //just some default optimisation for now
       //  cudaOccupancyMaxPotentialBlockSize(&gridsize,&blocksize,acc_knn_nd_kernel);
 
      //   std::cout << "opt grid" << gridsize << " opt block " << blocksize << " numSM " << numSMs << std::endl;
 
-        acc_knn_nd_kernel<<<grid, block>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
+        acc_knn_nd_kernel<<<numblocks, threadsperblock>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
                 n_vert,n_neigh,n_coords,n_feat,n_out_feat,n_moments);
 
     }
