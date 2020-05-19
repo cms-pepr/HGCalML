@@ -9,7 +9,12 @@ import argparse
 import matplotlib.pyplot as plt
 import gzip
 import pickle
-from matplotlib.backends.backend_pdf import PdfPages
+from ragged_plotting_tools import make_cluster_coordinates_plot, make_original_truth_shower_plot, createRandomizedColors
+from DeepJetCore.training.gpuTools import DJCSetGPUs
+from obc_data import build_dataset_analysis_dict, build_window_analysis_dict, append_window_dict_to_dataset_dict, build_window_visualization_dict
+
+
+from ragged_plotting_tools import make_plots_from_object_condensation_clustering_analysis
 
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
@@ -23,30 +28,24 @@ from DeepJetCore.DJCLayers import ScalarMultiply
 # tf.compat.v1.disable_eager_execution()
 
 
+os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
 
 
 
 ragged_constructor = RaggedConstructTensor()
 
 
-num_real_showers = []
-num_predicted_showers = []
-
-num_found_g = []
-num_missed_g = []
-num_fakes_g = []
-
-iii = 0
-
 
 def find_uniques_from_betas(betas, coords, dist_threshold):
 
-    n2_distances = np.sqrt(np.sum(np.abs(np.expand_dims(coords, axis=0) - np.expand_dims(coords, axis=1)), axis=-1))
+    n2_distances = np.sqrt(np.sum(np.square(np.expand_dims(coords, axis=0) - np.expand_dims(coords, axis=1)), axis=-1))
     betas_checked = np.zeros_like(betas) - 1
 
     index = 0
 
     arange_vector = np.arange(len(betas))
+
+    representative_indices = []
 
     while True:
         betas_remaining = betas[betas_checked==-1]
@@ -57,6 +56,8 @@ def find_uniques_from_betas(betas, coords, dist_threshold):
 
         max_beta = arange_remaining[np.argmax(betas_remaining)]
 
+        representative_indices.append(max_beta)
+
 
         n2 = n2_distances[max_beta]
 
@@ -66,131 +67,220 @@ def find_uniques_from_betas(betas, coords, dist_threshold):
         index += 1
 
 
-    return betas_checked
+    return betas_checked, representative_indices
+
+def replace(arr, rep_dict):
+    """Assumes all elements of "arr" are keys of rep_dict"""
+
+    # Removing the explicit "list" breaks python3
+    rep_keys, rep_vals = np.array(list(zip(*sorted(rep_dict.items()))))
+
+    idces = np.digitize(arr, rep_keys, right=True)
+    # Notice rep_keys[digitize(arr, rep_keys, right=True)] == arr
+
+    return rep_vals[idces]
 
 
-found_truth_energies_energies = []
-found_truth_energies_found = []
+def assign_classes_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, betas_filtered, distance_threshold):
+    unique_labels = np.unique(labels)
+
+    labels_all = np.zeros_like(beta_all) - 1
+
+    centers = []
+    labelsc = []
+
+    replacedict = {}
+    iii = 0
+
+    replacedict[-1] = -1
+
+    for x in unique_labels:
+        if x == -1:
+            continue
+        center = clustering_coords_all_filtered[labels==x][np.argmax(betas_filtered[labels==x])]
+        centers.append(center[np.newaxis, ...])
+        labelsc.append(x)
+
+        replacedict[iii] = x
+
+
+        distances = np.sqrt(np.sum(np.square(clustering_coords_all - center[np.newaxis, ...]), axis=-1))
+        labels_all[distances < distance_threshold] = x
+
+        iii += 1
+
+    # centers = np.concatenate(centers, axis=0)
+
+    # labels_all = np.argmin(np.sqrt(np.sum(np.square(np.expand_dims(clustering_coords_all, axis=1) - np.expand_dims(centers, axis=0)), axis=-1)), axis=-1)
+    labels_all = replace(labels_all, replacedict)
+
+    return labels_all
+
+
+
+# found_truth_energies_energies_truth = []
+# found_truth_energies_is_it_found = []
+#
+# found_2_truth_energies_predicted_sum = []
+# found_2_truth_energies_truth_sum = []
+#
+# found_2_truth_target_energies = []
+# found_2_truth_predicted_energies = []
+#
+# found_2_truth_rotational_distance = []
 
 
 beta_threshold = 0.1
+distance_threshold = 0.5
 
-def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment):
-    global  iii, num_predicted_showers, num_real_showers, num_fakes_g, num_found_g, num_missed_g, found_truth_energies_energies, found_truth_energies_found
-    global beta_threshold
+def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, should_return_visualization_data=False):
+    results_dict = build_window_analysis_dict()
 
-    iii+=1
-    uniques = tf.unique(classes_this_segment)[0].numpy()
+    unique_showers_this_segment,unique_showers_indices = np.unique(classes_this_segment, return_index=True)
     truth_energies_this_segment = y_this_segment[:, 1]
+    unique_showers_energies = truth_energies_this_segment[unique_showers_indices]
+
+    rechit_energies_this_segment = x_this_segment[:, 0]
 
 
     beta_all = pred_this_segment[:, -6]
-    is_spectator = np.logical_not(y_this_segment[:, 14])
-    is_spectator = np.logical_and(is_spectator, beta_all>beta_threshold)
-    is_spectator = np.logical_and(is_spectator, classes_this_segment>=0)
+    is_spectator = beta_all>beta_threshold
 
 
     beta_all_filtered = beta_all[is_spectator==1]
     y_all_filtered = y_this_segment[is_spectator==1]
+    x_filtered = x_this_segment[is_spectator==1]
+
+    prediction_filtered = pred_this_segment[is_spectator==1]
 
 
     clustering_coords_all = pred_this_segment[:, -2:]
     clustering_coords_all_filtered = clustering_coords_all[is_spectator==1, :]
 
-    labels = find_uniques_from_betas(beta_all_filtered, clustering_coords_all_filtered, dist_threshold=0.8)
-    num_showers_this_segment = len(np.unique(classes_this_segment))
-    # print(num_showers_this_segment, len(np.unique(labels)))
+    labels, representative_indices = find_uniques_from_betas(beta_all_filtered, clustering_coords_all_filtered, dist_threshold=distance_threshold)
 
-    classes_all_filtered = classes_this_segment[is_spectator==1]
-
-
-    predicted_showers_this_segment = len(np.unique(labels))
-    num_predicted_showers.append(predicted_showers_this_segment)
-
-    num_real_showers.append(num_showers_this_segment)
-
+    labels_for_all = assign_classes_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, beta_all_filtered, distance_threshold=distance_threshold)
 
     unique_labels = np.unique(labels)
-    unique_classes = np.unique(classes_all_filtered)
+
+    truth_showers_found = {}
+    truth_showers_found_e = {}
+    iii = 0
+    for x in unique_showers_this_segment:
+        truth_showers_found[x] = -1
+        truth_showers_found_e[x] = unique_showers_energies[iii]
+        iii += 1
+        results_dict['num_rechits_per_truth_shower'].append(len(classes_this_segment[classes_this_segment==x]))
+    results_dict['num_rechits_per_window'] = len(classes_this_segment)
 
 
-    found = dict()
-    found_energies = dict()
-    unique_classes_this_segment, indices = np.unique(classes_this_segment, return_index=True)
-    # for x in unique_classes_this_segment:
-    for i in range(len(unique_classes_this_segment)):
-        x = unique_classes_this_segment[i]
-        found[x]=False
-        found_energies[x] = truth_energies_this_segment[indices[i]]
-
-
-    found_predicted = dict()
-    for x in np.unique(unique_labels):
-        found_predicted[x]=False
-
-    num_fakes = 0
-    num_found = 0
-    num_missed = 0
-
-    for x in unique_classes:
-        classes = classes_all_filtered[classes_all_filtered==x]
-        betas = beta_all_filtered[classes_all_filtered==x]
-
-
-        this_class = classes[np.argmax(betas)]
-        label_max = labels[classes_all_filtered==x][np.argmax(betas)]
-        # y_this = y_all_filtered[np.argmax(betas)]
-        # print(y_this[:, 1], [])
-
-        if found[this_class]==True:
-            pass
-        else:
-            found[this_class]=True
-            found_predicted[label_max]=True
-            num_found+=1
-
+    predicted_showers_found = {}
     for x in unique_labels:
-        # labels_x = labels[labels==x]
-        # betas = beta_all_filtered[labels==x]
-        #
-        # this_class = classes[np.argmax(betas)]
+        predicted_showers_found[x] = -1
 
-        if found_predicted[x]==True:
+    representative_coords = []
+    ii_p = 0
+    for representative_index in representative_indices:
+        # rechit_energies_this_segment[labels_for_all==ii_p]
+        representative_coords.append(clustering_coords_all_filtered[representative_index])
+
+        top_match_index = -1
+        top_match_shower = -1
+        top_match_value = 0
+
+        top_match_shower = classes_this_segment[representative_index]
+        if truth_showers_found[top_match_shower] != -1:
+            top_match_shower = -1
+
+        for i in range(len(unique_showers_this_segment)):
+
+            if truth_showers_found[unique_showers_this_segment[i]] != -1:
+                continue
+
+            overlap = np.sum(rechit_energies_this_segment * (classes_this_segment==unique_showers_this_segment[i]) * (labels_for_all==ii_p)) / np.sum(rechit_energies_this_segment * np.logical_or((classes_this_segment==unique_showers_this_segment[i]), (labels_for_all==ii_p)))
+
+            if overlap > top_match_value:
+                top_match_index == i
+                top_match_shower = unique_showers_this_segment[i]
+                top_match_value = overlap
+
+        if top_match_shower != -1:
+            truth_showers_found[top_match_shower] = ii_p
+            predicted_showers_found[ii_p] = top_match_shower
+
+        ii_p += 1
+
+    num_found = 0.
+    num_missed = 0.
+    num_gt_showers = 0.
+
+    num_fakes = 0.
+    num_predicted_showers = 0.
+
+
+
+    for k,v in truth_showers_found.items():
+        results_dict['truth_shower_energies'].append(truth_showers_found_e[k])
+
+        if v > -1:
+            results_dict['truth_showers_found_or_not'].append(True)
+
+            num_found += 1
+        else:
+            results_dict['truth_showers_found_or_not'].append(False)
+            num_missed += 1
+
+        num_gt_showers += 1
+
+    for k, v in predicted_showers_found.items():
+        if v > -1:
             pass
         else:
-            num_fakes+=1
+            num_fakes += 1
+
+        num_predicted_showers += 1
+
+    try:
+        print(num_found / num_gt_showers, num_missed / num_gt_showers, num_fakes / num_predicted_showers)
+    except ZeroDivisionError:
+        pass
 
 
-    for k,v in found.items():
-        found_truth_energies_energies.append(found_energies[k])
-        if v==False:
-            found_truth_energies_found.append(False)
-            num_missed += 1
-        else:
-            found_truth_energies_found.append(True)
+    results_dict['num_real_showers'] = num_gt_showers
+    results_dict['num_found_showers'] = num_found
+    results_dict['num_missed_showers'] = num_missed
+    results_dict['num_fake_showers'] = num_fakes
+    results_dict['num_predicted_showers'] = num_predicted_showers
 
-    # print(num_found, num_missed, num_fakes)
+    representative_coords = np.array(representative_coords)
 
-    num_found_g.append(num_found)
-    num_missed_g.append(num_missed)
-    num_fakes_g.append(num_fakes)
+    if should_return_visualization_data:
+        vis_dict = build_window_visualization_dict()
 
-    print(num_showers_this_segment, num_found, num_missed, num_fakes, predicted_showers_this_segment)
-
-    # if iii == 11:
-    #     plt.scatter(clustering_coords_all_filtered[:, 0], clustering_coords_all_filtered[:, 1], c=classes_all_filtered, cmap='hsv')
-    #     plt.savefig('clustering_coords.png')
-    #     0/0
-
-    return
+        vis_dict['truth_showers'] = classes_this_segment
+        vis_dict['x'] = x_this_segment
+        vis_dict['y'] = y_this_segment
+        vis_dict['prediction_all'] = pred_this_segment
+        vis_dict['predicted_showers'] = labels_for_all
+        vis_dict['coords_representatives'] = representative_coords
+        vis_dict['identified_vertices'] = labels_for_all
 
 
+        results_dict['visualization_data'] = vis_dict
 
+    return results_dict
 
 
 
-truth_energies = []
+
+num_rechits_per_segment = []
+num_rechits_per_shower = []
+
+
 def analyse_one_file(features, predictions, truth):
+    global num_visualized_segments, num_segments_to_visualize
+    global dataset_analysis_dict
+
     predictions = tf.constant(predictions[0])
 
     row_splits = features[1][:, 0]
@@ -210,9 +300,14 @@ def analyse_one_file(features, predictions, truth):
         y_this_segment = y_data[row_splits[i]:row_splits[i + 1]].numpy()
         pred_this_segment = predictions[row_splits[i]:row_splits[i + 1]].numpy()
 
-        truth_energies.append(np.unique(y_this_segment[:, 1]))
+        if num_visualized_segments < num_segments_to_visualize:
+            window_analysis_dict = analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, True)
+        else:
+            window_analysis_dict = analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, False)
 
-        analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment)
+        append_window_dict_to_dataset_dict(dataset_analysis_dict, window_analysis_dict)
+        num_visualized_segments += 1
+
 
     i += 1
 
@@ -220,208 +315,50 @@ def analyse_one_file(features, predictions, truth):
 
 
 
-def make_plots(pdfpath):
-    global truth_energies, found_truth_energies_found, found_truth_energies_energies
-    global  num_real_showers, num_predicted_showers
-    global  num_found_g, num_missed_g, num_fakes_g
-
-    truth_energies = np.concatenate(truth_energies, axis=0)
-    truth_energies[truth_energies>250] = 300
-
-    found_truth_energies_energies = np.array(found_truth_energies_energies)
-    found_truth_energies_found = np.array(found_truth_energies_found)
-
-    e_bins = [0,10,20,30,40,50,60,70,80,90,200]
-
-    centers = []
-    mean = []
-
-    print(found_truth_energies_found)
-    print(found_truth_energies_energies)
-    for i in range(len(e_bins)-1):
-        l = e_bins[i]
-        h = e_bins[i+1]
-
-        this_energies = np.argwhere(np.logical_and(found_truth_energies_energies>l, found_truth_energies_energies<h))
-
-        filtered_found = found_truth_energies_found[this_energies].astype(np.float)
-        m = np.mean(filtered_found)
-        mean.append(m)
-        centers.append(l+5)
-
-    with PdfPages(pdfpath) as pdf:
-        plt.figure()
-        plt.hist(truth_energies, bins=50, histtype='step')
-        plt.xlabel("Truth shower energy")
-        plt.ylabel("Frequency")
-        plt.title('Truth energies')
-        pdf.savefig()
-
-        print(this_energies, centers)
-        plt.figure()
-        plt.plot(centers, mean, linewidth=0.7, marker='o')
-        plt.xticks(centers)
-
-        plt.xlabel('Shower energy')
-        plt.ylabel('% found')
-        plt.title('Function of energy')
-
-        pdf.savefig()
-
-
-        #
-        # 0/0
-        # print(num_real_showers, num_predicted_showers)
-
-
-        plt.figure()
-        plt.hist(num_real_showers, bins=np.arange(0,50), histtype='step')
-        plt.hist(num_predicted_showers, bins=np.arange(0,70), histtype='step')
-        plt.xlabel('Num showers')
-        plt.ylabel('Frequency')
-        plt.legend(['Real showers','Predicted showers'])
-        plt.title('Histogram of predicted/real number of showers')
-        pdf.savefig()
-
-
-
-        print(num_found_g)
-        print(num_missed_g)
-        print(num_fakes_g)
-
-
-        num_found_g = np.array(num_found_g)
-        num_missed_g = np.array(num_missed_g)
-        num_fakes_g = np.array(num_fakes_g)
-
-
-        plt.figure()
-        plt.hist(num_found_g, bins=30, histtype='step')
-        plt.hist(num_missed_g, bins=30, histtype='step')
-        plt.hist(num_fakes_g, bins=30, histtype='step')
-        plt.hist(num_real_showers, bins=30, histtype='step')
-        plt.xlabel('Num showers')
-        plt.ylabel('Frequency')
-        plt.legend(['Found','Missed', 'Fakes', 'Real number of showers'])
-        plt.title('Histogram of found/missed/fakes')
-        pdf.savefig()
-
-
-
-        bins = np.linspace(0,1,11)
-        num_real_showers = np.array(num_real_showers, np.float)
-        plt.figure()
-        plt.hist(num_found_g/num_real_showers, bins=30, range=(0,1.1),histtype='step')
-        plt.hist(num_missed_g/num_real_showers, bins=30, range=(0,1.1),histtype='step')
-        plt.hist(num_fakes_g/num_real_showers, bins=30, range=(0,1.1),histtype='step')
-        plt.xlabel('(Num found/missed/fakes) / Total showers')
-        plt.ylabel('Frequency')
-        plt.legend(['Found','Missed', 'Fakes'])
-        pdf.savefig()
-
-
-
-        x_num_real = []
-        x_fraction_found = []
-        x_fraction_missed = []
-        x_fraction_fakes = []
-
-
-        y_fraction_found = []
-        y_fraction_missed = []
-        y_fraction_fakes = []
-
-
-        f_found_g = num_found_g/num_real_showers
-        f_missed_g = num_missed_g/num_real_showers
-        f_fakes_g = num_fakes_g/num_real_showers
-
-        for i in np.unique(num_real_showers):
-            if i<=0:
-                continue
-
-            print("XYZ", i, np.mean(f_found_g[num_real_showers==i]))
-            print("ABC", i, np.mean(f_missed_g[num_real_showers==i]))
-            print("DEF", i, np.mean(f_fakes_g[num_real_showers==i]))
-
-            x_num_real.append(i)
-            x_fraction_found.append(np.mean(f_found_g[num_real_showers==i]))
-            x_fraction_missed.append(np.mean(f_missed_g[num_real_showers==i]))
-            x_fraction_fakes.append(np.mean(f_fakes_g[num_real_showers==i]))
-
-
-            y_fraction_found.append(np.var(f_found_g[num_real_showers==i]))
-            y_fraction_missed.append(np.var(f_missed_g[num_real_showers==i]))
-            y_fraction_fakes.append(np.var(f_fakes_g[num_real_showers==i]))
-
-        x_num_real = np.array(x_num_real)
-        x_fraction_found = np.array(x_fraction_found)
-        x_fraction_missed = np.array(x_fraction_missed)
-        x_fraction_fakes = np.array(x_fraction_fakes)
-
-        y_fraction_found = np.array(y_fraction_found)
-        y_fraction_missed = np.array(y_fraction_missed)
-        y_fraction_fakes = np.array(y_fraction_fakes)
-
-
-        order = np.argsort(x_num_real)
-        x_num_real = x_num_real[order]
-
-        x_fraction_found = x_fraction_found[order]
-        x_fraction_missed = x_fraction_missed[order]
-        x_fraction_fakes = x_fraction_fakes[order]
-
-
-        y_fraction_found = y_fraction_found[order]
-        y_fraction_missed = y_fraction_missed[order]
-        y_fraction_fakes = y_fraction_fakes[order]
-
-
-        print(x_fraction_found, x_fraction_missed, x_fraction_fakes)
-        print(y_fraction_found, y_fraction_missed, y_fraction_fakes)
-
-
-
-        plt.figure()
-        plt.plot(x_num_real, x_fraction_found, linewidth=0.7, marker='o')
-        plt.plot(x_num_real, x_fraction_missed, linewidth=0.7, marker='o')
-        plt.plot(x_num_real, x_fraction_fakes, linewidth=0.7, marker='o')
-        plt.xlabel('Num showers')
-        plt.ylabel('Fraction (mean)')
-        plt.legend(['Found','Missed', 'Fakes'])
-        pdf.savefig()
-
-
-
-        plt.figure()
-        plt.plot(x_num_real, y_fraction_found, linewidth=0.7, marker='o')
-        plt.plot(x_num_real, y_fraction_missed, linewidth=0.7, marker='o')
-        plt.plot(x_num_real, y_fraction_fakes, linewidth=0.7, marker='o')
-        plt.xlabel('Num showers')
-        plt.ylabel('Fraction (variance)')
-        plt.legend(['Found','Missed', 'Fakes'])
-        pdf.savefig()
-
-
-def main(files, pdfpath):
+def main(files, pdfpath, dumppath):
+    global dataset_analysis_dict
     for file in files:
         with gzip.open(file, 'rb') as f:
             data_dict = pickle.load(f)
             analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'])
+        break
 
-    make_plots(pdfpath)
+    make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict)
+
+    if len(dumppath) > 0:
+        print("Dumping analysis to bin file", dumppath)
+
+        with open(dumppath, 'wb') as f:
+            pickle.dump(dataset_analysis_dict, f)
+    else:
+        print("WARNING: No analysis output path specified. Skipped dumping of analysis.")
+
+
+
 
 
 if __name__ == '__main__':
-    global beta_threshold
     parser = argparse.ArgumentParser(
         'Analyse predictions from object condensation and plot relevant results')
     parser.add_argument('output', help='Output directory with .bin.gz files (all will be analysed) or a text file containing lest of those which are to be analysed')
     parser.add_argument('-p', help='Path of the pdf file. Otherwise will be produced in the output directory.', default='')
     parser.add_argument('-b', help='Beta threshold', default='0.1')
+    parser.add_argument('-d', help='Distance threshold', default='0.5')
+    parser.add_argument('-v', help='Visualize number of showers', default='10')
+    parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.', default='')
+    parser.add_argument('--gpu', help='GPU', default='')
     args = parser.parse_args()
 
+    # DJCSetGPUs(args.gpu)
+    num_segments_to_visualize = int(args.v)
+    num_visualized_segments = 0
+    dataset_analysis_dict = build_dataset_analysis_dict()
+
     beta_threshold = beta_threshold*0 + float(args.b)
+    distance_threshold = distance_threshold*0 + float(args.d)
+
+    dataset_analysis_dict['distance_threshold'] = distance_threshold
+    dataset_analysis_dict['beta_threshold'] = distance_threshold
 
     files_to_be_tested = []
     pdfpath = ''
@@ -443,4 +380,6 @@ if __name__ == '__main__':
     pdfpath = os.path.join(pdfpath, 'plots.pdf')
     if len(args.p) != 0:
         pdfpath = args.p
-    main(files_to_be_tested, pdfpath)
+
+    main(files_to_be_tested, pdfpath, args.analysisoutpath)
+
