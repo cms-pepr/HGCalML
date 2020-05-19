@@ -22,6 +22,10 @@ global_layers_list['RaggedVertexEater']=RaggedVertexEater
 global_layers_list['RaggedNeighborIndices']=RaggedNeighborIndices
 
 
+global_layers_list['FusedRaggedGravNet']=FusedRaggedGravNet
+
+
+
 from keras.layers import Layer
 import keras.backend as K
 import tensorflow as tf

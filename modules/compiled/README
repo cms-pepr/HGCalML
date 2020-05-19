@@ -1,0 +1,11 @@
+
+
+Please follow the naming scheme:
+
+<module name>_kernel.cc
+
+<module name>_kernel.cu.cc
+
+<module name>_kernel.h
+
+<module name>_module.cc
