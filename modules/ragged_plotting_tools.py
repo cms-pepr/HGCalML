@@ -383,7 +383,7 @@ def make_histogram_of_number_of_showers_per_segment(plt, ax, num_showers_per_seg
     plt.title('Distribution of number of showers')
 
 
-def visualize_the_segment(plt, classes_this_segment, x_this_segment, y_this_segment, pred_this_segment, labels,
+def visualize_the_segment(plt, truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, labels,
                           coords_representative_predicted_showers, distance_threshold):
     fig = plt.figure(figsize=(16, 12))
     gs = plt.GridSpec(3, 2)
@@ -416,10 +416,10 @@ def visualize_the_segment(plt, classes_this_segment, x_this_segment, y_this_segm
 
     cmap = createRandomizedColors('jet')
 
-    make_original_truth_shower_plot(plt, ax[0], classes_this_segment * 0, x_this_segment[:, 0],
+    make_original_truth_shower_plot(plt, ax[0], truth_showers_this_segment * 0, x_this_segment[:, 0],
                                     x_this_segment[:, 5], x_this_segment[:, 6], x_this_segment[:, 7],
                                     cmap=plt.get_cmap('Wistia'))
-    make_cluster_coordinates_plot(plt, ax[1], classes_this_segment, pred_this_segment[:, -6],
+    make_cluster_coordinates_plot(plt, ax[1], truth_showers_this_segment, pred_this_segment[:, -6],
                                   pred_this_segment[:, -2:],
                                   identified_coords=coords_representative_predicted_showers, cmap=cmap,
                                   distance_threshold=distance_threshold)
@@ -428,7 +428,7 @@ def visualize_the_segment(plt, classes_this_segment, x_this_segment, y_this_segm
     # make_original_truth_shower_plot(plt, ax[5], identified_vertices, x_this_segment[:, 0], x_this_segment[:, 5], x_this_segment[:, 6], x_this_segment[:, 7], cmap=plt.get_cmap('Reds'))
 
     # wrt predicted colors
-    make_original_truth_shower_plot(plt, ax[2], classes_this_segment, x_this_segment[:, 0], x_this_segment[:, 5],
+    make_original_truth_shower_plot(plt, ax[2], truth_showers_this_segment, x_this_segment[:, 0], x_this_segment[:, 5],
                                     x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap)
     make_original_truth_shower_plot(plt, ax[3], labels, x_this_segment[:, 0], x_this_segment[:, 5],
                                     x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap)

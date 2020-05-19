@@ -81,7 +81,7 @@ def replace(arr, rep_dict):
     return rep_vals[idces]
 
 
-def assign_classes_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, betas_filtered, distance_threshold):
+def assign_prediction_labels_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, betas_filtered, distance_threshold):
     unique_labels = np.unique(labels)
 
     labels_all = np.zeros_like(beta_all) - 1
@@ -133,10 +133,10 @@ def assign_classes_to_full_unfiltered_vertices(beta_all, clustering_coords_all, 
 beta_threshold = 0.1
 distance_threshold = 0.5
 
-def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, should_return_visualization_data=False):
+def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, should_return_visualization_data=False):
     results_dict = build_window_analysis_dict()
 
-    unique_showers_this_segment,unique_showers_indices = np.unique(classes_this_segment, return_index=True)
+    unique_showers_this_segment,unique_showers_indices = np.unique(truth_showers_this_segment, return_index=True)
     truth_energies_this_segment = y_this_segment[:, 1]
     unique_showers_energies = truth_energies_this_segment[unique_showers_indices]
 
@@ -159,7 +159,7 @@ def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment,
 
     labels, representative_indices = find_uniques_from_betas(beta_all_filtered, clustering_coords_all_filtered, dist_threshold=distance_threshold)
 
-    labels_for_all = assign_classes_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, beta_all_filtered, distance_threshold=distance_threshold)
+    labels_for_all = assign_prediction_labels_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, beta_all_filtered, distance_threshold=distance_threshold)
 
     unique_labels = np.unique(labels)
 
@@ -170,8 +170,8 @@ def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment,
         truth_showers_found[x] = -1
         truth_showers_found_e[x] = unique_showers_energies[iii]
         iii += 1
-        results_dict['num_rechits_per_truth_shower'].append(len(classes_this_segment[classes_this_segment==x]))
-    results_dict['num_rechits_per_window'] = len(classes_this_segment)
+        results_dict['num_rechits_per_truth_shower'].append(len(truth_showers_this_segment[truth_showers_this_segment == x]))
+    results_dict['num_rechits_per_window'] = len(truth_showers_this_segment)
 
 
     predicted_showers_found = {}
@@ -188,7 +188,7 @@ def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment,
         top_match_shower = -1
         top_match_value = 0
 
-        top_match_shower = classes_this_segment[representative_index]
+        top_match_shower = truth_showers_this_segment[representative_index]
         if truth_showers_found[top_match_shower] != -1:
             top_match_shower = -1
 
@@ -197,7 +197,7 @@ def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment,
             if truth_showers_found[unique_showers_this_segment[i]] != -1:
                 continue
 
-            overlap = np.sum(rechit_energies_this_segment * (classes_this_segment==unique_showers_this_segment[i]) * (labels_for_all==ii_p)) / np.sum(rechit_energies_this_segment * np.logical_or((classes_this_segment==unique_showers_this_segment[i]), (labels_for_all==ii_p)))
+            overlap = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == ii_p)) / np.sum(rechit_energies_this_segment * np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == ii_p)))
 
             if overlap > top_match_value:
                 top_match_index == i
@@ -257,7 +257,7 @@ def analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment,
     if should_return_visualization_data:
         vis_dict = build_window_visualization_dict()
 
-        vis_dict['truth_showers'] = classes_this_segment
+        vis_dict['truth_showers'] = truth_showers_this_segment
         vis_dict['x'] = x_this_segment
         vis_dict['y'] = y_this_segment
         vis_dict['prediction_all'] = pred_this_segment
@@ -287,23 +287,23 @@ def analyse_one_file(features, predictions, truth):
 
     x_data, _ = ragged_constructor((features[0], row_splits))
     y_data, _ = ragged_constructor((truth[0], row_splits))
-    classes, row_splits = ragged_constructor((truth[0][:, 0][..., tf.newaxis], row_splits))
+    truth_showers, row_splits = ragged_constructor((truth[0][:, 0][..., tf.newaxis], row_splits))
 
-    classes = tf.cast(classes[:, 0], tf.int32)
+    truth_showers = tf.cast(truth_showers[:, 0], tf.int32)
 
     num_unique = []
     shower_sizes = []
 
     for i in range(len(row_splits) - 1):
-        classes_this_segment = classes[row_splits[i]:row_splits[i + 1]].numpy()
+        truth_showers_this_segment = truth_showers[row_splits[i]:row_splits[i + 1]].numpy()
         x_this_segment = x_data[row_splits[i]:row_splits[i + 1]].numpy()
         y_this_segment = y_data[row_splits[i]:row_splits[i + 1]].numpy()
         pred_this_segment = predictions[row_splits[i]:row_splits[i + 1]].numpy()
 
         if num_visualized_segments < num_segments_to_visualize:
-            window_analysis_dict = analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, True)
+            window_analysis_dict = analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, True)
         else:
-            window_analysis_dict = analyse_one_window_cut(classes_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, False)
+            window_analysis_dict = analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, False)
 
         append_window_dict_to_dataset_dict(dataset_analysis_dict, window_analysis_dict)
         num_visualized_segments += 1
