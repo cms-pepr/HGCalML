@@ -8,6 +8,9 @@ import numpy as np
 import uproot
 from numba import jit
 import ROOT
+import os
+import pickle
+import gzip
 
 #@jit(nopython=True)   
 def _findRechitsSum(showerIdx, recHitEnergy, rs):
@@ -208,8 +211,18 @@ class TrainData_window(TrainData):
       
       
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
-        print("hello")
-        pass
+        outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
+        # print("hello", outfilename, inputfile)
+
+        outdict = dict()
+        outdict['predicted'] = predicted
+        outdict['features'] = features
+        outdict['truth'] = truth
+
+        print("Writing to ", outfilename)
+        with gzip.open(outfilename, "wb") as mypicklefile:
+            pickle.dump(outdict, mypicklefile)
+        print("Done")
     
     def bla(self):
         print("hello")
