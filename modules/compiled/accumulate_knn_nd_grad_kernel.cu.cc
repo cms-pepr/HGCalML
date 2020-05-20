@@ -60,27 +60,27 @@ void acc_knn_nd_gradkernel_features(
     if(i_c >= n_coords){
         return;
     }
-
+    float gradinuc =d_grad_from_out_features[I3D(i_v, nu_f, i_c, n_grad_from_out_feat, n_coords)];
+    float gradinucmax = d_grad_from_out_features[I3D(i_v, nu_f+n_feat, i_c,n_grad_from_out_feat, n_coords)];
 
     float vic = d_coord[I2D(i_v,i_c,n_coords)];
+    size_t max_for_iv = d_max_feat_indices[I3D(i_v,nu_f,i_c,n_feat,n_coords)];
 
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
         __syncthreads();
         size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
-
         float vnc = d_coord[I2D(m_v,i_c,n_coords)];
+
+
         float distsq_im = (vic-vnc)*(vic-vnc);
 
         float weight_imnu = gpu_grad_distanceWeight(distsq_im);
 
-        float contrib = d_grad_from_out_features[I3D(i_v, nu_f, i_c, n_grad_from_out_feat, n_coords)]
-                                                 / (float)n_neigh  * weight_imnu;
-        float maxgrad = d_grad_from_out_features[I3D(i_v, nu_f+n_feat, i_c,n_grad_from_out_feat, n_coords)];
+        float contrib = gradinuc / (float)n_neigh  * weight_imnu;
         //from max
-        size_t max_for_iv = d_max_feat_indices[I3D(i_v,nu_f,i_c,n_feat,n_coords)];
 
         if(m_v ==  max_for_iv){
-            contrib += maxgrad * weight_imnu;
+            contrib += gradinucmax * weight_imnu;
         }
 
         atomicAdd(&d_out_grad_features[I2D(m_v, nu_f, n_feat)], contrib);
@@ -126,25 +126,24 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
         return;
     }
 
+    float gibnu = d_grad_from_out_features[I3D(i_v, b_f, nu_c, n_grad_from_out_feat,n_coords)];
+    float gilnu = d_grad_from_out_features[I3D(i_v, b_f+n_feat, nu_c, n_grad_from_out_feat,n_coords)];
+    size_t max_for_iv = d_max_feat_indices[I3D(i_v, b_f, nu_c, n_feat,n_coords)];
+    float xinu = d_coord[I2D(i_v,nu_c,n_coords)];
 
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
-        size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
 
+        size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
 
         float mean_contrib = 0;
         float maxcontr = 0;
-
-
-        float gibnu = d_grad_from_out_features[I3D(i_v, b_f, nu_c, n_grad_from_out_feat,n_coords)];
-        float gilnu = d_grad_from_out_features[I3D(i_v, b_f+n_feat, nu_c, n_grad_from_out_feat,n_coords)];
-        size_t max_for_iv = d_max_feat_indices[I3D(i_v, b_f, nu_c, n_feat,n_coords)];
 
         for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
             __syncthreads();
 
             size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
 
-            float diknu= d_coord[I2D(i_v,nu_c,n_coords)] - d_coord[I2D(k,  nu_c,n_coords)];
+            float diknu= xinu - d_coord[I2D(k,  nu_c,n_coords)];
             float fbk = d_feat[I2D(k, b_f, n_feat)];
 
             //get them out of sync here, all memory access done
