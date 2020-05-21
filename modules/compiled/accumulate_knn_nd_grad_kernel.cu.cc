@@ -67,7 +67,7 @@ void acc_knn_nd_gradkernel_features(
     size_t max_for_iv = d_max_feat_indices[I3D(i_v,nu_f,i_c,n_feat,n_coords)];
 
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
-        __syncthreads();
+
         size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
         float vnc = d_coord[I2D(m_v,i_c,n_coords)];
 
@@ -138,10 +138,32 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
         float mean_contrib = 0;
         float maxcontr = 0;
 
-        for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
-            __syncthreads();
+        if(m_v == i_v){
+            for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
 
-            size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
+                size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
+                if(k == m_v)
+                    continue;
+
+                float diknu= xinu - d_coord[I2D(k,  nu_c,n_coords)];
+                float fbk = d_feat[I2D(k, b_f, n_feat)];
+
+                //get them out of sync here, all memory access done
+
+                float ddelta = gpu_delta(m_v,k) - gpu_delta(m_v,i_v);
+                if(!ddelta) // m == k (see below)
+                    continue;
+                float wiknu = gpu_grad_distanceWeight(diknu*diknu);
+
+                mean_contrib += gibnu * wiknu * fbk * diknu * ddelta ;
+                if(k == max_for_iv){//or k ??? also wrong.. something with this index
+                    maxcontr += gilnu * wiknu * fbk * diknu * ddelta ;
+                }
+
+            }
+        }
+        else{ // m != i, therefore m must be k
+            size_t k = m_v;
 
             float diknu= xinu - d_coord[I2D(k,  nu_c,n_coords)];
             float fbk = d_feat[I2D(k, b_f, n_feat)];
@@ -157,8 +179,8 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
             if(k == max_for_iv){//or k ??? also wrong.. something with this index
                 maxcontr += gilnu * wiknu * fbk * diknu * ddelta ;
             }
-
         }
+
 
 
         float add = 2. * ACCUMULATE_KNN_EXPONENT/(float) n_neigh * mean_contrib +
@@ -241,8 +263,8 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
         cudaDeviceSynchronize();
 
 
-        dim3 fgrid(n_vert/32+1, n_feat/4+1 ,n_coords/4+1);
-        dim3 fblock(32,4,4);
+        dim3 fgrid(n_vert/4+1, n_feat/32+1 ,n_coords/4+1);
+        dim3 fblock(4,32,4);
 
 
 

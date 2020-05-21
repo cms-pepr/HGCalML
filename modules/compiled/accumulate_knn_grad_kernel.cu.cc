@@ -140,19 +140,8 @@ void acc_knn_gradkernel_coordinates(const float *d_grad_from_out_features,
     size_t nu_c= blockIdx.y * blockDim.y + threadIdx.y;
     if(nu_c >= n_coords)
         return;
-    //set zero
-    // for (size_t i_v = 0; i_v < n_vert; i_v++){
-    //  for(size_t nu_c=0;nu_c<n_coords;nu_c++)
-   // d_out_grad_coords[I2D(i_v,nu_c,n_coords)] = 0;
-    //  }
 
 
-
-    //look for neighbours, add gradient term to every *neighbour*
-
-    //for (size_t i_v = 0; i_v < n_vert; i_v++) {
-
-    //these should be all vertices that have m as neighbour, not the other way around - here is the problem
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
         size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
@@ -161,14 +150,6 @@ void acc_knn_gradkernel_coordinates(const float *d_grad_from_out_features,
 
         float mean_contrib = 0;
         float maxcontr = 0;
-
-        //  for (size_t b_f = 0; b_f < n_feat; b_f++){
-        //  float thisfeat_mean_contr = 0;
-        // float thisfeat_max_contr = 0;
-
-        // m_v == k && m_v != i_v
-        // m_v != k && m_v == i_v (*= -1)
-        //
 
         for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
             size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];

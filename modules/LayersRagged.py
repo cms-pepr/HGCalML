@@ -29,7 +29,7 @@ class RaggedConstructTensor(keras.layers.Layer):
     def call(self, x):
         x_data = x[0]
         x_row_splits = x[1]
-
+    
         data_shape = x_data.shape
         # assert (data_shape[0]== row_splits_shape[0])
         self.num_features = data_shape[1]
@@ -329,17 +329,26 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
     
+        if not isinstance(n_filters, list):
+            n_filters=[n_filters]
         self.n_filters = n_filters
         self.n_propagate = n_propagate
 
         with tf.name_scope(self.name+"/1/"):
             self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
 
-        with tf.name_scope(self.name+"/2/"):
-            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
+        self.input_spatial_transform=[]
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name + "/"+str(i+2)+"/"):
+                if not i:
+                    self.input_spatial_transform.append(tf.keras.layers.Dense(n_dimensions))
+                else:
+                    self.input_spatial_transform.append(tf.keras.layers.Dense(n_dimensions,activation='tanh'))
 
-        with tf.name_scope(self.name+"/3/"):
-            self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='elu')
+        self.output_feature_transform=[]
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name+"/"+str(i+len(self.n_filters)+2)+"/"):
+                self.output_feature_transform.append(tf.keras.layers.Dense(self.n_filters[i], activation='elu'))
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]
@@ -347,13 +356,22 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
         with tf.name_scope(self.name + "/1/"):
             self.input_feature_transform.build(input_shape)
 
-        with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform.build(input_shape)
 
-        with tf.name_scope(self.name + "/3/"):
-            n_nodes = self.input_feature_transform.units*2*self.input_spatial_transform.units + input_shape[1]
-            self.output_feature_transform.build((input_shape[0],n_nodes))
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name + "/"+str(i+2)+"/"):
+                self.input_spatial_transform[i].build(input_shape)
 
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name+"/"+str(i+len(self.n_filters)+2)+"/"):
+                n_feat = 0
+                if not i:
+                    n_feat = self.input_feature_transform.units 
+                else:
+                    n_feat = self.output_feature_transform[i-1].units
+                n_feat = n_feat * 2 * self.input_spatial_transform[0].units
+                n_nodes = n_feat + input_shape[1]
+                self.output_feature_transform[i].build((input_shape[0],
+                                             n_nodes))
         
         super(FusedRaggedGravNet, self).build(input_shape)
 
@@ -362,21 +380,28 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
         x = inputs[0]
         row_splits = inputs[1]
 
-        coordinates = self.input_spatial_transform(x)
-        in_features = self.input_feature_transform(x)
+        coordinates = self.input_spatial_transform[0](x)
+        features = self.input_feature_transform(x)
         
         indices  = SelectKnn(self.n_neighbours, coordinates,  row_splits)
         
-        features,_ = AccumulateKnnNd(coordinates,  in_features, indices)
-        features = tf.reshape(features, [-1,self.input_feature_transform.units * 2 * self.input_spatial_transform.units])
-        features = tf.concat([x, features], axis=-1)
-        features = self.output_feature_transform(features)
+        #message passing, this actually could also work if the coordinates are allowed to be transformed...
+        for i in range(len(self.output_feature_transform)):
+            features,_ = AccumulateKnnNd(coordinates,  features, indices)
+            nfeat = self.input_feature_transform.units * 2 * self.input_spatial_transform[0].units
+            if i:
+                nfeat = self.output_feature_transform[i-1].units * 2 * self.input_spatial_transform[0].units
+            features = tf.reshape(features, [-1,nfeat])
+            features = tf.concat([x, features], axis=-1)
+            features = self.output_feature_transform[i](features)
+            if i < len(self.input_spatial_transform)-1:
+                coordinates = self.input_spatial_transform[i+1](x)
         
         return features
 
     def compute_output_shape(self, input_shapes):
         input_shape = input_shapes[0]
-        return (self.output_feature_transform.units[-1],)
+        return (self.output_feature_transform[-1].units[-1],)
     
 
     def get_config(self):
@@ -408,13 +433,17 @@ class RaggedGlobalExchange(keras.layers.Layer):
         x_data, x_row_splits = x[0], x[1]
         rt = tf.RaggedTensor.from_row_splits(values=x_data, row_splits=x_row_splits)  # [B, {V}, F]
         means = tf.reduce_mean(rt, axis=1)  # [B, F]
+        min = tf.reduce_min(rt, axis=1)  # [B, F]
+        max = tf.reduce_max(rt, axis=1)  # [B, F]
         data_means = tf.gather_nd(means, tf.ragged.row_splits_to_segment_ids(rt.row_splits)[..., tf.newaxis])  # [SV, F]
+        data_min = tf.gather_nd(min, tf.ragged.row_splits_to_segment_ids(rt.row_splits)[..., tf.newaxis])  # [SV, F]
+        data_max = tf.gather_nd(max, tf.ragged.row_splits_to_segment_ids(rt.row_splits)[..., tf.newaxis])  # [SV, F]
 
-        return tf.concat((data_means, x_data), axis=-1)
+        return tf.concat((data_means, data_min, data_max, x_data), axis=-1)
 
     def compute_output_shape(self, input_shape):
         data_input_shape = input_shape[0]
-        return (data_input_shape[0], data_input_shape[1]*2)
+        return (data_input_shape[0], data_input_shape[1]*4)
 
 
 

@@ -405,16 +405,34 @@ def get_arb_loss(ccoords, row_splits, beta, is_noise, cluster_asso, beta_min=1e-
 
 ###### keras trick
 
-
+pre_training_loss_counter=0
 def pre_training_loss(truth, pred):
     feat,pred = split_feat_pred(pred)
     d = create_loss_dict(truth, pred)
     feat = create_feature_dict(feat)
     
-    etadiff = (d['predCCoords'][:,0:1]+feat['recHitEta']  -   d['truthHitAssignedEtas'])**2
-    phidiff = (d['predCCoords'][:,1:2]+feat['recHitRelPhi'] - d['truthHitAssignedPhis'])**2
+    etadiff = d['truthNoNoise']*(.1+d['predBeta'])*(feat['recHitEta'] -  0.1*d['predCCoords'][:,1:2])**2  
+    phidiff = d['truthNoNoise']*(.1+d['predBeta'])*(feat['recHitRelPhi'] -  0.1*d['predCCoords'][:,0:1])**2 
+    posdiff = 0.*tf.reduce_mean(etadiff+phidiff)
     
-    return tf.reduce_mean(etadiff+phidiff)
+    detadiff = d['truthNoNoise']*(.1+d['predBeta'])*(d['truthHitAssignedEtas'] -  0.1*d['predCCoords'][:,1:2])**2 
+    dphidiff = d['truthNoNoise']*(.1+d['predBeta'])*(d['truthHitAssignedPhis'] -  0.1*d['predCCoords'][:,0:1])**2 
+    dposdiff = tf.reduce_mean(detadiff+dphidiff)
+    
+    mediumbeta = 10.*tf.reduce_mean(d['truthNoNoise']*(1. - d['predBeta'])**2)
+    noise =  tf.reduce_mean((1.-d['truthNoNoise'])*(d['predBeta'])**2)
+    
+    
+    realetadiff = (d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas'])**2
+    realphidiff = (d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis'])**2
+    realposdiff = d['truthNoNoise']*(.1+d['predBeta'])*(realetadiff+realphidiff)
+    realposloss = tf.reduce_mean(realposdiff)
+    
+    loss  = posdiff +mediumbeta + noise + realposloss + dposdiff
+    global pre_training_loss_counter
+    tf.print(pre_training_loss_counter, 'loss', loss, ' = posdiff',posdiff, 'beta contrib', mediumbeta, 'noise contrib', noise, 'realposloss',realposloss, 'dposdiff',dposdiff)
+    pre_training_loss_counter+=1
+    return loss
     
     
 def batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling):

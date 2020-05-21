@@ -43,28 +43,35 @@ def custom_impl(coords, features, indices):
 bm = Benchmarker(tf_impl, custom_impl,"GravNet_ND")
 bm.debugout=False
 print('checking TF versus custom for same results')
-for i in range(30):
+for i in range(0):
     print('nvert',5+10*i, 'nfeat',32+2*i, 'nneigh',2+10*i)
     bm.difference( nvert = 5+10*i, nfeat = 32+2*i, nneigh = 2+10*i, ncoords = 4, onlyForward=False)   
 
-exit()
+
 print('checking TF versus custom for performance')
 v100=True
 vertmulti = 1000
 if v100:
-    vertmulti = 8000
-nvert  = [int(i*vertmulti/2+1000) for i in range(30)] 
-nneigh = [int(25*i)+25 for i in range(0,10)] 
-nfeat  = [int(32*i)+32 for i in range(0,10)] 
+    vertmulti = 3*1000
+nvert  = [int(i*vertmulti/2+1000) for i in range(10)] 
+nneigh = [int(25*i)+25 for i in range(0,4)] 
+nfeat  = [int(32*i)+32 for i in range(0,4)] 
+
+
+bm.run_extended_difference(nvert,nneigh,nfeat)
 
 d_nfeat = 100
 d_nneigh = 100
 d_nvert = 10000
 if v100:
     d_nvert = 25000
+    
+nvert  = [int(i*4*vertmulti+1000) for i in range(20)] 
+nneigh = [int(25*i)+25 for i in range(0,4)] 
+nfeat  = [int(32*i)+32 for i in range(0,4)] 
 
 bm.run_extended_benchmark(nvert,nneigh,nfeat,d_nvert,d_nneigh,d_nfeat)
-bm.run_extended_benchmark(nvert,nneigh,nfeat,d_nvert,d_nneigh,gradient=True)
+#bm.run_extended_benchmark(nvert,nneigh,nfeat,d_nvert,d_nneigh,gradient=True)
 
 
 

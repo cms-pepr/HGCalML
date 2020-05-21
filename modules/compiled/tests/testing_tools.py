@@ -38,7 +38,7 @@ class Benchmarker(object):
         row_splits = tf.constant( [0, nvert] ,dtype='int32')
         
         indices = SelectKnn(K=nneigh, coords=coords, row_splits=row_splits)
-        
+        tf_failed = False
         if not dogradient:
             #each gets one dry run to compile
             meanmax = self.customimpl(coords=coords,  features=feats, indices=indices)
@@ -58,7 +58,7 @@ class Benchmarker(object):
                         meanmax = self.tfimp(coords=coords,  features=feats, indices=indices)
                     tf_time= (time.time() - t0)/50.
                 except:
-                    pass
+                    tf_failed=True
                     
                 print('tf_time',tf_time)
                     
@@ -97,28 +97,27 @@ class Benchmarker(object):
                         coord_grad = t_tfop.gradient(meanmax, coords)
                     tf_time= (time.time() - t0)/5.
                 except:
-                    pass
+                    tf_failed=True
             return op_time, tf_time
         
-    def difference(self, nvert = 300, nfeat = 64, nneigh = 32, ncoords = 4, onlyForward=False):
+    def difference(self, nvert = 300, nfeat = 64, nneigh = 32, ncoords = 4, onlyForward=False, assert_error=True):
         
         coords = tf.constant( np.random.rand(nvert,ncoords) ,dtype='float32')
         feats  = tf.constant( np.random.rand(nvert,nfeat) ,dtype='float32')
         row_splits = tf.constant( [0, nvert] ,dtype='int32')
-        print('building indices')
+        #print('building indices')
         indices = SelectKnn(K=nneigh, coords=coords, row_splits=row_splits)
-        print('process custom op')
+        #print('process custom op')
         op_time = 0
         t0 = time.time()
         with tf.GradientTape(persistent=True,watch_accessed_variables=True) as t_newop:
             t_newop.watch(coords)
             t_newop.watch(feats)
-            print('execute')
             meanmax = self.customimpl( coords=coords,  features=feats, indices=indices)
             t1 = time.time()
             op_time= t1 - t0
             
-        print('op time',op_time)
+        #print('op time',op_time)
             
         feat_grad = t_newop.gradient(meanmax, feats)
         coord_grad = t_newop.gradient(meanmax, coords)
@@ -134,7 +133,7 @@ class Benchmarker(object):
             
         tf_feat_grad = None
         tf_coord_grad = None
-        print('process TF op')
+        #print('process TF op')
         t0 = time.time()
         with tf.GradientTape(persistent=True) as t_tfop:
             t_tfop.watch(coords)
@@ -155,11 +154,12 @@ class Benchmarker(object):
         max_rel_difference = tf.reduce_max(tf.abs(difference/(tf_meanmax+1e-3))).numpy()
         max_difference = tf.reduce_max(tf.abs(difference)).numpy()
         
-        print('max rel difference',max_rel_difference)
-        print('max difference',max_difference)
-        print('op time',op_time)
-        print('tf time',tf_time)
-        assert max_difference < 1e-2
+        #print('max rel difference',max_rel_difference)
+        #print('max difference',max_difference)
+        #print('op time',op_time)
+        #print('tf time',tf_time)
+        if assert_error:
+            assert max_difference < 1e-2
         
         if onlyForward:
             return
@@ -180,14 +180,19 @@ class Benchmarker(object):
         #print('relative feat_grad_diff',feat_grad_diff/tf_feat_grad)
         #print('relative coord_grad_diff',coord_grad_diff/tf_coord_grad)
         
-        maxrelfeatgraddiff = tf.reduce_max(tf.abs(feat_grad_diff/(tf_feat_grad+1e-3)))
-        maxrelcoordgraddiff = tf.reduce_max(tf.abs(coord_grad_diff/(tf_coord_grad+1e-3)))
         
-        maxfeatgraddiff = tf.reduce_max(tf.abs(feat_grad_diff/(tf_feat_grad+1e-3)))
-        maxcoordgraddiff = tf.reduce_max(tf.abs(coord_grad_diff/(tf_coord_grad+1e-3)))
+        maxfeatgraddiff = tf.reduce_max(tf.abs(feat_grad_diff))
+        maxcoordgraddiff = tf.reduce_max(tf.abs(coord_grad_diff))
         
-        print('\nmax relative feature grad diff', maxrelfeatgraddiff)
-        print('max relative coordinate grad diff', maxrelcoordgraddiff)
+        rel_feat_grad_diff = feat_grad_diff/(tf.abs(tf_feat_grad)+1e-2)
+        rel_coord_grad_diff = coord_grad_diff/(tf.abs(tf_coord_grad)+1e-2)
+        
+        
+        maxrelfeatgraddiff = tf.reduce_max(rel_feat_grad_diff)
+        maxrelcoordgraddiff = tf.reduce_max(rel_coord_grad_diff)
+        
+        #print('\nmax relative feature grad diff', maxrelfeatgraddiff)
+        #print('max relative coordinate grad diff', maxrelcoordgraddiff)
         
         if maxrelfeatgraddiff > 1e-2:
             print('Feature gradient off:')
@@ -205,9 +210,63 @@ class Benchmarker(object):
             print('max rel diff',maxrelcoordgraddiff)
             print('max diff',maxcoordgraddiff)
         
+        if assert_error:
+            assert maxrelfeatgraddiff < 5e-2
+            assert maxrelcoordgraddiff < 5e-2
+            
         
-        assert maxfeatgraddiff < 1e-2
-        assert maxcoordgraddiff < 1e-2
+            
+        return difference,rel_feat_grad_diff,rel_coord_grad_diff,feat_grad_diff,coord_grad_diff
+        
+    def run_extended_difference(self,
+                                nvert,
+                                nneigh,
+                                nfeat,
+                                addstring=""):
+        
+        diff = []
+        relcoordgraddiff = []
+        relfeatgraddiff = []
+        coordgraddiff = []
+        featgraddiff = []
+        for nv in nvert:
+            for nn in nneigh:
+                for nf in nfeat:
+                    d,fr,cr,f,c = self.difference(nv,nf,nn, ncoords = 4, onlyForward=False, assert_error=False)
+                    diff.append(d)
+                    coordgraddiff.append(c)
+                    featgraddiff.append(f)
+                    relcoordgraddiff.append(cr)
+                    relfeatgraddiff.append(fr)
+        
+        diff = np.reshape(np.array(diff), [-1])
+        coordgraddiff = np.reshape(np.array(coordgraddiff), [-1])
+        featgraddiff = np.reshape(np.array(featgraddiff), [-1])
+        relcoordgraddiff = np.reshape(np.array(relcoordgraddiff), [-1])
+        relfeatgraddiff = np.reshape(np.array(relfeatgraddiff), [-1])
+        
+        plt.close()
+        plt.hist(diff)
+        plt.xlabel("Output Difference")
+        plt.savefig(self.name+addstring+"output_diff.pdf")
+        plt.close()
+        plt.hist(coordgraddiff)
+        plt.xlabel("Coordinate Gradient Difference")
+        plt.savefig(self.name+addstring+"coord_grad_diff.pdf")
+        plt.close()
+        plt.hist(featgraddiff)
+        plt.xlabel("Feature Gradient Difference")
+        plt.savefig(self.name+addstring+"feat_grad_diff.pdf")
+        plt.close()
+        plt.hist(coordgraddiff)
+        plt.xlabel("Relative Coordinate Gradient Difference")
+        plt.savefig(self.name+addstring+"rel_coord_grad_diff.pdf")
+        plt.close()
+        plt.hist(featgraddiff)
+        plt.xlabel("Relative Feature Gradient Difference")
+        plt.savefig(self.name+addstring+"rel_feat_grad_diff.pdf")
+        plt.close()
+        
     
         
     def run_extended_benchmark(self,
