@@ -23,7 +23,7 @@ def tf_impl(coords,features,indices):
     
     distances = tf.reduce_sum((neighbour_space-neighbour_space[:,0:1,:])**2, axis=-1, keepdims=True)
     
-    weights = tf.math.exp(-1.*distances)
+    weights = tf.math.exp(-10.*distances)
     neighbour_feat = neighbour_feat_uw * weights
     mean = tf.reduce_mean(neighbour_feat, axis=1)
     

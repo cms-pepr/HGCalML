@@ -19,7 +19,9 @@ struct SelectKnnOpFunctor {
             const int n_neigh,
             const int n_coords,
 
-            const int n_rs
+            const int n_rs,
+            const bool tf_compat,
+            const float max_radius
             );
 };
 

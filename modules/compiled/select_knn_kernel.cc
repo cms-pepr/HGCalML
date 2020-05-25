@@ -72,7 +72,9 @@ struct SelectKnnOpFunctor<CPUDevice, dummy> {
             const int n_neigh,
             const int n_coords,
 
-            const int n_rs) {
+            const int n_rs,
+            const bool tf_compat,
+            const float max_radius) {
 
         //really no buffering at all here
 
@@ -87,6 +89,19 @@ struct SelectKnnOpFunctor<CPUDevice, dummy> {
             for(size_t i_v=start_vert;i_v<end_vert;i_v++){
 
                 d_indices[I2D(i_v,0,n_neigh)] = i_v;
+                if(!tf_compat){//allow for <K neighbours
+                    for(size_t nn=1;nn<n_neigh;nn++)
+                        d_indices[I2D(i_v,nn,n_neigh)] = -1;
+                }
+                else{
+                    for(size_t nn=1;nn<n_neigh;nn++)
+                        d_indices[I2D(i_v,nn,n_neigh)] = i_v;
+                }
+                size_t max_neighbours = n_neigh;
+                //set default to self
+                if(end_vert - start_vert<n_neigh){
+                    max_neighbours=end_vert - start_vert;
+                }
 
                 size_t nfilled=1;
                 size_t maxidx_local=0;
@@ -97,7 +112,7 @@ struct SelectKnnOpFunctor<CPUDevice, dummy> {
                         continue;
                     //fill up
                     float distsq = calculateDistance(i_v,j_v,d_coord,n_coords);
-                    if(nfilled<n_neigh){
+                    if(nfilled<max_neighbours && (max_radius<=0 || max_radius>=distsq)){
                         d_indices[I2D(i_v,nfilled,n_neigh)] = j_v;
                         d_dist[I2D(i_v,nfilled,n_neigh)] = distsq;
                         if(distsq > maxdistsq){
@@ -126,6 +141,14 @@ public:
     explicit SelectKnnOp(OpKernelConstruction *context) : OpKernel(context) {
         OP_REQUIRES_OK(context,
                         context->GetAttr("n_neighbours", &K_));
+        OP_REQUIRES_OK(context,
+                        context->GetAttr("tf_compatible", &tf_compat_));
+        OP_REQUIRES_OK(context,
+                        context->GetAttr("max_radius", &max_radius_));
+
+        if(max_radius_>0)
+            max_radius_ *= max_radius_;//use squared
+
     }
 
     void Compute(OpKernelContext *context) override {
@@ -161,7 +184,9 @@ public:
                 K_,
                 n_coords,
 
-                n_rs
+                n_rs,
+                tf_compat_,
+                max_radius_
         );
 
 
@@ -170,6 +195,8 @@ public:
 
 private:
     int K_;
+    bool tf_compat_;
+    float max_radius_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("SelectKnn").Device(DEVICE_CPU), SelectKnnOp<CPUDevice>);

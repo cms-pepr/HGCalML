@@ -377,13 +377,19 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
 
     def call(self, inputs):
         
+        #DEBUG
+        import time
+        t1 = time.time()
+        
         x = inputs[0]
         row_splits = inputs[1]
 
         coordinates = self.input_spatial_transform[0](x)
         features = self.input_feature_transform(x)
         
-        indices  = SelectKnn(self.n_neighbours, coordinates,  row_splits)
+        indices  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=.8, tf_compatible=False) 
+        #contribution beyond .8 < 2 per mille for standard exp decay (factor 10 for GravNet)
         
         #message passing, this actually could also work if the coordinates are allowed to be transformed...
         for i in range(len(self.output_feature_transform)):
@@ -396,6 +402,9 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
             features = self.output_feature_transform[i](features)
             if i < len(self.input_spatial_transform)-1:
                 coordinates = self.input_spatial_transform[i+1](x)
+        
+        t2 = time.time() - t1
+        print('took',t2 ,'for call')
         
         return features
 

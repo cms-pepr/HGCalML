@@ -76,7 +76,8 @@ void acc_knn_nd_kernel(const float *d_coord,
 
 
     for(size_t i_n=0;i_n<n_neigh;i_n++){
-        size_t nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+        int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+        if(nidx<0) continue; //parallel for all coords and feats.
 
         float vnf = d_feat[I2D(nidx,i_f,n_feat)];
         float vnc = d_coord[I2D(nidx,i_c,n_coords)];
@@ -93,12 +94,12 @@ void acc_knn_nd_kernel(const float *d_coord,
 
     t_mean /= (float)n_neigh;
 
+    // __syncthreads(); ?
     d_out_maxidxs[I3D(i_v,i_f,i_c,n_feat,n_coords)] = max_i_n_gidx; //just used for gradient
     d_out_feat[I3D(i_v,i_f,i_c,n_out_feat,n_coords)] = t_mean;
     d_out_feat[I3D(i_v,i_f+n_feat,i_c,n_out_feat,n_coords)] = t_max;
 
 
-   // __syncthreads(); //might not be needed
 
 }
 

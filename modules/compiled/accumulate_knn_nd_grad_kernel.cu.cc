@@ -68,7 +68,9 @@ void acc_knn_nd_gradkernel_features(
 
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
-        size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+        int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+        if(m_v<0) continue;
+
         float vnc = d_coord[I2D(m_v,i_c,n_coords)];
 
 
@@ -133,7 +135,8 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
 
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
-        size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+        int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+        if(m_v<0) continue;
 
         float mean_contrib = 0;
         float maxcontr = 0;
@@ -141,7 +144,8 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
         if(m_v == i_v){
             for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
 
-                size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
+                int k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
+                if(k<0) continue;
                 if(k == m_v)
                     continue;
 

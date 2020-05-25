@@ -33,12 +33,12 @@ def euclidean_squared(A, B):
 
 def createData(nvert,ncoords):
     coords = tf.constant( np.random.rand(nvert,ncoords) ,dtype='float32')
-    row_splits = tf.constant( [0,  int(nvert/2), nvert] ,dtype='int32')
+    row_splits = tf.constant( [0,  nvert] ,dtype='int32')
     return coords, row_splits
 
 
 def custom_impl(K, coords, row_splits):
-    return SelectKnn(K = K, coords=coords,  row_splits=row_splits)
+    return SelectKnn(K = K, coords=coords,  row_splits=row_splits,max_radius=.2, tf_compatible=False)
 
 def tf_implt(K, coords, row_splits):
     
@@ -55,7 +55,7 @@ def tf_implt(K, coords, row_splits):
 
 
 
-coords, row_splits = createData(8000, 4)
+coords, row_splits = createData(3000, 4)
 
 K = 200
 print('launching custom')
@@ -66,6 +66,8 @@ for i in range(20):
     #print(i)
     x = custom_impl(K, coords, row_splits)
 c_time = (time.time()-t0)/20.
+
+print('x',x)
 
 print('custom time',c_time)
 
@@ -89,9 +91,9 @@ if maxdiff > 0 :
     rest = tf.reduce_sum(diff, axis=-1)%2
     maxdiff = tf.reduce_sum(rest).numpy()
 if maxdiff > 0 :
-    print(diff)
-    print(rest)
-    print(maxdiff)
+    print('diff',diff)
+    print('rest',rest)
+    print('maxdiff',maxdiff)
     
 print('min', tf.reduce_min(x), 'max', tf.reduce_max(x))
 

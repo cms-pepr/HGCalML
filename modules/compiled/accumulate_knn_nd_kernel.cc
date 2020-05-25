@@ -58,7 +58,8 @@ struct AccumulateKnnNdOpFunctor<CPUDevice, dummy> {
                     float vic = d_coord[I2D(i_v,i_c,n_coords)]; //buffer?
 
                     for(size_t i_n=0;i_n<n_neigh;i_n++){
-                        size_t nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+                        int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+                        if(nidx<0) continue;
 
                         float vnf = d_feat[I2D(nidx,i_f,n_feat)];
                         float vnc = d_coord[I2D(nidx,i_c,n_coords)];

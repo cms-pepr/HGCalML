@@ -19,7 +19,7 @@ def tf_impl(coords,features,indices):
     
     distances = neighbour_space-neighbour_space[:,0:1,:] # V x N x C
     distances = tf.expand_dims(distances, axis=2) # V x N x 1 x C
-    weights = tf.math.exp(-1.*distances**2)
+    weights = tf.math.exp(-10.*distances**2)
     
     neighbour_feat_uw = tf.expand_dims(neighbour_feat_uw, axis=3) # V x N x F x 1
     
@@ -51,14 +51,14 @@ for i in range(0):
 print('checking TF versus custom for performance')
 v100=True
 vertmulti = 1000
-if v100:
-    vertmulti = 3*1000
 nvert  = [int(i*vertmulti/2+1000) for i in range(10)] 
 nneigh = [int(25*i)+25 for i in range(0,4)] 
 nfeat  = [int(32*i)+32 for i in range(0,4)] 
 
 
 bm.run_extended_difference(nvert,nneigh,nfeat)
+
+exit()
 
 d_nfeat = 100
 d_nneigh = 100
