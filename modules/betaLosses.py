@@ -498,7 +498,7 @@ class _obj_cond_config(object):
         self.no_beta_norm = False
         self.potential_scaling = 1.
         self.s_b = 1.
-        self.position_scaling = 1.
+        self.position_loss_weight = 1.
 
 
 config = _obj_cond_config()
@@ -528,7 +528,19 @@ def full_obj_cond_loss(truth, pred, rowsplits):
         energyweights *= 0.
     energyweights += 1.
     
-    attractive_loss, rep_loss, noise_loss, min_beta_loss  = indiv_object_condensation_loss_2(d['predCCoords'], #
+    energy_diff = (d['predEnergy'] - d['truthHitAssignedEnergies'])
+    energy_loss = energyweights * energy_diff**2/(d['truthHitAssignedEnergies']**2+5)
+    
+    etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
+    phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
+    pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
+    pos_offs =  100. * tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True)
+    
+    payload_loss = config.energy_loss_weight * energy_loss + config.position_loss_weight * pos_offs
+    payload_loss = tf.squeeze(energyweights * payload_loss,axis=-1) #V
+    
+    
+    attractive_loss, rep_loss, noise_loss, min_beta_loss, payload_loss_full  = indiv_object_condensation_loss_2(d['predCCoords'], #
                                                                                              d['predBeta'][...,0],  #remove last 1 dim
                                                                                              classes, 
                                                                                              row_splits,
@@ -536,52 +548,32 @@ def full_obj_cond_loss(truth, pred, rowsplits):
                                                                                              Q_MIN=config.q_min, 
                                                                                              S_B=config.s_b,
                                                                                              energyweights=energyweights[...,0],
-                                                                                             no_beta_norm=config.no_beta_norm)
+                                                                                             no_beta_norm=config.no_beta_norm,
+                                                                                             payload_loss=payload_loss)
     
     attractive_loss *= config.potential_scaling
     rep_loss *= config.potential_scaling
     
-    beta_scaling = tf.math.atanh(tf.clip_by_value( d['predBeta'], 1e-3, 1. - 1e-3))**2 #avoid nans
-    
-    #energy loss. For particles other than muons, the highest energy hits contribute with about 1% of the total energy
-    energy_diff = (d['predEnergy'] - d['truthHitAssignedEnergies'])
-    energy_loss = beta_weighted_truth_mean(energyweights *  
-                                           energy_diff**2/(d['truthHitAssignedEnergies']**2+5), d,row_splits, beta_scaling, (1.-d['truthIsSpectator']) )
-    
-
-    etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
-    phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
-    pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
-    pos_offs =  tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True) # B x V x 1
-    position_loss = config.position_scaling*500.* beta_weighted_truth_mean(energyweights * pos_offs, d,row_splits, beta_scaling, (1.-d['truthIsSpectator']))
-    
-    
     spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
-    
-    min_beta_loss*=1.
-    energy_loss *= config.energy_loss_weight
     
     attractive_loss = tf.where(tf.math.is_nan(attractive_loss),0,attractive_loss)
     rep_loss = tf.where(tf.math.is_nan(rep_loss),0,rep_loss)
     min_beta_loss = tf.where(tf.math.is_nan(min_beta_loss),0,min_beta_loss)
     noise_loss = tf.where(tf.math.is_nan(noise_loss),0,noise_loss)
-    energy_loss = tf.where(tf.math.is_nan(energy_loss),0,energy_loss)
-    position_loss = tf.where(tf.math.is_nan(position_loss),0,position_loss)
+    payload_loss_full = tf.where(tf.math.is_nan(payload_loss_full),0,payload_loss_full)
     spectator_beta_penalty = tf.where(tf.math.is_nan(spectator_beta_penalty),0,spectator_beta_penalty)
     
     #energy_loss *= 0.0000001
     
     # neglect energy loss almost fully
-    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss +  position_loss + spectator_beta_penalty
+    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + payload_loss_full + spectator_beta_penalty
     
     print('loss',loss.numpy(), 
           'attractive_loss',attractive_loss.numpy(), 
           'rep_loss', rep_loss.numpy(), 
           'min_beta_loss', min_beta_loss.numpy(), 
           'noise_loss' , noise_loss.numpy(),
-          '(energy_loss)', energy_loss.numpy(), 
-          'sqrt(energy_loss)', tf.sqrt(energy_loss).numpy(), 
-          '(position_loss)' , position_loss.numpy(),
+          'payload_loss_full', payload_loss_full.numpy(), 
           'spectator_beta_penalty', spectator_beta_penalty.numpy())
     
     return loss
