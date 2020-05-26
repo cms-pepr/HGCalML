@@ -338,7 +338,7 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
             self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
 
         self.input_spatial_transform=[]
-        for i in range(len(self.n_filters)):
+        for i in range(1):
             with tf.name_scope(self.name + "/"+str(i+2)+"/"):
                 if not i:
                     self.input_spatial_transform.append(tf.keras.layers.Dense(n_dimensions))
@@ -357,7 +357,7 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
             self.input_feature_transform.build(input_shape)
 
 
-        for i in range(len(self.n_filters)):
+        for i in range(1):
             with tf.name_scope(self.name + "/"+str(i+2)+"/"):
                 self.input_spatial_transform[i].build(input_shape)
 
@@ -378,13 +378,14 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
     def call(self, inputs):
         
         #DEBUG
-        import time
-        t1 = time.time()
+        #import time
+        #t1 = time.time()
         
         x = inputs[0]
         row_splits = inputs[1]
 
         coordinates = self.input_spatial_transform[0](x)
+        out_coords=[coordinates]
         features = self.input_feature_transform(x)
         
         indices  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
@@ -400,17 +401,15 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
             features = tf.reshape(features, [-1,nfeat])
             features = tf.concat([x, features], axis=-1)
             features = self.output_feature_transform[i](features)
-            if i < len(self.input_spatial_transform)-1:
-                coordinates = self.input_spatial_transform[i+1](x)
         
-        t2 = time.time() - t1
-        print('took',t2 ,'for call')
+        #t2 = time.time() - t1
+        #print('took',t2 ,'for call')
         
-        return features
+        return features, coordinates
 
     def compute_output_shape(self, input_shapes):
         input_shape = input_shapes[0]
-        return (self.output_feature_transform[-1].units[-1],)
+        return (self.output_feature_transform[-1].units[-1],), [ (self.input_spatial_transform[0].units, ) for i in self.input_spatial_transform]
     
 
     def get_config(self):

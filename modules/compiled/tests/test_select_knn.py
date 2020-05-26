@@ -38,7 +38,7 @@ def createData(nvert,ncoords):
 
 
 def custom_impl(K, coords, row_splits):
-    return SelectKnn(K = K, coords=coords,  row_splits=row_splits,max_radius=.2, tf_compatible=False)
+    return SelectKnn(K = K, coords=coords,  row_splits=row_splits,max_radius=-.2, tf_compatible=False)
 
 def tf_implt(K, coords, row_splits):
     
@@ -46,18 +46,18 @@ def tf_implt(K, coords, row_splits):
     for i in range(row_splits.shape[0]-1):
     
         distance_matrix = euclidean_squared(coords[row_splits[i]:row_splits[i+1]], coords[row_splits[i]:row_splits[i+1]])
-        ranked_distances, ranked_indices = tf.nn.top_k(-distance_matrix, K)
+        ranked_distances, ranked_indices = tf.nn.top_k(-distance_matrix, K+1)
         ranked_indices += row_splits[i]
         out_indices.append(ranked_indices)
     
-    return tf.concat(out_indices,axis=0)
+    return tf.concat(out_indices,axis=0)[:,1:]
 
 
 
 
-coords, row_splits = createData(3000, 4)
+coords, row_splits = createData(20, 4)
 
-K = 200
+K = 10
 print('launching custom')
 x = custom_impl(K, coords, row_splits)
 print('taking time')
@@ -77,7 +77,7 @@ t0 = time.time()
 for i in range(20):
     tf_x = tf_implt(K = K, coords=coords,  row_splits=row_splits)
 tf_time = (time.time()-t0)/20.
-#print('tfx',tf_x)
+print('tfx',tf_x)
 
 print('tf time',tf_time)
 
