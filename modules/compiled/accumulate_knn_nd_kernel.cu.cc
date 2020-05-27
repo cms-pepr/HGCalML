@@ -22,12 +22,47 @@ float gpu_nd_distanceWeight(float distsq){
 }
 
 __global__
+void acc_knn_nd_featsum_kernel(
+        const float *d_feat,
+        const int *d_idxs,
+
+        float *d_out_feat_sum,
+
+        int n_vert,
+        int n_neigh,
+        int n_feat) {
+
+    const size_t i_v =  blockIdx.x * blockDim.x + threadIdx.x;
+    if(i_v >= n_vert)
+        return;
+
+    const size_t i_f =  blockIdx.y * blockDim.y + threadIdx.y;
+    if(i_f >= n_feat)
+        return;
+
+    float m_featsum = 0;
+
+    for(size_t i_n=0;i_n<n_neigh;i_n++){
+        int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+        if(nidx<0) continue; //parallel for all coords and feats.
+
+        float vnf = d_feat[I2D(nidx,i_f,n_feat)];
+        m_featsum += vnf;
+
+    }
+
+    d_out_feat_sum[I2D(i_v,i_f,n_feat)] = m_featsum;
+
+}
+
+__global__
 void acc_knn_nd_kernel(const float *d_coord,
         const float *d_feat,
         const int *d_idxs,
 
         float *d_out_feat,
         int *d_out_maxidxs,
+        const float *d_out_feat_sum,
 
         int n_vert,
         int n_neigh,
@@ -74,6 +109,7 @@ void acc_knn_nd_kernel(const float *d_coord,
 
     float vic = d_coord[I2D(i_v,i_c,n_coords)]; //buffer?
 
+    float m_mean = 0;
 
     for(size_t i_n=0;i_n<n_neigh;i_n++){
         int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
@@ -81,14 +117,17 @@ void acc_knn_nd_kernel(const float *d_coord,
 
         float vnf = d_feat[I2D(nidx,i_f,n_feat)];
         float vnc = d_coord[I2D(nidx,i_c,n_coords)];
-        float distsq = (vic-vnc)*(vic-vnc);
+        float dist = (vnc-vic);
 
-        float wfeat = vnf * gpu_nd_distanceWeight(distsq);
+        float wfeat = vnf * gpu_nd_distanceWeight(dist*dist);
         t_mean += wfeat;
         if(wfeat > t_max){
             max_i_n_gidx = nidx;
             t_max = wfeat;
         }
+
+        m_mean += vnf * dist;
+
         __syncthreads();
     }
 
@@ -99,7 +138,22 @@ void acc_knn_nd_kernel(const float *d_coord,
     d_out_feat[I3D(i_v,i_f,i_c,n_out_feat,n_coords)] = t_mean;
     d_out_feat[I3D(i_v,i_f+n_feat,i_c,n_out_feat,n_coords)] = t_max;
 
+    if(! n_moments)
+        return;
 
+    float featsum = d_out_feat_sum[I2D(i_v,i_f,n_feat)];
+
+    if(!featsum) //arrays are zero initialized
+        return;
+
+    m_mean /= featsum;
+
+    d_out_feat[I3D(i_v,i_f+2*n_feat,i_c,n_out_feat,n_coords)] = m_mean;
+
+    if(n_moments<2)
+        return;
+    float m_var = 0;
+    float m_skew = 0;
 
 }
 
@@ -120,6 +174,7 @@ struct AccumulateKnnNdOpFunctor<GPUDevice, dummy> {
 
             float *d_out_feat,
             int *d_out_maxidxs,
+            float *d_out_feat_sum,
 
             const int n_vert,
             const int n_neigh,
@@ -135,7 +190,16 @@ struct AccumulateKnnNdOpFunctor<GPUDevice, dummy> {
       //  int numSMs = d.getNumCudaMultiProcessors();
 
         //just simple 1 thread per vertex
+        dim3 numblocks_f(n_vert/32+1, n_feat/16+1);
+        dim3 threadsperblock_f(32,16);
 
+        acc_knn_nd_featsum_kernel<<<numblocks_f, threadsperblock_f, 0, d.stream()>>>(
+                d_feat,
+                d_idxs,
+                d_out_feat_sum,
+                n_vert,
+                n_neigh,
+                n_feat);
 
         //for GTX1080, also make some opt for V100
         dim3 numblocks(n_vert/32+1, n_feat/4+1, n_coords/4+1);
@@ -145,7 +209,7 @@ struct AccumulateKnnNdOpFunctor<GPUDevice, dummy> {
 
      //   std::cout << "opt grid" << gridsize << " opt block " << blocksize << " numSM " << numSMs << std::endl;
 
-        acc_knn_nd_kernel<<<numblocks, threadsperblock, 0, d.stream()>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,
+        acc_knn_nd_kernel<<<numblocks, threadsperblock, 0, d.stream()>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,d_out_feat_sum,
                 n_vert,n_neigh,n_coords,n_feat,n_out_feat,n_moments);
 
         cudaDeviceSynchronize();

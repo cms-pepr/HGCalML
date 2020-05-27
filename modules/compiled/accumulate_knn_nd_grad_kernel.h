@@ -11,8 +11,11 @@ struct AccumulateKnnNdGradOpFunctor {
             const Device &d,
 
             const float *d_grad_from_out_features,
+            const float *d_grad_from_sum_features,
+
             const float *d_coord, // sum(V) x S
             const float *d_feat, // sum(V) x F
+            const float *d_orig_out_feat,
             const int *d_max_feat_indices,
             const int * d_neigh_indices,
 

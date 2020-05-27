@@ -49,7 +49,7 @@ def AccumulateKnnNd(coords,  features, indices, n_moments=0):
 
 
 @ops.RegisterGradient("AccumulateKnnNd")
-def _AccumulateKnnNdGrad(op, grad, gradmaxidxs):
+def _AccumulateKnnNdGrad(op, grad, gradmaxidxs, gradfeatsum):
   """
     
   """
@@ -61,13 +61,16 @@ def _AccumulateKnnNdGrad(op, grad, gradmaxidxs):
   coords  = op.inputs[0]
   features  = op.inputs[1]
   max_feat_indices = op.outputs[1]
+  orig_op_out_feat = op.outputs[0]
   neigh_indices = op.inputs[2]
   
   coord_grad , feat_grad = _accknn_nd_grad_op.AccumulateKnnNdGrad(grad_from_out_features=grad,
+                                                                  grad_from_sum_features=gradfeatsum,
                                                              coords=coords,
                                                              features=features,
                                                              neigh_indices=neigh_indices,
-                                                             max_feat_indices=max_feat_indices)
+                                                             max_feat_indices=max_feat_indices,
+                                                             orig_op_out_feat=orig_op_out_feat)
 
   return [coord_grad , feat_grad, None] #no gradient for indices
   

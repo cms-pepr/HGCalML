@@ -13,13 +13,14 @@ from accknn_op import AccumulateKnnNd
 
 
 def tf_impl(coords,features,indices):
+    
     neighbour_space = tf.gather_nd(coords, indices[...,tf.newaxis])
     neighbour_feat_uw = tf.gather_nd(features, indices[...,tf.newaxis])
     no_weight_mean = tf.reduce_mean(neighbour_feat_uw,axis=1)
     
-    distances = neighbour_space-neighbour_space[:,0:1,:] # V x N x C
-    distances = tf.expand_dims(distances, axis=2) # V x N x 1 x C
-    weights = tf.math.exp(-10.*distances**2)
+    distances = neighbour_space- tf.expand_dims(coords, axis=1) # V x N x C
+    distances_exp = tf.expand_dims(distances, axis=2) # V x N x 1 x C
+    weights = tf.math.exp(-10.*distances_exp**2)
     
     neighbour_feat_uw = tf.expand_dims(neighbour_feat_uw, axis=3) # V x N x F x 1
     
@@ -27,18 +28,31 @@ def tf_impl(coords,features,indices):
     mean = tf.reduce_mean(neighbour_feat, axis=1)
     max = tf.reduce_max(neighbour_feat, axis=1)
     
+    #moments etc
+    featsum = tf.squeeze(tf.reduce_sum(neighbour_feat_uw, axis=1),axis=2)  # V x F 
+    
     out = tf.concat([mean,max],axis=-2)
-    out = tf.reshape(out, [coords.shape[0], 2*features.shape[1]*coords.shape[1]])
+    
+    #add moments
+    m_mean =  tf.reduce_sum(neighbour_feat_uw * distances_exp, axis=1) / tf.expand_dims(featsum, axis=2) # V x F x C
+    m_mean = tf.where(tf.expand_dims(featsum, axis=2) ==0, tf.zeros_like(m_mean), m_mean)
+    out = tf.concat([out,m_mean],axis=-2)
+    #end moments
+    
+    out = tf.reshape(out, [out.shape[0], out.shape[1]*out.shape[2] ])
+    out = tf.concat([out,featsum],axis=-1)
     
     return out
 
 
 def custom_impl(coords, features, indices):
-    out, midx = AccumulateKnnNd(n_moments=0, coords=coords,  features=features, indices=indices)
+    out, midx, featsum = AccumulateKnnNd(n_moments=1, coords=coords,  features=features, indices=indices)
     #print('midx',midx)
-    return tf.reshape(out, [coords.shape[0], 2*features.shape[1]*coords.shape[1]])
+    out = tf.reshape(out, [out.shape[0], out.shape[1]*out.shape[2] ])
+    out = tf.concat([out,featsum],axis=-1)
+    return out
 
-    
+
     
 bm = Benchmarker(tf_impl, custom_impl,"GravNet_ND")
 bm.debugout=False
@@ -46,12 +60,17 @@ print('checking TF versus custom for same results')
 for i in range(0):
     print('nvert',5+10*i, 'nfeat',32+2*i, 'nneigh',2+10*i)
     bm.difference( nvert = 5+10*i, nfeat = 32+2*i, nneigh = 2+10*i, ncoords = 4, onlyForward=False)   
+    
+    
 
+bm.debugout=True
+bm.difference( nvert = 10, nfeat = 10, nneigh = 8, ncoords = 4, onlyForward=False)  
+bm.debugout=False
+#exit()
 
-print('checking TF versus custom for performance')
 v100=True
-vertmulti = 1000
-nvert  = [int(i*vertmulti/2+1000) for i in range(10)] 
+vertmulti = 100
+nvert  = [int(i*vertmulti/2+100) for i in range(10)] 
 nneigh = [int(25*i)+25 for i in range(0,4)] 
 nfeat  = [int(32*i)+32 for i in range(0,4)] 
 
@@ -59,7 +78,7 @@ nfeat  = [int(32*i)+32 for i in range(0,4)]
 bm.run_extended_difference(nvert,nneigh,nfeat)
 
 exit()
-
+print('checking TF versus custom for performance')
 d_nfeat = 100
 d_nneigh = 100
 d_nvert = 10000
@@ -71,7 +90,7 @@ nneigh = [int(25*i)+25 for i in range(0,4)]
 nfeat  = [int(32*i)+32 for i in range(0,4)] 
 
 bm.run_extended_benchmark(nvert,nneigh,nfeat,d_nvert,d_nneigh,d_nfeat)
-#bm.run_extended_benchmark(nvert,nneigh,nfeat,d_nvert,d_nneigh,gradient=True)
+bm.run_extended_benchmark(nvert,nneigh,nfeat,d_nvert,d_nneigh,gradient=True)
 
 
 

@@ -184,8 +184,8 @@ class Benchmarker(object):
         maxfeatgraddiff = tf.reduce_max(tf.abs(feat_grad_diff))
         maxcoordgraddiff = tf.reduce_max(tf.abs(coord_grad_diff))
         
-        rel_feat_grad_diff = feat_grad_diff/(tf.abs(tf_feat_grad)+1e-2)
-        rel_coord_grad_diff = coord_grad_diff/(tf.abs(tf_coord_grad)+1e-2)
+        rel_feat_grad_diff = tf.abs(feat_grad_diff)/(tf.abs(tf_feat_grad)+1e-2)
+        rel_coord_grad_diff = tf.abs(coord_grad_diff)/(tf.abs(tf_coord_grad)+1e-2)
         
         
         maxrelfeatgraddiff = tf.reduce_max(rel_feat_grad_diff)
@@ -194,19 +194,21 @@ class Benchmarker(object):
         #print('\nmax relative feature grad diff', maxrelfeatgraddiff)
         #print('max relative coordinate grad diff', maxrelcoordgraddiff)
         
+        
+        if self.debugout:
+            print('custom feature grad ',feat_grad)
+            print('TF feature grad',tf_feat_grad)
+            
+            print('custom coord grad',coord_grad)
+            print('TF coord grad',tf_coord_grad)
+                
         if maxrelfeatgraddiff > 1e-2:
             print('Feature gradient off:')
-            if self.debugout:
-                print('custom ',feat_grad)
-                print('TF ',tf_feat_grad)
             print('max rel diff',maxrelfeatgraddiff)
             print('max diff',maxfeatgraddiff)
             
         if maxrelcoordgraddiff > 1e-2:
             print('Coordinate gradient off:')
-            if self.debugout:
-                print('custom ',coord_grad)
-                print('TF ',tf_coord_grad)
             print('max rel diff',maxrelcoordgraddiff)
             print('max diff',maxcoordgraddiff)
         
@@ -232,6 +234,7 @@ class Benchmarker(object):
         for nv in nvert:
             for nn in nneigh:
                 for nf in nfeat:
+                    print('nv:',nv, 'nf:',nf, 'nn:' ,nn)
                     d,fr,cr,f,c = self.difference(nv,nf,nn, ncoords = 4, onlyForward=False, assert_error=False)
                     diff.append(d)
                     coordgraddiff.append(c)
@@ -245,6 +248,7 @@ class Benchmarker(object):
         relcoordgraddiff = np.reshape(np.array(relcoordgraddiff), [-1])
         relfeatgraddiff = np.reshape(np.array(relfeatgraddiff), [-1])
         
+        print('plotting...')
         plt.close()
         plt.hist(diff)
         plt.xlabel("Output Difference")
@@ -258,11 +262,11 @@ class Benchmarker(object):
         plt.xlabel("Feature Gradient Difference")
         plt.savefig(self.name+addstring+"feat_grad_diff.pdf")
         plt.close()
-        plt.hist(coordgraddiff)
+        plt.hist(relcoordgraddiff)
         plt.xlabel("Relative Coordinate Gradient Difference")
         plt.savefig(self.name+addstring+"rel_coord_grad_diff.pdf")
         plt.close()
-        plt.hist(featgraddiff)
+        plt.hist(relfeatgraddiff)
         plt.xlabel("Relative Feature Gradient Difference")
         plt.savefig(self.name+addstring+"rel_feat_grad_diff.pdf")
         plt.close()

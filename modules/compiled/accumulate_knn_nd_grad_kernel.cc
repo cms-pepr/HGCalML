@@ -166,8 +166,11 @@ struct AccumulateKnnNdGradOpFunctor<CPUDevice, dummy> {
     void operator()(const CPUDevice &d,
 
             const float *d_grad_from_out_features, // sum(V) x Fopout
+            const float *d_grad_from_sum_features,
+
             const float *d_coord, // sum(V) x S
             const float *d_feat, // sum(V) x S
+            const float *d_orig_out_feat,
             const int *d_max_feat_indices, // sum(V) x Fopin
             const int * d_neigh_indices, // sum(V) x N
 
@@ -227,10 +230,13 @@ public:
     void Compute(OpKernelContext *context) override {
 
         const Tensor &t_grad_from_out_features = context->input(0);
-        const Tensor &t_coords = context->input(1);
-        const Tensor &t_feat = context->input(2);
-        const Tensor &t_neigh_indices = context->input(3);
-        const Tensor &t_max_feat_indices = context->input(4);
+        const Tensor &t_grad_from_sum_features = context->input(1);
+        const Tensor &t_coords = context->input(2);
+        const Tensor &t_feat = context->input(3);
+        const Tensor &t_neigh_indices = context->input(4);
+        const Tensor &t_max_feat_indices = context->input(5);
+
+        const Tensor &t_orig_op_outfeat = context->input(6);
 
         int n_in_grad_feat = t_grad_from_out_features.dim_size(1);
 
@@ -238,7 +244,7 @@ public:
 
         int n_neigh = t_neigh_indices.dim_size(1);
         int n_feat = t_feat.dim_size(1);
-        int n_moments = n_feat*2 - n_in_grad_feat;
+        int n_moments = (n_in_grad_feat - n_feat*2) / n_feat ;
         int n_coords = t_coords.dim_size(1);
 
         TensorShape outputShapeCoords;
@@ -262,8 +268,11 @@ public:
                 context->eigen_device<Device>(),
 
                 t_grad_from_out_features.flat<float>().data(),
+                t_grad_from_sum_features.flat<float>().data(),
                 t_coords.flat<float>().data(),
                 t_feat.flat<float>().data(),
+                t_orig_op_outfeat.flat<float>().data(),
+
                 t_max_feat_indices.flat<int>().data(),
                 t_neigh_indices.flat<int>().data(),
 

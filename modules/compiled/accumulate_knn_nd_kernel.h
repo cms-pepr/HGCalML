@@ -19,6 +19,7 @@ struct AccumulateKnnNdOpFunctor {
 
             float *d_out_feat,
             int *d_out_maxidxs,
+            float *d_out_feat_sum,
 
             const int n_vert,
             const int n_neigh,
