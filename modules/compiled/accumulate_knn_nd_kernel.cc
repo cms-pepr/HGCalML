@@ -138,6 +138,7 @@ public:
         Tensor *output_feat_sum_tensor = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(2, outputShape_feat_sum, &output_feat_sum_tensor));
 
+       // std::cout << "calling forward cpu" << std::endl;
 
         AccumulateKnnNdOpFunctor<Device, int>()(
                 context->eigen_device<Device>(),

@@ -179,7 +179,7 @@ void acc_knn_nd_gradkernel_features(
 
     }
 
-    __syncthreads();
+    //__syncthreads();
 
 }
 
@@ -335,7 +335,7 @@ void acc_knn_nd_gradkernel_coordinates(
         atomicAdd( &d_out_grad_coords[I2D(m_v, nu_c, n_coords)], add);
     }
 
-    __syncthreads();
+   // __syncthreads();
 
 }
 
@@ -396,6 +396,7 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
             const int n_moments) {
 
 
+       // printf("gradient\n");
         //Ti1080 has 768 blocks
         //zero out in threads
         dim3 fgridz(n_vert/32+1, n_feat/16+1);

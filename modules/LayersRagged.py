@@ -321,6 +321,7 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
                  n_dimensions: int,
                  n_filters,
                  n_propagate: int, 
+                 n_moments: int,
                  **kwargs):
         super(FusedRaggedGravNet, self).__init__(**kwargs)
 
@@ -333,21 +334,18 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
             n_filters=[n_filters]
         self.n_filters = n_filters
         self.n_propagate = n_propagate
+        
+        self.n_moments = n_moments
 
         with tf.name_scope(self.name+"/1/"):
             self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
 
-        self.input_spatial_transform=[]
-        for i in range(1):
-            with tf.name_scope(self.name + "/"+str(i+2)+"/"):
-                if not i:
-                    self.input_spatial_transform.append(tf.keras.layers.Dense(n_dimensions))
-                else:
-                    self.input_spatial_transform.append(tf.keras.layers.Dense(n_dimensions,activation='tanh'))
+        with tf.name_scope(self.name + "/2/"):
+            self.input_spatial_transform=tf.keras.layers.Dense(n_dimensions)
 
         self.output_feature_transform=[]
         for i in range(len(self.n_filters)):
-            with tf.name_scope(self.name+"/"+str(i+len(self.n_filters)+2)+"/"):
+            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
                 self.output_feature_transform.append(tf.keras.layers.Dense(self.n_filters[i], activation='elu'))
 
     def build(self, input_shapes):
@@ -357,19 +355,18 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
             self.input_feature_transform.build(input_shape)
 
 
-        for i in range(1):
-            with tf.name_scope(self.name + "/"+str(i+2)+"/"):
-                self.input_spatial_transform[i].build(input_shape)
+        with tf.name_scope(self.name + "/2/"):
+            self.input_spatial_transform.build(input_shape)
 
         for i in range(len(self.n_filters)):
-            with tf.name_scope(self.name+"/"+str(i+len(self.n_filters)+2)+"/"):
+            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
                 n_feat = 0
                 if not i:
                     n_feat = self.input_feature_transform.units 
                 else:
                     n_feat = self.output_feature_transform[i-1].units
-                n_feat = n_feat * 2 * self.input_spatial_transform[0].units
-                n_nodes = n_feat + input_shape[1]
+                n_feat_knnout = n_feat * self.input_spatial_transform.units * (2 + self.n_moments)
+                n_nodes = n_feat_knnout + input_shape[1] + n_feat #(last one is sum feat)
                 self.output_feature_transform[i].build((input_shape[0],
                                              n_nodes))
         
@@ -384,22 +381,23 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
         x = inputs[0]
         row_splits = inputs[1]
 
-        coordinates = self.input_spatial_transform[0](x)
-        out_coords=[coordinates]
+        coordinates = self.input_spatial_transform(x)
         features = self.input_feature_transform(x)
         
         indices  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=.8, tf_compatible=False) 
+        
+        
         #contribution beyond .8 < 2 per mille for standard exp decay (factor 10 for GravNet)
         
         #message passing, this actually could also work if the coordinates are allowed to be transformed...
         for i in range(len(self.output_feature_transform)):
-            features,_ = AccumulateKnnNd(coordinates,  features, indices)
-            nfeat = self.input_feature_transform.units * 2 * self.input_spatial_transform[0].units
+            features,_,sumfeat = AccumulateKnnNd(coordinates,  features, indices, n_moments=self.n_moments)
+            nfeat = self.input_feature_transform.units * self.input_spatial_transform.units * (2 + self.n_moments)
             if i:
-                nfeat = self.output_feature_transform[i-1].units * 2 * self.input_spatial_transform[0].units
+                nfeat = self.output_feature_transform[i-1].units * self.input_spatial_transform.units * (2 + self.n_moments)
             features = tf.reshape(features, [-1,nfeat])
-            features = tf.concat([x, features], axis=-1)
+            features = tf.concat([x, features, sumfeat], axis=-1)
             features = self.output_feature_transform[i](features)
         
         #t2 = time.time() - t1
@@ -409,14 +407,15 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
 
     def compute_output_shape(self, input_shapes):
         input_shape = input_shapes[0]
-        return (self.output_feature_transform[-1].units[-1],), [ (self.input_spatial_transform[0].units, ) for i in self.input_spatial_transform]
+        return (self.output_feature_transform[-1].units[-1],),  (self.input_spatial_transform.units, ) 
     
 
     def get_config(self):
         config = {'n_neighbours': self.n_neighbours,
                   'n_dimensions': self.n_dimensions,
                   'n_filters': self.n_filters,
-                  'n_propagate': self.n_propagate,}
+                  'n_propagate': self.n_propagate,
+                  'n_moments': self.n_moments}
         base_config = super(FusedRaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 

@@ -13,6 +13,8 @@ _accknn_op = tf.load_op_library('accumulate_knn.so')
 _accknn_grad_op = tf.load_op_library('accumulate_knn_grad.so')
 
 def AccumulateKnn(coords,  features, indices, n_moments):
+    if n_moments > 3 or n_moments<0:
+        raise ValueError("AccumulateKnn: n_moments must be between 0 and 3 (including)")
     return _accknn_op.AccumulateKnn(n_moments=n_moments, coords=coords,  features=features, indices=indices)
 
 
@@ -48,6 +50,8 @@ _accknn_nd_op = tf.load_op_library('accumulate_knn_nd.so')
 _accknn_nd_grad_op = tf.load_op_library('accumulate_knn_nd_grad.so')
 
 def AccumulateKnnNd(coords,  features, indices, n_moments=0):
+    if n_moments > 3 or n_moments<0:
+        raise ValueError("AccumulateKnnNd: n_moments must be between 0 and 3 (including)")
     return _accknn_nd_op.AccumulateKnnNd(n_moments=n_moments, coords=coords,  features=features, indices=indices)
 
 

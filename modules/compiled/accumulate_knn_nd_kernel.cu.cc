@@ -50,6 +50,8 @@ void acc_knn_nd_featsum_kernel(
         m_featsum += vnf;
 
     }
+    if(!m_featsum)
+        m_featsum = 1e-2;
 
     d_out_feat_sum[I2D(i_v,i_f,n_feat)] = m_featsum;
 
@@ -112,6 +114,7 @@ void acc_knn_nd_kernel(const float *d_coord,
     float m_mean = 0;
 
     for(size_t i_n=0;i_n<n_neigh;i_n++){
+        __syncthreads();
         int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
         if(nidx<0) continue; //parallel for all coords and feats.
 
@@ -128,7 +131,6 @@ void acc_knn_nd_kernel(const float *d_coord,
 
         m_mean += vnf * dist;
 
-        __syncthreads();
     }
 
     t_mean /= (float)n_neigh;
@@ -140,7 +142,6 @@ void acc_knn_nd_kernel(const float *d_coord,
 
     if(! n_moments)
         return;
-
     float featsum = d_out_feat_sum[I2D(i_v,i_f,n_feat)];
 
     if(!featsum) //arrays are zero initialized
@@ -156,6 +157,7 @@ void acc_knn_nd_kernel(const float *d_coord,
     float m_skew = 0;
 
     for(size_t i_n=0;i_n<n_neigh;i_n++){
+        __syncthreads();
         int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
         if(nidx<0) continue; //parallel for all coords and feats.
 
@@ -166,7 +168,6 @@ void acc_knn_nd_kernel(const float *d_coord,
         m_var += vnf * dist*dist;
         m_skew += vnf * dist*dist*dist;
 
-        __syncthreads();
     }
 
     m_var /= featsum;
@@ -207,6 +208,7 @@ struct AccumulateKnnNdOpFunctor<GPUDevice, dummy> {
 
             const int n_moments) {
 
+       // printf("forward\n");
        // int gridsize=56;
       //  int blocksize=768;
       //  int numSMs = d.getNumCudaMultiProcessors();
@@ -223,12 +225,14 @@ struct AccumulateKnnNdOpFunctor<GPUDevice, dummy> {
                 n_neigh,
                 n_feat);
 
+        cudaDeviceSynchronize();
         //for GTX1080, also make some opt for V100
         dim3 numblocks(n_vert/32+1, n_feat/4+1, n_coords/4+1);
         dim3 threadsperblock(32,4,4);//32,4,4
         //just some default optimisation for now
       //  cudaOccupancyMaxPotentialBlockSize(&gridsize,&blocksize,acc_knn_nd_kernel);
 
+      //  printf("forward rest\n");
      //   std::cout << "opt grid" << gridsize << " opt block " << blocksize << " numSM " << numSMs << std::endl;
 
         acc_knn_nd_kernel<<<numblocks, threadsperblock, 0, d.stream()>>>(d_coord,d_feat,d_idxs,d_out_feat,d_out_maxidxs,d_out_feat_sum,

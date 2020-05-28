@@ -264,6 +264,7 @@ public:
         Tensor *t_out_grad_features = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, outputShapeFeat, &t_out_grad_features));
 
+      //  std::cout << "calling gradient cpu" << std::endl;
 
         AccumulateKnnNdGradOpFunctor<Device, int>()(
 
