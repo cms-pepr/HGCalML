@@ -171,6 +171,7 @@ struct AccumulateKnnNdGradOpFunctor<CPUDevice, dummy> {
             const float *d_coord, // sum(V) x S
             const float *d_feat, // sum(V) x S
             const float *d_orig_out_feat,
+            const float *d_orig_out_feat_sum,
             const int *d_max_feat_indices, // sum(V) x Fopin
             const int * d_neigh_indices, // sum(V) x N
 
@@ -237,6 +238,7 @@ public:
         const Tensor &t_max_feat_indices = context->input(5);
 
         const Tensor &t_orig_op_outfeat = context->input(6);
+        const Tensor &t_orig_up_out_feat_sum = context->input(7);
 
         int n_in_grad_feat = t_grad_from_out_features.dim_size(1);
 
@@ -272,6 +274,7 @@ public:
                 t_coords.flat<float>().data(),
                 t_feat.flat<float>().data(),
                 t_orig_op_outfeat.flat<float>().data(),
+                t_orig_up_out_feat_sum.flat<float>().data(),
 
                 t_max_feat_indices.flat<int>().data(),
                 t_neigh_indices.flat<int>().data(),

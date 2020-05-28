@@ -12,6 +12,7 @@ REGISTER_OP("AccumulateKnnNdGrad")
     .Input("neigh_indices: int32")
     .Input("max_feat_indices: int32")
     .Input("orig_op_out_feat: float32")
+    .Input("orig_up_out_feat_sum: float32")
     .Output("out_grad_coords: float32")
     .Output("out_grad_features: float32");
     //.Output("grad_indices: int32");

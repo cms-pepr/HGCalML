@@ -16,6 +16,7 @@ struct AccumulateKnnNdGradOpFunctor {
             const float *d_coord, // sum(V) x S
             const float *d_feat, // sum(V) x F
             const float *d_orig_out_feat,
+            const float *d_orig_out_feat_sum,
             const int *d_max_feat_indices,
             const int * d_neigh_indices,
 

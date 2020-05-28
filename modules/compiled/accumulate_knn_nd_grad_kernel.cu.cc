@@ -70,6 +70,7 @@ void acc_knn_nd_gradkernel_features(
         const float *d_coord,
         const float *d_feat, // sum(V) x F
         const float *d_orig_out_feat, // sum(V) x F
+        const float *d_orig_out_feat_sum,
         const int *d_max_feat_indices,
         const int * d_neigh_indices,
         float *d_out_grad_coords,
@@ -98,10 +99,10 @@ void acc_knn_nd_gradkernel_features(
     }
     float gradinuc =d_grad_from_out_features[I3D(i_v, nu_f, i_c, n_grad_from_out_feat, n_coords)];
     float gradinucmax = d_grad_from_out_features[I3D(i_v, nu_f+n_feat, i_c,n_grad_from_out_feat, n_coords)];
-    float gradinucfeatsum = d_grad_from_sum_features[I2D(i_v, nu_f, n_feat)];
+    //float gradinucfeatsum = d_grad_from_sum_features[I2D(i_v, nu_f, n_feat)];
 
 
-    float featsum = 0 ; ///d_orig_out_feat[I3D(i_v, nu_f+n_feat+1, i_c,n_grad_from_out_feat, n_coords)];
+    float featsum = d_orig_out_feat_sum[I2D(i_v, nu_f,n_feat)];
 
     float grad_m_mean = 0;
     float grad_m_var  = 0;
@@ -127,10 +128,12 @@ void acc_knn_nd_gradkernel_features(
     float vic = d_coord[I2D(i_v,i_c,n_coords)];
     size_t max_for_iv = d_max_feat_indices[I3D(i_v,nu_f,i_c,n_feat,n_coords)];
 
+    bool first_self=true;
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
         int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
         if(m_v<0) continue;
+
 
         float vnc = d_coord[I2D(m_v,i_c,n_coords)];
 
@@ -143,17 +146,28 @@ void acc_knn_nd_gradkernel_features(
         //from max
 
         if(m_v ==  max_for_iv){
-            contrib += gradinucmax * weight_imnu;
+            if(m_v == i_v){
+                if(first_self){
+                    first_self=false;
+                    contrib += gradinucmax * weight_imnu;
+                }
+            }
+            else{
+                contrib += gradinucmax * weight_imnu;
+            }
         }
 
         if(n_moments>0 && featsum){
-            if(m_v == i_v)//self-loop
-                contrib -= gradinucfeatsum * 1./featsum * (grad_m_mean*m_mean + grad_m_var*m_var + grad_m_skew*m_skew);
+            //just gradient w.r.t. features. in addition, there is also gradients w.r.t. mean directly
 
+            //gradient w.r.t. 1/sum (gives -delta(m,k)/fsum
+            contrib -=  1./featsum * (grad_m_mean*m_mean);// + grad_m_var*m_var + grad_m_skew*m_skew);
+
+            //grad w.r.t sum gives 1/sum delta(m,k) D^N_ki
             float disttomean = dist_im-m_mean;
             contrib += 1./featsum * dist_im * grad_m_mean;
-            contrib += 1./featsum * disttomean*disttomean * grad_m_var;
-            contrib += 1./featsum * disttomean*disttomean*disttomean * grad_m_skew;
+          //  contrib += 1./featsum * disttomean*disttomean * grad_m_var;
+          //  contrib += 1./featsum * disttomean*disttomean*disttomean * grad_m_skew;
         }
 
         atomicAdd(&d_out_grad_features[I2D(m_v, nu_f, n_feat)], contrib);
@@ -320,6 +334,7 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
             const float *d_coord,
             const float *d_feat, // sum(V) x F
             const float *d_orig_out_feat,
+            const float *d_orig_out_feat_sum,
             const int *d_max_feat_indices,
             const int * d_neigh_indices,
 
@@ -372,6 +387,7 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
                 d_coord,
                 d_feat,
                 d_orig_out_feat,
+                d_orig_out_feat_sum,
                 d_max_feat_indices,
                 d_neigh_indices,
                 d_out_grad_coords,

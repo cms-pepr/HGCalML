@@ -3,7 +3,10 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 
 '''
-Wrap the module
+Indices MUST be unique in each row.
+Only exception are multiple self-references, that can be used as sort of padding.
+Alternatively, the index -1 is skipped (non TF conpatible padding)
+
 '''
 
 _accknn_op = tf.load_op_library('accumulate_knn.so')
@@ -62,6 +65,7 @@ def _AccumulateKnnNdGrad(op, grad, gradmaxidxs, gradfeatsum):
   features  = op.inputs[1]
   max_feat_indices = op.outputs[1]
   orig_op_out_feat = op.outputs[0]
+  feat_sum = op.outputs[2]
   neigh_indices = op.inputs[2]
   
   coord_grad , feat_grad = _accknn_nd_grad_op.AccumulateKnnNdGrad(grad_from_out_features=grad,
@@ -70,7 +74,8 @@ def _AccumulateKnnNdGrad(op, grad, gradmaxidxs, gradfeatsum):
                                                              features=features,
                                                              neigh_indices=neigh_indices,
                                                              max_feat_indices=max_feat_indices,
-                                                             orig_op_out_feat=orig_op_out_feat)
+                                                             orig_op_out_feat=orig_op_out_feat,
+                                                             orig_up_out_feat_sum = feat_sum)
 
   return [coord_grad , feat_grad, None] #no gradient for indices
   
