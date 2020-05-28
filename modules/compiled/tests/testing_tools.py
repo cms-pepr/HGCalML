@@ -184,12 +184,12 @@ class Benchmarker(object):
         maxfeatgraddiff = tf.reduce_max(tf.abs(feat_grad_diff))
         maxcoordgraddiff = tf.reduce_max(tf.abs(coord_grad_diff))
         
-        rel_feat_grad_diff = tf.abs(feat_grad_diff)/(tf.abs(tf_feat_grad)+1e-2)
-        rel_coord_grad_diff = tf.abs(coord_grad_diff)/(tf.abs(tf_coord_grad)+1e-2)
+        rel_feat_grad_diff = (feat_grad_diff)/(tf.abs(tf_feat_grad)+1e-2)
+        rel_coord_grad_diff = coord_grad_diff/(tf.abs(tf_coord_grad)+1e-2)
         
         
-        maxrelfeatgraddiff = tf.reduce_max(rel_feat_grad_diff)
-        maxrelcoordgraddiff = tf.reduce_max(rel_coord_grad_diff)
+        maxrelfeatgraddiff = tf.reduce_max(tf.abs(rel_feat_grad_diff))
+        maxrelcoordgraddiff = tf.reduce_max(tf.abs(rel_coord_grad_diff))
         
         #print('\nmax relative feature grad diff', maxrelfeatgraddiff)
         #print('max relative coordinate grad diff', maxrelcoordgraddiff)
@@ -198,9 +198,11 @@ class Benchmarker(object):
         if self.debugout:
             print('custom feature grad ',feat_grad)
             print('TF feature grad',tf_feat_grad)
+            print('difference',feat_grad-tf_feat_grad)
             
             print('custom coord grad',coord_grad)
             print('TF coord grad',tf_coord_grad)
+            print('Difference',coord_grad-tf_coord_grad)
                 
         if maxrelfeatgraddiff > 1e-2:
             print('Feature gradient off:')
@@ -252,22 +254,27 @@ class Benchmarker(object):
         plt.close()
         plt.hist(diff)
         plt.xlabel("Output Difference")
+        plt.yscale('log')
         plt.savefig(self.name+addstring+"output_diff.pdf")
         plt.close()
         plt.hist(coordgraddiff)
         plt.xlabel("Coordinate Gradient Difference")
+        plt.yscale('log')
         plt.savefig(self.name+addstring+"coord_grad_diff.pdf")
         plt.close()
         plt.hist(featgraddiff)
         plt.xlabel("Feature Gradient Difference")
+        plt.yscale('log')
         plt.savefig(self.name+addstring+"feat_grad_diff.pdf")
         plt.close()
         plt.hist(relcoordgraddiff)
         plt.xlabel("Relative Coordinate Gradient Difference")
+        plt.yscale('log')
         plt.savefig(self.name+addstring+"rel_coord_grad_diff.pdf")
         plt.close()
         plt.hist(relfeatgraddiff)
         plt.xlabel("Relative Feature Gradient Difference")
+        plt.yscale('log')
         plt.savefig(self.name+addstring+"rel_feat_grad_diff.pdf")
         plt.close()
         

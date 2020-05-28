@@ -155,6 +155,28 @@ void acc_knn_nd_kernel(const float *d_coord,
     float m_var = 0;
     float m_skew = 0;
 
+    for(size_t i_n=0;i_n<n_neigh;i_n++){
+        int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+        if(nidx<0) continue; //parallel for all coords and feats.
+
+        float vnf = d_feat[I2D(nidx,i_f,n_feat)];
+        float vnc = d_coord[I2D(nidx,i_c,n_coords)];
+        float dist = (vnc-vic) - m_mean;
+
+        m_var += vnf * dist*dist;
+        m_skew += vnf * dist*dist*dist;
+
+        __syncthreads();
+    }
+
+    m_var /= featsum;
+    m_skew /= featsum;
+
+    d_out_feat[I3D(i_v,i_f+3*n_feat,i_c,n_out_feat,n_coords)] = m_var;
+    if(n_moments>2)
+        d_out_feat[I3D(i_v,i_f+4*n_feat,i_c,n_out_feat,n_coords)] = m_skew;
+
+
 }
 
 

@@ -161,13 +161,17 @@ void acc_knn_nd_gradkernel_features(
             //just gradient w.r.t. features. in addition, there is also gradients w.r.t. mean directly
 
             //gradient w.r.t. 1/sum (gives -delta(m,k)/fsum
-            contrib -=  1./featsum * (grad_m_mean*m_mean);// + grad_m_var*m_var + grad_m_skew*m_skew);
+            contrib -=  1./featsum * (grad_m_mean*m_mean + grad_m_var*m_var + grad_m_skew*m_skew);
 
             //grad w.r.t sum gives 1/sum delta(m,k) D^N_ki
             float disttomean = dist_im-m_mean;
             contrib += 1./featsum * dist_im * grad_m_mean;
-          //  contrib += 1./featsum * disttomean*disttomean * grad_m_var;
-          //  contrib += 1./featsum * disttomean*disttomean*disttomean * grad_m_skew;
+            contrib += 1./featsum * disttomean*disttomean * grad_m_var;
+            contrib += 1./featsum * disttomean*disttomean*disttomean * grad_m_skew;
+
+            //this is an approximation! in principle m_mean has a also dependence on fkb
+            // (the sum that is just calculated here), this however scales with 1/Nfeatures... should be ok for large nfeat
+            // the same approximation is used in tf.nn.moments, relative feat grad diff for reasonable parameter choices is max about 1%
         }
 
         atomicAdd(&d_out_grad_features[I2D(m_v, nu_f, n_feat)], contrib);
@@ -273,6 +277,8 @@ void acc_knn_nd_gradkernel_coordinates(
         }
         if(n_moments && featsum){//otherwise defined as zero anyway, so can be skipped
             self_mom_contrib += grad_m_mean*fbk*ddelta;
+            self_mom_contrib += grad_m_var*fbk*ddelta * 2. * (diknu - m_mean);
+            self_mom_contrib += grad_m_skew*fbk*ddelta * 3. * (diknu - m_mean)* (diknu - m_mean);
         }
     }
 
@@ -313,6 +319,8 @@ void acc_knn_nd_gradkernel_coordinates(
 
             if(n_moments && featsum){//otherwise defined as zero anyway, so can be skipped
                 mom_contrib += grad_m_mean*fbk*ddelta;
+                mom_contrib += grad_m_var*fbk*ddelta * 2. * (diknu - m_mean);
+                mom_contrib += grad_m_skew*fbk*ddelta * 3. * (diknu - m_mean)* (diknu - m_mean);
             }
         }
 

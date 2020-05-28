@@ -38,6 +38,9 @@ def tf_impl(coords,features,indices):
     m_mean = tf.where(tf.expand_dims(featsum, axis=2) ==0, tf.zeros_like(m_mean), m_mean)
     out = tf.concat([out,m_mean],axis=-2)
     #end moments
+    var = tf.reduce_sum(neighbour_feat_uw * (distances_exp - tf.expand_dims(m_mean,axis=1))**2, axis=1) / tf.expand_dims(featsum, axis=2) # V x F x C
+    var = tf.where(tf.expand_dims(featsum, axis=2) ==0, tf.zeros_like(var), var)
+    out = tf.concat([out,var],axis=-2)
     
     out = tf.reshape(out, [out.shape[0], out.shape[1]*out.shape[2] ])
     out = tf.concat([out,featsum],axis=-1)
@@ -46,7 +49,7 @@ def tf_impl(coords,features,indices):
 
 
 def custom_impl(coords, features, indices):
-    out, midx, featsum = AccumulateKnnNd(n_moments=1, coords=coords,  features=features, indices=indices)
+    out, midx, featsum = AccumulateKnnNd(n_moments=2, coords=coords,  features=features, indices=indices)
     #print('midx',midx)
     out = tf.reshape(out, [out.shape[0], out.shape[1]*out.shape[2] ])
     out = tf.concat([out,featsum],axis=-1)
@@ -64,26 +67,26 @@ for i in range(0):
     
 
 bm.debugout=True
-#bm.difference( nvert = 3, nfeat = 1, nneigh = 1, ncoords = 1, onlyForward=False)  
+#bm.difference( nvert = 5, nfeat = 2, nneigh = 2, ncoords = 2, onlyForward=False)  
 bm.debugout=False
 #exit()
 
 v100=True
-vertmulti = 100
-nvert  = [int(i*vertmulti/2+100) for i in range(10)] 
+nvert  = [int(i*100/2+150) for i in range(10)] 
 nneigh = [int(25*i)+25 for i in range(0,4)] 
 nfeat  = [int(32*i)+32 for i in range(0,4)] 
 
 
 bm.run_extended_difference(nvert,nneigh,nfeat)
 
-exit()
+#exit()
 print('checking TF versus custom for performance')
 d_nfeat = 100
 d_nneigh = 100
 d_nvert = 10000
 if v100:
     d_nvert = 25000
+vertmulti = 1000
     
 nvert  = [int(i*4*vertmulti+1000) for i in range(20)] 
 nneigh = [int(25*i)+25 for i in range(0,4)] 
