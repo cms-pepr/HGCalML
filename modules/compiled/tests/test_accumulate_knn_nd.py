@@ -64,7 +64,7 @@ for i in range(0):
     
 
 bm.debugout=True
-#bm.difference( nvert = 3, nfeat = 3, nneigh = 5, ncoords = 4, onlyForward=False)  
+#bm.difference( nvert = 3, nfeat = 1, nneigh = 1, ncoords = 1, onlyForward=False)  
 bm.debugout=False
 #exit()
 
