@@ -28,7 +28,31 @@ def create_feature_dict(feat):
     outdict['recHitTime']    = feat[:,8:9] 
     return outdict
     
-feature_length=9
+
+def create_truth_dict(truth, usetf=False):
+    outdict={}
+    outdict['truthHitAssignementIdx']    =  truth[:,0:1]
+    if usetf:
+        outdict['truthIsNoise']              =  tf.where(truth[:,0:1] < -0.1, 
+                                                     tf.zeros_like(truth[:,0:1])+1, 
+                                                     tf.zeros_like(truth[:,0:1]))
+        
+    else:
+        outdict['truthIsNoise']              =  np.where(truth[:,0:1] < -0.1, 
+                                                     np.zeros_like(truth[:,0:1])+1, 
+                                                     np.zeros_like(truth[:,0:1]))
+    outdict['truthNoNoise'] = 1. - outdict['truthIsNoise']
+    outdict['truthHitAssignedEnergies']  =  truth[:,1:2]
+    outdict['truthHitAssignedEtas']      =  truth[:,8:9]
+    outdict['truthHitAssignedPhis']      =  truth[:,9:10]
+
+    # New
+    outdict['truthRechitsSum']      =  truth[:,16:17]
+    outdict['truthRealEnergy']      =  truth[:,15:16]
+    outdict['truthIsSpectator']      =  truth[:,14:15]
+
+    return outdict
+
 
 
 def create_index_dict(truth, pred, usetf=True):
@@ -84,6 +108,10 @@ def create_index_dict(truth, pred, usetf=True):
 
     return outdict
 
+
+
+
+feature_length=9
 pred_length=6
 
 

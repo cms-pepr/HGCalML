@@ -68,6 +68,7 @@ for i in range(0):
 
 bm.debugout=True
 #bm.difference( nvert = 5, nfeat = 2, nneigh = 2, ncoords = 2, onlyForward=False)  
+#bm.numerical_gradient(nvert = 5, nfeat = 2, nneigh = 2, ncoords = 2)
 bm.debugout=False
 #exit()
 

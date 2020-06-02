@@ -50,8 +50,13 @@ void acc_knn_nd_featsum_kernel(
         m_featsum += vnf;
 
     }
-    if(!m_featsum)
-        m_featsum = 1e-2;
+    const float feat_clip=0.001;
+
+    //smoothen around 0
+    if(m_featsum>0 && m_featsum < feat_clip)
+        m_featsum=feat_clip;
+    if(m_featsum<0 && m_featsum > -feat_clip)
+        m_featsum=-feat_clip;
 
     d_out_feat_sum[I2D(i_v,i_f,n_feat)] = m_featsum;
 
@@ -144,10 +149,9 @@ void acc_knn_nd_kernel(const float *d_coord,
         return;
     float featsum = d_out_feat_sum[I2D(i_v,i_f,n_feat)];
 
-    if(!featsum) //arrays are zero initialized
-        return;
-
     m_mean /= featsum;
+    if(!isfinite(m_mean))
+        m_mean=0;
 
     d_out_feat[I3D(i_v,i_f+2*n_feat,i_c,n_out_feat,n_coords)] = m_mean;
 
@@ -171,7 +175,11 @@ void acc_knn_nd_kernel(const float *d_coord,
     }
 
     m_var /= featsum;
+    if(!isfinite(m_var))
+        m_var=0.1;
     m_skew /= featsum;
+    if(!isfinite(m_skew))
+        m_skew=0;
 
     d_out_feat[I3D(i_v,i_f+3*n_feat,i_c,n_out_feat,n_coords)] = m_var;
     if(n_moments>2)

@@ -73,8 +73,7 @@ def _parametrised_instance_loop(max_instances,
         per_obj_pll = M * payload_loss
         per_obj_beta = M * tf.math.atanh(tf.expand_dims(beta_s,axis=0))**2
         per_obj_pll *= per_obj_beta
-        per_obj_beta_sum = tf.reduce_sum(per_obj_beta, axis=1)
-        per_obj_beta_sum = tf.where(per_obj_beta_sum==0,1e-3,per_obj_beta_sum)
+        per_obj_beta_sum = tf.reduce_sum(per_obj_beta, axis=1) + 1e-6
         per_obj_pll_sum = tf.reduce_sum(per_obj_pll, axis=1)
         full_pll = tf.reduce_sum(per_obj_pll_sum/per_obj_beta_sum, axis=0)
         full_pll /= (Nobj + 1e-3)
@@ -279,7 +278,7 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
         V_att += V_att_segment
         V_rep += V_rep_segment
         
-        payload_loss_full += segment_payload_loss
+        payload_loss_full += tf.where(tf.math.is_nan(segment_payload_loss), 0., segment_payload_loss) 
 
     batch_size = float(batch_size)
     V_att = V_att / (batch_size + 1e-5)

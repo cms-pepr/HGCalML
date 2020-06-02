@@ -321,7 +321,7 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
                  n_dimensions: int,
                  n_filters,
                  n_propagate: int, 
-                 n_moments: int,
+                 n_moments: int = 1,
                  **kwargs):
         super(FusedRaggedGravNet, self).__init__(**kwargs)
 
@@ -338,7 +338,7 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
         self.n_moments = n_moments
 
         with tf.name_scope(self.name+"/1/"):
-            self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
+            self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation='relu')#strict positive
 
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform=tf.keras.layers.Dense(n_dimensions)
@@ -392,11 +392,16 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
         
         #message passing, this actually could also work if the coordinates are allowed to be transformed...
         for i in range(len(self.output_feature_transform)):
+            
+            #print(features[0:2 , :])
             features,_,sumfeat = AccumulateKnnNd(coordinates,  features, indices, n_moments=self.n_moments)
             nfeat = self.input_feature_transform.units * self.input_spatial_transform.units * (2 + self.n_moments)
             if i:
                 nfeat = self.output_feature_transform[i-1].units * self.input_spatial_transform.units * (2 + self.n_moments)
             features = tf.reshape(features, [-1,nfeat])
+            
+            #print(features[0 , 2*self.input_feature_transform.units * self.input_spatial_transform.units:],'\n')
+            
             features = tf.concat([x, features, sumfeat], axis=-1)
             features = self.output_feature_transform[i](features)
         

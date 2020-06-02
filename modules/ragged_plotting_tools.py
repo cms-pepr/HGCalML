@@ -180,7 +180,7 @@ def make_original_truth_shower_plot(plt, ax,
     else:
         rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
     rgbcolor[truthHitAssignementIdx<0]=[0.92,0.92,0.92]
-    
+
     pl.set_data(x = recHitX , y=recHitY   , z=recHitZ, e=recHitEnergy , c =rgbcolor)
     pl.marker_scale=2.
     pl.plot3d(ax=ax)

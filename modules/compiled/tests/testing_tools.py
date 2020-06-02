@@ -100,6 +100,24 @@ class Benchmarker(object):
                     tf_failed=True
             return op_time, tf_time
         
+    def numerical_gradient(self, nvert = 300, nfeat = 64, nneigh = 32, ncoords = 4):
+        
+        coords = tf.constant( np.random.rand(nvert,ncoords) ,dtype='float32')
+        feats  = tf.constant( np.random.rand(nvert,nfeat) ,dtype='float32')
+        row_splits = tf.constant( [0, nvert] ,dtype='int32')
+        
+        indices = SelectKnn(K=nneigh, coords=coords, row_splits=row_splits)
+        
+        def testfun(coords, feats):
+            self.customimpl(coords, feats,indices)
+        
+        theoretical, numerical = tf.test.compute_gradient(testfun, [coords, feats])
+        
+        print(theoretical, numerical)
+
+
+        
+        
     def difference(self, nvert = 300, nfeat = 64, nneigh = 32, ncoords = 4, onlyForward=False, assert_error=True):
         
         coords = tf.constant( np.random.rand(nvert,ncoords) ,dtype='float32')
