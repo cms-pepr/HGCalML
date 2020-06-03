@@ -144,7 +144,9 @@ def makePlot(outfile,
               s=scatter_size,
               c=rgbcolor)
     
-    pl = plotter_3d(output_file=outdir+"/plot", colorscheme=None)
+    pl = plotter_3d(output_file=outdir+"/plot", colorscheme=args.color_scheme)
+    #if args.random_colors:
+    #    pl.set_randomise_colors(True)
     
     pl.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_e , c =rgbcolor)
     pl.marker_scale=1.
@@ -183,6 +185,7 @@ def makePlot(outfile,
     
     
     fig.savefig(outfile+".pdf")
+    fig.savefig(outfile+".png")
     plt.close()
     
     
@@ -207,6 +210,8 @@ parser.add_argument('--movie', help='Also create a movie', action='store_true' ,
 parser.add_argument('--show', help='Also create a movie', action='store_true' , default=False )
 parser.add_argument('-n', help='Event', default='0' )
 parser.add_argument('--default', help='Use default simclusters (not hgctruth merged)', action='store_true' , default=False )
+parser.add_argument('--random_colors', help='Randomly select cluster color', action='store_true')
+parser.add_argument('--color_scheme', help='Matplotlib color scheme for clusters', type=str, default='rainbow')
 args = parser.parse_args()
 
 infile = args.inputFile
@@ -279,6 +284,8 @@ def worker(eventno, show=False):
              make_movie,
              show=show)
     
+    #p.start()
+    #p.join()
     
     makePlot(outdir+"etaphir_"+str(eventno), 
              rechit_e, rechit_eta, rechit_phi, rechit_r,

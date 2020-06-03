@@ -167,7 +167,7 @@ class plotter_3d(base_plotter):
             c = cmap(c)
         #c = size_scaling #/=np.min(c)
         #ax.view_init(30, 130)
-        ax.scatter(xs, ys, zs, c=c, s=self.marker_scale*size_scaling, alpha=0.5)
+        ax.scatter(xs, ys, zs, c=c, s=self.marker_scale*size_scaling, alpha=0.5, cmap=cmap)
         
         if self.interactive:
             plt.show()
@@ -186,6 +186,8 @@ class plotter_fraction_colors(plotter_3d):
         self.noise_color=(0.,0.,0.,.1)
         self.not_gray_interval=0.1
         
+    def set_randomise_colors(self, randomise):
+        self.randomise_colors = True
         
     def set_data(self, x, y, z, e, fractions):
         marker_colors = self.make_simcluster_marker_colours(fractions)
