@@ -183,8 +183,8 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){ //n_rs-1 important!
 
 
-            dim3 numblocks(n_vert/32+1);
-            dim3 threadsperblock(32);
+            dim3 numblocks(n_vert/512+1);
+            dim3 threadsperblock(512);
 
             gpu::select_knn_kernel<<<numblocks, threadsperblock, 0, d.stream() >>>(
                     d_coord,

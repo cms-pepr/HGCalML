@@ -19,8 +19,7 @@ typedef Eigen::GpuDevice GPUDevice;
 namespace functor {
 
 
-float distanceWeight(float distsq){
-    if(!distsq)return 1;
+static inline float distanceWeight(const float& distsq){
     return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
 }
 
@@ -29,7 +28,7 @@ template<typename dummy>
 struct AccumulateKnnOpFunctor<CPUDevice, dummy> {
     void operator()(const CPUDevice &d,
 
-            const float *d_coord,
+            const float *d_distances,
             const float *d_feat,
             const int *d_idxs,
 
@@ -57,16 +56,11 @@ struct AccumulateKnnOpFunctor<CPUDevice, dummy> {
                     int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
                     if(nidx<0) continue;
                     float vnf = d_feat[I2D(nidx,i_f,n_feat)];
-                    float distsq = 0;
-
-                    for(size_t i_c=0;i_c<n_coords;i_c++){
-                        float vic = d_coord[I2D(i_v,i_c,n_coords)];
-                        float vnc = d_coord[I2D(nidx,i_c,n_coords)];
-                        distsq += (vic-vnc)*(vic-vnc);
-                    }
+                    float distsq = d_distances[I2D(i_v,i_n,n_neigh)];
                     float wfeat = vnf * distanceWeight(distsq);
+                    //DEBUGCOUT(wfeat);
                     t_mean += wfeat;
-                    if(wfeat > t_max){
+                    if(wfeat >= t_max || !i_n){
                         max_i_n_gidx = nidx;
                         t_max = wfeat;
                     }

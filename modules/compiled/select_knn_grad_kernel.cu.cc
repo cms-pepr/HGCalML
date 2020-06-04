@@ -182,8 +182,10 @@ struct SelectKnnGradOpFunctor<GPUDevice, dummy> {
 
         //just loop over n_rs, in a realistic setting these shouldn't be more than a handful entries
 
-        dim3 fgridzc(n_vert/32+1, n_coords/4+1);
-        dim3 fblockzc(32,4);
+        dim3 fgridzc(n_vert/128+1, n_coords/4+1);
+        if(n_coords==4)
+            fgridzc.y = 1;
+        dim3 fblockzc(128,4);
 
         gpu::select_knn_grad_selfloop_kernel<<<fgridzc, fblockzc, 0, d.stream()>>>(
                 d_grad_dist,
