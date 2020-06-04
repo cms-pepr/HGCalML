@@ -73,7 +73,7 @@ def _parametrised_instance_loop(max_instances,
         per_obj_pll = M * payload_loss
         per_obj_beta = M * tf.math.atanh(tf.expand_dims(beta_s,axis=0))**2
         per_obj_pll *= per_obj_beta
-        per_obj_beta_sum = tf.reduce_sum(per_obj_beta, axis=1) + 1e-6
+        per_obj_beta_sum = tf.reduce_sum(per_obj_beta, axis=1) # + 1e-6
         per_obj_pll_sum = tf.reduce_sum(per_obj_pll, axis=1)
         full_pll = tf.reduce_sum(per_obj_pll_sum/per_obj_beta_sum, axis=0)
         full_pll /= (Nobj + 1e-3)

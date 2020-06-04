@@ -4,7 +4,7 @@ import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from LayersRagged import RaggedConstructTensor, RaggedGravNet, RaggedGlobalExchange, RaggedGravNet_simple
+from LayersRagged import RaggedConstructTensor, RaggedGravNet, RaggedGlobalExchange, FusedRaggedGravNet_simple
 from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -73,7 +73,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
         x = Dense(64, activation='elu')(x)
         x = Dense(64, activation='elu')(x)
         x = BatchNormalization(momentum=0.6)(x)
-        x = RaggedGravNet_simple(n_neighbours=n_neighbours,
+        x = FusedRaggedGravNet_simple(n_neighbours=n_neighbours,
                                  n_dimensions=4,
                                  n_filters=n_filters,
                                  n_propagate=n_propagate,

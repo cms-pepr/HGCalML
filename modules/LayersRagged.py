@@ -4,7 +4,7 @@ from rknn_op import rknn_ragged, rknn_op
 from caloGraphNN import gauss_of_lin
 import uuid
 from select_knn_op import SelectKnn
-from accknn_op import AccumulateKnnNd
+from accknn_op import AccumulateKnn, AccumulateKnnNd
 
 class RaggedConstructTensor(keras.layers.Layer):
     """
@@ -135,10 +135,8 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
             return (self.output_feature_transform[-1].units[-1],)
     
     def compute_neighbours_and_weights(self, coordinates, row_splits):
-        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours), row_splits=row_splits,
-                                                          data=coordinates, add_splits=True)  # [SV, N+1]
-
-        ragged_split_added_indices = ragged_split_added_indices[:, 1:][..., tf.newaxis]  # [SV, N]
+        ragged_split_added_indices,_ = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=1.0, tf_compatible=True)[...,tf.newaxis] 
 
         distance = tf.reduce_sum(
             (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices)) ** 2,
@@ -165,6 +163,23 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
                   'n_propagate': self.n_propagate}
         base_config = super(RaggedGravNet_simple, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+
+class FusedRaggedGravNet_simple(RaggedGravNet_simple):
+    def __init__(self,
+                 **kwargs):
+        super(FusedRaggedGravNet_simple, self).__init__(**kwargs)
+        
+        
+    def compute_neighbours_and_weights(self, coordinates, row_splits):
+        return SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=1.0, tf_compatible=False) 
+        
+
+    def collect_neighbours(self, features, neighbour_indices, weights):
+        f,_ = AccumulateKnn(10.*weights,  features, neighbour_indices, n_moments=0)
+        return f
 
 
 class RaggedGravNet(tf.keras.layers.Layer):
@@ -270,10 +285,9 @@ class RaggedGravNet(tf.keras.layers.Layer):
             return (self.output_feature_transform[-1].units[-1],)
     
     def compute_neighbours_and_weights(self, coordinates, row_splits):
-        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.n_neighbours+1), row_splits=row_splits,
-                                                          data=coordinates, add_splits=True)  # [SV, N+1]
 
-        ragged_split_added_indices = ragged_split_added_indices[:, 1:][..., tf.newaxis]  # [SV, N]
+        ragged_split_added_indices,_  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=-1.0, tf_compatible=True)[...,tf.newaxis] 
 
         simple_distance = (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices))
 
@@ -384,7 +398,7 @@ class FusedRaggedGravNet(tf.keras.layers.Layer):
         coordinates = self.input_spatial_transform(x)
         features = self.input_feature_transform(x)
         
-        indices  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+        indices,_  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=.8, tf_compatible=False) 
         
         

@@ -12,9 +12,14 @@ Alternatively, the index -1 is skipped (non TF conpatible padding)
 _accknn_op = tf.load_op_library('accumulate_knn.so')
 _accknn_grad_op = tf.load_op_library('accumulate_knn_grad.so')
 
-def AccumulateKnn(distances,  features, indices, n_moments):
-    if n_moments > 3 or n_moments<0:
-        raise ValueError("AccumulateKnn: n_moments must be between 0 and 3 (including)")
+def AccumulateKnn(distances,  features, indices, n_moments=0):
+    '''
+    
+    .Output("out_features: float32")
+    .Output("out_max_idxs: int32");
+    '''
+    if n_moments > 0:
+        raise ValueError("AccumulateKnn: n_moments not implemented")
     return _accknn_op.AccumulateKnn(n_moments=n_moments, distances=distances,  features=features, indices=indices)
 
 
