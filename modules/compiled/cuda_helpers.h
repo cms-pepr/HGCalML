@@ -171,7 +171,42 @@ private:
     T iend;
 };
 
+template<class T>
+class _grid_and_block {
+    /*
+     * This can include some hardware resource (SM) checking etc in a future version
+     */
+public:
+
+    _grid_and_block(size_t nx,size_t xb,size_t ny=1,size_t yb=1,size_t nz=1,size_t zb=1){
+        calcGB(nx, xb, gx_, bx_);
+        calcGB(ny, yb, gy_, by_);
+        calcGB(nz, zb, gz_, bz_);
+    }
+
+    dim3 grid()const{
+        return dim3(gx_,gy_,gz_);
+    }
+    dim3 block()const{
+        return dim3(bx_,by_,bz_);
+    }
+
+private:
+    void calcGB(size_t n,size_t b, T& grid, T& block){
+        grid = n/b;
+        block=b;
+        if(n%b)
+            grid+=1;
+    }
+    _grid_and_block():gx_(0),gy_(0),gz_(0),bx_(0),by_(0),bz_(0){}
+    T gx_,gy_,gz_; //replace by T
+    T bx_,by_,bz_;
+};
+
+
+
 typedef _grid_stride_range<size_t> grid_stride_range;
 typedef _grid_stride_range_y<size_t> grid_stride_range_y;
+typedef _grid_and_block<size_t> grid_and_block;
 
 #endif /* HGCALML_MODULES_COMPILED_CUDA_HELPERS_H_ */

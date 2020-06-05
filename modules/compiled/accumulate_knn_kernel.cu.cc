@@ -56,7 +56,9 @@ void acc_knn_kernel(
         __syncthreads();
 
         int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
-        if(nidx<0) continue;
+
+        if(nidx<0) break;
+
         float vnf = d_feat[I2D(nidx,i_f,n_feat)];
         float distsq = d_distances[I2D(i_v,i_n,n_neigh)];
         float wfeat = vnf * distanceWeight(distsq);
@@ -110,14 +112,15 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
         //just simple 1 thread per vertex
 
         //for GTX1080, also make some opt for V100
-        dim3 grid(n_vert/64+1,n_feat/8+1);
-        dim3 block(64,8);
+
+        grid_and_block par(n_vert, 64, n_feat, 8);
+
         //just some default optimisation for now
       //  cudaOccupancyMaxPotentialBlockSize(&gridsize,&blocksize,acc_knn_kernel);
 
      //   std::cout << "opt grid" << gridsize << " opt block " << blocksize << " numSM " << numSMs << std::endl;
 
-        acc_knn_kernel<<<grid, block, 0, d.stream()>>>(
+        acc_knn_kernel<<<par.grid(), par.block(), 0, d.stream()>>>(
                 d_distances,
                 d_feat,
                 d_idxs,

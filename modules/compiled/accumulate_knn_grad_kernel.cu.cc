@@ -68,7 +68,8 @@ static void calc_feature_gradients(
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
         int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
-        if(m_v<0) continue;
+
+        if(m_v<0) break;
 
         const float distsq_im = d_distances[I2D(i_v,i_i_n,n_neigh)];
 
@@ -121,8 +122,10 @@ static void calc_distance_gradients(
         return;
 
     int l_g = d_neigh_indices[I2D(m,l,n_neigh)];
-    if(l_g  < 0 )
+    if(l_g  < 0 ){
+        d_out_grad_distances[I2D(m,l,n_neigh)] = 0;
         return;
+    }
 
     float mean_contrib=0;
     float max_contrib=0;
@@ -184,14 +187,13 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
             int n_moments) {
 
 
-        //less vertex parallelisation -> less atomic blocks
-        dim3 fgrid(n_vert/16+1, n_feat/32 +1);
-        dim3 fblock(16,32);
-        set_feature_grad_zero<<<fgrid, fblock, 0,  d.stream()>>>(d_out_grad_features, n_vert, n_feat);
+        grid_and_block feat_par(n_vert, 16, n_feat, 32);
+
+        set_feature_grad_zero<<<feat_par.grid(), feat_par.block(), 0,  d.stream()>>>(d_out_grad_features, n_vert, n_feat);
 
         cudaDeviceSynchronize();
 
-        calc_feature_gradients<<<fgrid, fblock, 0,  d.stream()>>>(
+        calc_feature_gradients<<<feat_par.grid(), feat_par.block(), 0,  d.stream()>>>(
                 d_grad_from_out_features,
                 d_max_feat_indices,
                 d_neigh_indices,
@@ -208,10 +210,10 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
         cudaDeviceSynchronize();
 
 
-        dim3 cgrid(n_vert/128+1, n_neigh/4+1);                          //
-        dim3 cblock(128,4);
+        grid_and_block neigh_par(n_vert, 128, n_neigh, 4);
 
-        calc_distance_gradients<<<cgrid, cblock, 0,  d.stream()>>>(
+
+        calc_distance_gradients<<<neigh_par.grid(), neigh_par.block(), 0,  d.stream()>>>(
                 d_grad_from_out_features,
                 d_max_feat_indices,
                 d_neigh_indices,

@@ -52,9 +52,9 @@ nfeat  = [int(32*i)+32 for i in range(0,4)]
 
 
 
-#bm.run_extended_difference(nvert,nneigh,nfeat)
+bm.run_extended_difference(nvert,nneigh,nfeat)
 
-#exit()
+exit()
 v100=True
 vertmulti = 1000
 if v100:

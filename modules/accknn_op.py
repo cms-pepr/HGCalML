@@ -17,6 +17,11 @@ def AccumulateKnn(distances,  features, indices, n_moments=0):
     
     .Output("out_features: float32")
     .Output("out_max_idxs: int32");
+    
+    
+    Assumes that neighbour indices can be padded with -1, but not mixed, e.g. [1,4,-1,2] needs to be [1,4,2,-1]
+    Other than the padding, the indices must be unique
+    
     '''
     if n_moments > 0:
         raise ValueError("AccumulateKnn: n_moments not implemented")

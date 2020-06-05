@@ -63,7 +63,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     feat = []
     for i in range(n_gravnet_layers):
         n_filters = 128
-        n_propagate = 64
+        n_propagate = 96
         n_neighbours = 200
         if i % 2:
             n_neighbours = 40
@@ -112,19 +112,21 @@ from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 # train.setCustomOptimizer(optimizer)
 
 # train.setDJCKerasModel(simple_model)
-train.setModel(gravnet_model)  # ser_simple_model)
-# train.keras_model.dynamic=True
-train.compileModel(learningrate=1e-4,
-                   loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits])
-####### do not use metrics here - keras problem in TF 2.2rc0
 
+if not train.modelSet():
+    train.setModel(gravnet_model)  # ser_simple_model)
+    # train.keras_model.dynamic=True
+    train.compileModel(learningrate=1e-4,
+                       loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits])
+    ####### do not use metrics here - keras problem in TF 2.2rc0
+    
 
 
 
 
 from betaLosses import config as loss_config
 
-loss_config.energy_loss_weight = 0.
+loss_config.energy_loss_weight = 0.0001
 loss_config.use_energy_weights = False
 loss_config.q_min = 0.5
 loss_config.no_beta_norm = False

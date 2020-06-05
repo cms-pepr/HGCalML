@@ -54,7 +54,9 @@ struct AccumulateKnnOpFunctor<CPUDevice, dummy> {
 
                 for(size_t i_n=0;i_n<n_neigh;i_n++){
                     int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
-                    if(nidx<0) continue;
+
+                    if(nidx<0) break;
+
                     float vnf = d_feat[I2D(nidx,i_f,n_feat)];
                     float distsq = d_distances[I2D(i_v,i_n,n_neigh)];
                     float wfeat = vnf * distanceWeight(distsq);
