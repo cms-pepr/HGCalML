@@ -72,8 +72,6 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         self.n_filters = n_filters
         self.n_propagate = n_propagate
 
-        self.return_indices = False
-
         with tf.name_scope(self.name+"/1/"):
             self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
 
@@ -121,22 +119,18 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
             collected_neighbours = self.collect_neighbours(features, neighbour_indices, weights)
             features = tf.concat([x, collected_neighbours], axis=-1)
             features = t(features)
-        if self.return_indices:
-            shapes = self.compute_output_shape(inputs)
-            return features, tf.reshape(neighbour_indices,(-1,)+shapes[1])
-        else:
-            return features
+
+        return features
 
     def compute_output_shape(self, input_shapes):
         input_shape = input_shapes[0]
-        if self.return_indices:
-            return (self.output_feature_transform[-1].units,), (self.n_neighbours-1,1)
-        else:
-            return (self.output_feature_transform[-1].units[-1],)
+        return (self.output_feature_transform[-1].units[-1],)
     
     def compute_neighbours_and_weights(self, coordinates, row_splits):
         ragged_split_added_indices,_ = SelectKnn(self.n_neighbours, coordinates,  row_splits,
-                             max_radius=1.0, tf_compatible=True)[...,tf.newaxis] 
+                             max_radius=1.0, tf_compatible=True)
+        
+        ragged_split_added_indices=ragged_split_added_indices[...,tf.newaxis] 
 
         distance = tf.reduce_sum(
             (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices)) ** 2,
@@ -181,262 +175,78 @@ class FusedRaggedGravNet_simple(RaggedGravNet_simple):
         f,_ = AccumulateKnn(10.*weights,  features, neighbour_indices, n_moments=0)
         return f
 
-
-class RaggedGravNet(tf.keras.layers.Layer):
+class FusedRaggedGravNet(FusedRaggedGravNet_simple):
+    '''
+    Also returns coordinates and has more distance modifiers
+    n_modifiers=0 is the same as the simple implementation
+    '''
     def __init__(self,
-                 n_neighbours: int,
-                 n_dimensions: int,
-                 n_filters,
-                 n_propagate: int, 
-                 return_indices = False,
-                 return_idx_and_space = False,
-                 calculate_moments = False,
-                 **kwargs):
-        super(RaggedGravNet, self).__init__(**kwargs)
-
-        assert n_neighbours > 1
-
-        self.n_neighbours = n_neighbours
-        self.n_dimensions = n_dimensions
-        self.calculate_moments = calculate_moments
-        
-        if not isinstance(n_filters, list):
-            n_filters=[n_filters]
-        
-        self.n_filters = n_filters
-        self.n_propagate = n_propagate
-
-        self.return_indices = return_indices
-        self.return_idx_and_space = return_idx_and_space
-        if return_idx_and_space:
-            self.return_indices = True
-
-        with tf.name_scope(self.name+"/1/"):
-            self.input_feature_transform = tf.keras.layers.Dense(n_propagate)
-
-        with tf.name_scope(self.name+"/2/"):
-            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
-
-        self.output_feature_transform=[]
-        for i in range(len(self.n_filters)):
-            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
-                self.output_feature_transform.append(tf.keras.layers.Dense(self.n_filters[i], activation='tanh'))
-
-    def build(self, input_shapes):
-        input_shape = input_shapes[0]
-
-        with tf.name_scope(self.name+"/1/"):
-            self.input_feature_transform.build(input_shape)
-
-        with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform.build(input_shape)
-
-        for i in range(len(self.n_filters)):
-            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
-                n_feat = 0
-                if not i:
-                    n_feat = self.input_feature_transform.units 
-                else:
-                    n_feat = self.output_feature_transform[i-1].units
-                if self.calculate_moments:
-                    n_feat = n_feat*2 + n_feat* 3
-                else:
-                    n_feat = n_feat * 2
-                n_nodes = n_feat + input_shape[1]
-                self.output_feature_transform[i].build((input_shape[0],
-                                             n_nodes))
-
-        
-
-        super(RaggedGravNet, self).build(input_shape)
-
-    def call(self, inputs):
-        x = inputs[0]
-        row_splits = inputs[1]
-
-        coordinates = self.input_spatial_transform(x)
-        in_features = self.input_feature_transform(x)
-        features = in_features
-        neighbour_indices, weights, distances = self.compute_neighbours_and_weights(coordinates, row_splits)
-
-        orig_neighbours = None
-        for t in self.output_feature_transform:
-            collected_neighbours = self.collect_neighbours(features, neighbour_indices, weights,distances)
-            features = tf.concat([x, collected_neighbours], axis=-1)
-            features = t(features)
-            
-        if self.return_indices:
-            shapes = self.compute_output_shape(inputs)
-            if self.return_idx_and_space:
-                return features, tf.reshape(neighbour_indices,(-1,)+shapes[1]), coordinates
-            else:
-                return features, tf.reshape(neighbour_indices,(-1,)+shapes[1])
-        else:
-            return features
-
-    def compute_output_shape(self, input_shapes):
-        input_shape = input_shapes[0]
-        if self.return_indices:
-            if self.return_idx_and_space:
-                return (self.output_feature_transform[-1].units,), (self.n_neighbours,1), (self.n_dimensions,)
-            else:
-                return (self.output_feature_transform[-1].units,), (self.n_neighbours,1)
-        else:
-            return (self.output_feature_transform[-1].units[-1],)
-    
-    def compute_neighbours_and_weights(self, coordinates, row_splits):
-
-        ragged_split_added_indices,_  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
-                             max_radius=-1.0, tf_compatible=True)[...,tf.newaxis] 
-
-        simple_distance = (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices))
-
-        rot_distance = tf.reduce_sum(
-             simple_distance** 2,
-             axis=-1)  # [SV, N]
-
-        weights = gauss_of_lin(rot_distance * 10.+1e-5)
-        weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
-        return ragged_split_added_indices,weights, simple_distance
-        
-
-    def collect_neighbours(self, features, neighbour_indices, weights, distances):
- 
- 
-        neighbour_features = tf.gather_nd(features, neighbour_indices) # sum(V) x N x F
-        weighted_neighbour_features = neighbour_features * weights
-        neighbours_max = tf.reduce_max(weighted_neighbour_features, axis=1)
-        neighbours_mean = tf.reduce_mean(weighted_neighbour_features, axis=1)
-        all = [neighbours_max, neighbours_mean]
-        
-        if self.calculate_moments:
-            # sum(V) x N x F
-            _, w_feat = tf.nn.moments(weighted_neighbour_features, axes = 1)
-            nw_mean, nw_var = tf.nn.moments(neighbour_features, axes = 1)
-            all += [w_feat, nw_mean, nw_var]
-                    
-        return tf.concat(all, axis=-1)
-
-    def get_config(self):
-        config = {'n_neighbours': self.n_neighbours,
-                  'n_dimensions': self.n_dimensions,
-                  'n_filters': self.n_filters,
-                  'n_propagate': self.n_propagate,
-                  'return_indices': self.return_indices,
-                  'return_idx_and_space': self.return_idx_and_space,
-                  'calculate_moments':self.calculate_moments}
-        base_config = super(RaggedGravNet, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-
-class FusedRaggedGravNet(tf.keras.layers.Layer):
-    def __init__(self,
-                 n_neighbours: int,
-                 n_dimensions: int,
-                 n_filters,
-                 n_propagate: int, 
-                 n_moments: int = 1,
+                 n_modifiers=0,
                  **kwargs):
         super(FusedRaggedGravNet, self).__init__(**kwargs)
-
-        assert n_neighbours > 1
-
-        self.n_neighbours = n_neighbours
-        self.n_dimensions = n_dimensions
-    
-        if not isinstance(n_filters, list):
-            n_filters=[n_filters]
-        self.n_filters = n_filters
-        self.n_propagate = n_propagate
         
-        self.n_moments = n_moments
-
-        with tf.name_scope(self.name+"/1/"):
-            self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation='relu')#strict positive
-
-        with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform=tf.keras.layers.Dense(n_dimensions)
-
-        self.output_feature_transform=[]
-        for i in range(len(self.n_filters)):
-            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
-                self.output_feature_transform.append(tf.keras.layers.Dense(self.n_filters[i], activation='elu'))
-
-    def build(self, input_shapes):
-        input_shape = input_shapes[0]
-
-        with tf.name_scope(self.name + "/1/"):
-            self.input_feature_transform.build(input_shape)
-
-
-        with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform.build(input_shape)
-
-        for i in range(len(self.n_filters)):
-            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
-                n_feat = 0
-                if not i:
-                    n_feat = self.input_feature_transform.units 
-                else:
-                    n_feat = self.output_feature_transform[i-1].units
-                n_feat_knnout = n_feat * self.input_spatial_transform.units * (2 + self.n_moments)
-                n_nodes = n_feat_knnout + input_shape[1] + n_feat #(last one is sum feat)
-                self.output_feature_transform[i].build((input_shape[0],
-                                             n_nodes))
+        self.n_modifiers=n_modifiers
         
-        super(FusedRaggedGravNet, self).build(input_shape)
-
+        
     def call(self, inputs):
-        
-        #DEBUG
-        #import time
-        #t1 = time.time()
-        
         x = inputs[0]
         row_splits = inputs[1]
 
         coordinates = self.input_spatial_transform(x)
         features = self.input_feature_transform(x)
         
-        indices,_  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
-                             max_radius=.8, tf_compatible=False) 
-        
-        
-        #contribution beyond .8 < 2 per mille for standard exp decay (factor 10 for GravNet)
-        
-        #message passing, this actually could also work if the coordinates are allowed to be transformed...
-        for i in range(len(self.output_feature_transform)):
-            
-            #print(features[0:2 , :])
-            features,_,sumfeat = AccumulateKnnNd(coordinates,  features, indices, n_moments=self.n_moments)
-            nfeat = self.input_feature_transform.units * self.input_spatial_transform.units * (2 + self.n_moments)
-            if i:
-                nfeat = self.output_feature_transform[i-1].units * self.input_spatial_transform.units * (2 + self.n_moments)
-            features = tf.reshape(features, [-1,nfeat])
-            
-            #print(features[0 , 2*self.input_feature_transform.units * self.input_spatial_transform.units:],'\n')
-            
-            features = tf.concat([x, features, sumfeat], axis=-1)
-            features = self.output_feature_transform[i](features)
-        
-        #t2 = time.time() - t1
-        #print('took',t2 ,'for call')
-        
-        return features, coordinates
+        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits)
 
+        for t in self.output_feature_transform:
+            collected_neighbours = self.collect_neighbours(features, neighbour_indices, weights)
+            features = tf.concat([x, collected_neighbours], axis=-1)
+            features = t(features)
+
+        return features, coordinates
+        
+    
     def compute_output_shape(self, input_shapes):
         input_shape = input_shapes[0]
-        return (self.output_feature_transform[-1].units[-1],),  (self.input_spatial_transform.units, ) 
+        return (self.output_feature_transform[-1].units[-1],), (self.n_dimensions, )
     
+    
+    def build(self, input_shapes):
+        input_shape = input_shapes[0]
 
+        with tf.name_scope(self.name+"/1/"):
+            self.input_feature_transform.build(input_shape)
+
+        with tf.name_scope(self.name + "/2/"):
+            self.input_spatial_transform.build(input_shape)
+
+        for i in range(len(self.n_filters)):
+            with tf.name_scope(self.name+"/"+str(i+3)+"/"):
+                n_nodes = 0
+                if not i:
+                    n_nodes = input_shape[1] + self.input_feature_transform.units * 2 * (1 + self.n_modifiers)
+                else:
+                    n_nodes = input_shape[1] + self.output_feature_transform[i-1].units * 2 * (1 + self.n_modifiers)
+                self.output_feature_transform[i].build((input_shape[0],
+                                             n_nodes))
+
+    def collect_neighbours(self, features, neighbour_indices, weights):
+        #zero modifier = simple implementation
+        all = []
+        f,_ = AccumulateKnn(10.*weights,  features, neighbour_indices, n_moments=0)
+        all.append(f)
+        
+        for i in range(self.n_modifiers):
+            modified_distance = 10. * 2**(i+1) * weights
+            f,_ = AccumulateKnn(modified_distance,  features, neighbour_indices, n_moments=0)
+            all.append(f)
+        
+        return tf.concat(all, axis=-1)
+    
     def get_config(self):
-        config = {'n_neighbours': self.n_neighbours,
-                  'n_dimensions': self.n_dimensions,
-                  'n_filters': self.n_filters,
-                  'n_propagate': self.n_propagate,
-                  'n_moments': self.n_moments}
+        config = {'n_modifiers': self.n_modifiers}
         base_config = super(FusedRaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
 
 
 

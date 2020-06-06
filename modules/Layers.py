@@ -10,8 +10,7 @@ global_layers_list['GarNet']=GarNet
 global_layers_list['weighted_sum_layer']=weighted_sum_layer
 
 from LayersRagged import *
-global_layers_list['RaggedGravNet_simple']=RaggedGravNet_simple 
-global_layers_list['RaggedGravNet']=RaggedGravNet
+
 global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 global_layers_list['RaggedConstructTensor']=RaggedConstructTensor
 global_layers_list['GraphShapeFilters']=GraphShapeFilters
@@ -23,6 +22,7 @@ global_layers_list['RaggedNeighborIndices']=RaggedNeighborIndices
 
 
 global_layers_list['FusedRaggedGravNet']=FusedRaggedGravNet
+global_layers_list['FusedRaggedGravNet_simple']=FusedRaggedGravNet_simple
 
 
 
