@@ -2,6 +2,7 @@
 
 import DeepJetCore
 import os
+import sys
 from argparse import ArgumentParser
 from plotting_tools import plotter_3d, movie_maker, plotter_fraction_colors
 from DeepJetCore.TrainData import TrainData
@@ -185,7 +186,8 @@ def makePlot(outfile,
     
     
     fig.savefig(outfile+".pdf")
-    fig.savefig(outfile+".png")
+    if not isetaphi:
+        fig.savefig(outfile+".png")
     plt.close()
     
     
@@ -219,6 +221,8 @@ outdir=args.outputDir+"/"
 nevents=int(args.n)
 make_movie = args.movie
 os.system('mkdir -p '+outdir)
+with open("%s/info.txt" % outdir, "w") as infofile:
+    infofile.write(' '.join(sys.argv))
 treename = "WindowNTupler/tree"
 if args.default:
     treename = "WindowNTuplerDefaultTruth/tree"
