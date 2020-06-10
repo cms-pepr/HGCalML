@@ -35,6 +35,7 @@ struct AccumulateKnnNdOpFunctor<CPUDevice, dummy> {
 
             float *d_out_feat,
             int *d_out_maxidxs,
+            float *d_out_feat_sum,
 
             const int n_vert,
             const int n_neigh,
@@ -58,7 +59,8 @@ struct AccumulateKnnNdOpFunctor<CPUDevice, dummy> {
                     float vic = d_coord[I2D(i_v,i_c,n_coords)]; //buffer?
 
                     for(size_t i_n=0;i_n<n_neigh;i_n++){
-                        size_t nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+                        int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+                        if(nidx<0) continue;
 
                         float vnf = d_feat[I2D(nidx,i_f,n_feat)];
                         float vnc = d_coord[I2D(nidx,i_c,n_coords)];
@@ -111,7 +113,7 @@ public:
         int n_out_feat = 2 * n_feat; //mean and max
 
         // after testing basic functionality!
-        // n_out_feat += n_moments * n_feat * n_coords;
+        n_out_feat += n_moments * n_feat ;
 
 
         TensorShape outputShape;
@@ -130,6 +132,13 @@ public:
         Tensor *output_max_idxs_tensor = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, outputShape_max_idxs, &output_max_idxs_tensor));
 
+        TensorShape outputShape_feat_sum;
+        outputShape_feat_sum.AddDim(n_vert);
+        outputShape_feat_sum.AddDim(n_feat);
+        Tensor *output_feat_sum_tensor = NULL;
+        OP_REQUIRES_OK(context, context->allocate_output(2, outputShape_feat_sum, &output_feat_sum_tensor));
+
+       // std::cout << "calling forward cpu" << std::endl;
 
         AccumulateKnnNdOpFunctor<Device, int>()(
                 context->eigen_device<Device>(),
@@ -138,6 +147,7 @@ public:
                 d_idxs_tensor.flat<int>().data(),
                 output_tensor->flat<float>().data(),
                 output_max_idxs_tensor->flat<int>().data(),
+                output_feat_sum_tensor->flat<float>().data(),
                 n_vert,
                 n_neigh,
                 n_coords,

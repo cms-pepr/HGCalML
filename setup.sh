@@ -17,3 +17,7 @@ cd RaggedKnn && \
 cd $HGCALML/modules
 ln -s $HGCALML/RaggedKnn/ragged_knn_kernel.so
 ln -s $HGCALML/RaggedKnn/python/rknn_op.py
+
+cd compiled
+make -j
+cd $HGCALML

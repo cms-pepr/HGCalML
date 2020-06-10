@@ -46,6 +46,35 @@ int searchLargestDistance(int i_v, float* d_dist, int n_neigh, float& maxdist){
     return maxidx;
 }
 
+__global__
+void set_defaults(
+        int *d_indices,
+        float *d_dist,
+        const bool tf_compat,
+        const int n_vert,
+        const int n_neigh
+){
+    const size_t i_v =  blockIdx.x * blockDim.x + threadIdx.x;
+    if(i_v >= n_vert)
+        return;
+    const size_t n =  blockIdx.y * blockDim.y + threadIdx.y;
+    if(n >= n_neigh)
+        return;
+
+    if(n){
+        if(tf_compat)
+            d_indices[I2D(i_v,n,n_neigh)] = i_v;
+        else
+            d_indices[I2D(i_v,n,n_neigh)] = -1;
+    }
+    else{
+        d_indices[I2D(i_v,n,n_neigh)] = i_v;
+    }
+    d_dist[I2D(i_v,n,n_neigh)] = 0;
+
+
+}
+
 
 __global__
 void select_knn_kernel(
@@ -58,7 +87,9 @@ void select_knn_kernel(
         const int n_neigh,
         const int n_coords,
 
-        const int j_rs) {
+        const int j_rs,
+        const bool tf_compat,
+        const float max_radius) {
 
     //really no buffering at all here
 
@@ -69,7 +100,6 @@ void select_knn_kernel(
     if(i_v >= end_vert || i_v>=n_vert)
         return;//this will be a problem with actual RS
 
-    d_indices[I2D(i_v,0,n_neigh)] = i_v;
 
     //protection against n_vert<n_neigh
     size_t nvert_in_row = end_vert - start_vert;
@@ -77,11 +107,8 @@ void select_knn_kernel(
     //set default to self
     if(nvert_in_row<n_neigh){
         max_neighbours=nvert_in_row;
-        for(size_t n=1;n<n_neigh;n++)
-            d_indices[I2D(i_v,n,n_neigh)] = i_v;
     }
 
-    __syncthreads();
 
     size_t nfilled=1;
     size_t maxidx_local=0;
@@ -92,7 +119,7 @@ void select_knn_kernel(
             continue;
         //fill up
         float distsq = calculateDistance(i_v,j_v,d_coord,n_coords);
-        if(nfilled<max_neighbours){
+        if(nfilled<max_neighbours && (max_radius<=0 || max_radius>=distsq)){
             d_indices[I2D(i_v,nfilled,n_neigh)] = j_v;
             d_dist[I2D(i_v,nfilled,n_neigh)] = distsq;
             if(distsq > maxdistsq){
@@ -102,7 +129,7 @@ void select_knn_kernel(
             nfilled++;
             continue;
         }
-        if(distsq < maxdistsq){
+        if(distsq < maxdistsq){// automatically applies to max radius
             //replace former max
             d_indices[I2D(i_v,maxidx_local,n_neigh)] = j_v;
             d_dist[I2D(i_v,maxidx_local,n_neigh)] = distsq;
@@ -131,7 +158,9 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
             const int n_neigh,
             const int n_coords,
 
-            const int n_rs) {
+            const int n_rs,
+            const bool tf_compat,
+            const float max_radius) {
 
 
         //for too low n, d_indices might need to be initialised with some number the
@@ -139,11 +168,23 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
 
         //just loop over n_rs, in a realistic setting these shouldn't be more than a handful entries
 
+        dim3 pre_numblocks(n_vert/64+1,n_neigh/8+1);
+        dim3 pre_threadsperblock(64,8);
+
+        gpu::set_defaults<<<pre_numblocks,pre_threadsperblock,0,  d.stream() >>>(
+                d_indices,
+                d_dist,
+                tf_compat,
+                n_vert,
+                n_neigh);
+
+        cudaDeviceSynchronize();
+
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){ //n_rs-1 important!
 
 
-            dim3 numblocks(n_vert/32+1);
-            dim3 threadsperblock(32);
+            dim3 numblocks(n_vert/512+1);
+            dim3 threadsperblock(512);
 
             gpu::select_knn_kernel<<<numblocks, threadsperblock, 0, d.stream() >>>(
                     d_coord,
@@ -155,12 +196,13 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
                     n_neigh,
                     n_coords,
 
-                    j_rs);
+                    j_rs,
+                    tf_compat,
+                    max_radius);
 
             cudaDeviceSynchronize();
 
         }
-        cudaDeviceSynchronize();
     }
 
 };

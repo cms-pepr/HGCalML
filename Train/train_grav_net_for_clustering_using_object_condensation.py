@@ -60,7 +60,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     n_filters = 0
     n_gravnet_layers = 5
-    feat = [x_basic]
+    feat = []
     for i in range(n_gravnet_layers):
         n_filters = 128
         n_propagate = 64
@@ -119,9 +119,25 @@ train.compileModel(learningrate=1e-4,
 ####### do not use metrics here - keras problem in TF 2.2rc0
 
 
+
+
+
+from betaLosses import config as loss_config
+
+loss_config.energy_loss_weight = 0.
+loss_config.use_energy_weights = False
+loss_config.q_min = 0.5
+loss_config.no_beta_norm = False
+loss_config.potential_scaling = 1.
+loss_config.s_b = 1.
+loss_config.position_loss_weight=0.001
+
+
+
+
 print(train.keras_model.summary())
 
-nbatch = 15000  # **2 #this will be an upper limit on vertices per batch
+nbatch = 10000  # **2 #this will be an upper limit on vertices per batch
 
 verbosity = 2
 import os

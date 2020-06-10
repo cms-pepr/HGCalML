@@ -6,6 +6,8 @@ using namespace tensorflow;
 
 REGISTER_OP("SelectKnn")
     .Attr("n_neighbours: int")
+    .Attr("tf_compatible: bool")
+    .Attr("max_radius: float")
     .Input("coords: float32")
     .Input("row_splits: int32")
     .Output("indices: int32")

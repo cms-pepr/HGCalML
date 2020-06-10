@@ -29,11 +29,49 @@ float gpu_delta(int k, int m){
     if (k==m) return 1;
     return 0;
 }
+
+
+__global__
+void acc_knn_nd_gradkernel_features_fromsum(
+        const float *d_grad_from_sum_features,
+        const int * d_neigh_indices,
+        float *d_out_grad_features,
+        const int n_vert,
+        const int n_neigh,
+        const int n_feat){
+
+    const size_t i_v  = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t nu_f = blockIdx.y * blockDim.y + threadIdx.y;
+    if(i_v >= n_vert){
+        return;
+    }
+    if(nu_f >= n_feat){
+        return;
+    }
+
+    float gradinucfeatsum = d_grad_from_sum_features[I2D(i_v, nu_f, n_feat)];
+    if(!isfinite(gradinucfeatsum))
+        return;
+    for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
+
+        int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+        if(m_v<0) continue;
+
+        atomicAdd(&d_out_grad_features[I2D(m_v, nu_f, n_feat)], gradinucfeatsum);
+    }
+}
+
+
+
 __global__
 void acc_knn_nd_gradkernel_features(
         const float *d_grad_from_out_features,
+        const float *d_grad_from_sum_features,
+
         const float *d_coord,
         const float *d_feat, // sum(V) x F
+        const float *d_orig_out_feat, // sum(V) x F
+        const float *d_orig_out_feat_sum,
         const int *d_max_feat_indices,
         const int * d_neigh_indices,
         float *d_out_grad_coords,
@@ -60,27 +98,83 @@ void acc_knn_nd_gradkernel_features(
     if(i_c >= n_coords){
         return;
     }
+    float gradinuc =d_grad_from_out_features[I3D(i_v, nu_f, i_c, n_grad_from_out_feat, n_coords)];
+    float gradinucmax = d_grad_from_out_features[I3D(i_v, nu_f+n_feat, i_c,n_grad_from_out_feat, n_coords)];
+    //float gradinucfeatsum = d_grad_from_sum_features[I2D(i_v, nu_f, n_feat)];
 
+
+    float featsum = d_orig_out_feat_sum[I2D(i_v, nu_f,n_feat)];
+
+    float grad_m_mean = 0;
+    float grad_m_var  = 0;
+    float grad_m_skew = 0;
+
+    float m_mean = 0;
+    float m_var  = 0;
+    float m_skew = 0;
+
+    if(n_moments > 0){
+        grad_m_mean = d_grad_from_out_features[I3D(i_v, nu_f+ 2*n_feat, i_c,n_grad_from_out_feat, n_coords)];
+        m_mean = d_orig_out_feat[I3D(i_v, nu_f+2*n_feat, i_c,n_grad_from_out_feat, n_coords)];
+    }
+    if(n_moments > 1){
+        grad_m_var  = d_grad_from_out_features[I3D(i_v, nu_f+ 3*n_feat, i_c,n_grad_from_out_feat, n_coords)];
+        m_var = d_orig_out_feat[I3D(i_v, nu_f+3*n_feat, i_c,n_grad_from_out_feat, n_coords)];
+    }
+    if(n_moments > 2){
+        grad_m_skew = d_grad_from_out_features[I3D(i_v, nu_f+ 4*n_feat, i_c,n_grad_from_out_feat, n_coords)];
+        m_skew = d_orig_out_feat[I3D(i_v, nu_f+4*n_feat, i_c,n_grad_from_out_feat, n_coords)];
+    }
 
     float vic = d_coord[I2D(i_v,i_c,n_coords)];
+    size_t max_for_iv = d_max_feat_indices[I3D(i_v,nu_f,i_c,n_feat,n_coords)];
 
+    bool first_self=true;
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
-        __syncthreads();
-        size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+
+        int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+        if(m_v<0) continue;
+
 
         float vnc = d_coord[I2D(m_v,i_c,n_coords)];
-        float distsq_im = (vic-vnc)*(vic-vnc);
 
-        float weight_imnu = gpu_grad_distanceWeight(distsq_im);
 
-        float contrib = d_grad_from_out_features[I3D(i_v, nu_f, i_c, n_grad_from_out_feat, n_coords)]
-                                                 / (float)n_neigh  * weight_imnu;
-        float maxgrad = d_grad_from_out_features[I3D(i_v, nu_f+n_feat, i_c,n_grad_from_out_feat, n_coords)];
+        float dist_im = (vnc-vic);
+
+        float weight_imnu = gpu_grad_distanceWeight(dist_im*dist_im);
+
+        float contrib = gradinuc / (float)n_neigh  * weight_imnu;
         //from max
-        size_t max_for_iv = d_max_feat_indices[I3D(i_v,nu_f,i_c,n_feat,n_coords)];
 
         if(m_v ==  max_for_iv){
-            contrib += maxgrad * weight_imnu;
+            if(m_v == i_v){
+                if(first_self){
+                    first_self=false;
+                    contrib += gradinucmax * weight_imnu;
+                }
+            }
+            else{
+                contrib += gradinucmax * weight_imnu;
+            }
+        }
+
+        if(n_moments>0 && featsum){
+            //just gradient w.r.t. features. in addition, there is also gradients w.r.t. mean directly
+            float mom_contrib=0;
+            //gradient w.r.t. 1/sum (gives -delta(m,k)/fsum
+            mom_contrib -=  1./featsum * (grad_m_mean*m_mean + grad_m_var*m_var + grad_m_skew*m_skew);
+
+            //grad w.r.t sum gives 1/sum delta(m,k) D^N_ki
+            float disttomean = dist_im-m_mean;
+            mom_contrib += 1./featsum * dist_im * grad_m_mean;
+            mom_contrib += 1./featsum * disttomean*disttomean * grad_m_var;
+            mom_contrib += 1./featsum * disttomean*disttomean*disttomean * grad_m_skew;
+
+            if(isfinite(mom_contrib))
+                contrib+=mom_contrib;
+            //this is an approximation! in principle m_mean has a also dependence on fkb
+            // (the sum that is just calculated here), this however scales with 1/Nfeatures... should be ok for large nfeat
+            // the same approximation is used in tf.nn.moments, relative feat grad diff for reasonable parameter choices is max about 1%
         }
 
         atomicAdd(&d_out_grad_features[I2D(m_v, nu_f, n_feat)], contrib);
@@ -88,14 +182,19 @@ void acc_knn_nd_gradkernel_features(
 
     }
 
-    __syncthreads();
+    //__syncthreads();
 
 }
 
 __global__
-void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
+void acc_knn_nd_gradkernel_coordinates(
+        const float *d_grad_from_out_features,
+        const float *d_grad_from_sum_features,
+
         const float *d_coord,
         const float *d_feat, // sum(V) x F
+        const float *d_orig_out_feat, // sum(V) x F
+        const float *d_orig_out_feat_sum,
         const int *d_max_feat_indices,
         const int * d_neigh_indices,
 
@@ -126,25 +225,93 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
         return;
     }
 
+    float gibnu = d_grad_from_out_features[I3D(i_v, b_f, nu_c, n_grad_from_out_feat,n_coords)];
+    float gilnu = d_grad_from_out_features[I3D(i_v, b_f+n_feat, nu_c, n_grad_from_out_feat,n_coords)];
+    size_t max_for_iv = d_max_feat_indices[I3D(i_v, b_f, nu_c, n_feat,n_coords)];
+    float xinu = d_coord[I2D(i_v,nu_c,n_coords)];
+    float featsum = d_orig_out_feat_sum[I2D(i_v, b_f,n_feat)];
 
-    for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
-        size_t m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+    float grad_m_mean = 0;
+    float grad_m_var  = 0;
+    float grad_m_skew = 0;
 
+    float m_mean = 0;
+  //  float m_var  = 0;
+  //  float m_skew = 0;
+
+    if(n_moments > 0){
+        grad_m_mean = d_grad_from_out_features[I3D(i_v, b_f+ 2*n_feat, nu_c,n_grad_from_out_feat, n_coords)];
+        m_mean = d_orig_out_feat[I3D(i_v, b_f+2*n_feat, nu_c,n_grad_from_out_feat, n_coords)];
+    }
+    if(n_moments > 1){
+        grad_m_var  = d_grad_from_out_features[I3D(i_v, b_f+ 3*n_feat, nu_c,n_grad_from_out_feat, n_coords)];
+      //  m_var = d_orig_out_feat[I3D(i_v, b_f+3*n_feat, nu_c,n_grad_from_out_feat, n_coords)];
+    }
+    if(n_moments > 2){
+        grad_m_skew = d_grad_from_out_features[I3D(i_v, b_f+ 4*n_feat, nu_c,n_grad_from_out_feat, n_coords)];
+     //   m_skew = d_orig_out_feat[I3D(i_v, b_f+4*n_feat, nu_c,n_grad_from_out_feat, n_coords)];
+    }
+
+    float self_mean_contrib = 0;
+    float self_max_contrib = 0;
+
+    float self_mom_contrib = 0;
+
+    for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
+
+        float neigh_mom_contrib=0;
+
+        int k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
+        if(k<0) continue;
+        if(k == i_v)
+            continue;
+
+        float diknu= d_coord[I2D(k,  nu_c,n_coords)] - xinu ;
+        float fbk = d_feat[I2D(k, b_f, n_feat)];
+
+        //get them out of sync here, all memory access done
+
+        float ddelta =  gpu_delta(i_v,k) - gpu_delta(i_v,i_v);
+        if(!ddelta) // m == k (see below)
+            continue;
+        float wiknu = gpu_grad_distanceWeight(diknu*diknu);
+
+        self_mean_contrib +=  wiknu * fbk * diknu * ddelta ;
+        if(k == max_for_iv){//or k ??? also wrong.. something with this index
+            self_max_contrib +=  wiknu * fbk * diknu * ddelta ;
+        }
+        if(n_moments && featsum){//otherwise defined as zero anyway, so can be skipped
+            neigh_mom_contrib += grad_m_mean*fbk*ddelta;
+            neigh_mom_contrib += grad_m_var*fbk*ddelta * 2. * (diknu - m_mean);
+            neigh_mom_contrib += grad_m_skew*fbk*ddelta * 3. * (diknu - m_mean)* (diknu - m_mean);
+        }
+        if(isfinite(neigh_mom_contrib))
+            self_mom_contrib+=neigh_mom_contrib;
+    }
+
+    float add = -2. * gibnu *ACCUMULATE_KNN_EXPONENT/(float) n_neigh *self_mean_contrib
+            - 2 * gilnu *ACCUMULATE_KNN_EXPONENT * self_max_contrib;
+    if(n_moments && featsum){
+        float selffullmomcontr = self_mom_contrib / featsum;
+        if(isfinite(selffullmomcontr))
+            add += selffullmomcontr;
+    }
+    atomicAdd( &d_out_grad_coords[I2D(i_v, nu_c, n_coords)], add);
+
+
+    for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){//can integrate the above loop???
+
+        int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
+        if(m_v<0) continue;
 
         float mean_contrib = 0;
         float maxcontr = 0;
+        float mom_contrib = 0;
 
+        if(m_v != i_v){ // m != i, therefore m must be k
+            size_t k = m_v;
 
-        float gibnu = d_grad_from_out_features[I3D(i_v, b_f, nu_c, n_grad_from_out_feat,n_coords)];
-        float gilnu = d_grad_from_out_features[I3D(i_v, b_f+n_feat, nu_c, n_grad_from_out_feat,n_coords)];
-        size_t max_for_iv = d_max_feat_indices[I3D(i_v, b_f, nu_c, n_feat,n_coords)];
-
-        for(size_t ii_k =0; ii_k< n_neigh ; ii_k++){
-            __syncthreads();
-
-            size_t k = d_neigh_indices[I2D(i_v, ii_k, n_neigh)];
-
-            float diknu= d_coord[I2D(i_v,nu_c,n_coords)] - d_coord[I2D(k,  nu_c,n_coords)];
+            float diknu= d_coord[I2D(k,  nu_c,n_coords)] - xinu ;
             float fbk = d_feat[I2D(k, b_f, n_feat)];
 
             //get them out of sync here, all memory access done
@@ -154,21 +321,34 @@ void acc_knn_nd_gradkernel_coordinates(const float *d_grad_from_out_features,
                 continue;
             float wiknu = gpu_grad_distanceWeight(diknu*diknu);
 
-            mean_contrib += gibnu * wiknu * fbk * diknu * ddelta ;
+            mean_contrib +=  wiknu * fbk * diknu * ddelta ;
             if(k == max_for_iv){//or k ??? also wrong.. something with this index
-                maxcontr += gilnu * wiknu * fbk * diknu * ddelta ;
+                maxcontr +=  wiknu * fbk * diknu * ddelta ;
             }
 
+            if(n_moments && featsum){//otherwise defined as zero anyway, so can be skipped
+                mom_contrib += grad_m_mean*fbk*ddelta;
+                mom_contrib += grad_m_var*fbk*ddelta * 2. * (diknu - m_mean);
+                mom_contrib += grad_m_skew*fbk*ddelta * 3. * (diknu - m_mean)* (diknu - m_mean);
+            }
+            if(!isfinite(mom_contrib))
+                mom_contrib=0;
         }
 
 
-        float add = 2. * ACCUMULATE_KNN_EXPONENT/(float) n_neigh * mean_contrib +
-                2 * ACCUMULATE_KNN_EXPONENT * maxcontr;
+
+        float add = -2. * gibnu *ACCUMULATE_KNN_EXPONENT/(float) n_neigh * mean_contrib
+                - 2 * gilnu *ACCUMULATE_KNN_EXPONENT * maxcontr;
+        if(n_moments && featsum){
+            mom_contrib /= featsum;
+            if(isfinite(mom_contrib))
+                add += mom_contrib;
+        }
         //ATOMIC this is slow.. but better if some are out of sync
         atomicAdd( &d_out_grad_coords[I2D(m_v, nu_c, n_coords)], add);
     }
 
-    __syncthreads();
+   // __syncthreads();
 
 }
 
@@ -209,8 +389,12 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
     void operator()(const GPUDevice& d,
 
             const float *d_grad_from_out_features,
+            const float *d_grad_from_sum_features,
+
             const float *d_coord,
             const float *d_feat, // sum(V) x F
+            const float *d_orig_out_feat,
+            const float *d_orig_out_feat_sum,
             const int *d_max_feat_indices,
             const int * d_neigh_indices,
 
@@ -225,33 +409,47 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
             const int n_moments) {
 
 
+       // printf("gradient\n");
         //Ti1080 has 768 blocks
         //zero out in threads
         dim3 fgridz(n_vert/32+1, n_feat/16+1);
-        dim3 fblockz(32,4);
+        dim3 fblockz(32,16);
 
-        acc_knn_nd_zero_features<<<fgridz,fblockz>>> (d_out_grad_features, n_vert, n_feat);
+        acc_knn_nd_zero_features<<<fgridz,fblockz, 0, d.stream()>>> (d_out_grad_features, n_vert, n_feat);
 
+        cudaDeviceSynchronize();
 
         dim3 fgridzc(n_vert/32+1, n_coords/4+1);
-        dim3 fblockzc(32,2);
+        dim3 fblockzc(32,4);
 
-        acc_knn_nd_zero_coordinates<<<fgridzc , fblockzc>>> (d_out_grad_coords, n_vert, n_coords);
+        acc_knn_nd_zero_coordinates<<<fgridzc , fblockzc, 0, d.stream()>>> (d_out_grad_coords, n_vert, n_coords);
 
 
         cudaDeviceSynchronize();
 
+        acc_knn_nd_gradkernel_features_fromsum<<<dim3(n_vert/32+1,n_feat/16+1) , dim3(32,16), 0, d.stream()>>> (
+                d_grad_from_sum_features,
+                 d_neigh_indices,
+                d_out_grad_features,
+                n_vert,
+                n_neigh,
+                n_feat);
 
-        dim3 fgrid(n_vert/32+1, n_feat/4+1 ,n_coords/4+1);
-        dim3 fblock(32,4,4);
+        cudaDeviceSynchronize();
+
+        dim3 fgrid(n_vert/4+1, n_feat/32+1 ,n_coords/4+1);
+        dim3 fblock(4,32,4);
 
 
 
 
         acc_knn_nd_gradkernel_features<<<fgrid, fblock, 0, d.stream()>>>(
                 d_grad_from_out_features,
+                d_grad_from_sum_features,
                 d_coord,
                 d_feat,
+                d_orig_out_feat,
+                d_orig_out_feat_sum,
                 d_max_feat_indices,
                 d_neigh_indices,
                 d_out_grad_coords,
@@ -267,8 +465,11 @@ struct AccumulateKnnNdGradOpFunctor<GPUDevice, dummy> {
 
         acc_knn_nd_gradkernel_coordinates<<<fgrid, fblock, 0, d.stream()>>>(
                 d_grad_from_out_features,
+                d_grad_from_sum_features,
                 d_coord,
                 d_feat,
+                d_orig_out_feat,
+                d_orig_out_feat_sum,
                 d_max_feat_indices,
                 d_neigh_indices,
                 d_out_grad_coords,

@@ -12,31 +12,49 @@ from testing_tools import Benchmarker
 
 from accknn_op import AccumulateKnn
 
-def custom_impl(coords, features, indices):
-    meanmax, _ = AccumulateKnn(n_moments=0, coords=coords,  features=features, indices=indices)
-    return meanmax
+def custom_impl(distances, features, indices):
+    #print(distances)
+    meanmax, mmidx = AccumulateKnn(n_moments=0, distances=distances,  features=features, indices=indices)
+    #print('mmidx',mmidx)
+    return meanmax#[:,features.shape[1]:] #just mean for now
 
-def tf_impl(coords,features,indices):
-    neighbour_space = tf.gather_nd(coords, indices[...,tf.newaxis])
+def tf_impl(distances,features,indices):
+
     neighbour_feat_uw = tf.gather_nd(features, indices[...,tf.newaxis])
-    no_weight_mean = tf.reduce_mean(neighbour_feat_uw,axis=1)
     
-    distances = tf.reduce_sum((neighbour_space-neighbour_space[:,0:1,:])**2, axis=-1, keepdims=True)
+    #print('minmax indxs',tf.reduce_min(indices), tf.reduce_max(indices))
+    weights = tf.math.exp(-1. * distances)[...,tf.newaxis]
+    #print('weights',weights)
+    #print('maxweight', tf.reduce_max(weights), 'min distance', tf.reduce_min(distances))
     
-    weights = tf.math.exp(-1.*distances)
     neighbour_feat = neighbour_feat_uw * weights
+    #print('neighbour_feat',neighbour_feat)
     mean = tf.reduce_mean(neighbour_feat, axis=1)
     
     max = tf.reduce_max(neighbour_feat, axis=1)
     return tf.concat([mean,max],axis=-1)
 
 
-
+usecpu=False
     
     
-bm = Benchmarker(tf_impl, custom_impl,"GravNet_default")
-bm.difference(nvert = 15, nfeat = 10, nneigh = 4, ncoords = 4)    
+bm = Benchmarker(tf_impl, custom_impl,"GravNet_default", use_distances_direct=True, 
+                 tfoncpu=usecpu, customoncpu=usecpu)
+bm.debugout=True
+bm.difference(nvert = 5, nfeat = 3, nneigh = 2, ncoords = 4)    
+bm.debugout=False
 
+#exit()
+
+nvert  = [int(i*100/2+150) for i in range(5)] 
+nneigh = [int(25*i)+25 for i in range(0,4)] 
+nfeat  = [int(32*i)+32 for i in range(0,4)] 
+
+
+
+bm.run_extended_difference(nvert,nneigh,nfeat)
+
+exit()
 v100=True
 vertmulti = 1000
 if v100:

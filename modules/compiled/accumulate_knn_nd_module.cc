@@ -10,7 +10,8 @@ REGISTER_OP("AccumulateKnnNd")
     .Input("features: float32")
     .Input("indices: int32")
     .Output("out_features: float32")
-    .Output("out_max_idxs: int32");
+    .Output("out_max_idxs: int32")
+    .Output("out_feature_sum: float32");
 
 
 

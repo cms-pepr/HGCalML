@@ -2,7 +2,7 @@
 #ifndef ACCUMULATE_KNN_KERNEL_H
 #define ACCUMULATE_KNN_KERNEL_H
 
-#define ACCUMULATE_KNN_EXPONENT 1
+#define ACCUMULATE_KNN_EXPONENT 1.
 
 namespace tensorflow {
 namespace functor {
@@ -12,7 +12,7 @@ struct AccumulateKnnOpFunctor {
     void operator()(
             const Device &d,
 
-            const float *d_coord,
+            const float *d_distances,
             const float *d_feat,
             const int *d_idxs,
 
