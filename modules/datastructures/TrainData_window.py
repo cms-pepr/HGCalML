@@ -192,7 +192,7 @@ class TrainData_window(TrainData):
             truthHitAssignedDirEta,
             truthHitAssignedDirPhi, #12
             truthHitAssignedDirR,
-            np.logical_not(notSpectators),
+            np.logical_not(notSpectators),#14
             truthHitAssignedEnergies,
             rechitsSum,
         #    truthHitAssignedPIDs    

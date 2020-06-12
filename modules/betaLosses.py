@@ -499,6 +499,7 @@ class _obj_cond_config(object):
         self.potential_scaling = 1.
         self.s_b = 1.
         self.position_loss_weight = 1.
+        self.use_spectators=True
 
 
 config = _obj_cond_config()
@@ -528,8 +529,10 @@ def full_obj_cond_loss(truth, pred, rowsplits):
         energyweights *= 0.
     energyweights += 1.
     
-    energy_diff = (d['predEnergy'] - d['truthHitAssignedEnergies'])
-    energy_loss = energyweights * energy_diff**2/(d['truthHitAssignedEnergies']**2+5)
+    #also using log now, scale back in evaluation
+    scaled_true_energy = tf.math.log(d['truthHitAssignedEnergies']+1.)
+    energy_diff = (d['predEnergy'] - scaled_true_energy) 
+    energy_loss = energyweights * energy_diff**2/(scaled_true_energy**2+tf.math.log(3.+1.))
     
     etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
@@ -549,7 +552,8 @@ def full_obj_cond_loss(truth, pred, rowsplits):
                                                                                              S_B=config.s_b,
                                                                                              energyweights=energyweights[...,0],
                                                                                              no_beta_norm=config.no_beta_norm,
-                                                                                             payload_loss=payload_loss)
+                                                                                             payload_loss=payload_loss,
+                                                                                             ignore_spectators=not config.use_spectators)
     
     attractive_loss *= config.potential_scaling
     rep_loss *= config.potential_scaling

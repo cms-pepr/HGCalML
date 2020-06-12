@@ -59,12 +59,16 @@ for i in range(nbatches):
             feat = create_feature_dict(feat)
             truth = create_truth_dict(truth)
             
+            t_idx = truth['truthHitAssignementIdx']
+            t_idx_nospec = np.where(truth['truthIsSpectator']>0.1, -1, t_idx )
+            #print(truth['truthIsSpectator'])
+            
             for k in range(4):
                 fig = plt.figure(figsize=(10,8))
                 ax = fig.add_subplot(111, projection='3d')
                 cmap = createRandomizedColors('jet',seed=k)
                 make_original_truth_shower_plot(plt, ax,
-                                            truth['truthHitAssignementIdx'],                      
+                                            t_idx,                      
                                             feat['recHitEnergy'], 
                                             feat['recHitX'],
                                             feat['recHitY'],
@@ -73,6 +77,19 @@ for i in range(nbatches):
                 plt.tight_layout()
                 fig.savefig("event_"+str(i)+"_batch_"+str(subbatch)+"_plotit_"+str(k)+".pdf")
                 fig.clear()
+                fig = plt.figure(figsize=(10,8))
+                ax = fig.add_subplot(111, projection='3d')
+                
+                make_original_truth_shower_plot(plt, ax,
+                                            t_idx_nospec,                      
+                                            feat['recHitEnergy'], 
+                                            feat['recHitX'],
+                                            feat['recHitY'],
+                                            feat['recHitZ'],
+                                            cmap=cmap)
+                plt.tight_layout()
+                fig.savefig("event_"+str(i)+"_batch_"+str(subbatch)+"_plotit_"+str(k)+"_nospec.pdf")
+                
                 plt.close(fig)
                 plt.clf()
                 plt.cla()

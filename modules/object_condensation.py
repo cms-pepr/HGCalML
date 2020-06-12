@@ -177,7 +177,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
                                      payload_loss,
                                      Q_MIN=0.1, S_B=1,
                                      energyweights=None,
-                                     no_beta_norm=False):
+                                     no_beta_norm=False,
+                                     ignore_spectators=False):
     """
     ####################################################################################################################
     # Implements OBJECT CONDENSATION for ragged tensors
@@ -211,6 +212,9 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
     beta_values = tf.clip_by_value(beta_values, 0. + 1e-5, 1. - 1e-5)
 
     for b in tf.range(batch_size):
+        
+        #print('segment',b)
+        
         x_s = output_space[row_splits[b]:row_splits[b + 1]]
         classes_s = labels_classes[row_splits[b]:row_splits[b + 1]]
         beta_s = beta_values[row_splits[b]:row_splits[b + 1]]
@@ -225,14 +229,17 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
         #num_vertices = tf.cast(row_splits[b + 1] - row_splits[b], tf.float32)
 
         spectators_s = spectators[row_splits[b]:row_splits[b + 1]]
+        is_not_spectator = spectators_s<0.1
+        if ignore_spectators:
+            is_not_spectator = spectators_s > -1.
 
         # Now filter TODO: Test
-        x_s = x_s[spectators_s==0]
-        classes_s = classes_s[spectators_s==0]
-        beta_s = beta_s[spectators_s==0]
-        payload_loss_seg = payload_loss_seg[spectators_s==0]
+        x_s = x_s[is_not_spectator]
+        classes_s = classes_s[is_not_spectator]
+        beta_s = beta_s[is_not_spectator]
+        payload_loss_seg = payload_loss_seg[is_not_spectator]
         if energyweights is not None:
-            e_weights = e_weights[spectators_s==0]
+            e_weights = e_weights[is_not_spectator]
             
         if len(x_s) == 0:
             print("Warning >>>>NO TRUTH ASSOCIATED VERTICES IN THIS SEGMENT<<<< (just a warning though)")
