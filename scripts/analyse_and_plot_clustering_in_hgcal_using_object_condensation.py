@@ -139,6 +139,7 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     unique_showers_this_segment,unique_showers_indices = np.unique(truth_showers_this_segment, return_index=True)
     truth_energies_this_segment = y_this_segment[:, 1]
     unique_showers_energies = truth_energies_this_segment[unique_showers_indices]
+    unique_showers_eta = y_this_segment[:, 9][unique_showers_indices]
 
     rechit_energies_this_segment = x_this_segment[:, 0]
 
@@ -189,10 +190,12 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     truth_showers_found = {}
     truth_showers_found_e = {}
+    truth_showers_found_eta = {}
     iii = 0
     for x in unique_showers_this_segment:
         truth_showers_found[x] = -1
         truth_showers_found_e[x] = unique_showers_energies[iii]
+        truth_showers_found_eta[x] = unique_showers_eta[iii]
         iii += 1
         results_dict['num_rechits_per_truth_shower'].append(len(truth_showers_this_segment[truth_showers_this_segment == x]))
     results_dict['num_rechits_per_window'] = len(truth_showers_this_segment)
@@ -259,6 +262,7 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     for k,v in truth_showers_found.items():
         results_dict['truth_shower_energies'].append(truth_showers_found_e[k])
+        results_dict['truth_shower_etas'].append(truth_showers_found_eta[k])
 
         if v > -1:
             results_dict['truth_showers_found_or_not'].append(True)

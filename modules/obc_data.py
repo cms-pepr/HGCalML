@@ -10,6 +10,7 @@ def build_dataset_analysis_dict():
     data_dict['distance_threshold'] = -1
 
     data_dict['truth_shower_energies'] = []
+    data_dict['truth_shower_etas'] = []
     data_dict['truth_showers_found_or_not'] = []
 
     data_dict['found_showers_predicted_sum'] = []
@@ -40,6 +41,7 @@ def build_window_analysis_dict():
     data_dict = dict()
 
     data_dict['truth_shower_energies'] = []
+    data_dict['truth_shower_etas'] = []
     data_dict['truth_showers_found_or_not'] = []
 
     data_dict['found_showers_predicted_sum'] = []
@@ -72,6 +74,7 @@ def build_window_analysis_dict():
 def append_window_dict_to_dataset_dict(dataset_dict, window_dict):
 
     dataset_dict['truth_shower_energies'] += window_dict['truth_shower_energies']
+    dataset_dict['truth_shower_etas'] += window_dict['truth_shower_etas']
     dataset_dict['truth_showers_found_or_not'] += window_dict['truth_showers_found_or_not']
 
     dataset_dict['found_showers_predicted_sum'] += window_dict['found_showers_predicted_sum']

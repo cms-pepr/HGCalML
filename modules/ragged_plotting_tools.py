@@ -369,6 +369,42 @@ def make_found_showers_plot_as_function_of_energy(plt, ax, energies, found_or_no
     plt.ylabel('% found')
     plt.title('Function of energy')
 
+
+
+def make_found_showers_plot_as_function_of_pt(plt, ax, energies, eta, found_or_not):
+    pt_bins = [0,10,30,70,100,150,250,700,800,900,1000,1100,1200,1300,1400,1500]
+    pt_bins = np.linspace(0, 800,15)
+    pt_bins = [0,50,100,150,200,250,300,350,400,450,500,600,700,800]
+
+    centers = []
+    mean = []
+    std = []
+
+    energies = np.array(energies)
+    eta = np.array(eta)
+    found_or_not = np.array(found_or_not)
+
+    pt = np.cosh(eta) * energies
+
+    for i in range(len(pt_bins)-1):
+        l = pt_bins[i]
+        h = pt_bins[i+1]
+
+        this_energies = np.argwhere(np.logical_and(pt > l, pt < h))
+
+        filtered_found = found_or_not[this_energies].astype(np.float)
+        m = np.mean(filtered_found)
+        mean.append(m)
+        std.append(np.std(filtered_found))
+        centers.append(l+5)
+
+
+    plt.errorbar(centers, mean, std, linewidth=0.7, marker='o', ls='--', markersize=3, capsize=3)
+    plt.xticks(centers)
+    plt.xlabel('Shower pT')
+    plt.ylabel('% found')
+    plt.title('Function of pT')
+
 def make_real_predicted_number_of_showers_histogram(plt, ax, num_real_showers, num_predicted_showers):
     plt.hist(num_real_showers, bins=np.arange(0,50), histtype='step')
     plt.hist(num_predicted_showers, bins=np.arange(0,70), histtype='step')
@@ -557,6 +593,12 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
 
     fig = plt.figure()
     make_found_showers_plot_as_function_of_energy(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_showers_found_or_not'])
+    pdf.savefig()
+
+
+
+    fig = plt.figure()
+    make_found_showers_plot_as_function_of_pt(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_shower_etas'], dataset_analysis_dict['truth_showers_found_or_not'])
     pdf.savefig()
 
 
