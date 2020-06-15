@@ -320,6 +320,26 @@ def make_truth_predicted_rotational_distance_histogram(plt, ax, rotational_dista
     plt.title('Positional performance')
 
 
+
+def make_truth_predicted_rotational_distance_histogram(plt, ax, eta_predicted, eta_truth, phi_predicted, phi_truth):
+    eta_predicted = np.array(eta_predicted)
+    eta_truth = np.array(eta_truth)
+    phi_predicted = np.array(phi_predicted)
+    phi_truth = np.array(phi_truth)
+
+    rotational_distance_data = np.sqrt((eta_predicted - eta_truth)**2 + (phi_predicted - phi_truth)**2)
+
+    rotational_distance_data = np.array(rotational_distance_data)
+    rotational_distance_data[rotational_distance_data > 0.2] = 0.2
+
+
+    plt.figure()
+    plt.hist(rotational_distance_data, bins=20, histtype='step')
+    plt.xlabel("Rotational distance between true and predicted eta/phi coordinates")
+    plt.ylabel("Frequency")
+    plt.title('Positional performance')
+
+
 def make_found_showers_plot_as_function_of_energy(plt, ax, energies, found_or_not):
     e_bins = [0,10,20,30,40,50,60,70,80,90,100,110,120,130,140,150]
 
@@ -511,15 +531,24 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
 
 
 
-    # fig = plt.figure()
-    # make_response_histograms(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_sum'],
-    #                          dataset_analysis_dict['found_showers_truth_sum'],
-    #                          dataset_analysis_dict['found_showers_predicted_energies'],
-    #                          dataset_analysis_dict['found_showers_target_energies'])
+    fig = plt.figure()
+    make_response_histograms(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_sum'],
+                             dataset_analysis_dict['found_showers_truth_sum'],
+                             dataset_analysis_dict['found_showers_predicted_energies'],
+                             dataset_analysis_dict['found_showers_target_energies'])
+    pdf.savefig()
 
-    # fig = plt.figure()
+    fig = plt.figure()
     # make_truth_predicted_rotational_distance_histogram(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_truth_rotational_difference'])
-    # pdf.savefig()
+    make_truth_predicted_rotational_distance_histogram(
+        plt, fig.axes, dataset_analysis_dict['found_showers_predicted_eta'],
+                       dataset_analysis_dict['found_showers_target_eta'],
+                       dataset_analysis_dict['found_showers_predicted_phi'],
+                       dataset_analysis_dict['found_showers_target_phi'],
+    )
+    pdf.savefig()
+
+
     for vis_dict in dataset_analysis_dict['visualized_segments']:
         visualize_the_segment(plt, vis_dict['truth_showers'], vis_dict['x'], vis_dict['y'],
             vis_dict['prediction_all'], vis_dict['predicted_showers'], vis_dict['coords_representatives'], dataset_analysis_dict['distance_threshold'])
