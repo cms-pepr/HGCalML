@@ -320,6 +320,26 @@ def make_truth_predicted_rotational_distance_histogram(plt, ax, rotational_dista
     plt.title('Positional performance')
 
 
+
+def make_truth_predicted_rotational_distance_histogram(plt, ax, eta_predicted, eta_truth, phi_predicted, phi_truth):
+    eta_predicted = np.array(eta_predicted)
+    eta_truth = np.array(eta_truth)
+    phi_predicted = np.array(phi_predicted)
+    phi_truth = np.array(phi_truth)
+
+    rotational_distance_data = np.sqrt((eta_predicted - eta_truth)**2 + (phi_predicted - phi_truth)**2)
+
+    rotational_distance_data = np.array(rotational_distance_data)
+    rotational_distance_data[rotational_distance_data > 0.2] = 0.2
+
+
+    plt.figure()
+    plt.hist(rotational_distance_data, bins=20, histtype='step')
+    plt.xlabel("Rotational distance between true and predicted eta/phi coordinates")
+    plt.ylabel("Frequency")
+    plt.title('Positional performance')
+
+
 def make_found_showers_plot_as_function_of_energy(plt, ax, energies, found_or_not):
     e_bins = [0,10,20,30,40,50,60,70,80,90,100,110,120,130,140,150]
 
@@ -348,6 +368,42 @@ def make_found_showers_plot_as_function_of_energy(plt, ax, energies, found_or_no
     plt.xlabel('Shower energy')
     plt.ylabel('% found')
     plt.title('Function of energy')
+
+
+
+def make_found_showers_plot_as_function_of_pt(plt, ax, energies, eta, found_or_not):
+    pt_bins = [0,10,30,70,100,150,250,700,800,900,1000,1100,1200,1300,1400,1500]
+    pt_bins = np.linspace(0, 800,15)
+    pt_bins = [0,50,100,150,200,250,300,350,400,450,500,600,700,800]
+
+    centers = []
+    mean = []
+    std = []
+
+    energies = np.array(energies)
+    eta = np.array(eta)
+    found_or_not = np.array(found_or_not)
+
+    pt = np.cosh(eta) * energies
+
+    for i in range(len(pt_bins)-1):
+        l = pt_bins[i]
+        h = pt_bins[i+1]
+
+        this_energies = np.argwhere(np.logical_and(pt > l, pt < h))
+
+        filtered_found = found_or_not[this_energies].astype(np.float)
+        m = np.mean(filtered_found)
+        mean.append(m)
+        std.append(np.std(filtered_found))
+        centers.append(l+5)
+
+
+    plt.errorbar(centers, mean, std, linewidth=0.7, marker='o', ls='--', markersize=3, capsize=3)
+    plt.xticks(centers)
+    plt.xlabel('Shower pT')
+    plt.ylabel('% found')
+    plt.title('Function of pT')
 
 def make_real_predicted_number_of_showers_histogram(plt, ax, num_real_showers, num_predicted_showers):
     plt.hist(num_real_showers, bins=np.arange(0,50), histtype='step')
@@ -511,15 +567,24 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
 
 
 
-    # fig = plt.figure()
-    # make_response_histograms(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_sum'],
-    #                          dataset_analysis_dict['found_showers_truth_sum'],
-    #                          dataset_analysis_dict['found_showers_predicted_energies'],
-    #                          dataset_analysis_dict['found_showers_target_energies'])
+    fig = plt.figure()
+    make_response_histograms(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_sum'],
+                             dataset_analysis_dict['found_showers_truth_sum'],
+                             dataset_analysis_dict['found_showers_predicted_energies'],
+                             dataset_analysis_dict['found_showers_target_energies'])
+    pdf.savefig()
 
-    # fig = plt.figure()
+    fig = plt.figure()
     # make_truth_predicted_rotational_distance_histogram(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_truth_rotational_difference'])
-    # pdf.savefig()
+    make_truth_predicted_rotational_distance_histogram(
+        plt, fig.axes, dataset_analysis_dict['found_showers_predicted_eta'],
+                       dataset_analysis_dict['found_showers_target_eta'],
+                       dataset_analysis_dict['found_showers_predicted_phi'],
+                       dataset_analysis_dict['found_showers_target_phi'],
+    )
+    pdf.savefig()
+
+
     for vis_dict in dataset_analysis_dict['visualized_segments']:
         visualize_the_segment(plt, vis_dict['truth_showers'], vis_dict['x'], vis_dict['y'],
             vis_dict['prediction_all'], vis_dict['predicted_showers'], vis_dict['coords_representatives'], dataset_analysis_dict['distance_threshold'])
@@ -528,6 +593,12 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
 
     fig = plt.figure()
     make_found_showers_plot_as_function_of_energy(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_showers_found_or_not'])
+    pdf.savefig()
+
+
+
+    fig = plt.figure()
+    make_found_showers_plot_as_function_of_pt(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_shower_etas'], dataset_analysis_dict['truth_showers_found_or_not'])
     pdf.savefig()
 
 

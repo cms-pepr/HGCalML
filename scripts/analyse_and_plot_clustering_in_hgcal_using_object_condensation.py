@@ -139,15 +139,40 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     unique_showers_this_segment,unique_showers_indices = np.unique(truth_showers_this_segment, return_index=True)
     truth_energies_this_segment = y_this_segment[:, 1]
     unique_showers_energies = truth_energies_this_segment[unique_showers_indices]
+    unique_showers_eta = y_this_segment[:, 9][unique_showers_indices]
 
     rechit_energies_this_segment = x_this_segment[:, 0]
 
 
+
+
     beta_all = pred_this_segment[:, -6]
+
+
+    energy_regressed_all = pred_this_segment[:, -5]
+    eta_regressed_all = pred_this_segment[:, -4] + x_this_segment[:, 1]
+    phi_regressed_all = pred_this_segment[:, -3] + x_this_segment[:, 2]
+
     is_spectator = beta_all>beta_threshold
 
 
     beta_all_filtered = beta_all[is_spectator==1]
+
+    # print(y_this_segment.shape)
+
+
+    energy_truth_all = y_this_segment[:, 1]
+    eta_truth_all = y_this_segment[:, 8]
+    phi_truth_all = y_this_segment[:, 9]
+
+    energy_regressed_filtered = energy_regressed_all[is_spectator==1]
+    eta_regressed_filtered = eta_regressed_all[is_spectator==1]
+    phi_regressed_filtered = phi_regressed_all[is_spectator==1]
+
+    energy_truth_filtered = energy_truth_all[is_spectator==1]
+    eta_truth_filtered = eta_truth_all[is_spectator==1]
+    phi_truth_filtered = phi_truth_all[is_spectator==1]
+
     y_all_filtered = y_this_segment[is_spectator==1]
     x_filtered = x_this_segment[is_spectator==1]
 
@@ -165,28 +190,37 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     truth_showers_found = {}
     truth_showers_found_e = {}
+    truth_showers_found_eta = {}
     iii = 0
     for x in unique_showers_this_segment:
         truth_showers_found[x] = -1
         truth_showers_found_e[x] = unique_showers_energies[iii]
+        truth_showers_found_eta[x] = unique_showers_eta[iii]
         iii += 1
         results_dict['num_rechits_per_truth_shower'].append(len(truth_showers_this_segment[truth_showers_this_segment == x]))
     results_dict['num_rechits_per_window'] = len(truth_showers_this_segment)
 
 
     predicted_showers_found = {}
+    predicted_showers_representative_index = {}
     for x in unique_labels:
         predicted_showers_found[x] = -1
+        predicted_showers_representative_index[x] = -1
 
     representative_coords = []
     ii_p = 0
     for representative_index in representative_indices:
         # rechit_energies_this_segment[labels_for_all==ii_p]
+        # x = labels[representative_index]
+        # print(ii_p, x)
+
         representative_coords.append(clustering_coords_all_filtered[representative_index])
 
         top_match_index = -1
         top_match_shower = -1
         top_match_value = 0
+        top_sum_truth = 0
+        top_sum_pred = 0
 
         top_match_shower = truth_showers_this_segment[representative_index]
         if truth_showers_found[top_match_shower] != -1:
@@ -197,18 +231,25 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
             if truth_showers_found[unique_showers_this_segment[i]] != -1:
                 continue
 
+            sum_truth = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]))
+            sum_predicted = np.sum(rechit_energies_this_segment * (labels_for_all == ii_p))
             overlap = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == ii_p)) / np.sum(rechit_energies_this_segment * np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == ii_p)))
 
             if overlap > top_match_value:
                 top_match_index == i
                 top_match_shower = unique_showers_this_segment[i]
                 top_match_value = overlap
+                top_sum_truth = sum_truth
+                top_sum_pred = sum_predicted
 
         if top_match_shower != -1:
             truth_showers_found[top_match_shower] = ii_p
             predicted_showers_found[ii_p] = top_match_shower
+            predicted_showers_representative_index[ii_p] = representative_index
+            # print(top_match_value, top_sum_pred, top_sum_truth)
 
         ii_p += 1
+
 
     num_found = 0.
     num_missed = 0.
@@ -221,6 +262,7 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     for k,v in truth_showers_found.items():
         results_dict['truth_shower_energies'].append(truth_showers_found_e[k])
+        results_dict['truth_shower_etas'].append(truth_showers_found_eta[k])
 
         if v > -1:
             results_dict['truth_showers_found_or_not'].append(True)
@@ -232,9 +274,42 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
         num_gt_showers += 1
 
+
+    results_dict['found_showers_predicted_energies'] = []
+    results_dict['found_showers_target_energies'] = []
+    results_dict['found_showers_predicted_sum'] = []
+    results_dict['found_showers_truth_sum'] = []
+    results_dict['found_showers_predicted_phi'] = []
+    results_dict['found_showers_target_phi'] = []
+    results_dict['found_showers_predicted_eta'] = []
+    results_dict['found_showers_target_eta'] = []
+
+
     for k, v in predicted_showers_found.items():
         if v > -1:
-            pass
+            filtered_index_predicted = predicted_showers_representative_index[k]
+            shower_energy_predicted = energy_regressed_filtered[filtered_index_predicted]
+            shower_eta_predicted = eta_regressed_filtered[filtered_index_predicted]
+            shower_phi_predicted = phi_regressed_filtered[filtered_index_predicted]
+
+            shower_energy_truth = energy_truth_all[truth_showers_this_segment==v][0]
+            shower_eta_truth = eta_truth_all[truth_showers_this_segment==v][0]
+            shower_phi_truth = phi_truth_all[truth_showers_this_segment==v][0]
+
+            shower_energy_sum_truth = np.sum(rechit_energies_this_segment[truth_showers_this_segment==v])
+            shower_energy_sum_predicted = np.sum(rechit_energies_this_segment[labels_for_all==k])
+
+            results_dict['found_showers_predicted_energies'].append(shower_energy_predicted)
+            results_dict['found_showers_target_energies'].append(shower_eta_truth)
+            results_dict['found_showers_predicted_sum'].append(shower_energy_sum_predicted)
+            results_dict['found_showers_truth_sum'].append(shower_energy_sum_truth)
+            results_dict['found_showers_predicted_phi'].append(shower_phi_predicted)
+            results_dict['found_showers_target_phi'].append(shower_phi_truth)
+            results_dict['found_showers_predicted_eta'].append(shower_eta_predicted)
+            results_dict['found_showers_target_eta'].append(shower_eta_truth)
+
+            # print(shower_energy_sum_predicted, shower_energy_sum_truth, shower_energy_predicted, shower_energy_truth, shower_eta_predicted, shower_eta_truth, shower_phi_predicted, shower_phi_truth)
+
         else:
             num_fakes += 1
 
@@ -244,7 +319,6 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
         print(num_found / num_gt_showers, num_missed / num_gt_showers, num_fakes / num_predicted_showers)
     except ZeroDivisionError:
         pass
-
 
     results_dict['num_real_showers'] = num_gt_showers
     results_dict['num_found_showers'] = num_found
