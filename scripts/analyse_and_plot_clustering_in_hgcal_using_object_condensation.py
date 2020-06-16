@@ -285,33 +285,59 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     results_dict['found_showers_target_eta'] = []
 
 
-    for k, v in predicted_showers_found.items():
-        if v > -1:
-            filtered_index_predicted = predicted_showers_representative_index[k]
-            shower_energy_predicted = energy_regressed_filtered[filtered_index_predicted]
-            shower_eta_predicted = eta_regressed_filtered[filtered_index_predicted]
-            shower_phi_predicted = phi_regressed_filtered[filtered_index_predicted]
 
+    results_dict['predicted_showers_regressed_energy'] = []
+    results_dict['predicted_showers_matched_energy'] = []
+    results_dict['predicted_showers_predicted_energy_sum'] = []
+    results_dict['predicted_showers_matched_energy_sum'] = []
+    results_dict['predicted_showers_regressed_phi'] = []
+    results_dict['predicted_showers_matched_phi'] = []
+    results_dict['predicted_showers_regressed_eta'] = []
+    results_dict['predicted_showers_matched_eta'] = []
+
+
+    for k, v in predicted_showers_found.items():
+        filtered_index_predicted = predicted_showers_representative_index[k]
+
+        shower_energy_predicted = np.exp(energy_regressed_filtered[filtered_index_predicted]) - 1
+        shower_eta_predicted = eta_regressed_filtered[filtered_index_predicted]
+        shower_phi_predicted = phi_regressed_filtered[filtered_index_predicted]
+        shower_energy_sum_predicted = np.sum(rechit_energies_this_segment[labels_for_all==k])
+
+        results_dict['predicted_showers_regressed_energy'].append(shower_energy_predicted)
+        results_dict['predicted_showers_predicted_energy_sum'].append(shower_energy_sum_predicted)
+        results_dict['predicted_showers_regressed_phi'].append(shower_phi_predicted)
+        results_dict['predicted_showers_regressed_eta'].append(shower_eta_predicted)
+
+        if v > -1:
             shower_energy_truth = energy_truth_all[truth_showers_this_segment==v][0]
             shower_eta_truth = eta_truth_all[truth_showers_this_segment==v][0]
             shower_phi_truth = phi_truth_all[truth_showers_this_segment==v][0]
-
             shower_energy_sum_truth = np.sum(rechit_energies_this_segment[truth_showers_this_segment==v])
-            shower_energy_sum_predicted = np.sum(rechit_energies_this_segment[labels_for_all==k])
 
-            results_dict['found_showers_predicted_energies'].append(shower_energy_predicted)
-            results_dict['found_showers_target_energies'].append(shower_eta_truth)
             results_dict['found_showers_predicted_sum'].append(shower_energy_sum_predicted)
             results_dict['found_showers_truth_sum'].append(shower_energy_sum_truth)
+            results_dict['found_showers_predicted_energies'].append(shower_energy_predicted)
+            results_dict['found_showers_target_energies'].append(shower_energy_truth)
             results_dict['found_showers_predicted_phi'].append(shower_phi_predicted)
             results_dict['found_showers_target_phi'].append(shower_phi_truth)
             results_dict['found_showers_predicted_eta'].append(shower_eta_predicted)
             results_dict['found_showers_target_eta'].append(shower_eta_truth)
 
-            # print(shower_energy_sum_predicted, shower_energy_sum_truth, shower_energy_predicted, shower_energy_truth, shower_eta_predicted, shower_eta_truth, shower_phi_predicted, shower_phi_truth)
+            results_dict['predicted_showers_matched_energy'].append(shower_energy_truth)
+            results_dict['predicted_showers_matched_energy_sum'].append(shower_energy_sum_truth)
+            results_dict['predicted_showers_matched_phi'].append(shower_phi_truth)
+            results_dict['predicted_showers_matched_eta'].append(shower_eta_truth)
+
+            print(shower_eta_predicted, shower_eta_truth, shower_phi_predicted, shower_phi_truth)
 
         else:
             num_fakes += 1
+            results_dict['predicted_showers_matched_energy'].append(-1)
+            results_dict['predicted_showers_matched_energy_sum'].append(-1)
+            results_dict['predicted_showers_matched_phi'].append(-1)
+            results_dict['predicted_showers_matched_eta'].append(-1)
+
 
         num_predicted_showers += 1
 
@@ -395,7 +421,6 @@ def main(files, pdfpath, dumppath):
         with gzip.open(file, 'rb') as f:
             data_dict = pickle.load(f)
             analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'])
-        break
 
     make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict)
 

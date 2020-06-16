@@ -19,12 +19,21 @@ def build_dataset_analysis_dict():
     data_dict['num_rechits_per_truth_shower'] = []
     data_dict['num_rechits_per_window'] = []
 
-    data_dict['found_showers_predicted_energies'] = []
+    data_dict['found_showers_predicted_energies'] = [] # TODO: These are redundant now - remove them later
     data_dict['found_showers_target_energies'] = []
     data_dict['found_showers_predicted_phi'] = []
     data_dict['found_showers_target_phi'] = []
     data_dict['found_showers_predicted_eta'] = []
     data_dict['found_showers_target_eta'] = []
+
+    data_dict['predicted_showers_regressed_energy'] = []
+    data_dict['predicted_showers_matched_energy'] = []
+    data_dict['predicted_showers_predicted_energy_sum'] = []
+    data_dict['predicted_showers_matched_energy_sum'] = []
+    data_dict['predicted_showers_regressed_phi'] = []
+    data_dict['predicted_showers_matched_phi'] = []
+    data_dict['predicted_showers_regressed_eta'] = []
+    data_dict['predicted_showers_matched_eta'] = []
 
     data_dict['found_showers_predicted_truth_rotational_difference'] = []
     data_dict['num_real_showers'] = []
@@ -58,6 +67,16 @@ def build_window_analysis_dict():
     data_dict['found_showers_predicted_eta'] = []
     data_dict['found_showers_target_eta'] = []
 
+
+    data_dict['predicted_showers_regressed_energy'] = []
+    data_dict['predicted_showers_matched_energy'] = []
+    data_dict['predicted_showers_predicted_energy_sum'] = []
+    data_dict['predicted_showers_matched_energy_sum'] = []
+    data_dict['predicted_showers_regressed_phi'] = []
+    data_dict['predicted_showers_matched_phi'] = []
+    data_dict['predicted_showers_regressed_eta'] = []
+    data_dict['predicted_showers_matched_eta'] = []
+
     data_dict['found_showers_predicted_truth_rotational_difference'] = []
     data_dict['num_real_showers'] = -1
     data_dict['num_predicted_showers'] = -1
@@ -89,6 +108,16 @@ def append_window_dict_to_dataset_dict(dataset_dict, window_dict):
     dataset_dict['found_showers_target_phi'] += window_dict['found_showers_target_phi']
     dataset_dict['found_showers_predicted_eta'] += window_dict['found_showers_predicted_eta']
     dataset_dict['found_showers_target_eta'] += window_dict['found_showers_target_eta']
+
+    dataset_dict['predicted_showers_regressed_energy'] += window_dict['predicted_showers_regressed_energy']
+    dataset_dict['predicted_showers_matched_energy'] += window_dict['predicted_showers_matched_energy']
+    dataset_dict['predicted_showers_predicted_energy_sum'] += window_dict['predicted_showers_predicted_energy_sum']
+    dataset_dict['predicted_showers_matched_energy_sum'] += window_dict['predicted_showers_matched_energy_sum']
+    dataset_dict['predicted_showers_regressed_phi'] += window_dict['predicted_showers_regressed_phi']
+    dataset_dict['predicted_showers_matched_phi'] += window_dict['predicted_showers_matched_phi']
+    dataset_dict['predicted_showers_regressed_eta'] += window_dict['predicted_showers_regressed_eta']
+    dataset_dict['predicted_showers_matched_eta'] += window_dict['predicted_showers_matched_eta']
+
 
     dataset_dict['found_showers_predicted_truth_rotational_difference'] += window_dict['found_showers_predicted_truth_rotational_difference']
 
