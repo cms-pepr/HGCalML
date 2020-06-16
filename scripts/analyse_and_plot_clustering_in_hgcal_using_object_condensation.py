@@ -421,7 +421,6 @@ def main(files, pdfpath, dumppath):
         with gzip.open(file, 'rb') as f:
             data_dict = pickle.load(f)
             analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'])
-        break
 
     make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict)
 
