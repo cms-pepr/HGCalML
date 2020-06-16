@@ -284,6 +284,24 @@ def make_truth_energy_histogram(plt, ax, truth_energies):
     plt.title('Truth energies')
 
 
+
+def make_fake_energy_regressed_histogram(plt, ax, regressed_energy):
+    plt.figure()
+    plt.hist(regressed_energy, bins=50, histtype='step')
+    plt.xlabel("Fake shower energy regressed")
+    plt.ylabel("Frequency")
+    plt.title('Fakes energy histogram')
+
+def make_fake_energy_sum_histogram(plt, ax, predicted_energy_sum):
+    predicted_energy_sum[predicted_energy_sum>60]=60
+    plt.figure()
+    plt.hist(predicted_energy_sum, bins=50, histtype='step')
+    plt.xlabel("Fake shower energy rechit sum")
+    plt.ylabel("Frequency")
+    plt.title('Fakes energy histogram')
+
+
+
 def make_response_histograms(plt, ax, found_showers_predicted_sum, found_showers_truth_sum, found_showers_predicted_energies, found_showers_target_energies):
     found_showers_predicted_sum = np.array(found_showers_predicted_sum)
     found_showers_truth_sum = np.array(found_showers_truth_sum)
@@ -369,6 +387,39 @@ def make_found_showers_plot_as_function_of_energy(plt, ax, energies, found_or_no
     plt.ylabel('% found')
     plt.title('Function of energy')
 
+def make_fake_rate_plot_as_function_of_fake_energy(plt, ax, predicted_energies, matched_energies, is_sum):
+    predicted_energies = np.array(predicted_energies)
+    matched_energies = np.array(matched_energies)
+    e_bins = [0,10,20,30,40,50,60,70,80,90,100,110,120,130,140,150]
+
+    centers = []
+    mean = []
+    std = []
+
+    fake_energies = predicted_energies[matched_energies==-1]
+
+    for i in range(len(e_bins)-1):
+        l = e_bins[i]
+        h = e_bins[i+1]
+
+        fake_energies_interval = np.argwhere(np.logical_and(fake_energies > l, fake_energies < h))
+        total_energies_interval = np.argwhere(np.logical_and(predicted_energies > l, predicted_energies < h))
+
+        try:
+            m = len(fake_energies_interval) / float(len(total_energies_interval))
+        except ZeroDivisionError:
+            m = 0
+        mean.append(m)
+        # std.append(np.std(filtered_found))
+        centers.append(l+5)
+
+
+    # plt.errorbar(centers, mean, std, linewidth=0.7, marker='o', ls='--', markersize=3, capsize=3)
+    plt.plot(centers, mean, linewidth=0.7, marker='o', ls='--', markersize=3)
+    plt.xticks(centers)
+    plt.xlabel('Fake energy sum' if is_sum else 'Fake energy regressed')
+    plt.ylabel('% fake')
+    plt.title('Function of fake energy')
 
 
 def make_found_showers_plot_as_function_of_pt(plt, ax, energies, eta, found_or_not):
@@ -566,6 +617,30 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
     pdf.savefig()
 
 
+    print("XYZ", len(dataset_analysis_dict['predicted_showers_predicted_energy_sum']), len(dataset_analysis_dict['predicted_showers_matched_energy']))
+
+    a = np.array(dataset_analysis_dict['predicted_showers_predicted_energy_sum'])
+    b =  np.array(dataset_analysis_dict['predicted_showers_regressed_energy'])
+    c =  np.array(dataset_analysis_dict['predicted_showers_matched_energy'])
+
+    a = a[c==-1]
+    b = b[c==-1]
+    fig = plt.figure()
+    make_fake_energy_sum_histogram(plt, fig.axes, a)
+    pdf.savefig()
+    fig = plt.figure()
+    make_fake_energy_regressed_histogram(plt, fig.axes, b)
+    pdf.savefig()
+
+
+
+    fig = plt.figure()
+    make_fake_rate_plot_as_function_of_fake_energy(plt, fig.axes, dataset_analysis_dict['predicted_showers_regressed_energy'], dataset_analysis_dict['predicted_showers_matched_energy'], False)
+    pdf.savefig()
+    fig = plt.figure()
+    make_fake_rate_plot_as_function_of_fake_energy(plt, fig.axes, dataset_analysis_dict['predicted_showers_predicted_energy_sum'], dataset_analysis_dict['predicted_showers_matched_energy_sum'], True)
+    pdf.savefig()
+
 
     fig = plt.figure()
     make_response_histograms(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_sum'],
@@ -573,6 +648,8 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
                              dataset_analysis_dict['found_showers_predicted_energies'],
                              dataset_analysis_dict['found_showers_target_energies'])
     pdf.savefig()
+
+
 
     fig = plt.figure()
     # make_truth_predicted_rotational_distance_histogram(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_truth_rotational_difference'])
