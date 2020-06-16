@@ -6,6 +6,7 @@ from index_dicts import create_index_dict, create_feature_dict, split_feat_pred
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import random
+from multiprocessing import Process
 
 class plotEventDuringTraining(PredictCallback): 
     def __init__(self, 
@@ -19,9 +20,15 @@ class plotEventDuringTraining(PredictCallback):
             raise ValueError("plotEventDuringTraining: only one event allowed")
         
         self.gs = gridspec.GridSpec(2, 2)
+        self.plot_process=None
             
     def make_plot(self,counter,feat,predicted,truth):  
-        self._make_plot(counter,feat,predicted,truth)
+        if self.plot_process is not None:
+            self.plot_process.join()
+            
+        self.plot_process = Process(target=self._make_plot, args=(counter,feat,predicted,truth))
+        self.plot_process.start()
+        #self._make_plot(counter,feat,predicted,truth)
         
     def _make_plot(self,counter,feat,predicted,truth):
 
@@ -137,9 +144,18 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
             raise ValueError("plotEventDuringTraining: only one event allowed")
         
         self.gs = gridspec.GridSpec(2, 2)
-        
+        self.plot_process=None
+    
+           
     def make_plot(self,counter,feat,predicted,truth):  
-        self._make_plot(counter,feat,predicted,truth)
+        if self.plot_process is not None:
+            self.plot_process.join()
+            
+        self.plot_process = Process(target=self._make_plot, args=(counter,feat,predicted,truth))
+        self.plot_process.start()
+        
+    #def make_plot(self,counter,feat,predicted,truth):  
+    #    self._make_plot(counter,feat,predicted,truth)
         
         
     def _make_plot(self,counter,feat,predicted,truth):
