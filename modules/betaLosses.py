@@ -532,7 +532,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     #also using log now, scale back in evaluation
     scaled_true_energy = tf.math.log(d['truthHitAssignedEnergies']+1.)
     energy_diff = (d['predEnergy'] - scaled_true_energy) 
-    energy_loss = energyweights * energy_diff**2/(scaled_true_energy**2+tf.math.log(3.+1.))
+    energy_loss = energyweights * energy_diff**2/(scaled_true_energy**2+tf.math.log(1.+1.))
     
     etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
@@ -558,14 +558,17 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     attractive_loss *= config.potential_scaling
     rep_loss *= config.potential_scaling
     
-    spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
+    spectator_beta_penalty = 0.
+    if config.use_spectators:
+        spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
+        spectator_beta_penalty = tf.where(tf.math.is_nan(spectator_beta_penalty),0,spectator_beta_penalty)
     
     attractive_loss = tf.where(tf.math.is_nan(attractive_loss),0,attractive_loss)
     rep_loss = tf.where(tf.math.is_nan(rep_loss),0,rep_loss)
     min_beta_loss = tf.where(tf.math.is_nan(min_beta_loss),0,min_beta_loss)
     noise_loss = tf.where(tf.math.is_nan(noise_loss),0,noise_loss)
     payload_loss_full = tf.where(tf.math.is_nan(payload_loss_full),0,payload_loss_full)
-    spectator_beta_penalty = tf.where(tf.math.is_nan(spectator_beta_penalty),0,spectator_beta_penalty)
+    
     
     #energy_loss *= 0.0000001
     
@@ -578,7 +581,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
           'min_beta_loss', min_beta_loss.numpy(), 
           'noise_loss' , noise_loss.numpy(),
           'payload_loss_full', payload_loss_full.numpy(), 
-          'spectator_beta_penalty', spectator_beta_penalty.numpy())
+          'spectator_beta_penalty', spectator_beta_penalty)
     
     return loss
     
