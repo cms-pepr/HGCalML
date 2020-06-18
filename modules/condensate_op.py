@@ -11,7 +11,7 @@ def BuildCondensates(ccoords, betas, features, row_splits, radius=0.8, min_beta=
     #get sorted etc here
     beta_sorting=[]
     for e in tf.range(len(row_splits)-1):
-        sorted = tf.argsort(betas[row_splits[e]:row_splits[e+1],0],axis=0)
+        sorted = tf.argsort(betas[row_splits[e]:row_splits[e+1],0],axis=0, direction='DESCENDING')
         beta_sorting.append(sorted)
     
     beta_sorting = tf.concat(beta_sorting,axis=0)

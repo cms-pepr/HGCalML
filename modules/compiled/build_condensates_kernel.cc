@@ -20,6 +20,84 @@ namespace functor {
 
 //helpers here
 
+static void set_defaults(
+        int *asso_idx,
+
+        const int n_vert){
+
+    for(size_t i_v=0;i_v<n_vert;i_v++){
+        asso_idx[i_v] = -1;
+    }
+}
+static void set_defaults_feat(
+        float *summed_features,
+
+        const int n_vert,
+        const int n_feat){
+
+    for(size_t i_v=0;i_v<n_vert;i_v++){
+        for(size_t i_f=0;i_f<n_feat;i_f++){
+            summed_features[I2D(i_v,i_f,n_feat)]=0;
+        }
+    }
+}
+
+static float distancesq(const int v_a,
+        const int v_b,
+        const float *d_ccoords,
+        const int n_ccoords){
+    float distsq=0;
+    for(size_t i=0;i<n_ccoords;i++){
+        float xa = d_ccoords[I2D(v_a,i,n_ccoords)];
+        float xb = d_ccoords[I2D(v_b,i,n_ccoords)];
+        distsq += (xa-xb)*(xa-xb);
+    }
+    return distsq;
+}
+
+static void check_and_collect(
+
+        const int ref_vertex,
+        const float *d_ccoords,
+
+        float *summed_features,
+        int *asso_idx,
+
+        const int n_vert,
+        const int n_feat,
+        const int n_ccoords,
+
+        const int start_vertex,
+        const int end_vertex,
+        const float radius){
+
+    for(size_t i_v=start_vertex;i_v<end_vertex;i_v++){
+        if(asso_idx[i_v] < 0){
+            if(distancesq(ref_vertex,i_v,d_ccoords,n_ccoords) <= radius){ //sum features in parallel?
+                asso_idx[i_v] = ref_vertex;
+            }
+        }
+    }
+
+
+}
+
+static void accumulate_features(
+            const float *features,
+            float *summed_features,
+            const int *asso_idx,
+            const int n_vert,
+            const int n_feat
+){
+    for(size_t i_v=0;i_v<n_vert;i_v++){
+        //make atomic
+        if(asso_idx[i_v]>=0)
+            for(size_t i_f=0;i_f<n_feat; i_f++){
+                summed_features[I2D(asso_idx[i_v],i_f,n_feat)] += features[I2D(i_v,i_f,n_feat)];
+
+            }
+    }
+}
 
 
 // CPU specialization
@@ -47,10 +125,35 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
             const float min_beta) {
 
 
+        set_defaults(asso_idx,n_vert);
+        set_defaults_feat(summed_features,n_vert,n_feat);
 
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){
-            //do something
+            const int start_vertex = row_splits[j_rs];
+            const int end_vertex = row_splits[j_rs+1];
+
+            for(size_t i_v = start_vertex; i_v < end_vertex; i_v++){
+                size_t ref = beta_sorting[i_v] + start_vertex; //sorting is done per row split
+                if(asso_idx[ref] >=0) continue;
+                if(d_betas[ref] < min_beta)continue;
+
+                check_and_collect(
+                        ref,
+                        d_ccoords,
+                        summed_features,
+                        asso_idx,
+                        n_vert,
+                        n_feat,
+                        n_ccoords,
+                        start_vertex,
+                        end_vertex,
+                        radius);
+
+            }
+
+
         }
+        accumulate_features(features,summed_features,asso_idx,n_vert,n_feat);
     }
 };
 
@@ -63,6 +166,7 @@ public:
                 context->GetAttr("min_beta", &min_beta_));
         OP_REQUIRES_OK(context,
                 context->GetAttr("radius", &radius_));
+        radius_*=radius_;
     }
 
 
@@ -90,13 +194,14 @@ public:
 
 
 
-        int n_vert = t_ccoords.dim_size(0);
-        int n_ccoords = t_ccoords.dim_size(1);
+        const int n_vert = t_ccoords.dim_size(0);
+        const int n_ccoords = t_ccoords.dim_size(1);
 
-        int n_feat = t_features.dim_size(1);
+        const int n_feat = t_features.dim_size(1);
 
-        int n_rs = t_row_splits.dim_size(0);
+        const int n_rs = t_row_splits.dim_size(0);
 
+        DEBUGCOUT(n_feat);
 
 
         TensorShape outputShape_feat;
@@ -108,7 +213,7 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(0, outputShape_feat, &output_features));
 
         TensorShape outputShape_idx;
-        outputShape_feat.AddDim(n_vert);
+        outputShape_idx.AddDim(n_vert);
 
         Tensor *output_indices = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, outputShape_idx, &output_indices));
