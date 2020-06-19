@@ -8,6 +8,7 @@ def build_dataset_analysis_dict():
 
     data_dict['beta_threshold'] = -1
     data_dict['distance_threshold'] = -1
+    data_dict['iou_threshold'] = -1
 
     data_dict['truth_shower_energies'] = []
     data_dict['truth_shower_etas'] = []

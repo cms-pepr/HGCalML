@@ -159,7 +159,8 @@ def make_original_truth_shower_plot(plt, ax,
                                     recHitX,
                                     recHitY,
                                     recHitZ,
-                                    cmap=None):
+                                    cmap=None,
+                                    rgbcolor=None):
     
     
     if len(truthHitAssignementIdx.shape)>1:
@@ -175,10 +176,11 @@ def make_original_truth_shower_plot(plt, ax,
         
         
     pl = plotter_3d(output_file="/tmp/plot")#will be ignored
-    if cmap is None:
-        rgbcolor = plt.get_cmap('prism')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
-    else:
-        rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
+    if rgbcolor is None:
+        if cmap is None:
+            rgbcolor = plt.get_cmap('prism')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
+        else:
+            rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
     rgbcolor[truthHitAssignementIdx<0]=[0.92,0.92,0.92]
 
     pl.set_data(x = recHitX , y=recHitY   , z=recHitZ, e=recHitEnergy , c =rgbcolor)
@@ -324,6 +326,64 @@ def make_response_histograms(plt, ax, found_showers_predicted_sum, found_showers
     plt.xlabel("Predicted/truth")
     plt.ylabel("Frequency")
     plt.title('Response curves')
+
+
+def make_response_histograms_energy_segmented(plt, ax, _found_showers_predicted_sum, _found_showers_truth_sum, _found_showers_predicted_energies, _found_showers_target_energies):
+    energy_segments = [0,5,10,20,30,50,100,200,300,3000]
+    names = ['0-5', '5-10','10-20', '20-30','30-50', '50-100', '100-200','200-300', '300+']
+    names = ['Energy = %s Gev' % s for s in names]
+
+    fig = plt.figure(figsize=(16, 16))
+    gs = plt.GridSpec(3, 3)
+
+    ax = [[fig.add_subplot(gs[0, 0]),
+          fig.add_subplot(gs[0, 1]),
+          fig.add_subplot(gs[0, 2]),],
+
+          [fig.add_subplot(gs[1, 0]),
+          fig.add_subplot(gs[1, 1]),
+          fig.add_subplot(gs[1, 2]),],
+
+          [fig.add_subplot(gs[2, 0]),
+          fig.add_subplot(gs[2, 1]),
+          fig.add_subplot(gs[2, 2]),]]
+
+
+    _found_showers_predicted_sum = np.array(_found_showers_predicted_sum)
+    _found_showers_truth_sum = np.array(_found_showers_truth_sum)
+    _found_showers_target_energies = np.array(_found_showers_target_energies)
+    _found_showers_predicted_energies = np.array(_found_showers_predicted_energies)
+
+    for i in range(9):
+        c = int(i/3)
+        r = i%3
+        n = names[i]
+        l = energy_segments[i]
+        h = energy_segments[i+1]
+
+        condition = np.logical_and(_found_showers_truth_sum>l, _found_showers_truth_sum<h)
+
+        found_showers_predicted_sum = _found_showers_predicted_sum[condition]
+        found_showers_truth_sum = _found_showers_truth_sum[condition]
+        found_showers_target_energies = _found_showers_target_energies[condition]
+        found_showers_predicted_energies = _found_showers_predicted_energies[condition]
+
+        response_rechit_sum_energy = found_showers_predicted_sum/found_showers_truth_sum
+        response_rechit_sum_energy[response_rechit_sum_energy > 3] = 3
+
+        response_energy_predicted = found_showers_predicted_energies/found_showers_target_energies
+        response_energy_predicted[response_energy_predicted > 3] = 3
+        response_energy_predicted[response_energy_predicted < 0.1] = 0.1
+
+
+        data_dict = {}
+        # plt.figure()
+        ax[c][r].hist(response_rechit_sum_energy, bins=20, histtype='step')
+        ax[c][r].hist(response_energy_predicted, bins=20, histtype='step')
+        ax[c][r].legend(['predicted shower sum / truth shower sum', 'predicted energy / target energy'])
+        ax[c][r].set_xlabel("Predicted/truth")
+        ax[c][r].set_ylabel("Frequency")
+        ax[c][r].set_title(n)
 
 
 def make_truth_predicted_rotational_distance_histogram(plt, ax, rotational_distance_data):
@@ -535,10 +595,20 @@ def visualize_the_segment(plt, truth_showers_this_segment, x_this_segment, y_thi
     # make_original_truth_shower_plot(plt, ax[5], identified_vertices, x_this_segment[:, 0], x_this_segment[:, 5], x_this_segment[:, 6], x_this_segment[:, 7], cmap=plt.get_cmap('Reds'))
 
     # wrt predicted colors
+
+    np.set_printoptions(threshold=np.inf)
+
+    # print(np.array(truth_showers_this_segment))
+    # print(np.array(labels))
+
+    xmax = max(np.max(truth_showers_this_segment), np.max(labels))
+    rgbcolor_truth = cmap(truth_showers_this_segment/xmax)[:,:-1]
+    rgbcolor_labels = cmap(labels/xmax)[:,:-1]
+
     make_original_truth_shower_plot(plt, ax[2], truth_showers_this_segment, x_this_segment[:, 0], x_this_segment[:, 5],
-                                    x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap)
+                                    x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap, rgbcolor=rgbcolor_truth)
     make_original_truth_shower_plot(plt, ax[3], labels, x_this_segment[:, 0], x_this_segment[:, 5],
-                                    x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap)
+                                    x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap, rgbcolor=rgbcolor_labels)
 
     # make_cluster_coordinates_plot(plt, ax[3], labels, pred_this_segment[:, -6], pred_this_segment[:, -2:], identified_coords=coords_representative_predicted_showers, cmap=cmap)
 
@@ -644,6 +714,13 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
 
     fig = plt.figure()
     make_response_histograms(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_sum'],
+                             dataset_analysis_dict['found_showers_truth_sum'],
+                             dataset_analysis_dict['found_showers_predicted_energies'],
+                             dataset_analysis_dict['found_showers_target_energies'])
+    pdf.savefig()
+
+    fig = plt.figure()
+    make_response_histograms_energy_segmented(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_sum'],
                              dataset_analysis_dict['found_showers_truth_sum'],
                              dataset_analysis_dict['found_showers_predicted_energies'],
                              dataset_analysis_dict['found_showers_target_energies'])

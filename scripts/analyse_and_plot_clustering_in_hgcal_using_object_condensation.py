@@ -12,7 +12,8 @@ import pickle
 from ragged_plotting_tools import make_cluster_coordinates_plot, make_original_truth_shower_plot, createRandomizedColors
 from DeepJetCore.training.gpuTools import DJCSetGPUs
 from obc_data import build_dataset_analysis_dict, build_window_analysis_dict, append_window_dict_to_dataset_dict, build_window_visualization_dict
-
+import copy
+import networkx as nx
 
 from ragged_plotting_tools import make_plots_from_object_condensation_clustering_analysis
 
@@ -132,6 +133,8 @@ def assign_prediction_labels_to_full_unfiltered_vertices(beta_all, clustering_co
 
 beta_threshold = 0.1
 distance_threshold = 0.5
+iou_threshold = 0.1
+
 
 def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, should_return_visualization_data=False):
     results_dict = build_window_analysis_dict()
@@ -208,47 +211,78 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
         predicted_showers_representative_index[x] = -1
 
     representative_coords = []
-    ii_p = 0
-    for representative_index in representative_indices:
-        # rechit_energies_this_segment[labels_for_all==ii_p]
-        # x = labels[representative_index]
-        # print(ii_p, x)
-
-        representative_coords.append(clustering_coords_all_filtered[representative_index])
-
-        top_match_index = -1
-        top_match_shower = -1
-        top_match_value = 0
-        top_sum_truth = 0
-        top_sum_pred = 0
-
-        top_match_shower = truth_showers_this_segment[representative_index]
-        if truth_showers_found[top_match_shower] != -1:
-            top_match_shower = -1
+    G = nx.Graph()
+    for index_shower_prediction in range(len(representative_indices)):
+        representative_coords.append(clustering_coords_all_filtered[representative_indices[index_shower_prediction]])
 
         for i in range(len(unique_showers_this_segment)):
-
-            if truth_showers_found[unique_showers_this_segment[i]] != -1:
+            if unique_showers_this_segment[i] == -1:
                 continue
 
-            sum_truth = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]))
-            sum_predicted = np.sum(rechit_energies_this_segment * (labels_for_all == ii_p))
-            overlap = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == ii_p)) / np.sum(rechit_energies_this_segment * np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == ii_p)))
+            # sum_truth = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]))
+            # sum_predicted = np.sum(rechit_energies_this_segment * (labels_for_all == index_shower_prediction))
+            overlap = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == index_shower_prediction)) / np.sum(rechit_energies_this_segment * np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == index_shower_prediction)))
 
-            if overlap > top_match_value:
-                top_match_index == i
-                top_match_shower = unique_showers_this_segment[i]
-                top_match_value = overlap
-                top_sum_truth = sum_truth
-                top_sum_pred = sum_predicted
+            if overlap > iou_threshold:
+                G.add_edge('p%d'%index_shower_prediction, 't%d'%unique_showers_this_segment[i], weight=overlap)
 
-        if top_match_shower != -1:
-            truth_showers_found[top_match_shower] = ii_p
-            predicted_showers_found[ii_p] = top_match_shower
-            predicted_showers_representative_index[ii_p] = representative_index
-            # print(top_match_value, top_sum_pred, top_sum_truth)
+    X = nx.algorithms.max_weight_matching(G)
+    for x,y in X:
+        if x[0] == 'p':
+            prediction_index = int(x[1:])
+            truth_index = int(y[1:])
+        else:
+            truth_index = int(x[1:])
+            prediction_index = int(y[1:])
 
-        ii_p += 1
+        print(x,y, truth_index, prediction_index)
+
+        truth_showers_found[truth_index] = prediction_index
+        predicted_showers_found[prediction_index] = truth_index
+        predicted_showers_representative_index[prediction_index] = representative_indices[prediction_index]
+
+    #
+    # ii_p = 0
+    # for representative_index in representative_indices:
+    #     # rechit_energies_this_segment[labels_for_all==ii_p]
+    #     # x = labels[representative_index]
+    #     # print(ii_p, x)
+    #
+    #     representative_coords.append(clustering_coords_all_filtered[representative_index])
+    #
+    #     top_match_index = -1
+    #     top_match_shower = -1
+    #     top_match_value = 0
+    #     top_sum_truth = 0
+    #     top_sum_pred = 0
+    #
+    #     top_match_shower = truth_showers_this_segment[representative_index]
+    #     if truth_showers_found[top_match_shower] != -1:
+    #         top_match_shower = -1
+    #
+    #     for i in range(len(unique_showers_this_segment)):
+    #
+    #         if truth_showers_found[unique_showers_this_segment[i]] != -1:
+    #             continue
+    #
+    #         sum_truth = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]))
+    #         sum_predicted = np.sum(rechit_energies_this_segment * (labels_for_all == ii_p))
+    #         overlap = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == ii_p)) / np.sum(rechit_energies_this_segment * np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == ii_p)))
+    #
+    #         if overlap > top_match_value and overlap > iou_threshold:
+    #             top_match_index == i
+    #             top_match_shower = unique_showers_this_segment[i]
+    #             top_match_value = overlap
+    #             top_sum_truth = sum_truth
+    #             top_sum_pred = sum_predicted
+    #
+    #     if top_match_shower != -1:
+    #         truth_showers_found[top_match_shower] = ii_p
+    #         predicted_showers_found[ii_p] = top_match_shower
+    #         predicted_showers_representative_index[ii_p] = representative_index
+    #         # print(top_match_value, top_sum_pred, top_sum_truth)
+    #
+    #     ii_p += 1
 
 
     num_found = 0.
@@ -329,7 +363,7 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
             results_dict['predicted_showers_matched_phi'].append(shower_phi_truth)
             results_dict['predicted_showers_matched_eta'].append(shower_eta_truth)
 
-            print(shower_eta_predicted, shower_eta_truth, shower_phi_predicted, shower_phi_truth)
+            # print(shower_eta_predicted, shower_eta_truth, shower_phi_predicted, shower_phi_truth)
 
         else:
             num_fakes += 1
@@ -357,7 +391,16 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     if should_return_visualization_data:
         vis_dict = build_window_visualization_dict()
 
-        vis_dict['truth_showers'] = truth_showers_this_segment
+        replace_dictionary = copy.deepcopy(truth_showers_found)
+        replace_dictionary_2 = copy.deepcopy(replace_dictionary)
+        start_secondary_indicing_from = np.max(labels_for_all) + 1
+        for k, v in replace_dictionary.items():
+            if v == -1 and k != -1:
+                replace_dictionary_2[k] = start_secondary_indicing_from
+                start_secondary_indicing_from += 1
+        replace_dictionary = replace_dictionary_2
+
+        vis_dict['truth_showers'] = replace(truth_showers_this_segment, replace_dictionary)
         vis_dict['x'] = x_this_segment
         vis_dict['y'] = y_this_segment
         vis_dict['prediction_all'] = pred_this_segment
@@ -421,6 +464,7 @@ def main(files, pdfpath, dumppath):
         with gzip.open(file, 'rb') as f:
             data_dict = pickle.load(f)
             analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'])
+            break
 
     make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict)
 
@@ -443,6 +487,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', help='Path of the pdf file. Otherwise will be produced in the output directory.', default='')
     parser.add_argument('-b', help='Beta threshold', default='0.1')
     parser.add_argument('-d', help='Distance threshold', default='0.5')
+    parser.add_argument('-i', help='IOU threshold', default='0.1')
     parser.add_argument('-v', help='Visualize number of showers', default='10')
     parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.', default='')
     parser.add_argument('--gpu', help='GPU', default='')
@@ -455,9 +500,11 @@ if __name__ == '__main__':
 
     beta_threshold = beta_threshold*0 + float(args.b)
     distance_threshold = distance_threshold*0 + float(args.d)
+    iou_threshold = iou_threshold*0 + float(args.i)
 
     dataset_analysis_dict['distance_threshold'] = distance_threshold
     dataset_analysis_dict['beta_threshold'] = distance_threshold
+    dataset_analysis_dict['iou_threshold'] = distance_threshold
 
     files_to_be_tested = []
     pdfpath = ''
