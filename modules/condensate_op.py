@@ -15,8 +15,7 @@ def BuildCondensates(ccoords, betas, features, row_splits, radius=0.8, min_beta=
         beta_sorting.append(sorted)
     
     beta_sorting = tf.concat(beta_sorting,axis=0)
-    print(beta_sorting)
-
+    
     summed_features, asso_idx = _bc_op.BuildCondensates(ccoords=ccoords, betas=betas, beta_sorting=beta_sorting, 
                                    features=features, row_splits=row_splits, radius=radius, 
                                    min_beta=min_beta)

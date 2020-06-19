@@ -201,9 +201,6 @@ public:
 
         const int n_rs = t_row_splits.dim_size(0);
 
-        DEBUGCOUT(n_feat);
-
-
         TensorShape outputShape_feat;
         outputShape_feat.AddDim(n_vert);
         outputShape_feat.AddDim(n_feat);
