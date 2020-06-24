@@ -40,7 +40,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = x_basic
 
     n_filters = 0
-    n_gravnet_layers = 7
+    n_gravnet_layers = 4
     feat = []
     for i in range(n_gravnet_layers):
         n_filters = 128
@@ -195,7 +195,7 @@ model, history = train.trainModel(nepochs=10 + 1,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   backup_after_batches=100,
-                                  verbose=verbosity,
+                                  verbose=verbosity, 
                                   additional_callbacks=callbacks)
 
 
@@ -215,7 +215,7 @@ model, history = train.trainModel(nepochs=10 + 10 + 1,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   backup_after_batches=100,
-                                  verbose=verbosity,
+                                  verbose=verbosity, 
                                   additional_callbacks=callbacks)
 
 

@@ -518,6 +518,8 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     d = create_loss_dict(truth, pred)
     feat = create_feature_dict(feat)
     #print('feat',feat.shape)
+    
+    d['predBeta'] = tf.clip_by_value(d['predBeta'],1e-6,1.-1e-6)
 
     truthIsSpectator = d['truthIsSpectator'][:, 0]
     

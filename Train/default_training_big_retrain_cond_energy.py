@@ -73,7 +73,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     
     x_en = Dense(64, activation='elu', name="dense_en_a")(x)#herer so the other names remain the same
     input_energy = SelectFeatures(0,1, name="select_en")(input_features)
-    energy_condensates,idxs = CondensateAndSum(radius=0.8, min_beta=0.1, name="condensate_en")([ccoords, beta, input_energy, x_row_splits])
+    energy_condensates,idxs = CondensateAndSum(radius=0.5, min_beta=0.1, name="condensate_en")([ccoords, beta, input_energy, x_row_splits])
     x_en = Concatenate(name="concat_en_cond")([ScalarMultiply(10, name="multi_en")(x_en),energy_condensates])
     x_en = Dense(64, activation='elu',name="dense_en_b")(x_en)
     energy = Dense(1, activation=None,name="dense_en_final")(x_en)
@@ -106,10 +106,10 @@ if not train.modelSet():
     import pretrained_models as ptm
     from DeepJetCore.modeltools import load_model, apply_weights_where_possible
     
-    pretrained_model = load_model(ptm.get_model_path("default_training_big_model.h5"))
+    #pretrained_model = load_model(ptm.get_model_path("default_training_big_model.h5"))
     train.setModel(gravnet_model)
     
-    apply_weights_where_possible(train.keras_model,pretrained_model)
+    #apply_weights_where_possible(train.keras_model,pretrained_model)
     
     # train.keras_model.dynamic=True
     train.compileModel(learningrate=1e-4,
@@ -194,7 +194,8 @@ model, history = train.trainModel(nepochs=10 + 1,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   backup_after_batches=100,
-                                  verbose=verbosity, )
+                                  verbose=verbosity,
+                                  additional_callbacks=callbacks )
 
 
 loss_config.energy_loss_weight = 2.
@@ -213,6 +214,7 @@ model, history = train.trainModel(nepochs=10 + 10 + 1,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   backup_after_batches=100,
-                                  verbose=verbosity, )
+                                  verbose=verbosity, 
+                                  additional_callbacks=callbacks)
 
 
