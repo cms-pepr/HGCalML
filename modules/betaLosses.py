@@ -500,6 +500,7 @@ class _obj_cond_config(object):
         self.s_b = 1.
         self.position_loss_weight = 1.
         self.use_spectators=True
+        self.log_energy=True
 
 
 config = _obj_cond_config()
@@ -530,9 +531,13 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     energyweights += 1.
     
     #also using log now, scale back in evaluation
-    scaled_true_energy = tf.math.log(d['truthHitAssignedEnergies']+1.)
+    scaled_true_energy = d['truthHitAssignedEnergies'] #
+    den_offset = 1.
+    if config.log_energy:
+        scaled_true_energy = tf.math.log(d['truthHitAssignedEnergies']+1.)
+        den_offset = 0.1
     energy_diff = (d['predEnergy'] - scaled_true_energy) 
-    energy_loss = energyweights * energy_diff**2/(scaled_true_energy**2+tf.math.log(1.+1.))
+    energy_loss = energyweights * energy_diff**2/(scaled_true_energy**2+den_offset**2)
     
     etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
