@@ -138,7 +138,7 @@ distance_threshold = 0.5
 iou_threshold = 0.1
 
 
-def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, should_return_visualization_data=False):
+def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, should_return_visualization_data=False, input_log_energy=True):
     results_dict = build_window_analysis_dict()
 
     unique_showers_this_segment,unique_showers_indices = np.unique(truth_showers_this_segment, return_index=True)
@@ -333,8 +333,11 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     for k, v in predicted_showers_found.items():
         filtered_index_predicted = predicted_showers_representative_index[k]
-
-        shower_energy_predicted = np.exp(energy_regressed_filtered[filtered_index_predicted]) - 1
+        
+        shower_energy_predicted = energy_regressed_filtered[filtered_index_predicted]
+        if input_log_energy:
+            shower_energy_predicted = np.exp(shower_energy_predicted) - 1
+        
         shower_eta_predicted = eta_regressed_filtered[filtered_index_predicted]
         shower_phi_predicted = phi_regressed_filtered[filtered_index_predicted]
         shower_energy_sum_predicted = np.sum(rechit_energies_this_segment[labels_for_all==k])
@@ -421,7 +424,7 @@ num_rechits_per_segment = []
 num_rechits_per_shower = []
 
 
-def analyse_one_file(features, predictions, truth):
+def analyse_one_file(features, predictions, truth, input_log_energy=True):
     global num_visualized_segments, num_segments_to_visualize
     global dataset_analysis_dict
 
@@ -445,9 +448,9 @@ def analyse_one_file(features, predictions, truth):
         pred_this_segment = predictions[row_splits[i]:row_splits[i + 1]].numpy()
 
         if num_visualized_segments < num_segments_to_visualize:
-            window_analysis_dict = analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, True)
+            window_analysis_dict = analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, True, input_log_energy=input_log_energy)
         else:
-            window_analysis_dict = analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, False)
+            window_analysis_dict = analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, False, input_log_energy=input_log_energy)
 
         append_window_dict_to_dataset_dict(dataset_analysis_dict, window_analysis_dict)
         num_visualized_segments += 1
@@ -459,12 +462,12 @@ def analyse_one_file(features, predictions, truth):
 
 
 
-def main(files, pdfpath, dumppath):
+def main(files, pdfpath, dumppath,input_log_energy=True):
     global dataset_analysis_dict
     for file in files:
         with gzip.open(file, 'rb') as f:
             data_dict = pickle.load(f)
-            analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'])
+            analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'], input_log_energy=input_log_energy)
             break
 
     make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict)
@@ -490,10 +493,12 @@ if __name__ == '__main__':
     parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
     parser.add_argument('-v', help='Visualize number of showers', default='10')
+    parser.add_argument('--notlogE', help='prediction is linear energy not log(E+1)', action='store_false')
     parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.', default='')
     parser.add_argument('--gpu', help='GPU', default='')
     args = parser.parse_args()
 
+    input_log_energy = not args.notlogE
     # DJCSetGPUs(args.gpu)
     num_segments_to_visualize = int(args.v)
     num_visualized_segments = 0
@@ -528,5 +533,5 @@ if __name__ == '__main__':
     if len(args.p) != 0:
         pdfpath = args.p
 
-    main(files_to_be_tested, pdfpath, args.analysisoutpath)
+    main(files_to_be_tested, pdfpath, args.analysisoutpath, input_log_energy=input_log_energy)
 
