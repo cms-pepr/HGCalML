@@ -550,15 +550,16 @@ def make_histogram_of_number_of_showers_per_segment(plt, ax, num_showers_per_seg
     plt.title('Distribution of number of showers')
 
 
-def visualize_the_segment(plt, truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, labels,
+def visualize_the_segment(plt, truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, ticl_showers, labels,
                           coords_representative_predicted_showers, distance_threshold):
-    fig = plt.figure(figsize=(16, 12))
+    fig = plt.figure(figsize=(16, 16))
     gs = plt.GridSpec(3, 2)
 
     ax = [fig.add_subplot(gs[0, 0], projection='3d'),
           fig.add_subplot(gs[0, 1]),
           fig.add_subplot(gs[1, 0], projection='3d'),
-          fig.add_subplot(gs[1, 1], projection='3d'), ]
+          fig.add_subplot(gs[1, 1], projection='3d'),
+          fig.add_subplot(gs[2, 0], projection='3d'), ]
 
     # wrt ground truth colors
 
@@ -580,6 +581,11 @@ def visualize_the_segment(plt, truth_showers_this_segment, x_this_segment, y_thi
     ax[3].set_ylabel('y (cm)')
     ax[3].set_zlabel('x (cm)')
     ax[3].set_title('Colors = predicted showers')
+
+    ax[4].set_xlabel('z (cm)')
+    ax[4].set_ylabel('y (cm)')
+    ax[4].set_zlabel('x (cm)')
+    ax[4].set_title('Colors = ticl showers')
 
     cmap = createRandomizedColors('jet')
 
@@ -604,11 +610,15 @@ def visualize_the_segment(plt, truth_showers_this_segment, x_this_segment, y_thi
     xmax = max(np.max(truth_showers_this_segment), np.max(labels))
     rgbcolor_truth = cmap(truth_showers_this_segment/xmax)[:,:-1]
     rgbcolor_labels = cmap(labels/xmax)[:,:-1]
+    rgbcolor_ticl = cmap(ticl_showers/xmax)[:,:-1]
+
 
     make_original_truth_shower_plot(plt, ax[2], truth_showers_this_segment, x_this_segment[:, 0], x_this_segment[:, 5],
                                     x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap, rgbcolor=rgbcolor_truth)
     make_original_truth_shower_plot(plt, ax[3], labels, x_this_segment[:, 0], x_this_segment[:, 5],
                                     x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap, rgbcolor=rgbcolor_labels)
+    make_original_truth_shower_plot(plt, ax[4], ticl_showers, x_this_segment[:, 0], x_this_segment[:, 5],
+                                    x_this_segment[:, 6], x_this_segment[:, 7], cmap=cmap, rgbcolor=rgbcolor_ticl)
 
     # make_cluster_coordinates_plot(plt, ax[3], labels, pred_this_segment[:, -6], pred_this_segment[:, -2:], identified_coords=coords_representative_predicted_showers, cmap=cmap)
 
@@ -741,7 +751,7 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
 
     for vis_dict in dataset_analysis_dict['visualized_segments']:
         visualize_the_segment(plt, vis_dict['truth_showers'], vis_dict['x'], vis_dict['y'],
-            vis_dict['prediction_all'], vis_dict['predicted_showers'], vis_dict['coords_representatives'], dataset_analysis_dict['distance_threshold'])
+            vis_dict['prediction_all'], vis_dict['ticl_showers'], vis_dict['predicted_showers'], vis_dict['coords_representatives'], dataset_analysis_dict['distance_threshold'])
         pdf.savefig()
 
 
