@@ -230,16 +230,13 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     phi_truth_all = y_this_segment[:, 9]
 
 
-    ticl_instance_id = y_this_segment[:, 17]
-    ticl_true_energy = y_this_segment[:, 18]
+    use_ticl = True
+    try:
+        ticl_instance_id = y_this_segment[:, 17]
+        ticl_true_energy = y_this_segment[:, 18]
+    except Exception:
+        use_ticl = False
 
-    print()
-    print()
-    print()
-    print(np.unique(ticl_instance_id))
-    print()
-    print()
-    print()
 
 
     energy_regressed_filtered = energy_regressed_all[is_spectator==1]
@@ -324,8 +321,10 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     print(predicted_showers_found)
     print()
 
-    truth_to_ticl, ticl_to_truth = match_to_truth(truth_showers_this_segment, unique_showers_this_segment, unique_showers_energies, unique_showers_eta, ticl_instance_id, clustering_coords_all_filtered,
-                   representative_indices, rechit_energies_this_segment)
+
+    if use_ticl:
+        truth_to_ticl, ticl_to_truth = match_to_truth(truth_showers_this_segment, unique_showers_this_segment, unique_showers_energies, unique_showers_eta, ticl_instance_id, clustering_coords_all_filtered,
+                       representative_indices, rechit_energies_this_segment)
 
 
     num_found = 0.
@@ -455,17 +454,20 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
         print(np.mean((labels_for_all==-1)).astype(np.float))
 
-        replace_dictionary = copy.deepcopy(ticl_to_truth)
-        replace_dictionary_2 = copy.deepcopy(replace_dictionary)
-        start_secondary_indicing_from = np.max(truth_showers_this_segment) + 1
-        for k, v in replace_dictionary.items():
-            if v == -1 and k != -1:
-                replace_dictionary_2[k] = start_secondary_indicing_from
-                start_secondary_indicing_from += 1
-        replace_dictionary = replace_dictionary_2
+        if use_ticl:
+            replace_dictionary = copy.deepcopy(ticl_to_truth)
+            replace_dictionary_2 = copy.deepcopy(replace_dictionary)
+            start_secondary_indicing_from = np.max(truth_showers_this_segment) + 1
+            for k, v in replace_dictionary.items():
+                if v == -1 and k != -1:
+                    replace_dictionary_2[k] = start_secondary_indicing_from
+                    start_secondary_indicing_from += 1
+            replace_dictionary = replace_dictionary_2
 
-        print(np.unique(ticl_instance_id), replace_dictionary)
-        vis_dict['ticl_showers'] = replace(ticl_instance_id, replace_dictionary)
+            print(np.unique(ticl_instance_id), replace_dictionary)
+            vis_dict['ticl_showers'] = replace(ticl_instance_id, replace_dictionary)
+        else:
+            vis_dict['ticl_showers'] = labels_for_all*10
 
         vis_dict['x'] = x_this_segment
         vis_dict['y'] = y_this_segment
