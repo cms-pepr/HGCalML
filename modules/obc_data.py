@@ -143,6 +143,7 @@ def build_window_visualization_dict():
     vis_dict['y'] = -1
     vis_dict['prediction_all'] = -1
     vis_dict['predicted_showers'] = -1
+    vis_dict['ticl_showers'] = -1
     vis_dict['coords_representatives'] = -1
     vis_dict['identified_vertices'] = -1
 
