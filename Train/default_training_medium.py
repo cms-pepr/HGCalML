@@ -58,7 +58,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
                                  n_propagate=n_propagate,
                                  name='gravnet_' + str(i))([x, x_row_splits])
         x = BatchNormalization(momentum=0.6)(x)
-        feat.append(Dense(48, activation='elu',name="dense_compress_"+str(i))(x))
+        feat.append(Dense(128, activation='elu',name="dense_compress_"+str(i))(x))
 
     x = Concatenate(name="concat_gravout")(feat)
     x = Dense(128, activation='elu',name="dense_last_a")(x)
