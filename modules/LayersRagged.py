@@ -4,7 +4,32 @@ from rknn_op import rknn_ragged, rknn_op
 from caloGraphNN import gauss_of_lin
 import uuid
 from select_knn_op import SelectKnn
-from accknn_op import AccumulateKnn, AccumulateKnnNd
+from accknn_op import AccumulateKnn
+from condensate_op import BuildCondensates
+
+
+class CondensateAndSum(keras.layers.Layer):
+    
+    def __init__(self, radius=0.8, min_beta=0.1, **kwargs):
+        super(CondensateAndSum, self).__init__(**kwargs)
+        self.radius=radius
+        self.min_beta=min_beta
+        
+    def get_config(self):
+        config = {'radius': self.radius,
+                  'min_beta': self.min_beta}
+        base_config = super(CondensateAndSum, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    
+    def compute_output_shape(self, input_shape):
+        return [input_shape[2], input_shape[1]] # features shape same, beta shape = idx shape
+    
+    def call(self, x):
+        ccoords, betas, features, row_splits = x[0], x[1], x[2], x[3]
+        summed_features, asso_idx = BuildCondensates(ccoords, betas, features, row_splits, radius=self.radius, min_beta=self.min_beta)
+        return summed_features, asso_idx
+        
 
 class RaggedConstructTensor(keras.layers.Layer):
     """

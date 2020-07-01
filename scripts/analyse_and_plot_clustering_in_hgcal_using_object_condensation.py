@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from __future__ import print_function
 
 import tensorflow as tf
@@ -483,10 +485,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         'Analyse predictions from object condensation and plot relevant results')
     parser.add_argument('output', help='Output directory with .bin.gz files (all will be analysed) or a text file containing lest of those which are to be analysed')
-    parser.add_argument('-p', help='Path of the pdf file. Otherwise will be produced in the output directory.', default='')
-    parser.add_argument('-b', help='Beta threshold', default='0.1')
-    parser.add_argument('-d', help='Distance threshold', default='0.5')
-    parser.add_argument('-i', help='IOU threshold', default='0.1')
+    parser.add_argument('-p', help='Name of the output file (you have to manually append .pdf). Otherwise will be produced in the output directory.', default='')
+    parser.add_argument('-b', help='Beta threshold (default 0.1)', default='0.1')
+    parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
+    parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
     parser.add_argument('-v', help='Visualize number of showers', default='10')
     parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.', default='')
     parser.add_argument('--gpu', help='GPU', default='')
