@@ -123,16 +123,6 @@ if not train.modelSet():
 
 
 
-from betaLosses import config as loss_config
-
-loss_config.energy_loss_weight = 0.0001
-loss_config.use_energy_weights = False
-loss_config.q_min = 0.5
-loss_config.no_beta_norm = False
-loss_config.potential_scaling = 1.
-loss_config.s_b = 1.
-loss_config.position_loss_weight=0.001
-
 
 
 
@@ -163,8 +153,26 @@ for i in range(10):
 from configSaver import copyModules
 copyModules(train.outputDir)
 
-print("It should save now")
-model, history = train.trainModel(nepochs=10,
+
+
+from betaLosses import config as loss_config
+
+loss_config.energy_loss_weight = 0.0001
+loss_config.use_energy_weights = False
+loss_config.q_min = 0.5
+loss_config.no_beta_norm = False
+loss_config.potential_scaling = 1.
+loss_config.s_b = 1.
+loss_config.position_loss_weight=0.00001
+loss_config.use_spectators=False
+loss_config.log_energy=False
+loss_config.beta_loss_scale = 1.
+
+
+train.change_learning_rate(1e-4)
+nbatch = 5000 #quick first training with simple examples = low # hits
+
+model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   batchsize_use_sum_of_squares=False,
@@ -173,25 +181,48 @@ model, history = train.trainModel(nepochs=10,
                                   backup_after_batches=100,
                                   additional_callbacks=callbacks)
 
-exit()
 
-train.change_learning_rate(2e-4)
-
-model, history = train.trainModel(nepochs=5 + 1,
-                                  batchsize=nbatch,
-                                  run_eagerly=True,
-                                  batchsize_use_sum_of_squares=False,
-                                  checkperiod=1,  # saves a checkpoint model every N epochs
-                                  backup_after_batches=100,
-                                  verbose=verbosity, )
-
+loss_config.energy_loss_weight = 0.001
+loss_config.position_loss_weight=0.0001
 train.change_learning_rate(1e-4)
-model, history = train.trainModel(nepochs=99 + 5 + 1,
+
+model, history = train.trainModel(nepochs=1+3,
+                                  run_eagerly=True,
+                                  batchsize=nbatch,
+                                  batchsize_use_sum_of_squares=False,
+                                  checkperiod=1,  # saves a checkpoint model every N epochs
+                                  verbose=verbosity,
+                                  backup_after_batches=100,
+                                  additional_callbacks=callbacks)
+
+
+nbatch = 50000
+
+loss_config.energy_loss_weight = 1.
+loss_config.position_loss_weight=0.01
+train.change_learning_rate(3e-5)
+
+model, history = train.trainModel(nepochs=10 + 3 +1,
                                   batchsize=nbatch,
                                   run_eagerly=True,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   backup_after_batches=100,
-                                  verbose=verbosity, )
+                                  verbose=verbosity,
+                                  additional_callbacks=callbacks )
+
+
+loss_config.energy_loss_weight = 2.
+loss_config.position_loss_weight=0.1
+
+train.change_learning_rate(1e-5)
+model, history = train.trainModel(nepochs=10 + 10 + 3 + 1,
+                                  batchsize=nbatch,
+                                  run_eagerly=True,
+                                  batchsize_use_sum_of_squares=False,
+                                  checkperiod=1,  # saves a checkpoint model every N epochs
+                                  backup_after_batches=100,
+                                  verbose=verbosity, 
+                                  additional_callbacks=callbacks)
 
 

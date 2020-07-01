@@ -241,6 +241,9 @@ def worker(eventno):
     truthdirPhi = ptruth[:,12]
     truthdirR = ptruth[:,13]
     
+    ticlAsso = ptruth[:,17]
+    ticlE    = ptruth[:,18]
+    
     p = Process(target=makePlot, args=(outdir+str(eventno), 
              rechit_e, rechit_x, rechit_y, rechit_z,
              truthasso,truthenergy,
@@ -260,7 +263,16 @@ def worker(eventno):
              True,
              False))
     p2.start()
-    return p,p2
+    
+    p3 = Process(target=makePlot, args=(outdir+"ticl_"+str(eventno), 
+             rechit_e, rechit_x, rechit_y, rechit_z,
+             ticlAsso,truthenergy,
+             truthX,truthY,truthZ,
+             truthdirX,truthdirY,truthdirZ,
+             make_movie))
+    p3.start()
+    
+    return p,p2,p3
     
 
 #from multiprocessing import Pool

@@ -142,6 +142,9 @@ class TrainData_window(TrainData):
         ## weird shape for this truthHitAssignedPIDs     = self.branchToFlatArray(tree["truthHitAssignedPIDs"], False)
         #windowEta                =
         #windowPhi                =
+        
+        ticlHitAssignementIdx    = self.branchToFlatArray(tree["ticlHitAssignementIdx"], False,select_truth)  #4
+        ticlHitAssignedEnergies    = self.branchToFlatArray(tree["ticlHitAssignedEnergies"], False,select_truth)  #4
 
 
         # For calculating spectators
@@ -195,6 +198,8 @@ class TrainData_window(TrainData):
             np.logical_not(notSpectators),#14
             truthHitAssignedEnergies,
             rechitsSum,
+            np.array(ticlHitAssignementIdx, dtype='float32')   , #17
+            ticlHitAssignedEnergies #18
         #    truthHitAssignedPIDs    
             ], axis=-1)
         
