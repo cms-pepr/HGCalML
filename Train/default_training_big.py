@@ -51,7 +51,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     I_data = Inputs[0]
     I_splits = tf.cast(Inputs[1], tf.int32)
 
-    x_data, x_row_splits = RaggedConstructTensor()([I_data, I_splits])
+    x_data, x_row_splits = RaggedConstructTensor(name="construct_ragged")([I_data, I_splits])
 
     input_features = x_data  # these are going to be passed through for the loss
 
@@ -66,10 +66,10 @@ def gravnet_model(Inputs, feature_dropout=-1.):
         n_propagate = 96
         n_neighbours = 200
 
-        x = RaggedGlobalExchange()([x, x_row_splits])
-        x = Dense(64, activation='elu')(x)
-        x = Dense(64, activation='elu')(x)
-        x = Dense(64, activation='elu')(x)
+        x = RaggedGlobalExchange(name="global_exchange_"+str(i))([x, x_row_splits])
+        x = Dense(64, activation='elu',name="dense_"+str(i)+"_a")(x)
+        x = Dense(64, activation='elu',name="dense_"+str(i)+"_b")(x)
+        x = Dense(64, activation='elu',name="dense_"+str(i)+"_c")(x)
         x = BatchNormalization(momentum=0.6)(x)
         x = FusedRaggedGravNet_simple(n_neighbours=n_neighbours,
                                  n_dimensions=4,
@@ -77,22 +77,21 @@ def gravnet_model(Inputs, feature_dropout=-1.):
                                  n_propagate=n_propagate,
                                  name='gravnet_' + str(i))([x, x_row_splits])
         x = BatchNormalization(momentum=0.6)(x)
-        feat.append(Dense(48, activation='elu')(x))
+        feat.append(Dense(48, activation='elu',name="dense_compress_"+str(i))(x))
 
-    x = Concatenate()(feat)
-    x = Dense(128, activation='elu')(x)
-    x = Dense(64, activation='elu')(x)
-    x = Dense(64, activation='elu')(x)
+    x = Concatenate(name="concat_gravout")(feat)
+    x = Dense(128, activation='elu',name="dense_last_a")(x)
+    x = Dense(64, activation='elu',name="dense_last_b")(x)
+    x = Dense(64, activation='elu',name="dense_last_c")(x)
 
-    beta = Dense(1, activation='sigmoid')(x)
-    energy = ScalarMultiply(100.)(Dense(1, activation=None)(x))
-    eta = Dense(1, activation=None)(x)
-    phi = Dense(1, activation=None)(x)
-    ccoords = Dense(2, activation=None)(x)
+    beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
+    eta = Dense(1, activation=None, name="dense_eta")(x)
+    phi = Dense(1, activation=None, name="dense_phi")(x)
+    ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
 
-    print('input_features', input_features.shape)
 
-    x = Concatenate()([input_features, beta, energy, eta, phi, ccoords])
+
+    x = Concatenate(name="concat_last")([input_features, beta, energy, eta, phi, ccoords])
 
     # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
     predictions = x

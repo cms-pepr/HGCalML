@@ -501,6 +501,7 @@ class _obj_cond_config(object):
         self.position_loss_weight = 1.
         self.use_spectators=True
         self.log_energy=True
+        self.beta_loss_scale=1.
 
 
 config = _obj_cond_config()
@@ -564,6 +565,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     
     attractive_loss *= config.potential_scaling
     rep_loss *= config.potential_scaling
+    min_beta_loss *= config.beta_loss_scale
     
     spectator_beta_penalty = 0.
     if config.use_spectators:

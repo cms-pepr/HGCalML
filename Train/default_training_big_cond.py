@@ -40,7 +40,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = x_basic
 
     n_filters = 0
-    n_gravnet_layers = 4
+    n_gravnet_layers = 7
     feat = []
     for i in range(n_gravnet_layers):
         n_filters = 128
@@ -106,10 +106,10 @@ if not train.modelSet():
     import pretrained_models as ptm
     from DeepJetCore.modeltools import load_model, apply_weights_where_possible
     
-    pretrained_model = load_model(ptm.get_model_path("default_training_big_model.h5"))
+    #pretrained_model = load_model(ptm.get_model_path("default_training_big_model.h5"))
     train.setModel(gravnet_model)
-    
-    apply_weights_where_possible(train.keras_model,pretrained_model)
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam())
+    #apply_weights_where_possible(train.keras_model,pretrained_model)
     
     # train.keras_model.dynamic=True
     train.compileModel(learningrate=1e-4,
@@ -140,7 +140,7 @@ for i in range(10):
         plotEventDuringTraining(
             outputfile=plotoutdir + "/sn",
             samplefile=samplepath,
-            after_n_batches=4000,
+            after_n_batches=2000,
             batchsize=100000,
             on_epoch_end=False,
             use_event=2 + i)
@@ -151,21 +151,37 @@ for i in range(10):
 from configSaver import copyModules
 copyModules(train.outputDir)
 
-train.change_learning_rate(1e-4)
 
-nbatch = 20000 
+nbatch = 10000 
 
-loss_config.energy_loss_weight = 0.001
+loss_config.energy_loss_weight = 0.0001
 loss_config.use_energy_weights = False
 loss_config.q_min = 0.5
 loss_config.no_beta_norm = False
 loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
-loss_config.position_loss_weight=0.001
+loss_config.position_loss_weight=0.00001
 loss_config.use_spectators=False
 loss_config.log_energy=False
+loss_config.beta_loss_scale = 1.
+
+train.change_learning_rate(3e-4)
 
 model, history = train.trainModel(nepochs=1,
+                                  run_eagerly=True,
+                                  batchsize=nbatch,
+                                  batchsize_use_sum_of_squares=False,
+                                  checkperiod=1,  # saves a checkpoint model every N epochs
+                                  verbose=verbosity,
+                                  backup_after_batches=100,
+                                  additional_callbacks=callbacks)
+
+loss_config.beta_loss_scale = 1.
+loss_config.energy_loss_weight = 0.001
+loss_config.position_loss_weight=0.0001
+train.change_learning_rate(1e-4)
+
+model, history = train.trainModel(nepochs=1+3,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   batchsize_use_sum_of_squares=False,
@@ -185,18 +201,17 @@ loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
 loss_config.position_loss_weight=0.01
 loss_config.use_spectators=False
-loss_config.log_energy=False
 
 train.change_learning_rate(3e-5)
 
-model, history = train.trainModel(nepochs=10 + 1,
+model, history = train.trainModel(nepochs=10 + 3 +1,
                                   batchsize=nbatch,
                                   run_eagerly=True,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   backup_after_batches=100,
-                                  verbose=verbosity, 
-                                  additional_callbacks=callbacks)
+                                  verbose=verbosity,
+                                  additional_callbacks=callbacks )
 
 
 loss_config.energy_loss_weight = 2.
@@ -209,7 +224,7 @@ loss_config.position_loss_weight=0.1
 loss_config.use_spectators=False
 
 train.change_learning_rate(1e-5)
-model, history = train.trainModel(nepochs=10 + 10 + 1,
+model, history = train.trainModel(nepochs=10 + 10 + 3 + 1,
                                   batchsize=nbatch,
                                   run_eagerly=True,
                                   batchsize_use_sum_of_squares=False,

@@ -58,7 +58,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
                                  n_propagate=n_propagate,
                                  name='gravnet_' + str(i))([x, x_row_splits])
         x = BatchNormalization(momentum=0.6)(x)
-        feat.append(Dense(48, activation='elu',name="dense_compress_"+str(i))(x))
+        feat.append(Dense(128, activation='elu',name="dense_compress_"+str(i))(x))
 
     x = Concatenate(name="concat_gravout")(feat)
     x = Dense(128, activation='elu',name="dense_last_a")(x)
@@ -70,13 +70,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     eta = Dense(1, activation=None, name="dense_eta")(x)
     phi = Dense(1, activation=None, name="dense_phi")(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
-    
-    x_en = Dense(64, activation='elu', name="dense_en_a")(x)#herer so the other names remain the same
-    input_energy = SelectFeatures(0,1, name="select_en")(input_features)
-    energy_condensates,idxs = CondensateAndSum(radius=0.5, min_beta=0.1, name="condensate_en")([ccoords, beta, input_energy, x_row_splits])
-    x_en = Concatenate(name="concat_en_cond")([ScalarMultiply(10, name="multi_en")(x_en),energy_condensates])
-    x_en = Dense(64, activation='elu',name="dense_en_b")(x_en)
-    energy = Dense(1, activation=None,name="dense_en_final")(x_en)
+    energy = Dense(1, activation=None,name="dense_en_final")(x)
 
     print('input_features', input_features.shape)
 
@@ -106,10 +100,11 @@ if not train.modelSet():
     import pretrained_models as ptm
     from DeepJetCore.modeltools import load_model, apply_weights_where_possible
     
-    pretrained_model = load_model(ptm.get_model_path("default_training_big_model.h5"))
+    #pretrained_model = load_model(ptm.get_model_path("default_training_big_model.h5"))
     train.setModel(gravnet_model)
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam())
     
-    apply_weights_where_possible(train.keras_model,pretrained_model)
+    #apply_weights_where_possible(train.keras_model,pretrained_model)
     
     # train.keras_model.dynamic=True
     train.compileModel(learningrate=1e-4,
@@ -151,9 +146,8 @@ for i in range(10):
 from configSaver import copyModules
 copyModules(train.outputDir)
 
-train.change_learning_rate(1e-4)
 
-nbatch = 20000 
+nbatch = 10000 
 
 loss_config.energy_loss_weight = 0.001
 loss_config.use_energy_weights = False
@@ -162,10 +156,26 @@ loss_config.no_beta_norm = False
 loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
 loss_config.position_loss_weight=0.001
-loss_config.use_spectators=True
+loss_config.use_spectators=False
 loss_config.log_energy=False
+loss_config.beta_loss_scale = 10.
+
+train.change_learning_rate(3e-4)
 
 model, history = train.trainModel(nepochs=1,
+                                  run_eagerly=True,
+                                  batchsize=nbatch,
+                                  batchsize_use_sum_of_squares=False,
+                                  checkperiod=1,  # saves a checkpoint model every N epochs
+                                  verbose=verbosity,
+                                  backup_after_batches=100,
+                                  additional_callbacks=callbacks)
+
+
+loss_config.beta_loss_scale = 1.
+train.change_learning_rate(1e-4)
+
+model, history = train.trainModel(nepochs=1+3,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   batchsize_use_sum_of_squares=False,
@@ -185,18 +195,17 @@ loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
 loss_config.position_loss_weight=0.01
 loss_config.use_spectators=False
-loss_config.log_energy=False
 
 train.change_learning_rate(3e-5)
 
-model, history = train.trainModel(nepochs=10 + 1,
+model, history = train.trainModel(nepochs=10 + 3 +1,
                                   batchsize=nbatch,
                                   run_eagerly=True,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   backup_after_batches=100,
-                                  verbose=verbosity, 
-                                  additional_callbacks=callbacks)
+                                  verbose=verbosity,
+                                  additional_callbacks=callbacks )
 
 
 loss_config.energy_loss_weight = 2.
@@ -207,10 +216,9 @@ loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
 loss_config.position_loss_weight=0.1
 loss_config.use_spectators=False
-loss_config.log_energy=False
 
 train.change_learning_rate(1e-5)
-model, history = train.trainModel(nepochs=10 + 10 + 1,
+model, history = train.trainModel(nepochs=10 + 10 + 3 + 1,
                                   batchsize=nbatch,
                                   run_eagerly=True,
                                   batchsize_use_sum_of_squares=False,
@@ -218,5 +226,3 @@ model, history = train.trainModel(nepochs=10 + 10 + 1,
                                   backup_after_batches=100,
                                   verbose=verbosity, 
                                   additional_callbacks=callbacks)
-
-
