@@ -527,7 +527,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     classes, row_splits = d['truthHitAssignementIdx'][...,0], rowsplits[ : rowsplits[-1,0],0]
     
     energyweights = d['truthHitAssignedEnergies']
-    energyweights = tf.math.log(0.1 * energyweights + 1.)*0.
+    energyweights = tf.math.log(0.1 * energyweights + 1.)
     
     if not config.use_energy_weights:
         energyweights *= 0.
@@ -540,7 +540,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
         scaled_true_energy = tf.math.log(d['truthHitAssignedEnergies']+1.)
         den_offset = 0.1
     energy_diff = (d['predEnergy'] - scaled_true_energy) 
-    energy_loss = energyweights * energy_diff**2/(scaled_true_energy**2+den_offset**2)
+    energy_loss = energyweights * energy_diff**2/(scaled_true_energy+den_offset**2)
     
     etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
     phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']

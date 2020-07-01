@@ -556,7 +556,7 @@ if __name__ == '__main__':
     parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
     parser.add_argument('-v', help='Visualize number of showers', default='10')
-    parser.add_argument('--notlogE', help='prediction is linear energy not log(E+1)', action='store_false')
+    parser.add_argument('--notlogE', help='prediction is linear energy not log(E+1)', action='store_true')
     parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.', default='')
     parser.add_argument('--gpu', help='GPU', default='')
     args = parser.parse_args()

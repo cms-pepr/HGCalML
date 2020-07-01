@@ -88,6 +88,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     eta = Dense(1, activation=None, name="dense_eta")(x)
     phi = Dense(1, activation=None, name="dense_phi")(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
+    energy = Dense(1, activation=None,name="dense_en_final")(x)
 
 
 
@@ -112,6 +113,7 @@ from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 
 if not train.modelSet():
     train.setModel(gravnet_model)  # ser_simple_model)
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam())
     # train.keras_model.dynamic=True
     train.compileModel(learningrate=1e-4,
                        loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits])
