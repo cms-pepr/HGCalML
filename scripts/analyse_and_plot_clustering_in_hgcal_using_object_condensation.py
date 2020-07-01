@@ -186,7 +186,6 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     clustering_coords_all_filtered = clustering_coords_all[is_spectator==1, :]
 
     labels, representative_indices = find_uniques_from_betas(beta_all_filtered, clustering_coords_all_filtered, dist_threshold=distance_threshold)
-
     labels_for_all = assign_prediction_labels_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, beta_all_filtered, distance_threshold=distance_threshold)
 
     unique_labels = np.unique(labels)
