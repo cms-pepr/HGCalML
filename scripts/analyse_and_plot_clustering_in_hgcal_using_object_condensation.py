@@ -138,6 +138,65 @@ distance_threshold = 0.5
 iou_threshold = 0.1
 
 
+def match_to_truth(truth_showers, unique_showers, unique_showers_e, unique_shower_eta, labels, clustering_coords_all_filtered, representative_indices, rechit_energies):
+    global iou_threshold
+    truth_showers_found = {}
+    truth_showers_found_e = {}
+    truth_showers_found_eta = {}
+    iii = 0
+    for x in unique_showers:
+        truth_showers_found[x] = -1
+        truth_showers_found_e[x] = unique_showers_e[iii]
+        truth_showers_found_eta[x] = unique_shower_eta[iii]
+        iii += 1
+
+    unique_labels = np.unique(labels)
+
+    print("HELLO")
+    print(unique_labels)
+
+
+
+    predicted_showers_found = {}
+    for x in unique_labels:
+        predicted_showers_found[x] = -1
+
+
+    unique_showers_this_segment = np.unique(truth_showers)
+    representative_coords = []
+    G = nx.Graph()
+    for index_shower_prediction in unique_labels:
+        if index_shower_prediction == -1:
+            continue
+
+        for i in range(len(unique_showers_this_segment)):
+            if unique_showers_this_segment[i] == -1:
+                continue
+
+            # sum_truth = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]))
+            # sum_predicted = np.sum(rechit_energies_this_segment * (labels_for_all == index_shower_prediction))
+            overlap = np.sum(rechit_energies * (truth_showers == unique_showers_this_segment[i]) * (labels == index_shower_prediction)) / np.sum(rechit_energies * np.logical_or((truth_showers == unique_showers_this_segment[i]), (labels == index_shower_prediction)))
+
+            if overlap > iou_threshold:
+                G.add_edge('p%d'%index_shower_prediction, 't%d'%unique_showers_this_segment[i], weight=overlap)
+
+    X = nx.algorithms.max_weight_matching(G)
+    for x,y in X:
+        if x[0] == 'p':
+            prediction_index = int(x[1:])
+            truth_index = int(y[1:])
+        else:
+            truth_index = int(x[1:])
+            prediction_index = int(y[1:])
+
+        print(x,y, truth_index, prediction_index)
+
+        truth_showers_found[truth_index] = prediction_index
+        predicted_showers_found[prediction_index] = truth_index
+
+    return truth_showers_found, predicted_showers_found
+
+
 def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, should_return_visualization_data=False, input_log_energy=True):
     results_dict = build_window_analysis_dict()
 
@@ -170,6 +229,19 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     eta_truth_all = y_this_segment[:, 8]
     phi_truth_all = y_this_segment[:, 9]
 
+
+    ticl_instance_id = y_this_segment[:, 17]
+    ticl_true_energy = y_this_segment[:, 18]
+
+    print()
+    print()
+    print()
+    print(np.unique(ticl_instance_id))
+    print()
+    print()
+    print()
+
+
     energy_regressed_filtered = energy_regressed_all[is_spectator==1]
     eta_regressed_filtered = eta_regressed_all[is_spectator==1]
     phi_regressed_filtered = phi_regressed_all[is_spectator==1]
@@ -190,7 +262,7 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     labels, representative_indices = find_uniques_from_betas(beta_all_filtered, clustering_coords_all_filtered, dist_threshold=distance_threshold)
     labels_for_all = assign_prediction_labels_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, beta_all_filtered, distance_threshold=distance_threshold)
 
-    unique_labels = np.unique(labels)
+    unique_labels = np.unique(labels_for_all)
 
     truth_showers_found = {}
     truth_showers_found_e = {}
@@ -210,6 +282,11 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     for x in unique_labels:
         predicted_showers_found[x] = -1
         predicted_showers_representative_index[x] = -1
+
+
+    print("12345")
+    print(predicted_showers_found)
+    print()
 
     representative_coords = []
     G = nx.Graph()
@@ -242,48 +319,13 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
         predicted_showers_found[prediction_index] = truth_index
         predicted_showers_representative_index[prediction_index] = representative_indices[prediction_index]
 
-    #
-    # ii_p = 0
-    # for representative_index in representative_indices:
-    #     # rechit_energies_this_segment[labels_for_all==ii_p]
-    #     # x = labels[representative_index]
-    #     # print(ii_p, x)
-    #
-    #     representative_coords.append(clustering_coords_all_filtered[representative_index])
-    #
-    #     top_match_index = -1
-    #     top_match_shower = -1
-    #     top_match_value = 0
-    #     top_sum_truth = 0
-    #     top_sum_pred = 0
-    #
-    #     top_match_shower = truth_showers_this_segment[representative_index]
-    #     if truth_showers_found[top_match_shower] != -1:
-    #         top_match_shower = -1
-    #
-    #     for i in range(len(unique_showers_this_segment)):
-    #
-    #         if truth_showers_found[unique_showers_this_segment[i]] != -1:
-    #             continue
-    #
-    #         sum_truth = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]))
-    #         sum_predicted = np.sum(rechit_energies_this_segment * (labels_for_all == ii_p))
-    #         overlap = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == ii_p)) / np.sum(rechit_energies_this_segment * np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == ii_p)))
-    #
-    #         if overlap > top_match_value and overlap > iou_threshold:
-    #             top_match_index == i
-    #             top_match_shower = unique_showers_this_segment[i]
-    #             top_match_value = overlap
-    #             top_sum_truth = sum_truth
-    #             top_sum_pred = sum_predicted
-    #
-    #     if top_match_shower != -1:
-    #         truth_showers_found[top_match_shower] = ii_p
-    #         predicted_showers_found[ii_p] = top_match_shower
-    #         predicted_showers_representative_index[ii_p] = representative_index
-    #         # print(top_match_value, top_sum_pred, top_sum_truth)
-    #
-    #     ii_p += 1
+
+    print("Hello XYZ")
+    print(predicted_showers_found)
+    print()
+
+    truth_to_ticl, ticl_to_truth = match_to_truth(truth_showers_this_segment, unique_showers_this_segment, unique_showers_energies, unique_showers_eta, ticl_instance_id, clustering_coords_all_filtered,
+                   representative_indices, rechit_energies_this_segment)
 
 
     num_found = 0.
@@ -394,21 +436,40 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     if should_return_visualization_data:
         vis_dict = build_window_visualization_dict()
+        vis_dict['truth_showers'] = truth_showers_this_segment# replace(truth_showers_this_segment, replace_dictionary)
 
-        replace_dictionary = copy.deepcopy(truth_showers_found)
+        replace_dictionary = copy.deepcopy(predicted_showers_found)
         replace_dictionary_2 = copy.deepcopy(replace_dictionary)
-        start_secondary_indicing_from = np.max(labels_for_all) + 1
+        start_secondary_indicing_from = np.max(truth_showers_this_segment) + 1
         for k, v in replace_dictionary.items():
             if v == -1 and k != -1:
                 replace_dictionary_2[k] = start_secondary_indicing_from
                 start_secondary_indicing_from += 1
         replace_dictionary = replace_dictionary_2
 
-        vis_dict['truth_showers'] = replace(truth_showers_this_segment, replace_dictionary)
+        print("===============")
+        print(np.unique(labels_for_all), replace_dictionary)
+        vis_dict['predicted_showers'] = replace(labels_for_all, replace_dictionary)
+
+        print(predicted_showers_found)
+
+        print(np.mean((labels_for_all==-1)).astype(np.float))
+
+        replace_dictionary = copy.deepcopy(ticl_to_truth)
+        replace_dictionary_2 = copy.deepcopy(replace_dictionary)
+        start_secondary_indicing_from = np.max(truth_showers_this_segment) + 1
+        for k, v in replace_dictionary.items():
+            if v == -1 and k != -1:
+                replace_dictionary_2[k] = start_secondary_indicing_from
+                start_secondary_indicing_from += 1
+        replace_dictionary = replace_dictionary_2
+
+        print(np.unique(ticl_instance_id), replace_dictionary)
+        vis_dict['ticl_showers'] = replace(ticl_instance_id, replace_dictionary)
+
         vis_dict['x'] = x_this_segment
         vis_dict['y'] = y_this_segment
         vis_dict['prediction_all'] = pred_this_segment
-        vis_dict['predicted_showers'] = labels_for_all
         vis_dict['coords_representatives'] = representative_coords
         vis_dict['identified_vertices'] = labels_for_all
 
