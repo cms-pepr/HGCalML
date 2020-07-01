@@ -4,7 +4,7 @@ import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet_simple
+from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet_simple, CondensateAndSum
 from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -16,30 +16,11 @@ from DeepJetCore.training.training_base import custom_objects_list
 # from tensorflow.keras.optimizer_v2 import Adam
 
 from ragged_callbacks import plotEventDuringTraining
-from DeepJetCore.DJCLayers import ScalarMultiply
+from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures
 
 
 # tf.compat.v1.disable_eager_execution()
 
-
-
-def ser_simple_model(Inputs):
-    x = Dense(128)(Inputs[0])
-
-    beta = Dense(1, activation='sigmoid')(x)
-    energy = Dense(1, activation=None)(x)
-    eta = Dense(1, activation=None)(x)
-    phi = Dense(1, activation=None)(x)
-    ccoords = Dense(2, activation=None)(x)
-
-    x = Concatenate()([
-        beta,
-        energy,
-        eta,
-        phi,
-        ccoords])
-
-    return Model(inputs=Inputs, outputs=[x, x])
 
 
 def gravnet_model(Inputs, feature_dropout=-1.):
@@ -85,13 +66,21 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
     beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
+    
     eta = Dense(1, activation=None, name="dense_eta")(x)
     phi = Dense(1, activation=None, name="dense_phi")(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
+    
+    x_en = Dense(64, activation='elu', name="dense_en_a")(x)#herer so the other names remain the same
+    input_energy = SelectFeatures(0,1, name="select_en")(input_features)
+    energy_condensates,idxs = CondensateAndSum(radius=0.5, min_beta=0.1, name="condensate_en")([ccoords, beta, input_energy, x_row_splits])
+    x_en = Concatenate(name="concat_en_cond")([ScalarMultiply(10, name="multi_en")(x_en),energy_condensates])
+    x_en = Dense(64, activation='elu',name="dense_en_b")(x_en)
+    energy = Dense(1, activation=None,name="dense_en_final")(x_en)
 
+    print('input_features', input_features.shape)
 
-
-    x = Concatenate(name="concat_last")([input_features, beta, energy, eta, phi, ccoords])
+    x = Concatenate(name="concat_final")([input_features, beta, energy, eta, phi, ccoords])
 
     # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
     predictions = x
@@ -99,6 +88,9 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     # outputs = tf.tuple([predictions, x_row_splits])
 
     return Model(inputs=Inputs, outputs=[predictions, predictions])
+
+
+
 
 
 train = training_base(testrun=False, resumeSilently=True, renewtokens=False)
@@ -111,7 +103,14 @@ from Losses import obj_cond_loss_truth, obj_cond_loss_rowsplits, null_loss
 # train.setDJCKerasModel(simple_model)
 
 if not train.modelSet():
-    train.setModel(gravnet_model)  # ser_simple_model)
+    import pretrained_models as ptm
+    from DeepJetCore.modeltools import load_model, apply_weights_where_possible
+    
+    #pretrained_model = load_model(ptm.get_model_path("default_training_big_model.h5"))
+    train.setModel(gravnet_model)
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam())
+    #apply_weights_where_possible(train.keras_model,pretrained_model)
+    
     # train.keras_model.dynamic=True
     train.compileModel(learningrate=1e-4,
                        loss=[obj_cond_loss_truth, obj_cond_loss_rowsplits])
@@ -123,20 +122,11 @@ if not train.modelSet():
 
 from betaLosses import config as loss_config
 
-loss_config.energy_loss_weight = 0.0001
-loss_config.use_energy_weights = False
-loss_config.q_min = 0.5
-loss_config.no_beta_norm = False
-loss_config.potential_scaling = 1.
-loss_config.s_b = 1.
-loss_config.position_loss_weight=0.001
-
-
 
 
 print(train.keras_model.summary())
 
-nbatch = 50000  # **2 #this will be an upper limit on vertices per batch
+ # **2 #this will be an upper limit on vertices per batch
 
 verbosity = 2
 import os
@@ -150,7 +140,7 @@ for i in range(10):
         plotEventDuringTraining(
             outputfile=plotoutdir + "/sn",
             samplefile=samplepath,
-            after_n_batches=300,
+            after_n_batches=2000,
             batchsize=100000,
             on_epoch_end=False,
             use_event=2 + i)
@@ -161,8 +151,23 @@ for i in range(10):
 from configSaver import copyModules
 copyModules(train.outputDir)
 
-print("It should save now")
-model, history = train.trainModel(nepochs=10,
+
+nbatch = 10000 
+
+loss_config.energy_loss_weight = 0.0001
+loss_config.use_energy_weights = False
+loss_config.q_min = 0.5
+loss_config.no_beta_norm = False
+loss_config.potential_scaling = 1.
+loss_config.s_b = 1.
+loss_config.position_loss_weight=0.00001
+loss_config.use_spectators=False
+loss_config.log_energy=False
+loss_config.beta_loss_scale = 1.
+
+train.change_learning_rate(3e-4)
+
+model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   batchsize_use_sum_of_squares=False,
@@ -171,25 +176,61 @@ model, history = train.trainModel(nepochs=10,
                                   backup_after_batches=100,
                                   additional_callbacks=callbacks)
 
-exit()
-
-train.change_learning_rate(2e-4)
-
-model, history = train.trainModel(nepochs=5 + 1,
-                                  batchsize=nbatch,
-                                  run_eagerly=True,
-                                  batchsize_use_sum_of_squares=False,
-                                  checkperiod=1,  # saves a checkpoint model every N epochs
-                                  backup_after_batches=100,
-                                  verbose=verbosity, )
-
+loss_config.beta_loss_scale = 1.
+loss_config.energy_loss_weight = 0.001
+loss_config.position_loss_weight=0.0001
 train.change_learning_rate(1e-4)
-model, history = train.trainModel(nepochs=99 + 5 + 1,
+
+model, history = train.trainModel(nepochs=1+3,
+                                  run_eagerly=True,
+                                  batchsize=nbatch,
+                                  batchsize_use_sum_of_squares=False,
+                                  checkperiod=1,  # saves a checkpoint model every N epochs
+                                  verbose=verbosity,
+                                  backup_after_batches=100,
+                                  additional_callbacks=callbacks)
+
+
+nbatch = 50000
+
+loss_config.energy_loss_weight = 1.
+loss_config.use_energy_weights = False
+loss_config.q_min = 0.5
+loss_config.no_beta_norm = False
+loss_config.potential_scaling = 1.
+loss_config.s_b = 1.
+loss_config.position_loss_weight=0.01
+loss_config.use_spectators=False
+
+train.change_learning_rate(3e-5)
+
+model, history = train.trainModel(nepochs=10 + 3 +1,
                                   batchsize=nbatch,
                                   run_eagerly=True,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   backup_after_batches=100,
-                                  verbose=verbosity, )
+                                  verbose=verbosity,
+                                  additional_callbacks=callbacks )
+
+
+loss_config.energy_loss_weight = 2.
+loss_config.use_energy_weights = False
+loss_config.q_min = 0.5
+loss_config.no_beta_norm = False
+loss_config.potential_scaling = 1.
+loss_config.s_b = 1.
+loss_config.position_loss_weight=0.1
+loss_config.use_spectators=False
+
+train.change_learning_rate(1e-5)
+model, history = train.trainModel(nepochs=10 + 10 + 3 + 1,
+                                  batchsize=nbatch,
+                                  run_eagerly=True,
+                                  batchsize_use_sum_of_squares=False,
+                                  checkperiod=1,  # saves a checkpoint model every N epochs
+                                  backup_after_batches=100,
+                                  verbose=verbosity, 
+                                  additional_callbacks=callbacks)
 
 
