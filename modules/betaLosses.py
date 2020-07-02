@@ -533,6 +533,9 @@ def full_obj_cond_loss(truth, pred, rowsplits):
         energyweights *= 0.
     energyweights += 1.
     
+    #just to mitigate the biased sample
+    energyweights = tf.where(d['truthHitAssignedEnergies']>10.,energyweights+0.1, energyweights*(d['truthHitAssignedEnergies']/10.+0.1))
+    
     #also using log now, scale back in evaluation
     scaled_true_energy = d['truthHitAssignedEnergies'] #
     den_offset = 1.
