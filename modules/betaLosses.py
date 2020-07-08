@@ -502,6 +502,7 @@ class _obj_cond_config(object):
         self.use_spectators=True
         self.log_energy=True
         self.beta_loss_scale=1.
+        self.use_average_cc_pos=False
 
 
 config = _obj_cond_config()
@@ -564,7 +565,8 @@ def full_obj_cond_loss(truth, pred, rowsplits):
                                                                                              energyweights=energyweights[...,0],
                                                                                              no_beta_norm=config.no_beta_norm,
                                                                                              payload_loss=payload_loss,
-                                                                                             ignore_spectators=not config.use_spectators)
+                                                                                             ignore_spectators=not config.use_spectators,
+                                                                                             use_average_cc_pos=config.use_average_cc_pos)
     
     attractive_loss *= config.potential_scaling
     rep_loss *= config.potential_scaling

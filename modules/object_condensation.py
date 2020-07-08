@@ -30,7 +30,8 @@ def _parametrised_instance_loop(max_instances,
                                 q_s,
                                 extra_beta_weights=None,
                                 no_beta_norm=False,
-                                payload_loss=None):
+                                payload_loss=None,
+                                use_average_cc_pos=False):
     # get an idea of all the shapes
 
     # K      print('instance_ids',tf.shape(instance_ids))
@@ -48,7 +49,7 @@ def _parametrised_instance_loop(max_instances,
 
     # instance ids > 0, do not include noise
     # classes_s is 0 for noise
-    # create Mki: V x K matrix
+    # create Mki: K x V matrix
     M = tf.expand_dims(instance_ids, axis=1) - tf.expand_dims(classes_s, axis=0)
     M = tf.where(tf.abs(M) < 0.1, tf.zeros_like(M) + 1., tf.zeros_like(M))
     # K x V
@@ -88,7 +89,11 @@ def _parametrised_instance_loop(max_instances,
 
     x_kalpha = gather_for_obj_from_vert(x_s, kalpha)
     x_kalpha = tf.expand_dims(x_kalpha, axis=1)  # K x 1 x 2
-    # print('x_kalpha',x_kalpha.shape)
+    if use_average_cc_pos:
+        M_exp  = tf.expand_dims(M, axis=2) # K x V x 1
+        x_kalpha = tf.reduce_sum( M_exp * tf.expand_dims(x_s,axis=0), axis=1, keepdims=True) # K x 1 x 2
+        x_kalpha = tf.where( x_kalpha ==0, x_kalpha, x_kalpha / tf.reduce_sum(M_exp, axis=1, keepdims=True))
+        
     x_s = tf.expand_dims(x_s, axis=0)
     # print('x_s',x_s.shape)
 
@@ -179,7 +184,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
                                      Q_MIN=0.1, S_B=1,
                                      energyweights=None,
                                      no_beta_norm=False,
-                                     ignore_spectators=False):
+                                     ignore_spectators=False,
+                                     use_average_cc_pos=False):
     """
     ####################################################################################################################
     # Implements OBJECT CONDENSATION for ragged tensors
@@ -272,7 +278,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
             q_s,
             e_weights,
             no_beta_norm,
-            payload_loss_seg)
+            payload_loss_seg,
+            use_average_cc_pos=use_average_cc_pos)
 
         L_beta_f_segment = tf.where(tf.math.is_nan(L_beta_f_segment), 0., L_beta_f_segment)
         L_beta_s_segment = tf.where(tf.math.is_nan(L_beta_s_segment), 0., L_beta_s_segment)
