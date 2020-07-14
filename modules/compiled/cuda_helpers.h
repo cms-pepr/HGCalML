@@ -203,10 +203,79 @@ private:
     T bx_,by_,bz_;
 };
 
+template<class T>
+class _lock_mutex{
+public:
+
+    _lock_mutex(){
+        T state=0;
+        cudaMalloc((void**)&mutex_, sizeof(T));
+        cudaMemcpy(mutex_, &state, sizeof(T), cudaMemcpyHostToDevice);
+    }
+    ~_lock_mutex(){
+        cudaFree(mutex_);
+    }
+
+    T* mutex(){return mutex_;}
+
+private:
+    T * mutex_;
+};
+template<class T>
+class _lock{
+public:
+    __device__
+    _lock( T * mutex):mutex_(mutex){
+    }
+    __device__
+    void lock(){
+        while(atomicCAS(mutex_,0,1) != 0){};
+    }
+    __device__
+    void unlock(){
+        atomicExch(mutex_,0);
+    }
+//private:
+    T * mutex_;
+private:
+    __device__
+        _lock(){}
+};
+
+//template<class T>
+//class _lock{
+//
+//public:
+//    __device__ _lock( void )
+//    {
+//        mutex = new T;
+//        (*mutex) = 0;
+//    }
+//    __device__ ~_lock( void )
+//    {
+//        delete mutex;
+//    }
+//
+//    __device__ void lock( void )
+//    {
+//        while( atomicCAS( mutex, 0, 1 ) != 0 );
+//    }
+//    __device__ void unlock( void )
+//    {
+//        atomicExch( mutex, 0 );
+//    }
+//private:
+//    T *mutex;
+//};
+//
+//
+
 
 
 typedef _grid_stride_range<size_t> grid_stride_range;
 typedef _grid_stride_range_y<size_t> grid_stride_range_y;
 typedef _grid_and_block<size_t> grid_and_block;
+typedef _lock<int> lock;
+typedef _lock_mutex<int> lock_mutex;
 
 #endif /* HGCALML_MODULES_COMPILED_CUDA_HELPERS_H_ */
