@@ -37,6 +37,22 @@ import keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
 
+
+
+class ExpMinusOne(Layer):
+    def __init__(self, **kwargs):
+        super(ExpMinusOne, self).__init__(**kwargs)
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    
+    def call(self, inputs):
+        return tf.math.expm1(inputs)
+    
+    
+global_layers_list['ExpMinusOne']=ExpMinusOne
+
+
 class CenterPhi(Layer):
     '''
     Centers phi to the first input vertex, such that the 2pi modulo behaviour 

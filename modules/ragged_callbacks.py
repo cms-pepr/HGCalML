@@ -12,7 +12,7 @@ import numpy as np
 class plotEventDuringTraining(PredictCallback): 
     def __init__(self, 
                  outputfile,
-                 log_energy=True,
+                 log_energy=False,
                  cycle_colors=False,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)

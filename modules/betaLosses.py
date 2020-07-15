@@ -500,7 +500,7 @@ class _obj_cond_config(object):
         self.s_b = 1.
         self.position_loss_weight = 1.
         self.use_spectators=True
-        self.log_energy=True
+        self.log_energy=False
         self.beta_loss_scale=1.
         self.use_average_cc_pos=False
 
@@ -541,8 +541,8 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     scaled_true_energy = d['truthHitAssignedEnergies'] #
     den_offset = 1.
     if config.log_energy:
-        scaled_true_energy = tf.math.log(d['truthHitAssignedEnergies']+1.)
-        den_offset = 0.1
+        raise ValueError("loss config log_energy is not supported anymore. Please use the 'ExpMinusOne' layer within the model instead to scale the output.")
+    
     energy_diff = (d['predEnergy'] - scaled_true_energy) 
     energy_loss = energyweights * energy_diff**2/(scaled_true_energy+den_offset**2)
     
