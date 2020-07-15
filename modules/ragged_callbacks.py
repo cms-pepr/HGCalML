@@ -7,15 +7,18 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import random
 from multiprocessing import Process
+import numpy as np
 
 class plotEventDuringTraining(PredictCallback): 
     def __init__(self, 
                  outputfile,
+                 log_energy=True,
                  cycle_colors=False,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)
         self.outputfile=outputfile
         self.cycle_colors=cycle_colors
+        self.log_energy = log_energy
         if self.td.nElements()>1:
             raise ValueError("plotEventDuringTraining: only one event allowed")
         
@@ -74,7 +77,10 @@ class plotEventDuringTraining(PredictCallback):
             while angle_in<=-360: angle_in-=360
             ax[0].view_init(30, angle_in)
             
-            
+            predEnergy=data['predEnergy']
+            if self.log_energy:
+                predEnergy = np.exp(predEnergy) - 1
+                
             make_eta_phi_projection_truth_plot(plt,ax[2],
                                                data['truthHitAssignementIdx'],                      
                                     feats['recHitEnergy'],                       
@@ -88,7 +94,9 @@ class plotEventDuringTraining(PredictCallback):
                                     data['predBeta'],               
                                     data['predCCoords'],            
                                     cmap=cmap,
-                                    identified=identified)
+                                    identified=identified,
+                                    predEnergy=predEnergy
+                                    )
             
             plt.tight_layout()
             fig.savefig(self.outputfile+str(counter)+".pdf")

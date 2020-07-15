@@ -125,21 +125,7 @@ print(train.keras_model.summary())
 verbosity = 2
 import os
 
-samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
-print("using sample for plotting ",samplepath)
-callbacks = []
-for i in range(10):
-    plotoutdir = train.outputDir + "/event_" + str(i + 2)
-    os.system('mkdir -p ' + plotoutdir)
-    callbacks.append(
-        plotEventDuringTraining(
-            outputfile=plotoutdir + "/sn",
-            samplefile=samplepath,
-            after_n_batches=1000,
-            batchsize=100000,
-            on_epoch_end=False,
-            use_event=2 + i)
-    )
+
 
 
 
@@ -151,7 +137,7 @@ copyModules(train.outputDir)
 
 from betaLosses import config as loss_config
 
-loss_config.energy_loss_weight = 0.0001
+loss_config.energy_loss_weight = 0.001
 loss_config.use_energy_weights = False
 loss_config.q_min = 0.5
 loss_config.no_beta_norm = False
@@ -165,6 +151,23 @@ loss_config.beta_loss_scale = 1.
 learningrate = 1e-5
 nbatch = 25000 #quick first training with simple examples = low # hits
 
+samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
+print("using sample for plotting ",samplepath)
+callbacks = []
+for i in range(10):
+    plotoutdir = train.outputDir + "/event_" + str(i + 2)
+    os.system('mkdir -p ' + plotoutdir)
+    callbacks.append(
+        plotEventDuringTraining(
+            outputfile=plotoutdir + "/sn",
+            samplefile=samplepath,
+            log_energy=loss_config.log_energy,
+            after_n_batches=1000,
+            batchsize=100000,
+            on_epoch_end=False,
+            use_event=2 + i)
+    )
+    
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
@@ -178,8 +181,8 @@ model, history = train.trainModel(nepochs=1,
                                  step_size = 10)])
 
 
-loss_config.energy_loss_weight = 0.001
-loss_config.position_loss_weight=0.0001
+loss_config.energy_loss_weight = 0.1
+loss_config.position_loss_weight=0.001
 learningrate = 3e-5
 
 model, history = train.trainModel(nepochs=1+3,

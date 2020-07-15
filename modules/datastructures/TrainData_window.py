@@ -206,8 +206,8 @@ class TrainData_window(TrainData):
             truthHitAssignedDirPhi, #12
             truthHitAssignedDirR,
             np.logical_not(notSpectators),#14
-            truthHitAssignedEnergies,
-            rechitsSum,
+            truthHitAssignedEnergies,#15
+            rechitsSum, #16
             np.array(ticlHitAssignementIdx, dtype='float32')   , #17
             ticlHitAssignedEnergies #18
         #    truthHitAssignedPIDs    

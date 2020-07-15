@@ -202,7 +202,8 @@ def make_eta_phi_projection_truth_plot(plt, ax,
                                     predCCoords,            #[ V x 2 ]
                                     beta_threshold=0.2, distance_threshold=0.8,
                                     cmap=None,
-                                    identified=None):
+                                    identified=None,
+                                    predEnergy=None):
     
     if len(truthHitAssignementIdx.shape)>1:
         truthHitAssignementIdx = np.array(truthHitAssignementIdx[:,0])
@@ -252,10 +253,13 @@ def make_eta_phi_projection_truth_plot(plt, ax,
     truth_size_scaling=np.log(truthEnergy[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0] +1.)+0.1
     truth_size_scaling /=  np.max(truth_size_scaling)
     
-    ax.scatter(truthPhi[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0],
-              truthEta[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0],
+    true_sel_phi = truthPhi[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0]
+    true_sel_eta = truthEta[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0]
+    true_sel_col = rgbcolor[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0]
+    ax.scatter(true_sel_phi,
+              true_sel_eta,
               s=100.*truth_size_scaling,
-              c=rgbcolor[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0],
+              c=true_sel_col,
               marker='x')
     
     
@@ -276,7 +280,29 @@ def make_eta_phi_projection_truth_plot(plt, ax,
               c='#000000',#rgba_cols[identified],
               marker='+')
     
-    
+    if predEnergy is not None:
+        if len(predEnergy.shape)>1:
+            predEnergy = np.array(predEnergy[:,0])
+            predE = predEnergy[identified]
+        for i in range(len(predE)):
+            
+            #predicted
+            ax.text(predPhi[identified][i],
+                    predEta[identified][i],
+                    s = str(predE[i])[:4],
+                    verticalalignment='bottom', horizontalalignment='right',
+                    rotation=30,
+                    fontsize='small')
+            
+            #truth
+        true_sel_en = truthEnergy[truth_idxs][truthHitAssignementIdx[truth_idxs] >= 0]
+        for i in range(len(true_sel_en)):
+            ax.text(true_sel_phi[i],true_sel_eta[i], 
+                    s=str(true_sel_en[i])[:4],
+                    color = true_sel_col[i]/1.2,
+                    verticalalignment='top', horizontalalignment='left',
+                    rotation=30,
+                    fontsize='small')
 
 
 def make_truth_energy_histogram(plt, ax, truth_energies):
