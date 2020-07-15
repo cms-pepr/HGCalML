@@ -22,6 +22,9 @@ global_layers_list['RaggedVertexEater']=RaggedVertexEater
 global_layers_list['RaggedNeighborIndices']=RaggedNeighborIndices
 
 
+global_layers_list['RaggedSelectThreshold']=RaggedSelectThreshold
+
+
 global_layers_list['FusedRaggedGravNet']=FusedRaggedGravNet
 global_layers_list['FusedRaggedGravNet_simple']=FusedRaggedGravNet_simple
 

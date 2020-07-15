@@ -164,8 +164,8 @@ loss_config.use_spectators=False
 loss_config.log_energy=False
 loss_config.beta_loss_scale = 1.
 
-train.change_learning_rate(1e-4)
-nbatch = 5000 #quick first training with simple examples = low # hits
+train.change_learning_rate(1e-5)
+nbatch = 15000 #quick first training with simple examples = low # hits
 
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
@@ -179,7 +179,7 @@ model, history = train.trainModel(nepochs=1,
 
 loss_config.energy_loss_weight = 0.001
 loss_config.position_loss_weight=0.0001
-train.change_learning_rate(1e-4)
+train.change_learning_rate(1e-5)
 
 model, history = train.trainModel(nepochs=1+3,
                                   run_eagerly=True,

@@ -106,7 +106,7 @@ def make_cluster_coordinates_plot(plt, ax,
         rgbcolor = plt.get_cmap('prism')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
     else:
         rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
-    rgbcolor[truthHitAssignementIdx<0]=[0.98,0.98,0.98]
+    rgbcolor[truthHitAssignementIdx<0]=[0.92,0.92,0.92]
     #print(rgbcolor)
     #print(rgbcolor.shape)
     alphas = predBeta
@@ -175,7 +175,7 @@ def make_original_truth_shower_plot(plt, ax,
         recHitZ = np.array(recHitZ[:,0])
         
         
-    pl = plotter_3d(output_file="/tmp/plot")#will be ignored
+    pl = plotter_3d(output_file="/tmp/plot", colorscheme=None)#will be ignored
     if rgbcolor is None:
         if cmap is None:
             rgbcolor = plt.get_cmap('prism')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
@@ -238,6 +238,7 @@ def make_eta_phi_projection_truth_plot(plt, ax,
     else:
         rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
 
+    rgbcolor[truthHitAssignementIdx<0]=[0.92,0.92,0.92]
     size_scaling = np.log(recHitEnergy+1)+0.1
     size_scaling /=  np.max(size_scaling)
 

@@ -123,8 +123,10 @@ def _parametrised_instance_loop(max_instances,
         per_obj_beta = M * tf.math.atanh(tf.expand_dims(beta_s,axis=0))**2
         per_obj_pll *= per_obj_beta
         per_obj_beta_sum = weights_ka*is_obj_k*tf.reduce_sum(per_obj_beta, axis=1) 
-        per_obj_pll_sum = tf.reduce_sum(per_obj_pll, axis=1)
+        per_obj_beta_sum = tf.where(is_obj_k>0., per_obj_beta_sum, 1.)
+        per_obj_pll_sum = is_obj_k * tf.reduce_sum(per_obj_pll, axis=1)
         full_pll = tf.reduce_sum(per_obj_pll_sum/per_obj_beta_sum, axis=0)
+        
         full_pll /= (Nobj + 1e-3)
     # check broadcasting here
     L_beta = tf.reduce_sum(weights_ka* is_obj_k * (1 - tf.squeeze(tf.squeeze(beta_kalpha, axis=1), axis=1)))
@@ -263,6 +265,7 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
             continue
 
         instance_ids = tf.where(instance_ids < 0.1, tf.zeros_like(instance_ids) - 1., instance_ids)
+        
         # instance_ids = tf.sort(instance_ids) #why?
 
         no_noise_mask = tf.where(classes_s > 0.1, tf.zeros_like(classes_s) + 1., tf.zeros_like(classes_s))

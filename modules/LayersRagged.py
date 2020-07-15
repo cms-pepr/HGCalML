@@ -6,6 +6,25 @@ import uuid
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from condensate_op import BuildCondensates
+from select_threshold_op import SelectThreshold
+
+class RaggedSelectThreshold(keras.layers.Layer):
+    def __init__(self,  **kwargs):
+        super(RaggedSelectThreshold, self).__init__(**kwargs)
+    
+    def compute_output_shape(self, input_shapes):
+        #in: th, feat, rs
+        #out: feat, rs, scatter_idxs
+        print('input_shapes',input_shapes)
+        return [input_shapes[1][-1], None, [1]]  
+    
+    def call(self, x):
+        xs,pl,rs = x[0], x[1], x[2]
+        newfeat, rs, scatter_idxs = SelectThreshold(xs,pl,rs,threshold=0.5)
+        return newfeat, rs, scatter_idxs
+     
+       
+    
 
 
 class CondensateAndSum(keras.layers.Layer):
@@ -505,7 +524,7 @@ class VertexScatterer(keras.layers.Layer):
         scatter_idcs = tf.cast(scatter_idcs,dtype='int64')
         shape = tf.cast(tf.shape(protoshape),dtype='int64')
         
-        tf.print('scattering', x_data.shape, 'to', shape)
+        #tf.print('scattering', x_data.shape, 'to', shape)
         
         return tf.scatter_nd(indices=scatter_idcs, updates=x_data, shape=shape)
 

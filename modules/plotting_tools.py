@@ -160,8 +160,11 @@ class plotter_3d(base_plotter):
         #size_scaling = np.exp(size_scaling*5.)
         size_scaling /=  np.max(size_scaling)
         size_scaling *= 40.
-        cmap = cm.get_cmap(self.colorscheme)  # type: matplotlib.colors.ListedColormap
-        
+        if self.colorscheme is not None:
+            cmap = cm.get_cmap(self.colorscheme)  # type: matplotlib.colors.ListedColormap
+            #c += np.min(c)
+            #c /= np.max(c)
+            c = cmap(c)
         #c = size_scaling #/=np.min(c)
         #ax.view_init(30, 130)
         ax.scatter(xs, ys, zs, c=c, s=self.marker_scale*size_scaling, alpha=0.5)
