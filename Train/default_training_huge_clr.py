@@ -19,6 +19,7 @@ from ragged_callbacks import plotEventDuringTraining
 from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures
 
 from clr_callback import CyclicLR
+from Layers import ExpMinusOne
 
 # tf.compat.v1.disable_eager_execution()
 
@@ -72,6 +73,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     phi = Dense(1, activation=None, name="dense_phi")(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
     energy = Dense(1, activation=None,name="dense_en_final")(x)
+    energy = ExpMinusOne(name="en_scaling")(energy)
 
     print('input_features', input_features.shape)
 
@@ -145,8 +147,8 @@ loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
 loss_config.position_loss_weight=0.00001
 loss_config.use_spectators=False
-loss_config.log_energy=True
-loss_config.beta_loss_scale = 1.
+loss_config.beta_loss_scale = 10.
+loss_config.payload_rel_threshold = 0.5
 
 learningrate = 1e-5
 nbatch = 25000 #quick first training with simple examples = low # hits
@@ -161,7 +163,6 @@ for i in range(10):
         plotEventDuringTraining(
             outputfile=plotoutdir + "/sn",
             samplefile=samplepath,
-            log_energy=loss_config.log_energy,
             after_n_batches=1000,
             batchsize=100000,
             on_epoch_end=False,

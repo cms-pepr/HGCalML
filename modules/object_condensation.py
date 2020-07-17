@@ -17,7 +17,15 @@ def remove_zero_length_elements_from_ragged_tensors(row_splits):
 
 # create a few with fixed number and then make an if statement selecting the right one
 # @tf.function
-
+def normalize_weights(weights):
+    '''
+    Input is X x V x X
+    Outputs are X x V x X
+    '''
+    weight_sum = tf.reduce_sum(weights, axis=1, keepdims=True) #K x 1
+    weight_sum = tf.where(weight_sum>0., weight_sum, 1.)
+    return weights/weight_sum
+    
 
 # bucket this guy with padded inputs maybe?
 # @tf.function
@@ -31,7 +39,8 @@ def _parametrised_instance_loop(max_instances,
                                 extra_beta_weights=None,
                                 no_beta_norm=False,
                                 payload_loss=None,
-                                use_average_cc_pos=False):
+                                use_average_cc_pos=False,
+                                payload_rel_threshold=0):
     # get an idea of all the shapes
 
     # K      print('instance_ids',tf.shape(instance_ids))
@@ -118,16 +127,25 @@ def _parametrised_instance_loop(max_instances,
 
     full_pll = None
     if payload_loss is not None:
-        payload_loss = tf.expand_dims(payload_loss, axis=0)
-        per_obj_pll = M * payload_loss
-        per_obj_beta = M * tf.math.atanh(tf.expand_dims(beta_s,axis=0))**2
-        per_obj_pll *= per_obj_beta
-        per_obj_beta_sum = weights_ka*is_obj_k*tf.reduce_sum(per_obj_beta, axis=1) 
-        per_obj_beta_sum = tf.where(is_obj_k>0., per_obj_beta_sum, 1.)
-        per_obj_pll_sum = is_obj_k * tf.reduce_sum(per_obj_pll, axis=1)
-        full_pll = tf.reduce_sum(per_obj_pll_sum/per_obj_beta_sum, axis=0)
+
+        payload_loss = tf.expand_dims(payload_loss, axis=0) # 1 x V x F
+        M_exp = tf.expand_dims(M, axis=2) # K x V x 1
         
-        full_pll /= (Nobj + 1e-3)
+        weights = M * tf.math.atanh(tf.expand_dims(beta_s,axis=0))**2
+        weights = tf.expand_dims(weights,axis=2) #K x V x 1
+        
+        if payload_rel_threshold>0:
+            maxweight = tf.reduce_max(weights,axis=1, keepdims=True)#make max weight 1
+            weights /= tf.where(maxweight>0, maxweight, 1.)
+            weights = tf.nn.relu(weights-payload_rel_threshold)
+        
+        weights = normalize_weights(weights)
+        
+        per_obj_vert_pll = M_exp * payload_loss # K x V x F
+        per_obj_pll = tf.reduce_sum(per_obj_vert_pll * weights, axis=1) 
+        #K x F
+        full_pll = tf.reduce_sum(per_obj_pll, axis=0) / (Nobj + 1e-3)# F
+        
     # check broadcasting here
     L_beta = tf.reduce_sum(weights_ka* is_obj_k * (1 - tf.squeeze(tf.squeeze(beta_kalpha, axis=1), axis=1)))
     if not no_beta_norm:
@@ -187,7 +205,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
                                      energyweights=None,
                                      no_beta_norm=False,
                                      ignore_spectators=False,
-                                     use_average_cc_pos=False):
+                                     use_average_cc_pos=False,
+                                     payload_rel_threshold=0.):
     """
     ####################################################################################################################
     # Implements OBJECT CONDENSATION for ragged tensors
@@ -282,7 +301,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
             e_weights,
             no_beta_norm,
             payload_loss_seg,
-            use_average_cc_pos=use_average_cc_pos)
+            use_average_cc_pos=use_average_cc_pos,
+            payload_rel_threshold=payload_rel_threshold)
 
         L_beta_f_segment = tf.where(tf.math.is_nan(L_beta_f_segment), 0., L_beta_f_segment)
         L_beta_s_segment = tf.where(tf.math.is_nan(L_beta_s_segment), 0., L_beta_s_segment)

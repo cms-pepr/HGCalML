@@ -6,8 +6,8 @@ import numpy as np
 import time
 
 
-n_vert=300000
-n_ccoords=2
+n_vert=30000
+n_ccoords=4
 n_feat=3
 
 radius=0.5
@@ -23,7 +23,9 @@ for _ in range(20):
     summed_features, asso_idx = BuildCondensates(ccoords=ccoords, betas=betas, features=features, row_splits=row_splits, radius=radius, min_beta=0.1)
 totaltime = (time.time()-t0)/20.
 
-
+print('op time', totaltime)
+exit()
+#exit()
 #print('betas',betas)
 #print('features',features)
 #print('ccoords',ccoords)
@@ -31,32 +33,34 @@ totaltime = (time.time()-t0)/20.
 #print('asso_idx',asso_idx)
 #print('n condensates', tf.unique(asso_idx))
 
-print('op time', totaltime)
 
 
-for i in range(len(row_splits)-1):
+for radius in [0.1,0.3,0.6,0.9]:
+    for i in range(len(row_splits)-1):
+        
+        summed_features, asso_idx = BuildCondensates(ccoords=ccoords, betas=betas, features=features, row_splits=row_splits, radius=radius, min_beta=0.1)
     
-    truthHitAssignementIdx = np.array(asso_idx[row_splits[i]:row_splits[i+1]].numpy(),dtype='float')
-    predBeta = betas[row_splits[i]:row_splits[i+1]].numpy()
-    predCCoords = ccoords[row_splits[i]:row_splits[i+1]].numpy()
-    
-    fig = plt.figure(figsize=(5,4))
-    ax = fig.add_subplot(111)
-    
-    make_cluster_coordinates_plot(plt, ax, 
-                                  truthHitAssignementIdx, #[ V ] or [ V x 1 ]
-                                  predBeta,               #[ V ] or [ V x 1 ]
-                                  predCCoords,            #[ V x 2 ]
-                                  identified_coords=None,
-                                  beta_threshold=0.1, 
-                                  distance_threshold=radius,
-                                  cmap=None
-                                )
-    plt.show()
-    #plt.savefig("plot_"+str(i)+".pdf")
-    fig.clear()
-    plt.close(fig)
-    #exit()
+        truthHitAssignementIdx = np.array(asso_idx[row_splits[i]:row_splits[i+1]].numpy(),dtype='float')
+        predBeta = betas[row_splits[i]:row_splits[i+1]].numpy()
+        predCCoords = ccoords[row_splits[i]:row_splits[i+1]].numpy()
+        
+        fig = plt.figure(figsize=(5,4))
+        ax = fig.add_subplot(111)
+        
+        make_cluster_coordinates_plot(plt, ax, 
+                                      truthHitAssignementIdx, #[ V ] or [ V x 1 ]
+                                      predBeta,               #[ V ] or [ V x 1 ]
+                                      predCCoords,            #[ V x 2 ]
+                                      identified_coords=None,
+                                      beta_threshold=0.1, 
+                                      distance_threshold=radius,
+                                      cmap=None
+                                    )
+        #plt.show()
+        plt.savefig("plot_"+str(i)+"_rad_"+str(radius)+".pdf")
+        fig.clear()
+        plt.close(fig)
+        #exit()
     
     
     

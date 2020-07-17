@@ -503,6 +503,7 @@ class _obj_cond_config(object):
         self.log_energy=False
         self.beta_loss_scale=1.
         self.use_average_cc_pos=False
+        self.payload_rel_threshold=0
 
 
 config = _obj_cond_config()
@@ -551,9 +552,10 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
     pos_offs =  100. * tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True)
     
-    payload_loss = config.energy_loss_weight * energy_loss + config.position_loss_weight * pos_offs
-    payload_loss = tf.squeeze(energyweights * payload_loss,axis=-1) #V
+    payload_loss = tf.concat([config.energy_loss_weight * energy_loss ,
+                              config.position_loss_weight * pos_offs], axis=-1)
     
+    tf.print('pll in',payload_loss.shape)
     
     attractive_loss, rep_loss, noise_loss, min_beta_loss, payload_loss_full  = indiv_object_condensation_loss_2(d['predCCoords'], #
                                                                                              d['predBeta'][...,0],  #remove last 1 dim
@@ -566,7 +568,8 @@ def full_obj_cond_loss(truth, pred, rowsplits):
                                                                                              no_beta_norm=config.no_beta_norm,
                                                                                              payload_loss=payload_loss,
                                                                                              ignore_spectators=not config.use_spectators,
-                                                                                             use_average_cc_pos=config.use_average_cc_pos)
+                                                                                             use_average_cc_pos=config.use_average_cc_pos,
+                                                                                             payload_rel_threshold=config.payload_rel_threshold)
     
     attractive_loss *= config.potential_scaling
     rep_loss *= config.potential_scaling
@@ -583,18 +586,20 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     noise_loss = tf.where(tf.math.is_nan(noise_loss),0,noise_loss)
     payload_loss_full = tf.where(tf.math.is_nan(payload_loss_full),0,payload_loss_full)
     
-    
+    energy_loss = payload_loss_full[0]
+    pos_loss = payload_loss_full[1]
     #energy_loss *= 0.0000001
     
     # neglect energy loss almost fully
-    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + payload_loss_full + spectator_beta_penalty
+    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss + pos_loss + spectator_beta_penalty
     
     print('loss',loss.numpy(), 
           'attractive_loss',attractive_loss.numpy(), 
           'rep_loss', rep_loss.numpy(), 
           'min_beta_loss', min_beta_loss.numpy(), 
           'noise_loss' , noise_loss.numpy(),
-          'payload_loss_full', payload_loss_full.numpy(), 
+          'energy_loss', energy_loss.numpy(), 
+          'pos_loss', pos_loss.numpy(), 
           'spectator_beta_penalty', spectator_beta_penalty)
     
     return loss

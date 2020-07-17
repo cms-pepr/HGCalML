@@ -51,12 +51,15 @@ static float distancesq(
         const int v_a,
         const int v_b,
         const float *d_ccoords,
-        const int n_ccoords){
+        const int n_ccoords,
+        const float maxrad){
     float distsq=0;
     for(size_t i=0;i<n_ccoords;i++){
         float xa = d_ccoords[I2D(v_a,i,n_ccoords)];
         float xb = d_ccoords[I2D(v_b,i,n_ccoords)];
         distsq += (xa-xb)*(xa-xb);
+        if(distsq>maxrad)
+            return distsq;
     }
     return distsq;
 }
@@ -85,7 +88,7 @@ static void check_and_collect(
         return;
     }
     if(asso_idx[i_v] < 0){
-        if(distancesq(ref_vertex,i_v,d_ccoords,n_ccoords) <= radius){ //sum features in parallel?
+        if(distancesq(ref_vertex,i_v,d_ccoords,n_ccoords,radius) <= radius){ //sum features in parallel?
             asso_idx[i_v] = ref_vertex;
         }
     }
@@ -172,9 +175,9 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
                 if(cpu_d_betas[ref] < min_beta)continue;
                 if(cpu_asso_idx[ref] >=0) continue;
                 //this converges actually quite quickly
+                size_t n_vert_in_block = end_vertex - start_vertex;
 
-
-                grid_and_block gb_cac(n_vert, 512);
+                grid_and_block gb_cac(n_vert_in_block, 32);
                 check_and_collect<<<gb_cac.grid(),gb_cac.block(),0,d.stream()>>>(
                         ref,
                         d_ccoords,
@@ -190,6 +193,9 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
                 cudaMemcpy(&cpu_asso_idx.at(start_vertex),
                         asso_idx+start_vertex,range*sizeof(int),
                         cudaMemcpyDeviceToHost);
+
+                //mask, resort? I already got the assoidx here... [-1, -1, 34, ...]
+                // to only run on the "-1"s
 
 
             }
