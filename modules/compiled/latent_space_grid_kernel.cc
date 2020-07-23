@@ -126,6 +126,7 @@ static void make_pseudo_rs(
     for(;ice<n_cells;ice++){
         pseudo_rs[ice]=total;
         total+=n_vert_per_global_cell[ice];
+        DEBUGCOUT(total);
     }
     pseudo_rs[n_cells]=total;
 
@@ -202,11 +203,11 @@ struct LatentSpaceGetGridSizeOpFunctor<CPUDevice, dummy>  {
 
         //cpu!
         n_pseudo_rs=1;//rs format
-        for(size_t i=0;i<n_rs-1;i++)
+        for(size_t i=0;i<n_rs-1;i++){
             n_pseudo_rs+=n_cells_tot_per_rs[i];
+        }
 
-
-
+        DEBUGCOUT(n_pseudo_rs);
     }
 };
 
@@ -242,6 +243,9 @@ struct LatentSpaceGridOpFunctor<CPUDevice, dummy> {
 
             const float size) {
 
+        for(size_t i=0;i<n_pseudo_rs-1;i++)
+            n_vert_per_global_cell[i]=0;
+
         for(size_t irs=0;irs<n_rs-1;irs++){
 
             assign_v_to_cells(d_coords,row_splits,min_coords,n_cells_per_rs_coord,n_cells_tot_per_rs,
@@ -255,7 +259,6 @@ struct LatentSpaceGridOpFunctor<CPUDevice, dummy> {
              */
 
         }
-
         make_pseudo_rs(n_vert_per_global_cell, pseudo_rs,n_pseudo_rs-1);
         //this can just run in some thread as long as pseudo_rs are not used
 
@@ -334,10 +337,6 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(2, shape_nrsmone_nc, &t_n_cells_per_rs_coord));
 
 
-        DEBUGCOUT(n_vert);
-        DEBUGCOUT(n_rs);
-        DEBUGCOUT(n_coords);
-
         int n_pseudo_rs=0;
 
 
@@ -381,8 +380,8 @@ public:
 
         //temps
 
-        Tensor t_asso_vert_to_global_cell;
-        OP_REQUIRES_OK(context, context->allocate_temp( DT_INT32 ,shape_nvert,&t_asso_vert_to_global_cell));
+        Tensor *t_asso_vert_to_global_cell=NULL;
+        OP_REQUIRES_OK(context, context->allocate_output(3, shape_nvert, &t_asso_vert_to_global_cell));
 
         TensorShape shape_ncells;
         shape_ncells.AddDim(n_pseudo_rs-1);
@@ -431,7 +430,7 @@ public:
                 n_pseudo_rs,
 
                 //calculates
-                t_asso_vert_to_global_cell.flat<int>().data(), // (nv) maps each vertex to global cell index.
+                t_asso_vert_to_global_cell->flat<int>().data(), // (nv) maps each vertex to global cell index.
                 t_n_vert_per_global_cell.flat<int>().data(), //almost the same as pseudo_rs
                 t_n_vert_per_global_cell_filled.flat<int>().data(), //almost the same as pseudo_rs
 

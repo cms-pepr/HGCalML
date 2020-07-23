@@ -503,7 +503,7 @@ class _obj_cond_config(object):
         self.log_energy=False
         self.beta_loss_scale=1.
         self.use_average_cc_pos=False
-        self.payload_rel_threshold=0
+        self.payload_rel_threshold=0.9
 
 
 config = _obj_cond_config()

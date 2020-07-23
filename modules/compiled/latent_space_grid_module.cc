@@ -13,7 +13,8 @@ REGISTER_OP("LatentSpaceGrid")
     .Input("row_splits: int32")
     .Output("select_idxs: int32")
     .Output("pseudo_rowsplits: int32")
-    .Output("cells_per_coord: int32");
+    .Output("n_cells_per_rs_coord: int32")
+    .Output("vert_to_cell: int32");
 
 
 
