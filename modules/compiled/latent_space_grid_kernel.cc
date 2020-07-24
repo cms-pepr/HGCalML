@@ -41,10 +41,10 @@ static void get_n_cells(
         const int min_cells
 ){
 
-    printf("get_n_cells\n");
+    //printf("get_n_cells\n");
 
     int nthisrs=1;
-    for(size_t ic=0;ic<n_coords;ic++){
+    for(int ic=0;ic<n_coords;ic++){
 
         float max = max_coords[I2D(irs,ic,n_coords)];
         float min = min_coords[I2D(irs,ic,n_coords)];
@@ -53,10 +53,13 @@ static void get_n_cells(
             n_ic = min_cells;
         nthisrs *= n_ic;
 
+       // printf("ic %d: n_ic %d\n",ic,n_ic);
+
         adj_cell_sizes[I2D(irs,ic,n_coords)] = (max-min)/(float)n_ic * 1.00001;//avoid edge effects
         n_cells_per_rs_coord[I2D(irs,ic,n_coords)] = n_ic;
     }
 
+    //printf("ntot per rs %d: %d\n",irs,nthisrs);
     n_cells_tot_per_rs[irs] = nthisrs;
 }
 
@@ -75,7 +78,7 @@ static void assign_v_to_cells(
         const int n_coords,
         const int irs){ //1D C-format
 
-    printf("assign_v_to_cells\n");
+   // printf("assign_v_to_cells\n");
 
     size_t startvert = row_splits[irs];
     size_t endvert = row_splits[irs+1];
@@ -86,7 +89,7 @@ static void assign_v_to_cells(
         cellidx_offset +=  n_cells_per_rs[i];
     }
 
-    printf("offset %d\n",cellidx_offset);
+   // printf("offset %d\n",cellidx_offset);
 
     for (int iv = startvert; iv < endvert; iv++) {
 
@@ -119,14 +122,14 @@ static void make_pseudo_rs(
         int * pseudo_rs,
         const int n_cells){
 
-    printf("make_pseudo_rs\n");
+    //printf("make_pseudo_rs\n");
 
     int total=0;
-    size_t ice=0;
+    int ice=0;
     for(;ice<n_cells;ice++){
         pseudo_rs[ice]=total;
+        //printf("nvert per cell %d : %d\n",ice,n_vert_per_global_cell[ice]);
         total+=n_vert_per_global_cell[ice];
-        DEBUGCOUT(total);
     }
     pseudo_rs[n_cells]=total;
 
@@ -144,7 +147,7 @@ static void make_resort_idxs(
         const int n_vert
         ){
 
-    printf("make_resort_idxs\n");
+   // printf("make_resort_idxs\n");
 
     for(size_t ice=0;ice<n_cell;ice++){//parallel over ice!
 
@@ -207,7 +210,6 @@ struct LatentSpaceGetGridSizeOpFunctor<CPUDevice, dummy>  {
             n_pseudo_rs+=n_cells_tot_per_rs[i];
         }
 
-        DEBUGCOUT(n_pseudo_rs);
     }
 };
 
@@ -262,7 +264,6 @@ struct LatentSpaceGridOpFunctor<CPUDevice, dummy> {
         make_pseudo_rs(n_vert_per_global_cell, pseudo_rs,n_pseudo_rs-1);
         //this can just run in some thread as long as pseudo_rs are not used
 
-        DEBUGCOUT(pseudo_rs[n_pseudo_rs-1]);
 
         for(int i=0;i<n_pseudo_rs-1;i++)
             n_vert_per_global_cell_filled[i]=0;
@@ -364,7 +365,6 @@ public:
         );
 
 
-        DEBUGCOUT(n_pseudo_rs);
 
         TensorShape shape_nvert;
         shape_nvert.AddDim(n_vert);
@@ -457,11 +457,11 @@ private:
 
 REGISTER_KERNEL_BUILDER(Name("LatentSpaceGrid").Device(DEVICE_CPU), LatentSpaceGridOp<CPUDevice>);
 
-//#ifdef GOOGLE_CUDA
-//extern template struct LatentSpaceGetGridSizeOpFunctor<GPUDevice, int>;
-//extern template struct LatentSpaceGridOpFunctor<GPUDevice, int>;
-//REGISTER_KERNEL_BUILDER(Name("LatentSpaceGrid").Device(DEVICE_GPU), LatentSpaceGridOp<GPUDevice>);
-//#endif  // GOOGLE_CUDA
+#ifdef GOOGLE_CUDA
+extern template struct LatentSpaceGetGridSizeOpFunctor<GPUDevice, int>;
+extern template struct LatentSpaceGridOpFunctor<GPUDevice, int>;
+REGISTER_KERNEL_BUILDER(Name("LatentSpaceGrid").Device(DEVICE_GPU), LatentSpaceGridOp<GPUDevice>);
+#endif  // GOOGLE_CUDA
 
 }//functor
 }//tensorflow

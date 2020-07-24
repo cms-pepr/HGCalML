@@ -160,7 +160,8 @@ def make_original_truth_shower_plot(plt, ax,
                                     recHitY,
                                     recHitZ,
                                     cmap=None,
-                                    rgbcolor=None):
+                                    rgbcolor=None,
+                                    alpha=0.5):
     
     
     if len(truthHitAssignementIdx.shape)>1:
@@ -185,7 +186,7 @@ def make_original_truth_shower_plot(plt, ax,
 
     pl.set_data(x = recHitX , y=recHitY   , z=recHitZ, e=recHitEnergy , c =rgbcolor)
     pl.marker_scale=2.
-    pl.plot3d(ax=ax)
+    pl.plot3d(ax=ax,alpha=alpha)
     
     
 def make_eta_phi_projection_truth_plot(plt, ax,
