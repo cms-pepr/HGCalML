@@ -62,7 +62,7 @@ def selectNeighbours_CUDA(K, coords, row_splits, return_distances=False):
 def selectNeighbours_NewKnnCPU(K, coords, row_splits, return_distances=False):
     with tf.GradientTape(persistent=True,watch_accessed_variables=True) as t_newop:
         t_newop.watch(coords)
-        out = NewKnn(K = K, coords=coords,  row_splits=row_splits,max_radius=-1., tf_compatible=True)
+        out = NewKnn(K = K, coords=coords,  row_splits=row_splits,max_radius=-1., tf_compatible=True, n_bins_x = 2, n_bins_y = 2)
     return out, t_newop
 
 def compareTensors(inTensor1, inTensor2):
@@ -71,28 +71,41 @@ def compareTensors(inTensor1, inTensor2):
         out = CompareKnnOutputs(inTensor1, inTensor2)
     return out, t_newop
 
-def calculateIndecies(nVertices, nNeighbours):
-    coords, row_splits = createData(nVertices, 4)
+def calculateIndecies(nVertices, nNeighbours, nDims = 4):
+    coords, row_splits = createData(nVertices, nDims)
 
-    #  print("***COORDS***")
-    #  print(coords)
+    #  coords = tf.constant([[0.,0.,0.], [3.,4.,100.], [11.,11.,0.], [100.,100.,0.]])
+
+    print("***COORDS***")
+    print(coords)
+    #  print("***ROW_SPLITS***")
+    #  print(row_splits)
 
     ind_custom, _ = selectNeighbours_CUDA(nNeighbours, coords, row_splits, return_distances=False)
 
     ind_newKnn, _ =  selectNeighbours_NewKnnCPU(nNeighbours, coords, row_splits, return_distances=False)
 
-    ind_tf, _ = selectNeighbours_TF(nNeighbours, coords, row_splits, return_distances=False)
+    ind_tf, _ = selectNeighbours_TF(nNeighbours, coords, row_splits, return_distances=True)
 
     return ind_tf, ind_custom, ind_newKnn
 
 
 #****** MAIN ******
-N_VERTICIES = 100
-N_NEIGHBOURS = 20
+N_VERTICIES = 500
+N_NEIGHBOURS = 30
+N_DIMS = 4
 
 with tf.device('/CPU:0'):
-    ind_tf, ind_custom, ind_newKnn = calculateIndecies(N_VERTICIES,N_NEIGHBOURS)
+    ind_tf, ind_custom, ind_newKnn = calculateIndecies(N_VERTICIES,N_NEIGHBOURS, N_DIMS)
+
+print("***DISTANCES, TF IMPL:***")
+print(ind_tf[1])
+print("***DISTANCES, NEW_KNN IMPL:***")
+print(ind_newKnn[1])
+
 ind_custom = ind_custom[0]
+ind_newKnn = ind_newKnn[0]
+ind_tf =tf.squeeze(ind_tf[0],axis=2)
 
 print("***INDECIES, CUDA IMPL:***")
 print(ind_custom)
@@ -102,8 +115,16 @@ print("***INDECIES, NEW_KNN IMPL:***")
 print(ind_newKnn)
 
 outTensor=compareTensors(ind_tf, ind_custom)
-print("***COMPARISON TENSOR***")
+print("***COMPARISON TENSOR: TF vs CUDA***")
 print(outTensor)
+
+outTensor=compareTensors(ind_tf, ind_newKnn)
+print("***COMPARISON TENSOR: TF vs. NEW_KNN ***")
+print(outTensor)
+
+#  tmp = outTensor.numpy()
+#  if (np.sum(tmp)>0):
+#      print ("***MISTAKE FOUND!!!***")
 
 #  with tf.device('/CPU:0'):
 #      outTensor=compareTensors(ind_tf, ind_custom)
