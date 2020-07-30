@@ -70,7 +70,8 @@ class plotEventDuringTraining(PredictCallback):
                                              feats['recHitX'],
                                              feats['recHitY'],
                                              feats['recHitZ'],
-                                             cmap=cmap)
+                                             cmap=cmap,
+                                             predBeta=data['predBeta'])
             
             angle_in=counter+60.
             while angle_in>=360: angle_in-=360

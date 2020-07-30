@@ -11,6 +11,7 @@ global_layers_list['weighted_sum_layer']=weighted_sum_layer
 
 from LayersRagged import *
 
+global_layers_list['GridMaxPoolReduction']=GridMaxPoolReduction
 global_layers_list['CondensateAndSum']=CondensateAndSum
 global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 global_layers_list['RaggedConstructTensor']=RaggedConstructTensor

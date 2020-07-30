@@ -110,6 +110,9 @@ def make_cluster_coordinates_plot(plt, ax,
     #print(rgbcolor)
     #print(rgbcolor.shape)
     alphas = predBeta
+    alphas = np.clip(alphas, a_min=1e-2,a_max=1.-1e-2)
+    alphas = np.arctanh(alphas)/np.arctanh(1.-1e-2)
+    #alphas *= alphas
     alphas[alphas<0.01] = 0.01
     alphas = np.expand_dims(alphas, axis=1)
     
@@ -161,7 +164,8 @@ def make_original_truth_shower_plot(plt, ax,
                                     recHitZ,
                                     cmap=None,
                                     rgbcolor=None,
-                                    alpha=0.5):
+                                    alpha=0.5,
+                                    predBeta=None):
     
     
     if len(truthHitAssignementIdx.shape)>1:
@@ -183,6 +187,22 @@ def make_original_truth_shower_plot(plt, ax,
         else:
             rgbcolor = cmap((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
     rgbcolor[truthHitAssignementIdx<0]=[0.92,0.92,0.92]
+    
+    if predBeta is not None:
+        alpha=None #use beta instead
+        if len(predBeta.shape)>1:
+            predBeta = np.array(predBeta[:,0])
+            
+        alphas = predBeta
+        alphas = np.clip(alphas, a_min=5e-1,a_max=1.-1e-2)
+        alphas = np.arctanh(alphas)/np.arctanh(1.-1e-2)
+        #alphas *= alphas
+        alphas[alphas<0.05] = 0.05
+        alphas = np.expand_dims(alphas, axis=1)
+        
+        rgbcolor = np.concatenate([rgbcolor,alphas],axis=-1)
+            
+        
 
     pl.set_data(x = recHitX , y=recHitY   , z=recHitZ, e=recHitEnergy , c =rgbcolor)
     pl.marker_scale=2.

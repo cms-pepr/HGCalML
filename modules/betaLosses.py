@@ -4,7 +4,7 @@ import tensorflow as tf
 import keras
 import keras.backend as K
 from index_dicts import create_index_dict, split_feat_pred, create_feature_dict
-
+import time
 
 #factorise a bit
 
@@ -508,6 +508,8 @@ class _obj_cond_config(object):
 
 config = _obj_cond_config()
 
+g_time = time.time()
+
 def full_obj_cond_loss(truth, pred, rowsplits):
     
     if truth.shape[0] is None: 
@@ -601,6 +603,10 @@ def full_obj_cond_loss(truth, pred, rowsplits):
           'energy_loss', energy_loss.numpy(), 
           'pos_loss', pos_loss.numpy(), 
           'spectator_beta_penalty', spectator_beta_penalty)
+    
+    global g_time
+    print('time for this batch',int((time.time()-g_time)*1000),'ms')
+    g_time=time.time()
     
     return loss
     
