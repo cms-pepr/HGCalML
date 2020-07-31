@@ -43,7 +43,7 @@ def euclidean_squared(A, B):
 
 def createData(nvert,ncoords):
     coords = tf.constant( np.random.rand(nvert,ncoords) ,dtype='float32')
-    row_splits = tf.constant( [0,  nvert] ,dtype='int32')
+    row_splits = tf.constant( [0,  nvert//2, nvert] ,dtype='int32')
     return coords, row_splits
 
 
@@ -51,7 +51,7 @@ def custom_impl(K, coords, row_splits, return_distances=False):
     
     with tf.GradientTape(persistent=True,watch_accessed_variables=True) as t_newop:
         t_newop.watch(coords)
-        out = SelectKnn(K = K, coords=coords,  row_splits=row_splits,max_radius=-1., tf_compatible=True)
+        out = SelectKnn(K = K, coords=coords,  row_splits=row_splits,max_radius=1., tf_compatible=True)
     return out, t_newop
 
 def tf_implt(K, coords, row_splits, return_distances=False):
@@ -82,6 +82,26 @@ def tf_implt(K, coords, row_splits, return_distances=False):
     return tf.concat(out_indices,axis=0), t_newop
 
 
+
+
+
+#visual inspection
+coords, row_splits = createData(20, 2)
+
+masking_values = tf.random.uniform((20,1),dtype='float32',seed=1)
+
+
+idx, dist = SelectKnn(K = 5, coords=coords,  row_splits=row_splits,max_radius=-.3, tf_compatible=False,
+                      masking_values=masking_values, threshold=0.5, 
+                      mask_mode='scat', mask_logic='and')
+
+print('masking_values',masking_values)
+print('idx',idx)
+print('dist',dist)
+
+
+
+exit()
 reldiff = []
 for it in range(1):
     coords, row_splits = createData(4000, 4)

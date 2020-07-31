@@ -504,6 +504,7 @@ class _obj_cond_config(object):
         self.beta_loss_scale=1.
         self.use_average_cc_pos=False
         self.payload_rel_threshold=0.9
+        self.rel_energy_mse=False
 
 
 config = _obj_cond_config()
@@ -547,6 +548,10 @@ def full_obj_cond_loss(truth, pred, rowsplits):
         raise ValueError("loss config log_energy is not supported anymore. Please use the 'ExpMinusOne' layer within the model instead to scale the output.")
     
     energy_diff = (d['predEnergy'] - scaled_true_energy) 
+    
+    if config.rel_energy_mse:
+        scaled_true_energy *= scaled_true_energy
+        
     energy_loss = energyweights * energy_diff**2/(scaled_true_energy+den_offset**2)
     
     etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']

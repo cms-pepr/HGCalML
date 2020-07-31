@@ -212,14 +212,8 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
 
         super(RaggedGravNet_simple, self).build(input_shape)
 
-    def priv_call(self, inputs):
-        x = inputs[0]
-        row_splits = inputs[1]
 
-        coordinates = self.input_spatial_transform(x)
-        
-        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits)
-
+    def create_output_features(self, x, neighbour_indices, weights):
         allfeat = []
         features = x
         for t in self.input_feature_transform:
@@ -230,7 +224,17 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
             allfeat.append(features)
             
         features = tf.concat(allfeat +[x], axis=-1)
-        return self.output_feature_transform(features), coordinates
+        return self.output_feature_transform(features)
+        
+    def priv_call(self, inputs):
+        x = inputs[0]
+        row_splits = inputs[1]
+
+        coordinates = self.input_spatial_transform(x)
+        
+        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits)
+
+        return self.create_output_features(x, neighbour_indices, weights), coordinates
     
     def call(self, inputs):
         return self.priv_call(inputs)[0]
@@ -305,10 +309,57 @@ class FusedRaggedGravNet(FusedRaggedGravNet_simple):
     def compute_output_shape(self, input_shapes):
         return (self.output_feature_transform.units[-1],), (self.n_dimensions, )
     
+    
+    def compute_neighbours_and_weights(self, coordinates, row_splits):
+        return SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=1.0, tf_compatible=False) 
 
 
+class FusedMaskedRaggedGravNet(FusedRaggedGravNet):
+    '''
+    direction: acc, scat 
+      accumulates for vertices above threshold only, or scatters information of vertices
+      above threshold to other vertices
+    '''
+    def __init__(self,
+                 direction , 
+                 threshold = 0.5,
+                 ex_mode = 'xor',
+                 **kwargs):
+        
+        assert direction=='acc' or direction=='scat'
+        assert ex_mode=='xor' or ex_mode=='and'
+        
+        self.direction = direction
+        self.threshold = threshold
+        self.ex_mode = ex_mode
+        
+        super(FusedMaskedRaggedGravNet, self).__init__(**kwargs)
+    
+    def get_config(self):
+        config = {'direction': self.direction,
+                  'threshold': self.threshold,
+                  'ex_mode': self.ex_mode}
+        base_config = super(FusedMaskedRaggedGravNet, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    
+    def call(self, inputs):
+        x = inputs[0]
+        row_splits = inputs[1]
+        masking_values = inputs[3]
 
+        coordinates = self.input_spatial_transform(x)
+        
+        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits, masking_values)
 
+        return self.create_output_features(x, neighbour_indices, weights), coordinates
+    
+    def compute_neighbours_and_weights(self, coordinates, row_splits, masking_values):
+        return SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=1.0, tf_compatible=False,
+                             masking_values=masking_values, threshold=self.threshold,
+                             mask_mode=self.direction, mask_logic=self.ex_mode) 
 
 
 class RaggedGlobalExchange(keras.layers.Layer):
