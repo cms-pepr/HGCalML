@@ -28,6 +28,10 @@ global_layers_list['RaggedSelectThreshold']=RaggedSelectThreshold
 
 global_layers_list['FusedRaggedGravNet']=FusedRaggedGravNet
 global_layers_list['FusedRaggedGravNet_simple']=FusedRaggedGravNet_simple
+global_layers_list['FusedMaskedRaggedGravNet']=FusedMaskedRaggedGravNet
+global_layers_list['FusedRaggedGravNetLinParse']=FusedRaggedGravNetLinParse
+
+
 
 
 

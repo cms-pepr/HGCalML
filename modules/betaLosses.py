@@ -513,6 +513,8 @@ g_time = time.time()
 
 def full_obj_cond_loss(truth, pred, rowsplits):
     
+    start_time = time.time()
+    
     if truth.shape[0] is None: 
         return tf.constant(0., tf.float32)
     
@@ -609,8 +611,9 @@ def full_obj_cond_loss(truth, pred, rowsplits):
           'pos_loss', pos_loss.numpy(), 
           'spectator_beta_penalty', spectator_beta_penalty)
     
+    print('time for this loss eval',int((time.time()-start_time)*1000),'ms')
     global g_time
-    print('time for this batch',int((time.time()-g_time)*1000),'ms')
+    print('time for total batch',int((time.time()-g_time)*1000),'ms')
     g_time=time.time()
     
     return loss

@@ -213,13 +213,13 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         super(RaggedGravNet_simple, self).build(input_shape)
 
 
-    def create_output_features(self, x, neighbour_indices, weights):
+    def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
         for t in self.input_feature_transform:
             features = t(features)
             prev_shape = features.shape
-            features = self.collect_neighbours(features, neighbour_indices, weights)
+            features = self.collect_neighbours(features, neighbour_indices, distancesq)
             features = tf.reshape(features, [-1, prev_shape[1]*2])
             allfeat.append(features)
             
@@ -231,10 +231,11 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         row_splits = inputs[1]
 
         coordinates = self.input_spatial_transform(x)
+        #tf.print('minmax coords',tf.reduce_min(coordinates), tf.reduce_max(coordinates))
         
-        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits)
+        neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
 
-        return self.create_output_features(x, neighbour_indices, weights), coordinates
+        return self.create_output_features(x, neighbour_indices, distancesq), coordinates
     
     def call(self, inputs):
         return self.priv_call(inputs)[0]
@@ -243,23 +244,23 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         input_shape = input_shapes[0]
         return (self.output_feature_transform.units[-1],)
     
-    def compute_neighbours_and_weights(self, coordinates, row_splits):
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
         ragged_split_added_indices,_ = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=True)
         
         ragged_split_added_indices=ragged_split_added_indices[...,tf.newaxis] 
 
-        distance = tf.reduce_sum(
+        distancesq = tf.reduce_sum(
             (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates,ragged_split_added_indices)) ** 2,
             axis=-1)  # [SV, N]
 
-        weights = gauss_of_lin(distance * 10.+1e-5)
-        weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
-        return ragged_split_added_indices,weights 
+        return ragged_split_added_indices,distancesq 
         
 
-    def collect_neighbours(self, features, neighbour_indices, weights):
+    def collect_neighbours(self, features, neighbour_indices, distancesq):
 
+        weights = gauss_of_lin(10.*distancesq)
+        weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
         neighbour_features = tf.gather_nd(features, neighbour_indices)
         neighbour_features *= weights
         neighbours_max = tf.reduce_max(neighbour_features, axis=1)
@@ -283,19 +284,18 @@ class FusedRaggedGravNet_simple(RaggedGravNet_simple):
         super(FusedRaggedGravNet_simple, self).__init__(**kwargs)
         
         
-    def compute_neighbours_and_weights(self, coordinates, row_splits):
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
         return SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=False) 
         
 
-    def collect_neighbours(self, features, neighbour_indices, weights):
-        f,_ = AccumulateKnn(10.*weights,  features, neighbour_indices, n_moments=0)
+    def collect_neighbours(self, features, neighbour_indices, distancesq):
+        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices, n_moments=0)
         return f
 
 class FusedRaggedGravNet(FusedRaggedGravNet_simple):
     '''
-    Also returns coordinates and has more distance modifiers
-    n_modifiers=0 is the same as the simple implementation
+    also returns coordinates
     '''
     def __init__(self,
                  **kwargs):
@@ -303,16 +303,42 @@ class FusedRaggedGravNet(FusedRaggedGravNet_simple):
         
     
     def call(self, inputs):
-        return self.priv_call(inputs)    
+        x,coords = self.priv_call(inputs) 
+        return x,coords   
     
         
     def compute_output_shape(self, input_shapes):
         return (self.output_feature_transform.units[-1],), (self.n_dimensions, )
     
     
-    def compute_neighbours_and_weights(self, coordinates, row_splits):
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
         return SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=False) 
+
+
+class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
+    '''
+    linear parsing
+    '''
+    def __init__(self,
+                 **kwargs):
+        super(FusedRaggedGravNetLinParse, self).__init__(**kwargs)
+        
+    
+    def create_output_features(self, x, neighbour_indices, distancesq):
+        allfeat = []
+        features = x
+
+        for t in self.input_feature_transform:
+            features = t(features)
+            prev_shape = features.shape
+            features = self.collect_neighbours(features, neighbour_indices, distancesq)
+            features = tf.reshape(features, [-1, prev_shape[1]*2])
+            allfeat.append(features)
+            distancesq *= 0. #the remaining parsing operations will be at zero distance
+            
+        features = tf.concat(allfeat +[x], axis=-1)
+        return self.output_feature_transform(features)
 
 
 class FusedMaskedRaggedGravNet(FusedRaggedGravNet):
@@ -347,15 +373,15 @@ class FusedMaskedRaggedGravNet(FusedRaggedGravNet):
     def call(self, inputs):
         x = inputs[0]
         row_splits = inputs[1]
-        masking_values = inputs[3]
+        masking_values = inputs[2]
 
         coordinates = self.input_spatial_transform(x)
         
-        neighbour_indices, weights = self.compute_neighbours_and_weights(coordinates, row_splits, masking_values)
+        neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits, masking_values)
 
-        return self.create_output_features(x, neighbour_indices, weights), coordinates
+        return self.create_output_features(x, neighbour_indices, distancesq), coordinates
     
-    def compute_neighbours_and_weights(self, coordinates, row_splits, masking_values):
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits, masking_values):
         return SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=False,
                              masking_values=masking_values, threshold=self.threshold,
