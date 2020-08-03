@@ -13,22 +13,20 @@ struct BuildCondensatesOpFunctor {
 
             const float *d_ccoords,
             const float *d_betas,
-            const int *beta_sorting,
-            const float *features,
             const int *row_splits,
 
-
-            float *summed_features,
             int *asso_idx,
+            int *is_cpoint,
+            float * temp_betas,
 
             const int n_vert,
-            const int n_feat,
             const int n_ccoords,
 
             const int n_rs,
 
             const float radius,
-            const float min_beta
+            const float min_beta,
+            const bool soft
             );
 };
 

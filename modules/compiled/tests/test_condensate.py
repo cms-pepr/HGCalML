@@ -5,29 +5,37 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 
-
-n_vert=30000
-n_ccoords=4
+print('starting test')
+n_vert=100000
+n_ccoords=2
 n_feat=3
 
-radius=0.5
+radius=0.7
 
-betas = tf.random.uniform((n_vert,1), dtype='float32',minval=0.5 , maxval=0.99,seed=1)
-features = tf.random.uniform((n_vert,n_feat), dtype='float32',seed=1)
-ccoords = 3.*tf.random.uniform((n_vert,n_ccoords), dtype='float32',seed=1)
-row_splits = tf.constant([0,int(n_vert/3),int(n_vert*2/3),n_vert], dtype='int32')
+betas = tf.random.uniform((n_vert,1), dtype='float32',minval=0.01 , maxval=0.99,seed=1)
 
-summed_features, asso_idx = BuildCondensates(ccoords=ccoords, betas=betas, features=features, row_splits=row_splits, radius=radius, min_beta=0.1)
+
+ccoords = 10.*tf.random.uniform((n_vert,n_ccoords), dtype='float32',seed=1)
+row_splits = tf.constant([0,n_vert], dtype='int32')
+
+print('first call')
+asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits=row_splits, radius=radius, min_beta=0.1, soft=False)
+
+#print(ccoords)
+#print(asso_idx)
+#print(is_cpoint)
+#exit()
+
+print('starting taking time')
 t0 = time.time()
-for _ in range(20):
-    summed_features, asso_idx = BuildCondensates(ccoords=ccoords, betas=betas, features=features, row_splits=row_splits, radius=radius, min_beta=0.1)
+for _ in range(0):
+    asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits=row_splits, radius=radius, min_beta=0.1)
 totaltime = (time.time()-t0)/20.
 
 print('op time', totaltime)
-exit()
+#exit()
 #exit()
 #print('betas',betas)
-#print('features',features)
 #print('ccoords',ccoords)
 #print('summed_features',summed_features)
 #print('asso_idx',asso_idx)
@@ -35,12 +43,12 @@ exit()
 
 
 
-for radius in [0.1,0.3,0.6,0.9]:
+for radius in [0.6,0.9]:
+    asso_idx, is_cpoint  = BuildCondensates(ccoords=ccoords, betas=betas, row_splits=row_splits, 
+                                            radius=radius, min_beta=0.1, soft=True)
     for i in range(len(row_splits)-1):
         
-        summed_features, asso_idx = BuildCondensates(ccoords=ccoords, betas=betas, features=features, row_splits=row_splits, radius=radius, min_beta=0.1)
-    
-        truthHitAssignementIdx = np.array(asso_idx[row_splits[i]:row_splits[i+1]].numpy(),dtype='float')
+        truthHitAssignementIdx = np.array(asso_idx[row_splits[i]:row_splits[i+1]].numpy(),dtype='float')+1
         predBeta = betas[row_splits[i]:row_splits[i+1]].numpy()
         predCCoords = ccoords[row_splits[i]:row_splits[i+1]].numpy()
         
@@ -56,8 +64,8 @@ for radius in [0.1,0.3,0.6,0.9]:
                                       distance_threshold=radius,
                                       cmap=None
                                     )
-        #plt.show()
-        plt.savefig("plot_"+str(i)+"_rad_"+str(radius)+".pdf")
+        plt.show()
+        #plt.savefig("plot_"+str(i)+"_rad_"+str(radius)+".pdf")
         fig.clear()
         plt.close(fig)
         #exit()
