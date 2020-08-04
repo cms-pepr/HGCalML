@@ -88,7 +88,8 @@ def make_cluster_coordinates_plot(plt, ax,
                                   identified_coords=None,
                                   beta_threshold=0.2, distance_threshold=0.8,
                                   cmap=None,
-                                  noalpha=False
+                                  noalpha=False,
+                                  direct_color=False
                                 ):
     
     #data = create_index_dict(truth,pred,usetf=False)
@@ -121,6 +122,9 @@ def make_cluster_coordinates_plot(plt, ax,
     
     rgba_cols = np.concatenate([rgbcolor,alphas],axis=-1)
     rgb_cols = np.concatenate([rgbcolor,np.zeros_like(alphas+1.)],axis=-1)
+    
+    if direct_color:
+        rgba_cols = truthHitAssignementIdx
     
     sorting = np.reshape(np.argsort(alphas, axis=0), [-1])
     

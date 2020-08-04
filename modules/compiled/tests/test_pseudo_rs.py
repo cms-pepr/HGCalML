@@ -25,10 +25,10 @@ print('starting full test')
 n_vert=10000
 n_ccoords=2
 n_feat=3
-soft=False
+soft=True
 radius=0.7
 
-betas = tf.random.uniform((n_vert,1), dtype='float32',minval=0.01 , maxval=0.1+1e-4,seed=2)
+betas = tf.random.uniform((n_vert,1), dtype='float32',minval=0.01 , maxval=0.3+1e-4,seed=2)
 
 
 ccoords = 3.*tf.random.uniform((n_vert,n_ccoords), dtype='float32',seed=1)
