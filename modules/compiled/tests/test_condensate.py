@@ -6,7 +6,7 @@ import numpy as np
 import time
 
 print('starting test')
-n_vert=200000
+n_vert=400000
 n_ccoords=2
 n_feat=3
 soft=True
@@ -28,15 +28,15 @@ asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits
 
 print('starting taking time')
 t0 = time.time()
-for _ in range(20):
+for _ in range(100):
     asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits=row_splits, radius=radius, min_beta=0.1, soft=soft)
-totaltime = (time.time()-t0)/20.
+totaltime = (time.time()-t0)/100.
 
 
 
 print('op time', totaltime)
 
-#exit()
+exit()
 #exit()
 #print('betas',betas)
 #print('ccoords',ccoords)

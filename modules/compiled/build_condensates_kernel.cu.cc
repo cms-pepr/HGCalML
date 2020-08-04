@@ -87,16 +87,17 @@ static void get_max_sub(
 
         if(i>=n_values)
             break;
-
+        if(mask[i] >= 0)
+            continue;
         float val_i = values[i];
-        if(val_i > local_max && mask[i] < 0){
+        if(val_i > local_max){
             local_max=val_i;
             local_ref=i;
         }
 
     }
 
-    __syncthreads();
+   // __syncthreads();
 
     int global_ref = local_ref;
     if(ref_idxs && global_ref>=0)
@@ -144,7 +145,10 @@ static float get_max_beta(
     int n_sub = n_total+1;
     while(n_sub > 1){
 
-        n_sub = sub_n_total/10 + 1; //loop 10 per thread
+        n_sub = sub_n_total/100 + 1; //loop 100 per thread
+        if(n_sub < 10){
+            n_sub = 1;
+        }
         //printf("nsub: %d\n",n_sub);
 
         float * new_values=NULL;
@@ -158,9 +162,9 @@ static float get_max_beta(
         if(cudaMalloc((void**)&new_mask,n_sub*sizeof(int)) != cudaSuccess)
             printf("ERROR: get_max_beta mem alloc not successful.");
 
+        cudaDeviceSynchronize();
 
-
-        grid_and_block gb(n_sub,512);
+        grid_and_block gb(n_sub,256);
         //do
         //printf("launch kernel\n");
         get_max_sub<<<gb.grid(),gb.block()>>>(
@@ -220,6 +224,7 @@ static float get_max_beta(
     cudaFree(tmp_mask);
 
 
+    cudaDeviceSynchronize();
     return ref_beta;
 }
 
@@ -346,6 +351,8 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
                         radius,
                         min_beta,
                         soft);
+
+                cudaDeviceSynchronize();
 
                 ref_beta = get_max_beta(temp_betas,d_betas,asso_idx,is_cpoint,&ref,n_vert,start_vertex,end_vertex,min_beta);
 
