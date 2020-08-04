@@ -19,7 +19,7 @@ ccoords = 3.*tf.random.uniform((n_vert,n_ccoords), dtype='float32',seed=1)
 row_splits = tf.constant([0,n_vert//2,n_vert], dtype='int32')
 
 print('first call')
-asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits=row_splits, radius=radius, min_beta=0.1, soft=soft)
+asso_idx, is_cpoint,n = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits=row_splits, radius=radius, min_beta=0.1, soft=soft)
 
 #print(ccoords)
 #print(asso_idx)
@@ -29,7 +29,7 @@ asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits
 print('starting taking time')
 t0 = time.time()
 for _ in range(0):
-    asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits=row_splits, radius=radius, min_beta=0.1, soft=soft)
+    asso_idx, is_cpoint,n = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits=row_splits, radius=radius, min_beta=0.1, soft=soft)
 totaltime = (time.time()-t0)/100.
 
 
@@ -53,13 +53,15 @@ def makecolours(asso):
 
 
 for radius in [0.6, 1.3]:
-    asso_idx, is_cpoint  = BuildCondensates(ccoords=ccoords, betas=betas, row_splits=row_splits, 
+    asso_idx, is_cpoint,n  = BuildCondensates(ccoords=ccoords, betas=betas, row_splits=row_splits, 
                                             radius=radius, min_beta=0.1, soft=soft)
     print('refs', np.unique(asso_idx))
+    print('N',n)
     for i in range(len(row_splits)-1):
         
         truthHitAssignementIdx = np.array(asso_idx[row_splits[i]:row_splits[i+1]].numpy())
-        
+        ncond = n[i:i+1]
+        print('N condensates', ncond.numpy())
         truthHitAssignementIdx = makecolours(truthHitAssignementIdx)+1.
         
         predBeta = betas[row_splits[i]:row_splits[i+1]].numpy()

@@ -292,6 +292,7 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
             int *asso_idx,
             int *is_cpoint,
             float * temp_betas,
+            int *n_condensates,
 
             const int n_vert,
             const int n_ccoords,
@@ -329,13 +330,13 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
             //copy ref and refBeta from GPU to CPU
 
             grid_and_block gb_rsvert(end_vertex-start_vertex, 512);
-
+            int ncond=0;
             while(ref>=0){
 
                 // if(asso_idx[ref] >=0) continue; //
                 // if(temp_betas[ref] < min_beta)continue;
                 //probably better to copy here instead of accessing n_vert times in GPU mem
-
+                ncond+=1;
 
                 check_and_collect<<<gb_rsvert.grid(),gb_rsvert.block()>>>(
                         ref,
@@ -357,6 +358,8 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
                 ref_beta = get_max_beta(temp_betas,d_betas,asso_idx,is_cpoint,&ref,n_vert,start_vertex,end_vertex,min_beta);
 
             }
+
+            cudaMemcpy(&n_condensates[j_rs], &ncond, sizeof(int), cudaMemcpyHostToDevice);
 
 
         }

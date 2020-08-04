@@ -22,7 +22,8 @@ REGISTER_OP("BuildCondensates")
     .Input("betas: float32")
     .Input("row_splits: int32")
     .Output("asso_idx: int32")
-    .Output("is_cpoint: int32");
+    .Output("is_cpoint: int32")
+    .Output("n_condensates: int32");
 
 
 

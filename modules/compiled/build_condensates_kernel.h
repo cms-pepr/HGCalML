@@ -18,6 +18,7 @@ struct BuildCondensatesOpFunctor {
             int *asso_idx,
             int *is_cpoint,
             float * temp_betas,
+            int *n_condensates,
 
             const int n_vert,
             const int n_ccoords,

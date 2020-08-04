@@ -145,6 +145,7 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
             int *asso_idx,
             int *is_cpoint,
             float * temp_betas,
+            int *n_condensates,
 
             const int n_vert,
             const int n_ccoords,
@@ -168,6 +169,7 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
             get_max_beta(temp_betas,asso_idx,is_cpoint,&ref,n_vert,start_vertex,end_vertex,min_beta);
             //copy ref back
             float ref_beta = d_betas[ref];
+            int ncond=0;
             //copy ref and refBeta from GPU to CPU
 
             while(ref>=0){
@@ -175,7 +177,7 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
                // if(asso_idx[ref] >=0) continue; //
                // if(temp_betas[ref] < min_beta)continue;
                  //probably better to copy here instead of accessing n_vert times in GPU mem
-
+                ncond++;
 
                 check_and_collect(
                         ref,
@@ -196,6 +198,8 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
                 //copy ref and refBeta from GPU to CPU
                 ref_beta = d_betas[ref];
             }
+
+            n_condensates[j_rs] = ncond;
 
 
         }
@@ -276,6 +280,11 @@ REGISTER_OP("BuildCondensates")
         Tensor *t_is_cpoint = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, outputShape_idx, &t_is_cpoint));
 
+        TensorShape rsmone;
+        rsmone.AddDim(n_rs-1);
+        Tensor *t_n_condensates = NULL;
+        OP_REQUIRES_OK(context, context->allocate_output(2, rsmone, &t_n_condensates));
+
         Tensor t_temp_betas;
         OP_REQUIRES_OK(context, context->allocate_temp( DT_FLOAT ,outputShape_idx,&t_temp_betas));
 
@@ -290,6 +299,7 @@ REGISTER_OP("BuildCondensates")
                 t_asso_idx->flat<int>().data(), //                  int *asso_idx,
                 t_is_cpoint->flat<int>().data(),//                  int *is_cpoint,
                 t_temp_betas.flat<float>().data(),
+                t_n_condensates->flat<int>().data(),
 
                 n_vert,
                 n_ccoords,
