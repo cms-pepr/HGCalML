@@ -46,8 +46,8 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     feat = []
     for i in range(n_gravnet_layers):
         n_filters = 128
-        n_propagate = 96
-        n_neighbours = 200 + i*100
+        n_propagate = 96 + 8*i
+        n_neighbours = 256 + i*128
 
         x = FusedRaggedGravNet_simple(n_neighbours=n_neighbours,
                                  n_dimensions=4,
@@ -69,14 +69,13 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
     beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
-    eta = Dense(1, activation=None, name="dense_eta")(x)
-    phi = Dense(1, activation=None, name="dense_phi")(x)
+    eta = Dense(1, activation=None, name="dense_eta",kernel_initializer='zeros')(x)
+    phi = Dense(1, activation=None, name="dense_phi",kernel_initializer='zeros')(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
     energy = Dense(1, activation=None,name="dense_en_final")(x)
     energy = ExpMinusOne(name="en_scaling")(energy)
 
-    print('input_features', input_features.shape)
-
+   
     x = Concatenate(name="concat_final")([input_features, beta, energy, eta, phi, ccoords])
 
     # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
@@ -150,7 +149,7 @@ loss_config.use_spectators=False
 loss_config.beta_loss_scale = 10.
 loss_config.payload_rel_threshold = 0.5
 
-learningrate = 1e-5
+learningrate = 1e-4
 nbatch = 25000 #quick first training with simple examples = low # hits
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
@@ -178,12 +177,12 @@ model, history = train.trainModel(nepochs=1,
                                   backup_after_batches=100,
                                   additional_callbacks=callbacks+ 
                                   [CyclicLR (base_lr = learningrate,
-                                 max_lr = learningrate*20.,
+                                 max_lr = learningrate*10.,
                                  step_size = 10)])
 
 
 loss_config.energy_loss_weight = 0.1
-loss_config.position_loss_weight=0.001
+loss_config.position_loss_weight=0.01
 learningrate = 3e-5
 
 model, history = train.trainModel(nepochs=1+3,
@@ -203,7 +202,7 @@ nbatch = 50000
 
 loss_config.energy_loss_weight = 1.
 loss_config.position_loss_weight=0.01
-learningrate = 1e-5
+learningrate = 3e-5
 
 model, history = train.trainModel(nepochs=10 + 3 +1,
                                   batchsize=nbatch,

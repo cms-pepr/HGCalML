@@ -42,15 +42,18 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = x_basic
 
     n_filters = 0
-    n_gravnet_layers = 4
+    n_gravnet_layers = 5
     feat = [x]
     for i in range(n_gravnet_layers):
         n_filters = 128
         n_propagate = [128,64,32,16,16,8,8,4,4]
         n_neighbours = 128
-
+        n_dim=4
+        if i == n_gravnet_layers - 1:
+            n_dim=2
+        x = Concatenate()([x_basic,x])
         x,coords = FusedRaggedGravNetLinParse(n_neighbours=n_neighbours,
-                                 n_dimensions=3,
+                                 n_dimensions=n_dim,
                                  n_filters=n_filters,
                                  n_propagate=n_propagate,
                                  name='gravnet_' + str(i))([x, x_row_splits])
@@ -191,8 +194,8 @@ model, history = train.trainModel(nepochs=1,
                                  step_size = 20)])
 
 
-loss_config.energy_loss_weight = 0.1
-loss_config.position_loss_weight=0.1
+loss_config.energy_loss_weight = 0.01
+loss_config.position_loss_weight=0.01
 learningrate = 3e-5
 
 model, history = train.trainModel(nepochs=1+3,

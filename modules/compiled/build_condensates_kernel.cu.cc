@@ -24,13 +24,15 @@ static void set_defaults(
         int * is_cpoint,
         const float * d_betas,
         float * temp_betas,
+        const int start_vertex,
+        const int end_vertex,
         const int n_vert){
 
-    size_t i_v = blockIdx.x * blockDim.x + threadIdx.x;
-    if(i_v>n_vert)
+    size_t i_v = blockIdx.x * blockDim.x + threadIdx.x + start_vertex;
+    if(i_v>=end_vertex)
         return;
 
-    asso_idx[i_v] = -1;
+    asso_idx[i_v] = -start_vertex -1;
 
     temp_betas[i_v] = d_betas[i_v];
 
@@ -305,9 +307,6 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
 
 ) {
 
-        grid_and_block gb_vert(n_vert, 512);
-
-        set_defaults<<<gb_vert.grid(),gb_vert.block()>>>(asso_idx,is_cpoint,d_betas,temp_betas,n_vert);
 
         std::vector<int> cpu_rowsplits(n_rs);
         cudaMemcpy(&cpu_rowsplits.at(0),row_splits,n_rs*sizeof(int),cudaMemcpyDeviceToHost); //Async if needed, but these are just a few kB
@@ -323,6 +322,11 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
             const int start_vertex = cpu_rowsplits[j_rs];
             const int end_vertex = cpu_rowsplits[j_rs+1];
 
+            grid_and_block gb_vert(end_vertex-start_vertex, 512);
+//
+            set_defaults<<<gb_vert.grid(),gb_vert.block()>>>(asso_idx,is_cpoint,d_betas,temp_betas,start_vertex,end_vertex,n_vert);
+
+            cudaDeviceSynchronize();
 
             ref_beta = get_max_beta(temp_betas,d_betas,asso_idx,is_cpoint,&ref,n_vert,start_vertex,end_vertex,min_beta);
             //copy ref back

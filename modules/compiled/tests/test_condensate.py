@@ -6,13 +6,13 @@ import numpy as np
 import time
 
 print('starting test')
-n_vert=400000
+n_vert=4000
 n_ccoords=2
 n_feat=3
-soft=True
+soft=False
 radius=0.7
 
-betas = tf.random.uniform((n_vert,1), dtype='float32',minval=0.02 , maxval=0.99,seed=2)
+betas = tf.random.uniform((n_vert,1), dtype='float32',minval=0.01 , maxval=0.1+1e-3,seed=2)
 
 
 ccoords = 3.*tf.random.uniform((n_vert,n_ccoords), dtype='float32',seed=1)
@@ -63,8 +63,8 @@ for radius in [0.6, 1.3]:
         ncond = n[i:i+1]
         print('N condensates', ncond.numpy())
         truthHitAssignementIdx = makecolours(truthHitAssignementIdx)+1.
-        
         predBeta = betas[row_splits[i]:row_splits[i+1]].numpy()
+        #predBeta = np.ones_like(predBeta,dtype='float')-1e-2
         predCCoords = ccoords[row_splits[i]:row_splits[i+1]].numpy()
         
         fig = plt.figure(figsize=(5,4))
@@ -77,7 +77,8 @@ for radius in [0.6, 1.3]:
                                       identified_coords=None,
                                       beta_threshold=0.1, 
                                       distance_threshold=radius,
-                                      cmap=None
+                                      cmap=None,
+                                      noalpha=True
                                     )
         plt.show()
         #plt.savefig("plot_"+str(i)+"_rad_"+str(radius)+".pdf")

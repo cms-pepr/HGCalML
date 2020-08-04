@@ -25,10 +25,12 @@ static void set_defaults(
         int * is_cpoint,
         const float * d_betas,
         float * temp_betas,
+        const int start_vertex,
+        const int end_vertex,
         const int n_vert){
 
-    for(size_t i_v=0;i_v<n_vert;i_v++){
-        asso_idx[i_v] = -1;
+    for(size_t i_v=start_vertex;i_v<end_vertex;i_v++){
+        asso_idx[i_v] = -start_vertex-1;
 
         temp_betas[i_v] = d_betas[i_v];
 
@@ -157,13 +159,14 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
             const bool soft) {
 
 
-        set_defaults(asso_idx,is_cpoint,d_betas,temp_betas,n_vert);
 
         //copy RS to CPU
 
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){
             const int start_vertex = row_splits[j_rs];
             const int end_vertex = row_splits[j_rs+1];
+
+            set_defaults(asso_idx,is_cpoint,d_betas,temp_betas,start_vertex,end_vertex,n_vert);
 
             int ref;
             get_max_beta(temp_betas,asso_idx,is_cpoint,&ref,n_vert,start_vertex,end_vertex,min_beta);

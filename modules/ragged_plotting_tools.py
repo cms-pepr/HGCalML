@@ -22,16 +22,16 @@ def c_collectoverthresholds(betas,
                             ccoords, 
                             sorting,
                             betasel,
-                          beta_threshold, distance_threshold):
+                          beta_threshold, in_distance_threshold):
     
-
+    distance_threshold = in_distance_threshold**2
     for e in range(len(betasel)):
         selected = []
         for si in range(len(sorting[e])):
             i = sorting[e][si]
             use=True
             for s in selected:
-                distance = math.sqrt( (s[0]-ccoords[e][i][0])**2 +  (s[1]-ccoords[e][i][1])**2 )
+                distance =  (s[0]-ccoords[e][i][0])**2 +  (s[1]-ccoords[e][i][1])**2 
                 if distance  < distance_threshold:
                     use=False
                     break
@@ -87,7 +87,8 @@ def make_cluster_coordinates_plot(plt, ax,
                                   predCCoords,            #[ V x 2 ]
                                   identified_coords=None,
                                   beta_threshold=0.2, distance_threshold=0.8,
-                                  cmap=None
+                                  cmap=None,
+                                  noalpha=False
                                 ):
     
     #data = create_index_dict(truth,pred,usetf=False)
@@ -115,6 +116,8 @@ def make_cluster_coordinates_plot(plt, ax,
     #alphas *= alphas
     alphas[alphas<0.01] = 0.01
     alphas = np.expand_dims(alphas, axis=1)
+    if noalpha:
+        alphas = np.ones_like(alphas)
     
     rgba_cols = np.concatenate([rgbcolor,alphas],axis=-1)
     rgb_cols = np.concatenate([rgbcolor,np.zeros_like(alphas+1.)],axis=-1)

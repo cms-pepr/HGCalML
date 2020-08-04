@@ -16,7 +16,8 @@ def BuildCondensates(ccoords, betas, row_splits, radius=0.8, min_beta=0.1, soft=
     .Input("betas: float32")
     .Input("row_splits: int32")
     .Output("asso_idx: int32")
-    .Output("is_cpoint: int32");
+    .Output("is_cpoint: int32")
+    .Output("n_condensates: int32");
 
 
     '''
@@ -27,7 +28,7 @@ def BuildCondensates(ccoords, betas, row_splits, radius=0.8, min_beta=0.1, soft=
     
 
 @ops.RegisterGradient("BuildCondensates")
-def _BuildCondensatesGrad(op, asso_grad, is_cgrad):
+def _BuildCondensatesGrad(op, asso_grad, is_cgrad,ncondgrad):
     
     return [None, None, None]
   
