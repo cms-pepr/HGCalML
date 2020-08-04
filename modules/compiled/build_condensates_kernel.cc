@@ -109,7 +109,7 @@ static void check_and_collect(
             if(soft){
                 //should the reduction in beta be using the original betas or the modified ones...?
                 //go with original betas
-                float moddist = 1 - sqrt(distsq / radius );
+                float moddist = 1 - (distsq / radius );
                 if(moddist < 0)
                     moddist = 0;
                 float subtract =  moddist * ref_beta;
@@ -194,7 +194,7 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
 
                 get_max_beta(temp_betas,asso_idx,is_cpoint,&ref,n_vert,start_vertex,end_vertex,min_beta);
                 //copy ref and refBeta from GPU to CPU
-
+                ref_beta = d_betas[ref];
             }
 
 

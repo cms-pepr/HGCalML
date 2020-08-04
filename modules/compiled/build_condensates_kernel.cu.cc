@@ -53,8 +53,76 @@ static float distancesq(const int v_a,
 }
 
 __global__
-static void get_max_beta(
-        const float* temp_betas,
+static void get_max_sub(
+
+        const float* values,
+        const int* ref_idxs,
+        const int* mask,
+
+        float * new_values,
+        int * new_ref_idx,
+        int * new_mask,
+
+        const int n_values,
+
+        const int n_subs,//includes a '+1'
+
+        const float min_value){
+
+    int tidx = blockIdx.x * blockDim.x + threadIdx.x;
+    //printf("launched %d, nsub %d\n",tidx, n_subs);
+    if(tidx>=n_subs)
+        return;
+
+    const int offset = tidx * n_values/n_subs;
+    const int end = (tidx+1) * n_values/n_subs;//protect in loop
+
+    // THIS NEEDS IMPROVEMENTS!
+
+    //this needs to be some smart algo here
+    //it will be called N_condensate times at least
+    int local_ref=-1;
+    float local_max = min_value;
+    for(int i=offset;i<end;i++){
+
+        if(i>=n_values)
+            break;
+
+        float val_i = values[i];
+        if(val_i > local_max && mask[i] < 0){
+            local_max=val_i;
+            local_ref=i;
+        }
+
+    }
+
+    __syncthreads();
+
+    int global_ref = local_ref;
+    if(ref_idxs && global_ref>=0)
+        global_ref = ref_idxs[local_ref];
+
+   // printf("max in %d is %d\n",tidx,global_ref);
+
+    //fill output
+    new_ref_idx[tidx] = global_ref;
+    if(local_ref>=0){
+        new_values[tidx] = values[local_ref];
+        new_mask[tidx] = mask[local_ref];
+    }
+    else{
+        new_values[tidx] = min_value;
+        new_mask[tidx] = -1;
+    }
+}
+
+
+
+
+static float get_max_beta(
+         float* temp_betas, //actually const
+
+        const float* d_betas,
         int *asso_idx,
         int * is_cpoint,
         int * maxidx,
@@ -64,27 +132,95 @@ static void get_max_beta(
         const int end_vertex,
         const float min_beta){
 
-    // THIS NEEDS IMPROVEMENTS!
 
-    //this needs to be some smart algo here
-    //it will be called N_condensate times at least
-    int ref=-1;
-    float max = min_beta;
-    for(int i_v=start_vertex;i_v<end_vertex;i_v++){
-        float biv = temp_betas[i_v];
-        if(biv > max && asso_idx[i_v] < 0){
-            max=biv;
-            ref=i_v;
+
+    const int n_total = end_vertex - start_vertex;
+
+    float * tmp_values=temp_betas+start_vertex;
+    int * tmp_ref_idx=NULL;
+    int * tmp_mask=asso_idx+start_vertex;
+
+    int sub_n_total = n_total;
+    int n_sub = n_total+1;
+    while(n_sub > 1){
+
+        n_sub = sub_n_total/10 + 1; //loop 10 per thread
+        //printf("nsub: %d\n",n_sub);
+
+        float * new_values=NULL;
+        int * new_ref_idx=NULL;
+        int * new_mask=NULL;
+
+        if(cudaMalloc((void**)&new_values,n_sub*sizeof(float)) != cudaSuccess)
+            printf("ERROR: get_max_beta mem alloc not successful.");
+        if(cudaMalloc((void**)&new_ref_idx,n_sub*sizeof(int)) != cudaSuccess)
+            printf("ERROR: get_max_beta mem alloc not successful.");
+        if(cudaMalloc((void**)&new_mask,n_sub*sizeof(int)) != cudaSuccess)
+            printf("ERROR: get_max_beta mem alloc not successful.");
+
+
+
+        grid_and_block gb(n_sub,512);
+        //do
+        //printf("launch kernel\n");
+        get_max_sub<<<gb.grid(),gb.block()>>>(
+                tmp_values,
+                tmp_ref_idx,
+                tmp_mask,
+                new_values,
+                new_ref_idx,
+                new_mask,
+                sub_n_total,
+                n_sub,
+                min_beta);
+
+        cudaDeviceSynchronize();
+
+        //if tmp delete tmp
+        if(tmp_ref_idx){
+            cudaFree(tmp_values);
+            cudaFree(tmp_ref_idx);
+            cudaFree(tmp_mask);
         }
+        tmp_values = new_values;
+        tmp_ref_idx = new_ref_idx;
+        tmp_mask = new_mask;
+        //set tmp to new
+        sub_n_total = n_sub;
 
     }
+    //printf("done, last nsub: %d\n",n_sub);
+    //use tmp, delete tmp
 
-    //if none can be found set ref to -1
+
+    // collect output and clean up
+
+    //copy final ref to CPU
+
+    int ref=-1;
+    cudaMemcpy(&ref, &tmp_ref_idx[0], sizeof(int), cudaMemcpyDeviceToHost);
+    if(ref>=0)
+        ref += start_vertex;
     *maxidx = ref;
+
+
+    //printf("ref %d\n",ref);
+
+    float ref_beta=0;
     if(ref>=0){
-        is_cpoint[ref]=1;
-        asso_idx[ref]=ref;
+        int isc=1;
+        cudaMemcpy(&is_cpoint[ref], &isc, sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(&asso_idx[ref], &ref, sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(&ref_beta, &d_betas[ref], sizeof(float), cudaMemcpyDeviceToHost);
     }
+
+
+    cudaFree(tmp_values);
+    cudaFree(tmp_ref_idx);
+    cudaFree(tmp_mask);
+
+
+    return ref_beta;
 }
 
 __global__
@@ -107,8 +243,8 @@ static void check_and_collect(
         const float min_beta,
         const bool soft){
 
-    int i_v = blockIdx.x * blockDim.x + threadIdx.x;
-    if(i_v>n_vert)
+    int i_v = blockIdx.x * blockDim.x + threadIdx.x + start_vertex;
+    if(i_v>=end_vertex)
         return;
 
     if(asso_idx[i_v] < 0){
@@ -117,7 +253,7 @@ static void check_and_collect(
         if(soft){
             //should the reduction in beta be using the original betas or the modified ones...?
             //go with original betas
-            float moddist = 1 - sqrt(distsq / radius );
+            float moddist = 1 - (distsq / radius );
             if(moddist < 0)
                 moddist = 0;
             float subtract =  moddist * ref_beta;
@@ -131,9 +267,6 @@ static void check_and_collect(
             }
         }
     }
-
-
-
 
 
 }
@@ -176,22 +309,18 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
         cudaDeviceSynchronize();
         //copy RS to CPU
 
-        int *gref=0;
+
         int ref=0;
         float ref_beta = 0;
-        cudaMalloc((void**)&gref, sizeof(int));
-        cudaMemcpy(gref, &ref, sizeof(int), cudaMemcpyHostToDevice);
 
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){
             const int start_vertex = cpu_rowsplits[j_rs];
             const int end_vertex = cpu_rowsplits[j_rs+1];
 
 
-            get_max_beta<<<1,1>>>(temp_betas,asso_idx,is_cpoint,gref,n_vert,start_vertex,end_vertex,min_beta);
+            ref_beta = get_max_beta(temp_betas,d_betas,asso_idx,is_cpoint,&ref,n_vert,start_vertex,end_vertex,min_beta);
             //copy ref back
 
-            cudaMemcpy(&ref, gref, sizeof(int), cudaMemcpyDeviceToHost);
-            cudaMemcpy(&ref_beta, &d_betas[ref], sizeof(float), cudaMemcpyDeviceToHost);
             //copy ref and refBeta from GPU to CPU
 
             grid_and_block gb_rsvert(end_vertex-start_vertex, 512);
@@ -218,18 +347,13 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
                         min_beta,
                         soft);
 
-                get_max_beta<<<1,1>>>(temp_betas,asso_idx,is_cpoint,gref,n_vert,start_vertex,end_vertex,min_beta);
-                //copy ref and refBeta from GPU to CPU
-                cudaMemcpy(&ref, gref, sizeof(int), cudaMemcpyDeviceToHost);
-                cudaMemcpy(&ref_beta, &d_betas[ref], sizeof(float), cudaMemcpyDeviceToHost);
+                ref_beta = get_max_beta(temp_betas,d_betas,asso_idx,is_cpoint,&ref,n_vert,start_vertex,end_vertex,min_beta);
 
             }
 
 
         }
 
-
-        cudaFree(gref);
 
     }
 
