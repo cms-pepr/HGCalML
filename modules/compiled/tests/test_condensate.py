@@ -28,7 +28,7 @@ asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits
 
 print('starting taking time')
 t0 = time.time()
-for _ in range(100):
+for _ in range(0):
     asso_idx, is_cpoint = BuildCondensates(ccoords=ccoords, betas=betas,  row_splits=row_splits, radius=radius, min_beta=0.1, soft=soft)
 totaltime = (time.time()-t0)/100.
 
@@ -36,7 +36,7 @@ totaltime = (time.time()-t0)/100.
 
 print('op time', totaltime)
 
-exit()
+#exit()
 #exit()
 #print('betas',betas)
 #print('ccoords',ccoords)
@@ -52,7 +52,7 @@ def makecolours(asso):
     return np.array(cols,dtype='float')
 
 
-for radius in [0.6]:
+for radius in [0.6, 1.3]:
     asso_idx, is_cpoint  = BuildCondensates(ccoords=ccoords, betas=betas, row_splits=row_splits, 
                                             radius=radius, min_beta=0.1, soft=soft)
     print('refs', np.unique(asso_idx))
