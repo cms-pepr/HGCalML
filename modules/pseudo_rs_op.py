@@ -13,8 +13,12 @@ def CreatePseudoRS(asso_idx, data):
     sids = tf.expand_dims(tf.gather(ids,args),axis=1)
     
     sasso_idx = tf.gather(asso_idx,args)
-    u,idx,c = tf.unique_with_counts(sasso_idx)
+    u,belongs_to_prs,c = tf.unique_with_counts(sasso_idx)
+    
+    
     c = tf.concat([tf.zeros_like(c[0:1], dtype='int32'),c], axis=0)
+    
     sdata = tf.gather_nd(data, sids)
-    return tf.expand_dims(args,axis=1), tf.cumsum(c, axis=0), sdata
+    
+    return tf.expand_dims(args,axis=1), tf.cumsum(c, axis=0), sdata, tf.expand_dims(belongs_to_prs,axis=1)
    

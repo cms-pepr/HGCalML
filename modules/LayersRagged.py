@@ -6,11 +6,58 @@ import uuid
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from condensate_op import BuildCondensates
+from pseudo_rs_op import CreatePseudoRS
 from select_threshold_op import SelectThreshold
 
 from latent_space_grid_op import LatentSpaceGrid
 from tensorflow.keras.layers import MaxPooling2D, MaxPooling3D
 
+class RaggedSumAndScatter(keras.layers.Layer):
+    def __init__(self,**kwargs):
+        super(RaggedSumAndScatter, self).__init__(**kwargs)
+        
+    def compute_output_shape(self, input_shapes): # data, rs, scat
+        return input_shapes[0][-1]
+    
+    def call(self, inputs):
+        data, rs, indices = inputs[0], inputs[1], inputs[2]
+        ragged = tf.RaggedTensor.from_row_splits(values=data,
+              row_splits=rs)
+        ragged = tf.reduce_mean(ragged,axis=1)
+        gath = tf.gather_nd(ragged, indices) 
+        return tf.reshape(gath, tf.shape(data))#so that shape is known to keras
+        
+
+class CondensateToPseudoRS(keras.layers.Layer):
+    
+    def __init__(self, radius, threshold, soft,**kwargs):
+        self.radius=radius
+        self.threshold=threshold
+        self.soft=soft
+        super(CondensateToPseudoRS, self).__init__(**kwargs)
+        
+    def get_config(self):
+            config = {'radius': self.radius,
+                      'threshold': self.threshold,
+                      'soft': self.soft}
+            base_config = super(CondensateToPseudoRS, self).get_config()
+            return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes): #input is data, coords, beta, rs
+        outshapes = [input_shapes[0][-1],None , 1, None]
+        print('outshapes',outshapes)
+        return outshapes #returns reshuffled data, new rs, indices to go back   
+
+    def call(self, inputs):
+        data, ccoords, betas, row_splits = inputs[0],inputs[1],inputs[2],inputs[3],
+        asso_idx, is_cpoint,n = BuildCondensates(ccoords, betas, row_splits, 
+                                                 radius=self.radius, min_beta=self.threshold, soft=self.soft)
+        sids, psrs, sdata, belongs_to_prs = CreatePseudoRS(asso_idx,data)
+        sdata = tf.reshape(sdata, tf.shape(data) )#same shape
+        return sdata, psrs, sids, asso_idx, belongs_to_prs
+    
+
+        
 
 class GridMaxPoolReduction(keras.layers.Layer):
     
@@ -84,28 +131,6 @@ class RaggedSelectThreshold(keras.layers.Layer):
     
 
 
-class CondensateAndSum(keras.layers.Layer):
-    
-    def __init__(self, radius=0.8, min_beta=0.1, **kwargs):
-        super(CondensateAndSum, self).__init__(**kwargs)
-        self.radius=radius
-        self.min_beta=min_beta
-        
-    def get_config(self):
-        config = {'radius': self.radius,
-                  'min_beta': self.min_beta}
-        base_config = super(CondensateAndSum, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-    
-    
-    def compute_output_shape(self, input_shape):
-        return [input_shape[2], input_shape[1]] # features shape same, beta shape = idx shape
-    
-    def call(self, x):
-        ccoords, betas, features, row_splits = x[0], x[1], x[2], x[3]
-        summed_features, asso_idx = BuildCondensates(ccoords, betas, features, row_splits, radius=self.radius, min_beta=self.min_beta)
-        return summed_features, asso_idx
-        
 
 class RaggedConstructTensor(keras.layers.Layer):
     """
@@ -600,9 +625,6 @@ class RaggedNeighborBuilder(keras.layers.Layer):
     
 class VertexScatterer(keras.layers.Layer):
     '''
-    reduces a set of neighbours (sum(V) x N x F) to a unique set of maximum activation vertices
-    inputs : data (sum(V) x N x F), row splits (TF format)
-    outputs: data (sum(V') x F , new row splits, remaining indices (as in sum(V)) to reconstruct original vertices (to be used with scatted_nd)
     '''
     def __init__(self, **kwargs):
         super(VertexScatterer, self).__init__(**kwargs)
@@ -617,7 +639,7 @@ class VertexScatterer(keras.layers.Layer):
         shape = tf.cast(tf.shape(protoshape),dtype='int64')[:-1]
         shape = tf.concat([shape,tf.cast(tf.shape(x_data)[1:2],dtype='int64')],axis=-1)
         
-        tf.print(self.name, 'is scattering', x_data.shape, 'to', shape)
+        #tf.print(self.name, 'is scattering', x_data.shape, 'to', shape)
         
         return tf.scatter_nd(indices=scatter_idcs_n, updates=x_data, shape=shape)
 
