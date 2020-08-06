@@ -20,14 +20,11 @@ typedef Eigen::GpuDevice GPUDevice;
 
 namespace functor {
 
-float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_coords, bool calculate2dDistance = false){
+float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_coords){
     float distsq=0;
     if(i_v == j_v)
         return 0;
-    size_t n_coords_to_use = n_coords;
-    if (calculate2dDistance)
-        n_coords_to_use = 2;
-    for(size_t i=0;i<n_coords_to_use;i++){
+    for(size_t i=0;i<n_coords;i++){
         float dist = d_coord[I2D(i_v,i,n_coords)] - d_coord[I2D(j_v,i,n_coords)];
         distsq += dist*dist;
     }
@@ -216,10 +213,9 @@ void constructPhaseSpaceBins(const float *d_coord, size_t n_coords, size_t start
         size_t indx[2] = {0,0};
         for(size_t iDim=0;iDim<2;iDim++){
             float coord = d_coord[I2D(i_v,iDim,n_coords)];
-            while (coord>binEdges[iDim][indx[iDim]+1]){
-                indx[iDim] += 1;
-            }
+            indx[iDim] = (size_t)((coord - binEdges[iDim][0])/(binEdges[iDim][1]-binEdges[iDim][0]));
         }
+
         size_t bin_index = I2D(indx[0], indx[1], n_bins_y);
         n_vertices_in_bin[bin_index] += 1;
         indices_of_vertices_in_bin[i_v] = bin_index;
@@ -433,6 +429,8 @@ void new_knn_kernel(
 		                );
 
 		            if (n_output_vertices>0){
+
+                        cout << "DEBUG: iBinX: " << iBinX << "; iBinY: " << iBinY << "; iBinX2: " << iBinX2 << "; iBinY2: " << iBinY2 << "; n_output_vertices: " << n_output_vertices << ";\tn_vert["<< iBinX << ","<<iBinY<<"]: " << n_vertices_in_bin[bin_index] << "; n_vert["<<iBinX2 << ","<<iBinY2<<"]: " << n_vertices_in_bin[bin_index2] << endl;
 		                
 		                // find neighbours
 		                findNeighbours(output_indices,
@@ -580,7 +578,7 @@ REGISTER_KERNEL_BUILDER(Name("NewKnn").Device(DEVICE_CPU), NewKnnOp<CPUDevice>);
 
 #ifdef GOOGLE_CUDA
 extern template struct NewKnnOpFunctor<GPUDevice, int>;
-// REGISTER_KERNEL_BUILDER(Name("NewKnn").Device(DEVICE_GPU), NewKnnOp<GPUDevice>);
+REGISTER_KERNEL_BUILDER(Name("NewKnn").Device(DEVICE_GPU), NewKnnOp<GPUDevice>);
 #endif  // GOOGLE_CUDA
 
 }//functor
