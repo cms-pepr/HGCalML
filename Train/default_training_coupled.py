@@ -86,8 +86,8 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
     beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
-    eta = Dense(1, activation=None, name="dense_eta",kernel_initializer='zeros')(x)
-    phi = Dense(1, activation=None, name="dense_phi",kernel_initializer='zeros')(x)
+    xy = Dense(2, activation=None, name="dense_xy",kernel_initializer='zeros')(x)
+    t = ScalarMultiply(1e-9)(Dense(1, activation=None, name="dense_t",kernel_initializer='zeros')(x))
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
     
     n_cc = len(coords)

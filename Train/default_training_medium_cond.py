@@ -67,8 +67,8 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
     
-    eta = Dense(1, activation=None, name="dense_eta")(x)
-    phi = Dense(1, activation=None, name="dense_phi")(x)
+    xy = Dense(2, activation=None, name="dense_xy")(x)
+    t = ScalarMultiply(1e-9)(Dense(1, activation=None, name="dense_t")(x))
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
     
     x_en = Dense(64, activation='elu', name="dense_en_a")(x)#herer so the other names remain the same
@@ -80,7 +80,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     print('input_features', input_features.shape)
 
-    x = Concatenate(name="concat_final")([input_features, beta, energy, eta, phi, ccoords])
+    x = Concatenate(name="concat_final")([input_features, beta, energy, xy, t, ccoords])
 
     # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
     predictions = x

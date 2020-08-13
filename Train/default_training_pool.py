@@ -122,15 +122,15 @@ def gravnet_model(Inputs, feature_dropout=-1.,momentum=0.6):
     beta = Add()([all_beta_p,beta])
     
     
-    eta = Dense(1, activation=None, name="dense_eta", kernel_initializer='zeros')(x)
-    phi = Dense(1, activation=None, name="dense_phi", kernel_initializer='zeros')(x)
+    xy = Dense(2, activation=None, name="dense_xy", kernel_initializer='zeros')(x)
+    t = Dense(1, activation=None, name="dense_t", kernel_initializer='zeros')(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
     energy = Dense(1, activation=None,name="dense_en_final")(x)
     energy = ExpMinusOne(name="en_scaling")(energy)
 
     print('input_features', input_features.shape)
 
-    x = Concatenate(name="concat_final")([input_features, beta, energy, eta, phi, ccoords])
+    x = Concatenate(name="concat_final")([input_features, beta, energy, xy, t, ccoords])
 
     # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
     predictions = x
