@@ -23,6 +23,7 @@ from Layers import ExpMinusOne, GridMaxPoolReduction, RaggedSumAndScatter
 from model_blocks import indep_energy_block
 # tf.compat.v1.disable_eager_execution()
 
+from model_blocks import  create_default_outputs
 
 
 def gravnet_model(Inputs, feature_dropout=-1.):
@@ -71,7 +72,6 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     
         
     x = Concatenate(name="concat_gravout")(feat)
-    x_split = x
     x = Dense(128, activation='elu',name="dense_last_a")(x)
     x = Dense(128, activation='elu',name="dense_last_a1")(x)
     x = BatchNormalization(momentum=0.6)(x)
@@ -79,21 +79,8 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = BatchNormalization(momentum=0.6)(x)
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
-    beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
-    eta = Dense(1, activation=None, name="dense_eta",kernel_initializer='zeros')(x)
-    phi = Dense(1, activation=None, name="dense_phi",kernel_initializer='zeros')(x)
-    ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
+    predictions = create_default_outputs(input_features, x, x_row_splits, energy_block=True)
     
-    #split part
-
-    x = Concatenate()([beta,x_split])
-    energy = indep_energy_block(x, ccoords, beta, x_row_splits) 
-
-
-    x = Concatenate(name="concat_final")([input_features, beta, energy, eta, phi, ccoords])
-
-    # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
-    predictions = x
 
     # outputs = tf.tuple([predictions, x_row_splits])
 

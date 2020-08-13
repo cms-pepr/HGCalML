@@ -22,7 +22,7 @@ from clr_callback import CyclicLR
 from Layers import ExpMinusOne
 
 # tf.compat.v1.disable_eager_execution()
-from model_blocks import indep_energy_block2, create_default_outputs
+from model_blocks import  create_default_outputs
 
 
 def gravnet_model(Inputs, feature_dropout=-1.):
