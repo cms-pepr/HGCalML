@@ -499,6 +499,7 @@ class _obj_cond_config(object):
         self.potential_scaling = 1.
         self.s_b = 1.
         self.position_loss_weight = 1.
+        self.timing_loss_weight = 1.
         self.use_spectators=True
         self.log_energy=False
         self.beta_loss_scale=1.
@@ -512,6 +513,7 @@ config = _obj_cond_config()
 g_time = time.time()
 
 def full_obj_cond_loss(truth, pred, rowsplits):
+    
     
     start_time = time.time()
     
@@ -556,13 +558,23 @@ def full_obj_cond_loss(truth, pred, rowsplits):
         
     energy_loss = energyweights * energy_diff**2/(scaled_true_energy+den_offset**2)
     
-    etadiff = d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas']
-    phidiff = d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis']
-    pos_offs = tf.concat( [etadiff,  phidiff],axis=-1)
-    pos_offs =  100. * tf.reduce_sum(pos_offs**2, axis=-1, keepdims=True)
+    pos_offs = None
+    payload_loss = None
+    
+    xdiff = d['predX']+feat['recHitX']  -   d['truthHitAssignedX']
+    ydiff = d['predY']+feat['recHitY']  -   d['truthHitAssignedY']
+    pos_offs = tf.reduce_sum(tf.concat( [xdiff,  ydiff],axis=-1)**2, axis=-1, keepdims=True)
+    
+    tdiff = d['predT']  -   d['truthHitAssignedT']
+    print("d['truthHitAssignedT']", tf.reduce_mean(d['truthHitAssignedT']), tdiff)
+    tdiff = (1e6 * tdiff)**2
+    # self.timing_loss_weight
     
     payload_loss = tf.concat([config.energy_loss_weight * energy_loss ,
-                              config.position_loss_weight * pos_offs], axis=-1)
+                          config.position_loss_weight * pos_offs,
+                          config.timing_loss_weight * tdiff], axis=-1)
+    
+    
     
     tf.print('pll in',payload_loss.shape)
     
@@ -595,12 +607,15 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     noise_loss = tf.where(tf.math.is_nan(noise_loss),0,noise_loss)
     payload_loss_full = tf.where(tf.math.is_nan(payload_loss_full),0,payload_loss_full)
     
+    
+    
     energy_loss = payload_loss_full[0]
     pos_loss = payload_loss_full[1]
+    time_loss = payload_loss_full[2]
     #energy_loss *= 0.0000001
     
     # neglect energy loss almost fully
-    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss + pos_loss + spectator_beta_penalty
+    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss + time_loss + pos_loss + spectator_beta_penalty
     
     print('loss',loss.numpy(), 
           'attractive_loss',attractive_loss.numpy(), 
@@ -609,6 +624,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
           'noise_loss' , noise_loss.numpy(),
           'energy_loss', energy_loss.numpy(), 
           'pos_loss', pos_loss.numpy(), 
+          'time_loss', time_loss.numpy(), 
           'spectator_beta_penalty', spectator_beta_penalty)
     
     print('time for this loss eval',int((time.time()-start_time)*1000),'ms')

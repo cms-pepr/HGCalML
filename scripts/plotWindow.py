@@ -89,7 +89,7 @@ def makePlot(outfile,
     #print('event', e)
     print('not assigned ',np.count_nonzero(not_assigned, axis=-1))
     
-    
+    print('truthZ',truthZ)
     selpos,select       = getpositions_and_select(truthX,truthY,truthZ,takeall=True)
     selpos = np.array(selpos, dtype='float32')
     select = np.array(select, dtype='float')
@@ -143,6 +143,15 @@ def makePlot(outfile,
     ax[3].scatter(rechit_x, rechit_y,
               s=scatter_size,
               c=rgbcolor)
+    
+    
+    print('selpos',selpos)
+    ax[3].scatter(selpos[:,0],selpos[:,1],
+                  #s = 2.0,
+                  marker='+',
+                  c='k')
+    
+    
     
     pl = plotter_3d(output_file=outdir+"/plot", colorscheme=None)
     
@@ -263,7 +272,7 @@ def worker(eventno, show=False):
     
     truthEta = ptruth[:,8]
     truthPhi = ptruth[:,9]
-    truthR = ptruth[:,10]
+    truthR =  truthZ / np.cos(2* np.arctan(np.exp(-truthEta)))
     truthdirEta = ptruth[:,11]
     truthdirPhi = ptruth[:,12]
     truthdirR = ptruth[:,13]

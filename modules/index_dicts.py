@@ -76,6 +76,8 @@ def create_index_dict(truth, pred, usetf=True):
             
     
     '''
+    xyzt=True
+    
     outdict={}
     #make it all lists
     outdict['truthHitAssignementIdx']    =  truth[:,0:1]
@@ -92,6 +94,11 @@ def create_index_dict(truth, pred, usetf=True):
     outdict['truthHitAssignedEnergies']  =  truth[:,1:2]
     outdict['truthHitAssignedEtas']      =  truth[:,8:9]
     outdict['truthHitAssignedPhis']      =  truth[:,9:10]
+    
+    outdict['truthHitAssignedX']      =  truth[:,2:3]
+    outdict['truthHitAssignedY']      =  truth[:,3:4]
+    outdict['truthHitAssignedZ']      =  truth[:,4:5]
+    outdict['truthHitAssignedT']      =  truth[:,10:11]
 
     # New
     outdict['truthRechitsSum']      =  truth[:,16:17]
@@ -100,11 +107,22 @@ def create_index_dict(truth, pred, usetf=True):
 
     outdict['predBeta']       = pred[:,0:1]
     outdict['predEnergy']     = pred[:,1:2]
+    
     outdict['predEta']        = pred[:,2:3]
     outdict['predPhi']        = pred[:,3:4]
     outdict['predCCoords']    = pred[:,4:6]
-
+    
     outdict['predAdditional'] = pred[:,6:]
+    
+    if xyzt:
+        outdict['predX']        = pred[:,2:3]
+        outdict['predY']        = pred[:,3:4]
+        outdict['predT']        = pred[:,4:5]
+        outdict['predCCoords']    = pred[:,5:7]
+        outdict['predAdditional'] = pred[:,7:]
+        
+
+    
 
     return outdict
 

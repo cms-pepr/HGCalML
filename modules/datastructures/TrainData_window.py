@@ -145,13 +145,15 @@ class TrainData_window(TrainData):
         truthHitAssignedDirZ   = self.branchToFlatArray(tree["truthHitAssignedDirZ"], False,selection)  #4
         truthHitAssignedEta     = self.branchToFlatArray(tree["truthHitAssignedEta"], False,selection)  #2
         truthHitAssignedPhi     = self.branchToFlatArray(tree["truthHitAssignedPhi"], False,selection)  #3
-        truthHitAssignedR       = self.branchToFlatArray(tree["truthHitAssignedR"], False,selection)  #3
+        #truthHitAssignedR       = self.branchToFlatArray(tree["truthHitAssignedR"], False,selection)  #3
         truthHitAssignedDirEta   = self.branchToFlatArray(tree["truthHitAssignedDirEta"], False,selection)  #4
         truthHitAssignedDirPhi   = self.branchToFlatArray(tree["truthHitAssignedDirPhi"], False,selection)  #4
         truthHitAssignedDirR    = self.branchToFlatArray(tree["truthHitAssignedDirR"], False,selection)  #4
         ## weird shape for this truthHitAssignedPIDs     = self.branchToFlatArray(tree["truthHitAssignedPIDs"], False)
         #windowEta                =
         #windowPhi                =
+        
+        truthHitAssignedT   = self.branchToFlatArray(tree["truthHitAssignedT"], False,selection) 
         
         ticlHitAssignementIdx    = self.branchToFlatArray(tree["ticlHitAssignementIdx"], False,selection)  #4
         ticlHitAssignedEnergies    = self.branchToFlatArray(tree["ticlHitAssignedEnergies"], False,selection)  #4
@@ -186,7 +188,8 @@ class TrainData_window(TrainData):
         print("features",features.shape)
         
         del features
-
+        
+        
         
         truth = np.concatenate([
         #    np.expand_dims(frs,axis=1),
@@ -201,7 +204,7 @@ class TrainData_window(TrainData):
             truthHitAssignedDirZ,
             truthHitAssignedEta     ,
             truthHitAssignedPhi,
-            truthHitAssignedR,  #10
+            truthHitAssignedT,  #10
             truthHitAssignedDirEta,
             truthHitAssignedDirPhi, #12
             truthHitAssignedDirR,
@@ -209,7 +212,7 @@ class TrainData_window(TrainData):
             truthHitAssignedEnergies,#15
             rechitsSum, #16
             np.array(ticlHitAssignementIdx, dtype='float32')   , #17
-            ticlHitAssignedEnergies #18
+            ticlHitAssignedEnergies, #18
         #    truthHitAssignedPIDs    
             ], axis=-1)
         
@@ -242,7 +245,13 @@ class TrainData_window(TrainData):
     def bla(self):
         print("hello")
     
-
+class TrainData_window_defaulttruth(TrainData_window):
+    def __init__(self):
+        TrainData_window.__init__(self)
+        
+    def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="WindowNTuplerDefaultTruth/tree"):
+        return self.base_convertFromSourceFile(filename, weighterobjects, istraining, onlytruth=False, treename=treename)
+    
 
 class TrainData_window_onlytruth(TrainData_window):
     def __init__(self):

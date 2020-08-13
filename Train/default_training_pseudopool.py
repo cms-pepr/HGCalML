@@ -1,13 +1,11 @@
 from __future__ import print_function
 
-
-
 import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet_simple,FusedRaggedGravNetLinParse
-from tensorflow.keras.layers import Dense, Concatenate
+from LayersRagged import RaggedConstructTensor, FusedMaskedRaggedGravNet, RaggedGlobalExchange, FusedRaggedGravNet_simple,FusedRaggedGravNet, CondensateAndSum
+from tensorflow.keras.layers import Dense, Concatenate, Add
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
@@ -44,44 +42,89 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = x_basic
 
     n_filters = 0
-    n_gravnet_layers = 5
+    n_gravnet_blocks = 3
     feat = [x]
-    for i in range(n_gravnet_layers):
+    all_beta_p=[]
+    for i in range(n_gravnet_blocks):
         n_filters = 128
-        n_propagate = [128,64,32,16,16,8,8,4,4]
+        n_propagate = [128,64,32,32,16,16,8,8,4,4]
         n_neighbours = 128
-        n_dim=4
-        if i == n_gravnet_layers - 1:
-            n_dim=2
-        x = Concatenate()([x_basic,x])
-        x,coords = FusedRaggedGravNetLinParse(n_neighbours=n_neighbours,
-                                 n_dimensions=n_dim,
+        
+        x,coords = FusedRaggedGravNet(n_neighbours=n_neighbours,
+                                 n_dimensions=4,
                                  n_filters=n_filters,
                                  n_propagate=n_propagate,
-                                 name='gravnet_' + str(i))([x, x_row_splits])
-                                 
-        #tf.print('minmax coords',tf.reduce_min(coords),tf.reduce_max(coords))
+                                 name='gravnet_' + str(i))([x, x_row_splits]) 
+
+        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_a")(x)
+        x = BatchNormalization(momentum=0.6)(x)
+        feat.append(x)
+        
+        beta_p = Dense(1,activation='sigmoid',name='sel_x_'+str(i))(x)
+        all_beta_p.append(beta_p)
+        
+        threshold = 0.3*(i+1)
+        
+        x = BatchNormalization(momentum=0.6)(x)
+        x,coords = FusedMaskedRaggedGravNet(n_neighbours=n_neighbours,
+                                     n_dimensions=4,
+                                     n_filters=n_filters,
+                                     n_propagate=128,
+                                     direction='acc',  ##accumulate in potential condensation points
+                                     threshold = threshold,
+                                     ex_mode = 'xor',
+                                     name='gravnet_masked_up_' + str(i))([x, x_row_splits, beta_p])
+        
+        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_b")(x)   
+        x = BatchNormalization(momentum=0.6)(x)   
+        feat.append(x)
+                               
+        x = BatchNormalization(momentum=0.6)(x)
+        x,coords = FusedMaskedRaggedGravNet(n_neighbours=n_neighbours,
+                                     n_dimensions=4,
+                                     n_filters=n_filters,
+                                     n_propagate=n_propagate,
+                                     direction='acc',  ##accumulate in potential condensation points
+                                     threshold = threshold,
+                                     ex_mode = 'and',
+                                     name='gravnet_masked_up_ex_' + str(i))([x, x_row_splits, beta_p])
+        
+        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_c")(x) 
+        x = BatchNormalization(momentum=0.6)(x)   
+        feat.append(x)
                                  
         x = BatchNormalization(momentum=0.6)(x)
-        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_a")(x)
-        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_b")(x)
-        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_c")(x)
+        x,coords = FusedMaskedRaggedGravNet(n_neighbours=n_neighbours,
+                                     n_dimensions=4,
+                                     n_filters=n_filters,
+                                     n_propagate=128,
+                                     direction='scat',  ##accumulate in potential condensation points
+                                     threshold = threshold,
+                                     ex_mode = 'xor',
+                                     name='gravnet_masked_down_' + str(i))([x, x_row_splits, beta_p])       
+                                                         
+        
+        x = RaggedGlobalExchange(name="global_exchange_bottom_"+str(i))([x, x_row_splits])
+        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_d")(x)  
         x = BatchNormalization(momentum=0.6)(x)
 
         feat.append(x)
-    
-        
+
     x = Concatenate(name="concat_gravout")(feat)
-    x = RaggedGlobalExchange(name="global_exchange_bottom_"+str(i))([x, x_row_splits])
     x = Dense(128, activation='elu',name="dense_last_a")(x)
     x = Dense(128, activation='elu',name="dense_last_a1")(x)
-    x = BatchNormalization(momentum=0.6)(x)
-    x = Dense(128, activation='elu',name="dense_last_a2")(x)
     x = Dense(64, activation='elu',name="dense_last_b")(x)
-    x = BatchNormalization(momentum=0.6)(x)
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
-    beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
+    
+    
+    all_beta_pt = Add()(all_beta_p)
+    all_beta_p = ScalarMultiply(1/(2.* len(all_beta_p)))(all_beta_pt)
+    
+    beta = ScalarMultiply(1/2.)(Dense(1, activation='sigmoid', name="dense_beta")(x))
+    beta = Add()([all_beta_p,beta])
+    
+    
     eta = Dense(1, activation=None, name="dense_eta",kernel_initializer='zeros')(x)
     phi = Dense(1, activation=None, name="dense_phi",kernel_initializer='zeros')(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
@@ -196,8 +239,8 @@ model, history = train.trainModel(nepochs=1,
                                  step_size = 20)])
 
 
-loss_config.energy_loss_weight = 0.01
-loss_config.position_loss_weight=0.01
+loss_config.energy_loss_weight = 0.1
+loss_config.position_loss_weight=0.1
 learningrate = 3e-5
 
 model, history = train.trainModel(nepochs=1+3,

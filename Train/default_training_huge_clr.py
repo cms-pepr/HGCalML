@@ -4,7 +4,7 @@ import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet_simple, CondensateAndSum
+from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet_simple
 from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -149,7 +149,7 @@ loss_config.use_spectators=False
 loss_config.beta_loss_scale = 10.
 loss_config.payload_rel_threshold = 0.5
 
-learningrate = 1e-4
+learningrate = 5e-4
 nbatch = 25000 #quick first training with simple examples = low # hits
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
@@ -162,7 +162,7 @@ for i in range(10):
         plotEventDuringTraining(
             outputfile=plotoutdir + "/sn",
             samplefile=samplepath,
-            after_n_batches=1000,
+            after_n_batches=100,
             batchsize=100000,
             on_epoch_end=False,
             use_event=2 + i)
@@ -177,7 +177,7 @@ model, history = train.trainModel(nepochs=1,
                                   backup_after_batches=100,
                                   additional_callbacks=callbacks+ 
                                   [CyclicLR (base_lr = learningrate,
-                                 max_lr = learningrate*10.,
+                                 max_lr = learningrate*5.,
                                  step_size = 10)])
 
 

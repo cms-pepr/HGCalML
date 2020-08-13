@@ -1,12 +1,10 @@
 from __future__ import print_function
 
-
-
 import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet_simple,FusedRaggedGravNetLinParse
+from LayersRagged import RaggedConstructTensor,VertexScatterer,CondensateToPseudoRS, RaggedGlobalExchange, FusedRaggedGravNet_simple,FusedRaggedGravNetLinParse
 from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -18,11 +16,11 @@ from DeepJetCore.training.training_base import custom_objects_list
 # from tensorflow.keras.optimizer_v2 import Adam
 
 from ragged_callbacks import plotEventDuringTraining
-from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures, ReduceSumEntirely
+from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures, ReduceSumEntirely, StopGradient
 
 from clr_callback import CyclicLR
-from Layers import ExpMinusOne, GridMaxPoolReduction
-
+from Layers import ExpMinusOne, GridMaxPoolReduction, RaggedSumAndScatter
+from model_blocks import indep_energy_block
 # tf.compat.v1.disable_eager_execution()
 
 
@@ -44,7 +42,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = x_basic
 
     n_filters = 0
-    n_gravnet_layers = 5
+    n_gravnet_layers = 3
     feat = [x]
     for i in range(n_gravnet_layers):
         n_filters = 128
@@ -63,6 +61,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
         #tf.print('minmax coords',tf.reduce_min(coords),tf.reduce_max(coords))
                                  
         x = BatchNormalization(momentum=0.6)(x)
+        x = RaggedGlobalExchange(name="global_exchange_bottom_"+str(i))([x, x_row_splits])
         x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_a")(x)
         x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_b")(x)
         x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_c")(x)
@@ -72,11 +71,10 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     
         
     x = Concatenate(name="concat_gravout")(feat)
-    x = RaggedGlobalExchange(name="global_exchange_bottom_"+str(i))([x, x_row_splits])
+    x_split = x
     x = Dense(128, activation='elu',name="dense_last_a")(x)
     x = Dense(128, activation='elu',name="dense_last_a1")(x)
     x = BatchNormalization(momentum=0.6)(x)
-    x = Dense(128, activation='elu',name="dense_last_a2")(x)
     x = Dense(64, activation='elu',name="dense_last_b")(x)
     x = BatchNormalization(momentum=0.6)(x)
     x = Dense(64, activation='elu',name="dense_last_c")(x)
@@ -85,10 +83,12 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     eta = Dense(1, activation=None, name="dense_eta",kernel_initializer='zeros')(x)
     phi = Dense(1, activation=None, name="dense_phi",kernel_initializer='zeros')(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
-    energy = Dense(1, activation=None,name="dense_en_final")(x)
-    energy = ExpMinusOne(name="en_scaling")(energy)
+    
+    #split part
 
-    print('input_features', input_features.shape)
+    x = Concatenate()([beta,x_split])
+    energy = indep_energy_block(x, ccoords, beta, x_row_splits) 
+
 
     x = Concatenate(name="concat_final")([input_features, beta, energy, eta, phi, ccoords])
 

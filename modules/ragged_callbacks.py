@@ -14,11 +14,14 @@ class plotEventDuringTraining(PredictCallback):
                  outputfile,
                  log_energy=False,
                  cycle_colors=False,
+                 n_keep = 3,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)
         self.outputfile=outputfile
         self.cycle_colors=cycle_colors
         self.log_energy = log_energy
+        self.n_keep=n_keep
+        self.keep_counter=0
         if self.td.nElements()>1:
             raise ValueError("plotEventDuringTraining: only one event allowed")
         
@@ -28,6 +31,10 @@ class plotEventDuringTraining(PredictCallback):
     def make_plot(self,counter,feat,predicted,truth):  
         if self.plot_process is not None:
             self.plot_process.join()
+        
+        self.keep_counter+=1
+        if self.keep_counter > self.n_keep:
+            self.keep_counter=0
             
         self.plot_process = Process(target=self._make_plot, args=(counter,feat,predicted,truth))
         self.plot_process.start()
@@ -100,12 +107,13 @@ class plotEventDuringTraining(PredictCallback):
                                     )
             
             plt.tight_layout()
-            fig.savefig(self.outputfile+str(counter)+".pdf")
+            fig.savefig(self.outputfile+str(self.keep_counter)+".pdf")
             fig.clear()
             plt.close(fig)
             plt.clf()
             plt.cla()
             plt.close() 
+            
         
         except Exception as e:
             print(e)
@@ -120,6 +128,7 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
                  outputfile,
                  start_pred_index,
                  end_pred_index,
+                 n_keep = 3,
                  cycle_colors=False,
                  **kwargs):
         super(plotGravNetCoordinatesDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)
@@ -129,6 +138,9 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
         self.coordinates_b=[]
         self.coordinates_c=[]
         self.ndims=end_pred_index-start_pred_index
+        
+        self.n_keep=n_keep
+        self.keep_counter=0
         
         if self.ndims == 3:
             self.coordinates_a=[i+start_pred_index for i in range(self.ndims)]
@@ -157,6 +169,11 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
     
            
     def make_plot(self,counter,feat,predicted,truth):  
+        
+        self.keep_counter+=1
+        if self.keep_counter > self.n_keep:
+            self.keep_counter=0
+            
         if self.plot_process is not None:
             self.plot_process.join()
             
@@ -235,12 +252,14 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
             
             
             plt.tight_layout()
-            fig.savefig(self.outputfile+str(counter)+".pdf")
+            fig.savefig(self.outputfile+str(self.keep_counter)+".pdf")
             fig.clear()
             plt.close(fig)
             plt.clf()
             plt.cla()
             plt.close() 
+            
+            
         
         except Exception as e:
             print(e)

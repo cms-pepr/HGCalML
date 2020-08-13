@@ -12,6 +12,8 @@ from select_threshold_op import SelectThreshold
 from latent_space_grid_op import LatentSpaceGrid
 from tensorflow.keras.layers import MaxPooling2D, MaxPooling3D
 
+gravnet_compat_mode=False
+
 class RaggedSumAndScatter(keras.layers.Layer):
     def __init__(self,**kwargs):
         super(RaggedSumAndScatter, self).__init__(**kwargs)
@@ -243,9 +245,9 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         features = x
         for t in self.input_feature_transform:
             features = t(features)
-            prev_shape = features.shape
+            prev_feat = features
             features = self.collect_neighbours(features, neighbour_indices, distancesq)
-            features = tf.reshape(features, [-1, prev_shape[1]*2])
+            features = tf.reshape(features, [-1, prev_feat.shape[1]*2])
             allfeat.append(features)
             
         features = tf.concat(allfeat +[x], axis=-1)
@@ -256,7 +258,6 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         row_splits = inputs[1]
 
         coordinates = self.input_spatial_transform(x)
-        #tf.print('minmax coords',tf.reduce_min(coordinates), tf.reduce_max(coordinates))
         
         neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
 
@@ -270,8 +271,14 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         return (self.output_feature_transform.units[-1],)
     
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
+        global gravnet_compat_mode
+        
         ragged_split_added_indices,_ = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=True)
+        
+        if not gravnet_compat_mode:
+            ragged_split_added_indices = ragged_split_added_indices[:,1:]
+            
         
         ragged_split_added_indices=ragged_split_added_indices[...,tf.newaxis] 
 
@@ -310,8 +317,15 @@ class FusedRaggedGravNet_simple(RaggedGravNet_simple):
         
         
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        return SelectKnn(self.n_neighbours, coordinates,  row_splits,
-                             max_radius=1.0, tf_compatible=False) 
+        global gravnet_compat_mode
+        
+        idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=1.0, tf_compatible=False)
+        
+        if gravnet_compat_mode:
+            return idx,dist
+        else:
+            return idx[:,1:], dist[:,1:]
         
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
@@ -337,8 +351,15 @@ class FusedRaggedGravNet(FusedRaggedGravNet_simple):
     
     
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        return SelectKnn(self.n_neighbours, coordinates,  row_splits,
+        global gravnet_compat_mode
+        
+        idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=False) 
+        
+        if gravnet_compat_mode:
+            return idx,dist 
+        else:
+            return idx[:,1:], dist[:,1:]
 
 
 class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
@@ -353,19 +374,63 @@ class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
+        
 
         for t in self.input_feature_transform:
             features = t(features)
-            prev_shape = features.shape
+            prev_feat = features
             features = self.collect_neighbours(features, neighbour_indices, distancesq)
-            features = tf.reshape(features, [-1, prev_shape[1]*2])
+            features = tf.reshape(features, [-1, prev_feat.shape[1]*2])
             allfeat.append(features)
             distancesq *= 0. #the remaining parsing operations will be at zero distance
             
         features = tf.concat(allfeat +[x], axis=-1)
         return self.output_feature_transform(features)
 
+class FusedRaggedGravNetLinParsePool(FusedRaggedGravNetLinParse):
+    def __init__(self,
+                 cut_off = 0.5,
+                 hardness = 20,
+                 **kwargs):
+        self.cut_off = cut_off
+        self.hardness = hardness
+        super(FusedRaggedGravNetLinParsePool, self).__init__(**kwargs)
+        
+    def get_config(self):
+        config = {'cut_off': self.cut_off,
+                  'hardness': self.hardness}
+        base_config = super(FusedRaggedGravNetLinParsePool, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    
+    def compute_output_shape(self, input_shapes):
+        GNouts = super(FusedRaggedGravNetLinParsePool, self).compute_output_shape(input_shapes)
+        #this layer adds a set of scatter indices to the output
+        return GNouts + (None,) + (1,)
 
+    def call(self, inputs):
+        x = inputs[0]
+        row_splits = inputs[1]
+        
+        coordinates = self.input_spatial_transform(x)
+        selcoords = coordinates
+        selx = x
+        selrs = row_splits
+        scatter_idxs = tf.range(tf.shape(row_splits)[0])[...,tf.newaxis]
+        if self.cut_off is not None:
+            threshold_values = inputs[2]
+            
+            selx, selrs, scatter_idxs = SelectThreshold(threshold_values, x, row_splits, hardness=self.hardness, threshold=self.cut_off)
+            
+            selcoords = tf.gather_nd(coordinates,scatter_idxs)
+        
+        neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(selcoords, selrs)
+
+        return self.create_output_features(selx, neighbour_indices, distancesq), selcoords, selrs, scatter_idxs
+    
+
+        
+        
 class FusedMaskedRaggedGravNet(FusedRaggedGravNet):
     '''
     direction: acc, scat 
@@ -407,11 +472,103 @@ class FusedMaskedRaggedGravNet(FusedRaggedGravNet):
         return self.create_output_features(x, neighbour_indices, distancesq), coordinates
     
     def compute_neighbours_and_distancesq(self, coordinates, row_splits, masking_values):
-        return SelectKnn(self.n_neighbours, coordinates,  row_splits,
+        global gravnet_compat_mode
+        
+        idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=False,
                              masking_values=masking_values, threshold=self.threshold,
                              mask_mode=self.direction, mask_logic=self.ex_mode) 
+        
+        if gravnet_compat_mode: 
+            return idx,dist
+        else:
+            return idx[:,1:], dist[:,1:]
 
+
+
+class FusedRaggedGravNetGarNetLike(FusedRaggedGravNet):
+    '''
+    bounces back and forth information between vertices above and below threshold
+    '''
+    def __init__(self,
+                 threshold = 0.5,
+                 parse_lin=True,
+                 max_radius = 1.0,
+                 **kwargs):
+        
+        self.threshold = threshold
+        self.parse_lin=parse_lin
+        self.max_radius=max_radius
+        super(FusedRaggedGravNetGarNetLike, self).__init__(**kwargs)
+        
+        if len(self.n_propagate)%2:
+            raise ValueError("FusedRaggedGravNetGarNetLike: n_propagate must have an even number of entries (altering up and down propagation)")
+        
+        
+    def get_config(self):
+        config = {'threshold': self.threshold,
+                  'parse_lin': self.parse_lin,
+                  'max_radius': self.max_radius}
+        base_config = super(FusedRaggedGravNetGarNetLike, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    
+
+    def call(self, inputs):
+        x = inputs[0]
+        row_splits = inputs[1]
+        thresh_values = inputs[2]
+
+        coordinates = self.input_spatial_transform(x)
+        
+        up_neighbour_indices, up_distancesq  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=self.max_radius, masking_values =thresh_values, tf_compatible=False, 
+                             threshold=self.threshold,
+                             mask_mode='acc', mask_logic='xor') 
+        
+        up_neighbour_indices, up_distancesq = up_neighbour_indices[:,1:], up_distancesq[:,1:]
+        
+        down_neighbour_indices, down_distancesq  = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius=self.max_radius, masking_values =thresh_values, tf_compatible=False, 
+                             threshold=self.threshold,
+                             mask_mode='scat', mask_logic='xor') 
+        
+        down_neighbour_indices, down_distancesq = down_neighbour_indices[:,1:], down_distancesq[:,1:]
+        
+        allfeat = []
+        tfet=[]
+        features = x
+        
+        #tf.print(down_neighbour_indices)
+
+        for i in range(len(self.input_feature_transform)):
+            t = self.input_feature_transform[i]
+            
+            neighbour_indices = up_neighbour_indices
+            distancesq = up_distancesq
+            if i%2:
+                neighbour_indices = down_neighbour_indices
+                distancesq = down_distancesq
+            
+            features = t(features)
+            orig_tf = features
+            prev_shape = features.shape
+            features = self.collect_neighbours(features, neighbour_indices, distancesq)
+            features = tf.reshape(features, [-1, prev_shape[1]*2])
+            
+            #tf.print(i, tf.concat([thresh_values,features,orig_tf],axis=-1), summarize=10)
+            
+            allfeat.append(features)
+            if self.parse_lin and i>0:
+                up_distancesq *= 0. #the remaining parsing operations will be at zero distance
+                down_distancesq *= 0.
+        #tf.print(thresh_values.shape, allfeat[0].shape)
+        #tf.print(tf.concat([thresh_values]+allfeat+tfet,axis=-1), summarize=120)
+        features = tf.concat(allfeat +[x], axis=-1)
+        
+        return self.output_feature_transform(features), coordinates
+    
+        
 
 class RaggedGlobalExchange(keras.layers.Layer):
     def __init__(self, **kwargs):
@@ -639,7 +796,7 @@ class VertexScatterer(keras.layers.Layer):
         shape = tf.cast(tf.shape(protoshape),dtype='int64')[:-1]
         shape = tf.concat([shape,tf.cast(tf.shape(x_data)[1:2],dtype='int64')],axis=-1)
         
-        #tf.print(self.name, 'is scattering', x_data.shape, 'to', shape)
+        tf.print(self.name, 'is scattering', x_data.shape, 'to', shape)
         
         return tf.scatter_nd(indices=scatter_idcs_n, updates=x_data, shape=shape)
 

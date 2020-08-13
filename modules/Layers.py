@@ -34,6 +34,8 @@ global_layers_list['FusedRaggedGravNet']=FusedRaggedGravNet
 global_layers_list['FusedRaggedGravNet_simple']=FusedRaggedGravNet_simple
 global_layers_list['FusedMaskedRaggedGravNet']=FusedMaskedRaggedGravNet
 global_layers_list['FusedRaggedGravNetLinParse']=FusedRaggedGravNetLinParse
+global_layers_list['FusedRaggedGravNetLinParsePool']=FusedRaggedGravNetLinParsePool
+global_layers_list['FusedRaggedGravNetGarNetLike']=FusedRaggedGravNetGarNetLike
 
 
 

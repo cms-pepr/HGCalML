@@ -1,13 +1,11 @@
 from __future__ import print_function
 
-
-
 import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet_simple,FusedRaggedGravNetLinParse
-from tensorflow.keras.layers import Dense, Concatenate
+from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet
+from tensorflow.keras.layers import Dense, Concatenate, Add
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
@@ -18,10 +16,10 @@ from DeepJetCore.training.training_base import custom_objects_list
 # from tensorflow.keras.optimizer_v2 import Adam
 
 from ragged_callbacks import plotEventDuringTraining
-from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures, ReduceSumEntirely
+from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures
 
 from clr_callback import CyclicLR
-from Layers import ExpMinusOne, GridMaxPoolReduction
+from Layers import ExpMinusOne
 
 # tf.compat.v1.disable_eager_execution()
 
@@ -44,47 +42,59 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = x_basic
 
     n_filters = 0
-    n_gravnet_layers = 5
-    feat = [x]
+    n_gravnet_layers = 6
+    
+    feat = []
+    coords=[]
     for i in range(n_gravnet_layers):
+        
         n_filters = 128
-        n_propagate = [128,64,32,16,16,8,8,4,4]
-        n_neighbours = 128
-        n_dim=4
-        if i == n_gravnet_layers - 1:
-            n_dim=2
-        x = Concatenate()([x_basic,x])
-        x,coords = FusedRaggedGravNetLinParse(n_neighbours=n_neighbours,
+        n_propagate = 96
+        n_neighbours = 256
+        n_dim = 4-int(i/2)
+        if n_dim < 2:
+            n_dim = 2
+            n_propagate = 4*[32]
+
+        x = RaggedGlobalExchange(name="global_exchange_"+str(i))([x, x_row_splits])
+        x = Dense(64, activation='elu',name="dense_"+str(i)+"_a")(x)
+        x = Dense(64, activation='elu',name="dense_"+str(i)+"_b")(x)
+        x = Dense(64, activation='elu',name="dense_"+str(i)+"_c")(x)
+        x = BatchNormalization(momentum=0.6)(x)
+        
+        x,c = FusedRaggedGravNet(n_neighbours=n_neighbours,
                                  n_dimensions=n_dim,
                                  n_filters=n_filters,
                                  n_propagate=n_propagate,
                                  name='gravnet_' + str(i))([x, x_row_splits])
-                                 
-        #tf.print('minmax coords',tf.reduce_min(coords),tf.reduce_max(coords))
+        #
+        #
+        # needs a larger RF branch somewhere here
+        #
+        #
                                  
         x = BatchNormalization(momentum=0.6)(x)
-        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_a")(x)
-        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_b")(x)
-        x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_c")(x)
-        x = BatchNormalization(momentum=0.6)(x)
-
         feat.append(x)
-    
+        if n_dim == 2:
+            print('add coords for GN',i)
+            coords.append(c)
         
+
     x = Concatenate(name="concat_gravout")(feat)
-    x = RaggedGlobalExchange(name="global_exchange_bottom_"+str(i))([x, x_row_splits])
     x = Dense(128, activation='elu',name="dense_last_a")(x)
-    x = Dense(128, activation='elu',name="dense_last_a1")(x)
-    x = BatchNormalization(momentum=0.6)(x)
-    x = Dense(128, activation='elu',name="dense_last_a2")(x)
     x = Dense(64, activation='elu',name="dense_last_b")(x)
-    x = BatchNormalization(momentum=0.6)(x)
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
     beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
     eta = Dense(1, activation=None, name="dense_eta",kernel_initializer='zeros')(x)
     phi = Dense(1, activation=None, name="dense_phi",kernel_initializer='zeros')(x)
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
+    
+    n_cc = len(coords)
+    coords = Add()(coords)
+    coords = ScalarMultiply(1/(4*n_cc))(coords)
+    ccoords = Add()([ScalarMultiply(3./4.)(ccoords), coords])
+    
     energy = Dense(1, activation=None,name="dense_en_final")(x)
     energy = ExpMinusOne(name="en_scaling")(energy)
 
@@ -140,7 +150,21 @@ print(train.keras_model.summary())
 verbosity = 2
 import os
 
-
+samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
+print("using sample for plotting ",samplepath)
+callbacks = []
+for i in range(10):
+    plotoutdir = train.outputDir + "/event_" + str(i + 2)
+    os.system('mkdir -p ' + plotoutdir)
+    callbacks.append(
+        plotEventDuringTraining(
+            outputfile=plotoutdir + "/sn",
+            samplefile=samplepath,
+            after_n_batches=50,
+            batchsize=100000,
+            on_epoch_end=False,
+            use_event=2 + i)
+    )
 
 
 
@@ -152,37 +176,20 @@ copyModules(train.outputDir)
 
 from betaLosses import config as loss_config
 
-loss_config.energy_loss_weight = 0.01
+loss_config.energy_loss_weight = 0.001
 loss_config.use_energy_weights = False
 loss_config.q_min = 0.5
 loss_config.no_beta_norm = False
 loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
-loss_config.position_loss_weight=0.01
+loss_config.position_loss_weight=0.001
 loss_config.use_spectators=False
+loss_config.log_energy=False
 loss_config.beta_loss_scale = 10.
-loss_config.payload_rel_threshold = 0.5
 
 learningrate = 1e-4
 nbatch = 20000 #quick first training with simple examples = low # hits
 
-samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
-print("using sample for plotting ",samplepath)
-callbacks = []
-for i in range(3):
-    ev = i + 7
-    plotoutdir = train.outputDir + "/event_" + str(ev)
-    os.system('mkdir -p ' + plotoutdir)
-    callbacks.append(
-        plotEventDuringTraining(
-            outputfile=plotoutdir + "/sn",
-            samplefile=samplepath,
-            after_n_batches=1000,
-            batchsize=100000,
-            on_epoch_end=False,
-            use_event=ev)
-    )
-    
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
@@ -193,12 +200,12 @@ model, history = train.trainModel(nepochs=1,
                                   additional_callbacks=callbacks+ 
                                   [CyclicLR (base_lr = learningrate,
                                  max_lr = learningrate*10.,
-                                 step_size = 20)])
+                                 step_size = 10)])
 
 
-loss_config.energy_loss_weight = 0.01
+loss_config.energy_loss_weight = 0.1
 loss_config.position_loss_weight=0.01
-learningrate = 3e-5
+learningrate = 1e-5
 
 model, history = train.trainModel(nepochs=1+3,
                                   run_eagerly=True,

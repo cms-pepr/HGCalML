@@ -246,7 +246,7 @@ public:
 
         mask_mode = selknn::mm_none;
         mask_logic = selknn::ml_xor;
-        printf("mm_ml_int: %d\n",mm_ml_int);
+        //printf("mm_ml_int: %d\n",mm_ml_int);
         if(mm_ml_int>0){
             if(mm_ml_int>19){
                 mask_logic = selknn::ml_and;
