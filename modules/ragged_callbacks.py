@@ -1,4 +1,5 @@
-
+import matplotlib
+matplotlib.use('Agg')
 
 from ragged_plotting_tools import make_cluster_coordinates_plot, make_original_truth_shower_plot, createRandomizedColors, make_eta_phi_projection_truth_plot
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
@@ -89,15 +90,29 @@ class plotEventDuringTraining(PredictCallback):
             if self.log_energy:
                 predEnergy = np.exp(predEnergy) - 1
                 
+            def calc_eta(x,y,z):
+                rsq = np.sqrt(x**2 + y**2)
+                return -1 * np.sign(z) *np.log( rsq/np.abs(z+1e-3) / 2. )
+                
+            def calc_phi(x,y):
+                return np.arctan2(x,y)
+            
+            predEta = calc_eta(data['predX']+feats['recHitX'], data['predY']+feats['recHitY'], np.sign(feats['recHitZ'])*322.1)
+            predPhi = calc_phi(data['predX']+feats['recHitX'], data['predY']+feats['recHitY']) 
+            
+            
+            trueEta = calc_eta(data['truthHitAssignedX'],data['truthHitAssignedY']+1e-3,data['truthHitAssignedZ']+1e-3)
+            truePhi = calc_phi(data['truthHitAssignedX'],data['truthHitAssignedY']+1e-3) 
+                
             make_eta_phi_projection_truth_plot(plt,ax[2],
                                                data['truthHitAssignementIdx'],                      
                                     feats['recHitEnergy'],                       
-                                    feats['recHitEta'],                       
-                                    feats['recHitRelPhi'], 
-                                    data['predEta']+feats['recHitEta'],
-                                    data['predPhi']+feats['recHitRelPhi'],
-                                    data['truthHitAssignedEtas'],
-                                    data['truthHitAssignedPhis'],
+                                    calc_eta(feats['recHitX'],feats['recHitY'],feats['recHitZ']),                    
+                                    calc_phi(feats['recHitX'],feats['recHitY']), 
+                                    predEta, #data['predEta']+feats['recHitEta'],
+                                    predPhi, #data['predPhi']+feats['recHitRelPhi'],
+                                    trueEta,
+                                    truePhi,
                                     data['truthHitAssignedEnergies'],
                                     data['predBeta'],               
                                     data['predCCoords'],            
