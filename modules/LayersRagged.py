@@ -12,7 +12,6 @@ from select_threshold_op import SelectThreshold
 from latent_space_grid_op import LatentSpaceGrid
 from tensorflow.keras.layers import MaxPooling2D, MaxPooling3D
 
-gravnet_compat_mode=False
 
 class RaggedSumAndScatter(keras.layers.Layer):
     def __init__(self,**kwargs):
@@ -189,6 +188,7 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
                  **kwargs):
         super(RaggedGravNet_simple, self).__init__(**kwargs)
 
+        n_neighbours += 1 #includes the 'self' vertex
         assert n_neighbours > 1
 
         self.n_neighbours = n_neighbours
@@ -271,13 +271,11 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         return (self.output_feature_transform.units[-1],)
     
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        global gravnet_compat_mode
-        
+
         ragged_split_added_indices,_ = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=True)
         
-        if not gravnet_compat_mode:
-            ragged_split_added_indices = ragged_split_added_indices[:,1:]
+        ragged_split_added_indices = ragged_split_added_indices[:,1:]
             
         
         ragged_split_added_indices=ragged_split_added_indices[...,tf.newaxis] 
@@ -317,15 +315,9 @@ class FusedRaggedGravNet_simple(RaggedGravNet_simple):
         
         
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        global gravnet_compat_mode
-        
         idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=False)
-        
-        if gravnet_compat_mode:
-            return idx,dist
-        else:
-            return idx[:,1:], dist[:,1:]
+        return idx[:,1:], dist[:,1:]
         
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
@@ -351,15 +343,9 @@ class FusedRaggedGravNet(FusedRaggedGravNet_simple):
     
     
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        global gravnet_compat_mode
-        
         idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=False) 
-        
-        if gravnet_compat_mode:
-            return idx,dist 
-        else:
-            return idx[:,1:], dist[:,1:]
+        return idx[:,1:], dist[:,1:]
 
 
 class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
@@ -472,17 +458,11 @@ class FusedMaskedRaggedGravNet(FusedRaggedGravNet):
         return self.create_output_features(x, neighbour_indices, distancesq), coordinates
     
     def compute_neighbours_and_distancesq(self, coordinates, row_splits, masking_values):
-        global gravnet_compat_mode
-        
         idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius=1.0, tf_compatible=False,
                              masking_values=masking_values, threshold=self.threshold,
                              mask_mode=self.direction, mask_logic=self.ex_mode) 
-        
-        if gravnet_compat_mode: 
-            return idx,dist
-        else:
-            return idx[:,1:], dist[:,1:]
+        return idx[:,1:], dist[:,1:]
 
 
 
