@@ -1,6 +1,5 @@
 import tensorflow as tf
 import tensorflow.keras as keras
-from rknn_op import rknn_ragged, rknn_op
 from caloGraphNN import gauss_of_lin
 import uuid
 from select_knn_op import SelectKnn
@@ -212,7 +211,8 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         self.input_feature_transform=[]
         with tf.name_scope(self.name+"/1/"):
             for i in range(len(n_propagate)):
-                self.input_feature_transform.append(tf.keras.layers.Dense(n_propagate[i]))
+                with tf.name_scope(self.name + "/1/"+str(i)+"/"):
+                    self.input_feature_transform.append(tf.keras.layers.Dense(n_propagate[i]))
 
         with tf.name_scope(self.name+"/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
@@ -612,11 +612,9 @@ class RaggedEdgeConvLayer(keras.layers.Layer):
         vertices_in, rowsplits = x
         rowsplits = tf.cast(rowsplits, tf.int32)
 
-        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.num_neighbors+1), row_splits=rowsplits,
-                                                          data=vertices_in, add_splits=True)  # [SV, N+1]
-        ragged_split_added_indices = ragged_split_added_indices[:, 1:][..., tf.newaxis]  # [SV, N]
-
-        neighbor_space = tf.gather_nd(vertices_in, ragged_split_added_indices)
+        ragged_split_added_indices, _ = None, None
+        #
+        neighbor_space = None #tf.gather_nd(vertices_in, ragged_split_added_indices)
 
 
         expanded_trans_space = tf.expand_dims(vertices_in, axis=1)
@@ -718,29 +716,6 @@ class RaggedVertexEater(keras.layers.Layer):
         return ( data_input_shape[1],), (None,), (1,) 
 
 
-class RaggedNeighborIndices(keras.layers.Layer):
-    def __init__(self, k,  **kwargs):
-        super(RaggedNeighborIndices, self).__init__(**kwargs)
-        self.k = k
-        
-        assert self.k > 2
-        
-    def call(self, x):
-        assert isinstance(x, list)
-        x_space, row_splits = x[0], x[1]
-        row_splits = tf.cast(row_splits, tf.int32)
-        ragged_split_added_indices, _ = rknn_op.RaggedKnn(num_neighbors=int(self.k), row_splits=row_splits,
-                                                          data=x_space, add_splits=True)  # [SV, N+1]
-        ragged_split_added_indices = ragged_split_added_indices[:, :][..., tf.newaxis]  # [SV, N]
-        return ragged_split_added_indices
-
-    def compute_output_shape(self, input_shape): 
-        return (self.k,1)
-    
-    def get_config(self):
-        config = {'k': self.k}
-        base_config = super(RaggedNeighborIndices, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 class RaggedNeighborBuilder(keras.layers.Layer):

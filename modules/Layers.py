@@ -24,7 +24,6 @@ global_layers_list['GraphFunctionFilters']=GraphFunctionFilters
 global_layers_list['VertexScatterer']=VertexScatterer
 global_layers_list['RaggedNeighborBuilder']=RaggedNeighborBuilder
 global_layers_list['RaggedVertexEater']=RaggedVertexEater
-global_layers_list['RaggedNeighborIndices']=RaggedNeighborIndices
 
 
 global_layers_list['RaggedSelectThreshold']=RaggedSelectThreshold
