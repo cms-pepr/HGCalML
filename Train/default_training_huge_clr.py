@@ -4,7 +4,7 @@ import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet_simple
+from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange, FusedRaggedGravNet
 from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -47,25 +47,29 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     feat = []
     for i in range(n_gravnet_layers):
         n_filters = 128
-        n_propagate = 96 + 8*i
+        n_propagate = [96 + 8*i, 32,16,8,4]
         n_neighbours = 256 + i*128
+        n_dim=4
 
-        x = FusedRaggedGravNet_simple(n_neighbours=n_neighbours,
-                                 n_dimensions=4,
+        x,_ = FusedRaggedGravNet(n_neighbours=n_neighbours,
+                                 n_dimensions=n_dim,
                                  n_filters=n_filters,
                                  n_propagate=n_propagate,
                                  name='gravnet_' + str(i))([x, x_row_splits])
-        x = BatchNormalization(momentum=0.6)(x)
-        x = RaggedGlobalExchange(name="global_exchange_bottom_"+str(i))([x, x_row_splits])
+
         x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_a")(x)
+        x = BatchNormalization(momentum=0.6, name="bn_b_"+str(i))(x)
+        x = RaggedGlobalExchange(name="global_exchange_bottom_"+str(i))([x, x_row_splits])
         x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_b")(x)
         x = Dense(96, activation='elu',name="dense_bottom_"+str(i)+"_c")(x)
-        x = BatchNormalization(momentum=0.6)(x)
+        x = BatchNormalization(momentum=0.6, name="bn_c_"+str(i))(x)
         
         feat.append(x)
 
     x = Concatenate(name="concat_gravout")(feat)
     x = Dense(128, activation='elu',name="dense_last_a")(x)
+    x = Dense(128, activation='elu',name="dense_last_a2")(x)
+    x = BatchNormalization(momentum=0.6, name="bn_last_a")(x)
     x = Dense(64, activation='elu',name="dense_last_b")(x)
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
@@ -140,8 +144,12 @@ loss_config.use_spectators=False
 loss_config.beta_loss_scale = 10.
 loss_config.payload_rel_threshold = 0.5
 
-learningrate = 5e-4
-nbatch = 25000 #quick first training with simple examples = low # hits
+loss_config.energy_loss_weight = 1e-4
+loss_config.position_loss_weight=1e-4
+loss_config.timing_loss_weight = 1e-6
+
+learningrate = 3e-5
+nbatch = 10000 #quick first training with simple examples = low # hits
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
 print("using sample for plotting ",samplepath)
@@ -172,8 +180,9 @@ model, history = train.trainModel(nepochs=1,
                                  step_size = 10)])
 
 
-loss_config.energy_loss_weight = 0.1
-loss_config.position_loss_weight=0.01
+loss_config.energy_loss_weight = 1e-3
+loss_config.position_loss_weight=1e-3
+loss_config.timing_loss_weight = 1e-5
 learningrate = 3e-5
 
 model, history = train.trainModel(nepochs=1+3,
@@ -191,8 +200,9 @@ model, history = train.trainModel(nepochs=1+3,
 
 nbatch = 50000
 
-loss_config.energy_loss_weight = 1.
-loss_config.position_loss_weight=0.01
+loss_config.energy_loss_weight = 1e-2
+loss_config.position_loss_weight=1e-2
+loss_config.timing_loss_weight = 1e-4
 learningrate = 3e-5
 
 model, history = train.trainModel(nepochs=10 + 3 +1,
@@ -208,8 +218,9 @@ model, history = train.trainModel(nepochs=10 + 3 +1,
                                  step_size = 10)])
 
 
-loss_config.energy_loss_weight = 2.
-loss_config.position_loss_weight=0.1
+loss_config.energy_loss_weight = 1e-1
+loss_config.position_loss_weight=1e-1
+loss_config.timing_loss_weight = 1e-3
 
 learningrate = 1e-5
 model, history = train.trainModel(nepochs=10 + 10 + 3 + 1,

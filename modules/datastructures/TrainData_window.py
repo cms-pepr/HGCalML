@@ -93,6 +93,7 @@ class TrainData_window(TrainData):
             if t.GetEntries() < 1:
                 raise ValueError("")
         except Exception as e:
+            print(e)
             return False
         return True
 

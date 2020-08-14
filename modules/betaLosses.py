@@ -209,8 +209,6 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     
     
     
-    tf.print('pll in',payload_loss.shape)
-    
     attractive_loss, rep_loss, noise_loss, min_beta_loss, payload_loss_full  = indiv_object_condensation_loss_2(d['predCCoords'], #
                                                                                              d['predBeta'][...,0],  #remove last 1 dim
                                                                                              classes, 

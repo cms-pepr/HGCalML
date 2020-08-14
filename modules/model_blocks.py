@@ -104,7 +104,7 @@ def create_default_outputs(raw_inputs, x, x_row_splits, energy_block=True, n_cco
     if energy_block:
         energy = indep_energy_block2(x, SelectFeatures(0,1)(raw_inputs),ccoords, beta, x_row_splits) 
     else:
-        energy = Dense(1,ativation='None')(x)
+        energy = Dense(1,activation=None)(x)
         energy = ExpMinusOne(name='predicted_energy')(energy)
 
     
