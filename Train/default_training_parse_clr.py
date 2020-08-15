@@ -50,7 +50,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     for i in range(n_gravnet_layers):
         n_filters = 196
         n_propagate = [128,64,64,32,32,16,16,8,8]
-        n_neighbours = 128
+        n_neighbours = 4
         n_dim = 4 - i
         if n_dim < 2:
             n_dim = 2
@@ -126,7 +126,6 @@ print(train.keras_model.summary())
  # **2 #this will be an upper limit on vertices per batch
 
 verbosity = 2
-import os
 
 
 
@@ -148,16 +147,19 @@ loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
 loss_config.position_loss_weight=1e-6
 loss_config.use_spectators=False
-loss_config.beta_loss_scale = 10.
+loss_config.beta_loss_scale = 1.
 loss_config.payload_rel_threshold = 0.5
 loss_config.timing_loss_weight = 1e-6
 
-learningrate = 5e-5
-nbatch = 10000 #quick first training with simple examples = low # hits
+learningrate = 3e-5
+nbatch = 30000 #quick first training with simple examples = low # hits
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
 print("using sample for plotting ",samplepath)
 callbacks = []
+
+import os
+publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 for i in range(6,10):
     ev = i 
     plotoutdir = train.outputDir + "/event_" + str(ev)
@@ -166,9 +168,10 @@ for i in range(6,10):
         plotEventDuringTraining(
             outputfile=plotoutdir + "/sn",
             samplefile=samplepath,
-            after_n_batches=100,
+            after_n_batches=200,
             batchsize=100000,
             on_epoch_end=False,
+            publish = publishpath+"_event_"+ str(ev),
             use_event=ev)
     )
     
@@ -182,13 +185,14 @@ model, history = train.trainModel(nepochs=1,
                                   additional_callbacks=callbacks+ 
                                   [CyclicLR (base_lr = learningrate,
                                   max_lr = learningrate*10.,
-                                  step_size = 50)])
+                                  step_size = 10)])
 
 
 loss_config.energy_loss_weight = 1e-2
 loss_config.position_loss_weight=1e-3
 loss_config.timing_loss_weight = 1e-6
-learningrate = 3e-5
+learningrate = 1e-5
+loss_config.beta_loss_scale = 10.
 
 model, history = train.trainModel(nepochs=1+3,
                                   run_eagerly=True,

@@ -9,12 +9,16 @@ import matplotlib.gridspec as gridspec
 import random
 from multiprocessing import Process
 import numpy as np
+import tempfile
+import os
+
 
 class plotEventDuringTraining(PredictCallback): 
     def __init__(self, 
                  outputfile,
                  log_energy=False,
                  cycle_colors=False,
+                 publish=None,
                  n_keep = 3,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)
@@ -28,6 +32,7 @@ class plotEventDuringTraining(PredictCallback):
         
         self.gs = gridspec.GridSpec(2, 2)
         self.plot_process=None
+        self.publish = publish
             
     def make_plot(self,counter,feat,predicted,truth):  
         if self.plot_process is not None:
@@ -59,6 +64,8 @@ class plotEventDuringTraining(PredictCallback):
             _, pred = split_feat_pred(pred)    
             data = create_index_dict(truth, pred, usetf=False)
             feats = create_feature_dict(feat)
+            
+            data['predBeta'] = np.clip(data['predBeta'],1e-6,1.-1e-6)
             
             seed = truth.shape[0]
             if self.cycle_colors:
@@ -123,6 +130,18 @@ class plotEventDuringTraining(PredictCallback):
             
             plt.tight_layout()
             fig.savefig(self.outputfile+str(self.keep_counter)+".pdf")
+            
+            if self.publish is not None:
+                temp_name = next(tempfile._get_candidate_names())
+                temp_name = self.outputfile+temp_name+'.png'
+                fig.savefig(temp_name)
+                cpstring='cp -f '
+                if "@" in self.publish:
+                    cpstring='scp '
+                os.system(cpstring+temp_name+' '+self.publish+'.png')
+                os.system('rm -f '+temp_name)
+                
+            
             fig.clear()
             plt.close(fig)
             plt.clf()

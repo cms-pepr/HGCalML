@@ -113,7 +113,7 @@ def make_cluster_coordinates_plot(plt, ax,
     #print(rgbcolor.shape)
     alphas = predBeta
     alphas = np.clip(alphas, a_min=1e-2,a_max=1.-1e-2)
-    alphas = np.arctanh(alphas)/np.arctanh(1.-1e-2)
+    #alphas = np.arctanh(alphas)/np.arctanh(1.-1e-2)
     #alphas *= alphas
     alphas[alphas<0.01] = 0.01
     alphas = np.expand_dims(alphas, axis=1)
