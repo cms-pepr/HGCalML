@@ -105,9 +105,14 @@ def create_index_dict(truth, pred, usetf=True):
     outdict['truthRealEnergy']      =  truth[:,15:16]
     outdict['truthIsSpectator']      =  truth[:,14:15]
 
+
+    #(None, 9) (None, 1) (None, 1) (None, 3) (None, 2)
+    #print(raw_inputs.shape, beta.shape, energy.shape, xyt.shape, ccoords.shape)
     outdict['predBeta']       = pred[:,0:1]
     outdict['predEnergy']     = pred[:,1:2]
     
+    
+    outdict['predXY']        = pred[:,2:4]
     
     outdict['predX']        = pred[:,2:3]
     outdict['predY']        = pred[:,3:4]

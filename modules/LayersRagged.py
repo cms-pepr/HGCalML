@@ -205,14 +205,20 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
         self.n_propagate = n_propagate
         
         self.n_prop_total = 0
-        for p in self.n_propagate:
-            self.n_prop_total += 2* p
+        for i in range(len(self.n_propagate)):
+            if i:
+                self.n_prop_total += 3* self.n_propagate[i]
+            else:
+                self.n_prop_total += 2* self.n_propagate[i]
 
         self.input_feature_transform=[]
         with tf.name_scope(self.name+"/1/"):
             for i in range(len(n_propagate)):
                 with tf.name_scope(self.name + "/1/"+str(i)+"/"):
-                    self.input_feature_transform.append(tf.keras.layers.Dense(n_propagate[i]))
+                    if i:
+                        self.input_feature_transform.append(tf.keras.layers.Dense(n_propagate[i], activation='elu'))
+                    else:
+                        self.input_feature_transform.append(tf.keras.layers.Dense(n_propagate[i]))
 
         with tf.name_scope(self.name+"/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions)
@@ -227,7 +233,10 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
             self.input_feature_transform[0].build(input_shape)
             for i in range(1, len(self.n_propagate)):
                 with tf.name_scope(self.name + "/1/"+str(i)+"/"):
-                    self.input_feature_transform[i].build((input_shape[0],self.n_propagate[i-1]*2))
+                    if i>1:
+                        self.input_feature_transform[i].build((input_shape[0],self.n_propagate[i-1]*3))
+                    else:
+                        self.input_feature_transform[i].build((input_shape[0],self.n_propagate[i-1]*2))
 
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform.build(input_shape)
@@ -243,12 +252,16 @@ class RaggedGravNet_simple(tf.keras.layers.Layer):
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
+        parse=False
         for t in self.input_feature_transform:
             features = t(features)
             prev_feat = features
             features = self.collect_neighbours(features, neighbour_indices, distancesq)
             features = tf.reshape(features, [-1, prev_feat.shape[1]*2])
+            if parse:
+                features = tf.concat([features, prev_feat],axis=-1)
             allfeat.append(features)
+            parse = True #first is default gravnet
             
         features = tf.concat(allfeat +[x], axis=-1)
         return self.output_feature_transform(features)
@@ -391,15 +404,17 @@ class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
-        
-
+        parse=False
         for t in self.input_feature_transform:
             features = t(features)
             prev_feat = features
             features = self.collect_neighbours(features, neighbour_indices, distancesq)
             features = tf.reshape(features, [-1, prev_feat.shape[1]*2])
+            if parse:
+                features = tf.concat([features, prev_feat],axis=-1)
             allfeat.append(features)
-            distancesq *= 0. #the remaining parsing operations will be at zero distance
+            parse = True #first is default gravnet
+            distancesq*=0.
             
         features = tf.concat(allfeat +[x], axis=-1)
         return self.output_feature_transform(features)

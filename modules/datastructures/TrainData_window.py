@@ -174,7 +174,7 @@ class TrainData_window(TrainData):
         features = np.concatenate([
             recHitEnergy,
             recHitEta   ,
-            recHitRelPhi,
+            recHitPad, #no phi anymore!
             recHitTheta ,
             recHitR   ,
             recHitX     ,

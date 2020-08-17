@@ -109,8 +109,9 @@ def create_default_outputs(raw_inputs, x, x_row_splits, energy_block=True, n_cco
     else:
         energy = Dense(1,activation=None)(x)
         energy = ExpMinusOne(name='predicted_energy')(energy)
-
-    
+        
+    #(None, 9) (None, 1) (None, 1) (None, 3) (None, 2)
+    print(raw_inputs.shape, beta.shape, energy.shape, xyt.shape, ccoords.shape)
     return Concatenate(name="predicted_final")([raw_inputs, beta, energy, xyt, ccoords])
 
 

@@ -152,6 +152,7 @@ loss_config.beta_loss_scale = 1.
 loss_config.payload_rel_threshold = 0.5
 loss_config.timing_loss_weight = 1e-6
 
+
 learningrate = 1e-4
 nbatch = 30000 #quick first training with simple examples = low # hits
 
@@ -174,6 +175,8 @@ for i in range(6,10):
             publish = publishpath+"_event_"+ str(ev),
             use_event=ev)
     )
+    
+loss_config.pre_train=True
 
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
@@ -188,6 +191,7 @@ model, history = train.trainModel(nepochs=1,
                                   step_size = 10)])
 
 
+loss_config.pre_train=False
 loss_config.energy_loss_weight = 1e-2
 loss_config.position_loss_weight=1e-3
 loss_config.timing_loss_weight = 1e-6

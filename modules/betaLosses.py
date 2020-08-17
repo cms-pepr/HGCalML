@@ -44,27 +44,19 @@ def pre_training_loss(truth, pred):
     d = create_loss_dict(truth, pred)
     feat = create_feature_dict(feat)
     
-    etadiff = d['truthNoNoise']*(.1+d['predBeta'])*(feat['recHitEta'] -  0.1*d['predCCoords'][:,1:2])**2  
-    phidiff = d['truthNoNoise']*(.1+d['predBeta'])*(feat['recHitRelPhi'] -  0.1*d['predCCoords'][:,0:1])**2 
-    posdiff = 0.*tf.reduce_mean(etadiff+phidiff)
+    truthxy = tf.concat([d['truthHitAssignedX'],d['truthHitAssignedY']],axis=-1)
     
-    detadiff = d['truthNoNoise']*(.1+d['predBeta'])*(d['truthHitAssignedEtas'] -  0.1*d['predCCoords'][:,1:2])**2 
-    dphidiff = d['truthNoNoise']*(.1+d['predBeta'])*(d['truthHitAssignedPhis'] -  0.1*d['predCCoords'][:,0:1])**2 
-    dposdiff = tf.reduce_mean(detadiff+dphidiff)
+    #print('>>>>> >>> > > > > >', truthxy.shape, d['predCCoords'].shape, d['predXY'].shape, )
     
-    mediumbeta = 10.*tf.reduce_mean(d['truthNoNoise']*(1. - d['predBeta'])**2)
-    noise =  tf.reduce_mean((1.-d['truthNoNoise'])*(d['predBeta'])**2)
+    diff = 10.*d['predCCoords'] - truthxy
+    diff = d['truthNoNoise']*(0.1*d['predBeta'])*diff**2
     
+    beta_med = (d['predBeta']-0.5)**2
     
-    realetadiff = (d['predEta']+feat['recHitEta']  -   d['truthHitAssignedEtas'])**2
-    realphidiff = (d['predPhi']+feat['recHitRelPhi'] - d['truthHitAssignedPhis'])**2
-    realposdiff = d['truthNoNoise']*(.1+d['predBeta'])*(realetadiff+realphidiff)
-    realposloss = tf.reduce_mean(realposdiff)
+    posl = (d['predXY'] - truthxy)**2 / 1000.
     
-    loss  = posdiff +mediumbeta + noise + realposloss + dposdiff
-    global pre_training_loss_counter
-    tf.print(pre_training_loss_counter, 'loss', loss, ' = posdiff',posdiff, 'beta contrib', mediumbeta, 'noise contrib', noise, 'realposloss',realposloss, 'dposdiff',dposdiff)
-    pre_training_loss_counter+=1
+    loss = tf.reduce_mean(diff) + tf.reduce_mean(beta_med) + tf.reduce_mean(posl)
+    tf.print('pretrain loss',loss, 'posl**2', tf.reduce_mean(posl))
     return loss
     
     
@@ -141,13 +133,14 @@ class _obj_cond_config(object):
         self.payload_rel_threshold=0.9
         self.rel_energy_mse=False
         self.smooth_rep_loss=False
+        self.pre_train=False
 
 
 config = _obj_cond_config()
 
 g_time = time.time()
 
-def full_obj_cond_loss(truth, pred, rowsplits):
+def full_obj_cond_loss(truth, pred_in, rowsplits):
     
     
     start_time = time.time()
@@ -159,7 +152,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
 
     rowsplits = tf.cast(rowsplits, tf.int64)#just for first loss evaluation from stupid keras
     
-    feat,pred = split_feat_pred(pred)
+    feat,pred = split_feat_pred(pred_in)
     d = create_loss_dict(truth, pred)
     feat = create_feature_dict(feat)
     #print('feat',feat.shape)
@@ -251,8 +244,13 @@ def full_obj_cond_loss(truth, pred, rowsplits):
     # neglect energy loss almost fully
     loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss + time_loss + pos_loss + spectator_beta_penalty
     
+    if config.pre_train:
+         preloss = pre_training_loss(truth,pred_in)
+         loss /= 10.
+         loss += preloss
+         
     print('loss',loss.numpy(), 
-          'attractive_loss',attractive_loss.numpy(), 
+          'attractive_loss',attractive_loss.numpy(),
           'rep_loss', rep_loss.numpy(), 
           'min_beta_loss', min_beta_loss.numpy(), 
           'noise_loss' , noise_loss.numpy(),
@@ -260,6 +258,7 @@ def full_obj_cond_loss(truth, pred, rowsplits):
           'pos_loss', pos_loss.numpy(), 
           'time_loss', time_loss.numpy(), 
           'spectator_beta_penalty', spectator_beta_penalty)
+    
     
     print('time for this loss eval',int((time.time()-start_time)*1000),'ms')
     global g_time
