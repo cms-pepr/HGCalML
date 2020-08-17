@@ -348,6 +348,37 @@ class FusedRaggedGravNet(FusedRaggedGravNet_simple):
         return idx[:,1:], dist[:,1:]
 
 
+
+class FusedRaggedGravNetAggAtt(FusedRaggedGravNet):
+    '''
+    uses a third input between [0 1] (e.g. sigmoid) to determine for each vertex how strongly
+    it aggregates information for neighbour. done by scaling the distances
+    with 1/(s+eps) , where s is the scaler.
+    This effectively cuts off certain vertices from aggregating information
+    
+    Later, the scaler can be used for pooling, e.g. by introducing a pooling pressure loss penalty term to keep the
+    scaler small
+    '''
+    def __init__(self,
+                 **kwargs):
+        super(FusedRaggedGravNetAggAtt, self).__init__(**kwargs)
+        
+    
+    def priv_call(self, inputs):
+        x = inputs[0]
+        row_splits = inputs[1]
+        scaler = inputs[2]
+
+        coordinates = self.input_spatial_transform(x)
+        
+        neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+
+        distancesq /= scaler + 1e-3
+
+        return self.create_output_features(x, neighbour_indices, distancesq), coordinates  
+    
+
+
 class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
     '''
     linear parsing

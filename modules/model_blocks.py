@@ -1,5 +1,5 @@
 
-from tensorflow.keras.layers import Dense, Concatenate
+from tensorflow.keras.layers import Dense, Concatenate, BatchNormalization
 from Layers import ExpMinusOne, CondensateToPseudoRS, RaggedSumAndScatter, FusedRaggedGravNetLinParse, VertexScatterer
 from DeepJetCore.DJCLayers import  StopGradient, SelectFeatures, ScalarMultiply
 
@@ -93,7 +93,10 @@ def indep_energy_block2(x, energy, ccoords, beta, x_row_splits):
 def create_default_outputs(raw_inputs, x, x_row_splits, energy_block=True, n_ccoords=2):
     
     beta = Dense(1, activation='sigmoid', name="predicted_beta")(x)
-    ccoords = Dense(n_ccoords, activation=None, name="predicted_ccoords")(x)
+    
+    x_raw = BatchNormalization(momentum=0.6,name="pre_ccoords_bn")(raw_inputs)
+    pre_ccoords = Dense(64, activation='elu',name="pre_ccords")(Concatenate()([x,x_raw]))
+    ccoords = Dense(n_ccoords, activation=None, name="predicted_ccoords")(pre_ccoords)
     
     xy = Dense(2, activation=None, name="predicted_positions",kernel_initializer='zeros')(x)
     t = Dense(1, activation=None, name="predicted_time",kernel_initializer='zeros')(x)

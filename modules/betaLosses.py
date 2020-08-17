@@ -130,6 +130,7 @@ class _obj_cond_config(object):
         self.q_min = 0.5
         self.no_beta_norm = False
         self.potential_scaling = 1.
+        self.repulsion_scaling = 1.
         self.s_b = 1.
         self.position_loss_weight = 1.
         self.timing_loss_weight = 1.
@@ -139,6 +140,7 @@ class _obj_cond_config(object):
         self.use_average_cc_pos=False
         self.payload_rel_threshold=0.9
         self.rel_energy_mse=False
+        self.smooth_rep_loss=False
 
 
 config = _obj_cond_config()
@@ -221,10 +223,11 @@ def full_obj_cond_loss(truth, pred, rowsplits):
                                                                                              payload_loss=payload_loss,
                                                                                              ignore_spectators=not config.use_spectators,
                                                                                              use_average_cc_pos=config.use_average_cc_pos,
-                                                                                             payload_rel_threshold=config.payload_rel_threshold)
+                                                                                             payload_rel_threshold=config.payload_rel_threshold,
+                                                                                             smooth_rep_loss=config.smooth_rep_loss)
     
     attractive_loss *= config.potential_scaling
-    rep_loss *= config.potential_scaling
+    rep_loss *= config.potential_scaling * config.repulsion_scaling
     min_beta_loss *= config.beta_loss_scale
     
     spectator_beta_penalty = 0.

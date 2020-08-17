@@ -40,7 +40,8 @@ def _parametrised_instance_loop(max_instances,
                                 no_beta_norm=False,
                                 payload_loss=None,
                                 use_average_cc_pos=False,
-                                payload_rel_threshold=0):
+                                payload_rel_threshold=0,
+                                smooth_rep_loss=False):
     # get an idea of all the shapes
 
     # K      print('instance_ids',tf.shape(instance_ids))
@@ -117,6 +118,8 @@ def _parametrised_instance_loop(max_instances,
     # print('L_att',L_att.shape)
 
     F_rep = q_kalpha * tf.expand_dims(q_s, axis=0) * tf.nn.relu(1. - distance) * (1. - M)  # K x V
+    if smooth_rep_loss:
+        F_rep = q_kalpha * tf.expand_dims(q_s, axis=0) * tf.exp(-5.*distance**2) * (1. - M)
     F_rep = is_obj_k * tf.reduce_sum(F_rep, axis=1)  # K
     L_rep = tf.reduce_sum(F_rep, axis=0) / (Ntotal + 1e-6)
 
@@ -206,7 +209,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
                                      no_beta_norm=False,
                                      ignore_spectators=False,
                                      use_average_cc_pos=False,
-                                     payload_rel_threshold=0.):
+                                     payload_rel_threshold=0.,
+                                     smooth_rep_loss=False):
     """
     ####################################################################################################################
     # Implements OBJECT CONDENSATION for ragged tensors
@@ -302,7 +306,8 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
             no_beta_norm,
             payload_loss_seg,
             use_average_cc_pos=use_average_cc_pos,
-            payload_rel_threshold=payload_rel_threshold)
+            payload_rel_threshold=payload_rel_threshold,
+            smooth_rep_loss=smooth_rep_loss)
 
         L_beta_f_segment = tf.where(tf.math.is_nan(L_beta_f_segment), 0., L_beta_f_segment)
         L_beta_s_segment = tf.where(tf.math.is_nan(L_beta_s_segment), 0., L_beta_s_segment)

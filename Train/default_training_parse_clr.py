@@ -45,12 +45,12 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = Dense(64, activation='elu',name="dense_start")(x)
 
     n_filters = 0
-    n_gravnet_layers = 3
-    feat = [x]
+    n_gravnet_layers = 4
+    feat = [x_basic,x]
     for i in range(n_gravnet_layers):
         n_filters = 196
-        n_propagate = [128,64,64,32,32,16,16,8,8]
-        n_neighbours = 4
+        n_propagate = [128,64,32,16,8,4,2]
+        n_neighbours = 64
         n_dim = 4 - i
         if n_dim < 2:
             n_dim = 2
@@ -126,6 +126,7 @@ print(train.keras_model.summary())
  # **2 #this will be an upper limit on vertices per batch
 
 verbosity = 2
+import os
 
 
 
@@ -151,13 +152,12 @@ loss_config.beta_loss_scale = 1.
 loss_config.payload_rel_threshold = 0.5
 loss_config.timing_loss_weight = 1e-6
 
-learningrate = 3e-5
+learningrate = 1e-4
 nbatch = 30000 #quick first training with simple examples = low # hits
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
 print("using sample for plotting ",samplepath)
 callbacks = []
-
 import os
 publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 for i in range(6,10):
@@ -174,7 +174,7 @@ for i in range(6,10):
             publish = publishpath+"_event_"+ str(ev),
             use_event=ev)
     )
-    
+
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
@@ -184,7 +184,7 @@ model, history = train.trainModel(nepochs=1,
                                   backup_after_batches=100,
                                   additional_callbacks=callbacks+ 
                                   [CyclicLR (base_lr = learningrate,
-                                  max_lr = learningrate*10.,
+                                  max_lr = learningrate*5.,
                                   step_size = 10)])
 
 

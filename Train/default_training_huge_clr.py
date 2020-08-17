@@ -41,10 +41,12 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     x_basic = BatchNormalization(momentum=0.6)(x_data)  # mask_and_norm is just batch norm now
     x = x_basic
+    x = RaggedGlobalExchange(name="global_exchange")([x, x_row_splits])
+    x = Dense(64, activation='elu',name="dense_start")(x)
 
     n_filters = 0
     n_gravnet_layers = 5
-    feat = []
+    feat = [x_basic,x]
     for i in range(n_gravnet_layers):
         n_filters = 128
         n_propagate = [96 + 8*i, 32,16,8,4]
