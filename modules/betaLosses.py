@@ -228,11 +228,11 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
         spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
         spectator_beta_penalty = tf.where(tf.math.is_nan(spectator_beta_penalty),0,spectator_beta_penalty)
     
-    attractive_loss = tf.where(tf.math.is_nan(attractive_loss),0,attractive_loss)
-    rep_loss = tf.where(tf.math.is_nan(rep_loss),0,rep_loss)
-    min_beta_loss = tf.where(tf.math.is_nan(min_beta_loss),0,min_beta_loss)
-    noise_loss = tf.where(tf.math.is_nan(noise_loss),0,noise_loss)
-    payload_loss_full = tf.where(tf.math.is_nan(payload_loss_full),0,payload_loss_full)
+    #attractive_loss = tf.where(tf.math.is_nan(attractive_loss),0,attractive_loss)
+    #rep_loss = tf.where(tf.math.is_nan(rep_loss),0,rep_loss)
+    #min_beta_loss = tf.where(tf.math.is_nan(min_beta_loss),0,min_beta_loss)
+    #noise_loss = tf.where(tf.math.is_nan(noise_loss),0,noise_loss)
+    #payload_loss_full = tf.where(tf.math.is_nan(payload_loss_full),0,payload_loss_full)
     
     
     
@@ -243,6 +243,9 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     
     # neglect energy loss almost fully
     loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss + time_loss + pos_loss + spectator_beta_penalty
+    
+    loss = tf.debugging.check_numerics(loss,"loss has nan")
+
     
     if config.pre_train:
          preloss = pre_training_loss(truth,pred_in)

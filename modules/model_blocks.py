@@ -94,9 +94,9 @@ def create_default_outputs(raw_inputs, x, x_row_splits, energy_block=True, n_cco
     
     beta = Dense(1, activation='sigmoid', name="predicted_beta")(x)
     
-    x_raw = BatchNormalization(momentum=0.6,name="pre_ccoords_bn")(raw_inputs)
-    pre_ccoords = Dense(64, activation='elu',name="pre_ccords")(Concatenate()([x,x_raw]))
-    ccoords = Dense(n_ccoords, activation=None, name="predicted_ccoords")(pre_ccoords)
+    #x_raw = BatchNormalization(momentum=0.6,name="pre_ccoords_bn")(raw_inputs)
+    #pre_ccoords = Dense(64, activation='elu',name="pre_ccords")(Concatenate()([x,x_raw]))
+    ccoords = Dense(n_ccoords, activation=None, name="predicted_ccoords")(x)
     
     xy = Dense(2, activation=None, name="predicted_positions",kernel_initializer='zeros')(x)
     t = Dense(1, activation=None, name="predicted_time",kernel_initializer='zeros')(x)
@@ -109,6 +109,7 @@ def create_default_outputs(raw_inputs, x, x_row_splits, energy_block=True, n_cco
     else:
         energy = Dense(1,activation=None)(x)
         energy = ExpMinusOne(name='predicted_energy')(energy)
+        
         
     #(None, 9) (None, 1) (None, 1) (None, 3) (None, 2)
     print(raw_inputs.shape, beta.shape, energy.shape, xyt.shape, ccoords.shape)

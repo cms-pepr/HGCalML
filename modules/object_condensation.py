@@ -23,8 +23,7 @@ def normalize_weights(weights):
     Outputs are X x V x X
     '''
     weight_sum = tf.reduce_sum(weights, axis=1, keepdims=True) #K x 1
-    weight_sum = tf.where(weight_sum>0., weight_sum, 1.)
-    return weights/weight_sum
+    return tf.math.divide_no_nan(weights,weight_sum)
     
 
 # bucket this guy with padded inputs maybe?
@@ -102,7 +101,7 @@ def _parametrised_instance_loop(max_instances,
     if use_average_cc_pos:
         M_exp  = tf.expand_dims(M, axis=2) # K x V x 1
         x_kalpha = tf.reduce_sum( M_exp * tf.expand_dims(x_s,axis=0), axis=1, keepdims=True) # K x 1 x 2
-        x_kalpha = tf.where( x_kalpha ==0, x_kalpha, x_kalpha / tf.reduce_sum(M_exp, axis=1, keepdims=True))
+        x_kalpha = tf.math.divide_no_nan(x_kalpha, tf.reduce_sum(M_exp, axis=1, keepdims=True))
         
     x_s = tf.expand_dims(x_s, axis=0)
     # print('x_s',x_s.shape)
@@ -139,7 +138,7 @@ def _parametrised_instance_loop(max_instances,
         
         if payload_rel_threshold>0:
             maxweight = tf.reduce_max(weights,axis=1, keepdims=True)#make max weight 1
-            weights /= tf.where(maxweight>0, maxweight, 1.)
+            weights = tf.math.divide_no_nan(weights,maxweight)# tf.where(maxweight>0, maxweight, 1.)
             weights = tf.nn.relu(weights-payload_rel_threshold)
         
         weights = normalize_weights(weights)
@@ -309,11 +308,11 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
             payload_rel_threshold=payload_rel_threshold,
             smooth_rep_loss=smooth_rep_loss)
 
-        L_beta_f_segment = tf.where(tf.math.is_nan(L_beta_f_segment), 0., L_beta_f_segment)
-        L_beta_s_segment = tf.where(tf.math.is_nan(L_beta_s_segment), 0., L_beta_s_segment)
-        
-        V_att_segment = tf.where(tf.math.is_nan(V_att_segment), 0., V_att_segment)
-        V_rep_segment = tf.where(tf.math.is_nan(V_rep_segment), 0., V_rep_segment)
+        #L_beta_f_segment = tf.where(tf.math.is_nan(L_beta_f_segment), 0., L_beta_f_segment)
+        #L_beta_s_segment = tf.where(tf.math.is_nan(L_beta_s_segment), 0., L_beta_s_segment)
+        #
+        #V_att_segment = tf.where(tf.math.is_nan(V_att_segment), 0., V_att_segment)
+        #V_rep_segment = tf.where(tf.math.is_nan(V_rep_segment), 0., V_rep_segment)
 
         L_beta_f += L_beta_f_segment
         L_beta_s += L_beta_s_segment
@@ -321,7 +320,7 @@ def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, 
         V_att += V_att_segment
         V_rep += V_rep_segment
         
-        payload_loss_full += tf.where(tf.math.is_nan(segment_payload_loss), 0., segment_payload_loss) 
+        payload_loss_full += segment_payload_loss #tf.where(tf.math.is_nan(segment_payload_loss), 0., segment_payload_loss) 
 
     batch_size = float(batch_size)
     V_att = V_att / (batch_size + 1e-5)

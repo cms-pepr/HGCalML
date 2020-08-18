@@ -124,7 +124,7 @@ class TrainData_window(TrainData):
         
         recHitEnergy , rs        = self.branchToFlatArray(tree["recHitEnergy"], True,selection)
         recHitEta                = self.branchToFlatArray(tree["recHitEta"], False,selection)
-        recHitRelPhi             = self.branchToFlatArray(tree["recHitRelPhi"], False,selection)
+        #recHitRelPhi             = self.branchToFlatArray(tree["recHitRelPhi"], False,selection)
         recHitTheta              = self.branchToFlatArray(tree["recHitTheta"], False,selection)
         recHitR                = self.branchToFlatArray(tree["recHitR"], False,selection)
         recHitX                  = self.branchToFlatArray(tree["recHitX"], False,selection)
