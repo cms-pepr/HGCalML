@@ -142,7 +142,7 @@ from betaLosses import config as loss_config
 
 loss_config.energy_loss_weight = 1e-6
 loss_config.use_energy_weights = False
-loss_config.q_min = 0.5
+loss_config.q_min = 1.5
 loss_config.no_beta_norm = False
 loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
@@ -152,8 +152,7 @@ loss_config.beta_loss_scale = 1.
 loss_config.payload_rel_threshold = 0.5
 loss_config.timing_loss_weight = 1e-6
 
-
-learningrate = 1e-4
+learningrate = 3e-5
 nbatch = 30000 #quick first training with simple examples = low # hits
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
@@ -175,9 +174,8 @@ for i in range(6,10):
             publish = publishpath+"_event_"+ str(ev),
             use_event=ev)
     )
-    
-loss_config.pre_train=True
 
+loss_config.use_average_cc_pos=True
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
@@ -187,11 +185,10 @@ model, history = train.trainModel(nepochs=1,
                                   backup_after_batches=100,
                                   additional_callbacks=callbacks+ 
                                   [CyclicLR (base_lr = learningrate,
-                                  max_lr = learningrate*5.,
-                                  step_size = 10)])
+                                  max_lr = learningrate*10.,
+                                  step_size = 100)])
 
 
-loss_config.pre_train=False
 loss_config.energy_loss_weight = 1e-2
 loss_config.position_loss_weight=1e-3
 loss_config.timing_loss_weight = 1e-6
@@ -211,11 +208,14 @@ model, history = train.trainModel(nepochs=1+3,
                                  step_size = 10)])
 
 
-nbatch = 50000
+nbatch = 80000
+loss_config.use_average_cc_pos=False
 
 loss_config.energy_loss_weight = 1e-1
 loss_config.position_loss_weight=1e-2
 loss_config.timing_loss_weight = 1e-5
+loss_config.q_min = .5
+
 
 learningrate = 1e-5
 

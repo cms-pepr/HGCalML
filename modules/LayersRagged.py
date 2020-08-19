@@ -379,7 +379,10 @@ class FusedRaggedGravNetAggAtt(FusedRaggedGravNet):
 
         return self.create_output_features(x, neighbour_indices, distancesq), coordinates  
     
-
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
+        idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius= -1.0, tf_compatible=False) 
+        return idx,dist
 
 class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
     '''
@@ -405,6 +408,62 @@ class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
             
         features = tf.concat(allfeat +[x], axis=-1)
         return self.output_feature_transform(features)
+    
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
+        idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius= -1.0, tf_compatible=False) 
+        return idx,dist
+    
+class FusedRaggedGravNetDistMod(FusedRaggedGravNet):
+    '''
+    allows distances after each passing operation to be dynamically adjusted.
+    this similar to FusedRaggedGravNetAggAtt, but incorporates the scaling in the message passing loop
+    '''
+    def __init__(self,
+                 **kwargs):
+        super(FusedRaggedGravNetDistMod, self).__init__(**kwargs)
+        
+        
+        self.dist_mod_dense = []
+        for i in range(len(self.input_feature_transform)-1):
+            with tf.name_scope(self.name+"/5/"+str(i)):
+                self.dist_mod_dense.append( tf.keras.layers.Dense(1, activation='relu') )
+        
+    def build(self, input_shapes):
+        input_shape = input_shapes[0]
+        
+        
+        self.dist_mod_dense[0].build(input_shape)
+        for i in range(len(self.dist_mod_dense)):
+            with tf.name_scope(self.name+"/5/"+str(i)):
+                self.dist_mod_dense[i].build((input_shape[0],self.n_propagate[i]*2))
+
+        super(FusedRaggedGravNetDistMod, self).build(input_shapes)
+        
+    
+    def create_output_features(self, x, neighbour_indices, distancesq):
+        allfeat = []
+        features = x
+
+        for i in range(len(self.input_feature_transform)):
+            if i:
+                distancesq *= self.dist_mod_dense[i-1](features) 
+            t = self.input_feature_transform[i]
+            features = t(features)
+            prev_feat = features
+            features = self.collect_neighbours(features, neighbour_indices, distancesq)
+            features = tf.reshape(features, [-1, prev_feat.shape[1]*2])
+            features -= tf.tile(prev_feat, [1,2])
+            allfeat.append(features)
+            
+            
+        features = tf.concat(allfeat +[x], axis=-1)
+        return self.output_feature_transform(features)
+
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
+        idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                             max_radius= -1.0, tf_compatible=False) 
+        return idx,dist
 
 class FusedRaggedGravNetLinParsePool(FusedRaggedGravNetLinParse):
     def __init__(self,
