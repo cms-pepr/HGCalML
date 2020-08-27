@@ -184,7 +184,7 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     if config.rel_energy_mse:
         scaled_true_energy *= scaled_true_energy
         
-    energy_loss = energyweights * energy_diff**2/(scaled_true_energy+den_offset**2)
+    energy_loss = energy_diff**2/(scaled_true_energy+den_offset**2)
     
     pos_offs = None
     payload_loss = None
@@ -198,7 +198,7 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     tdiff = (1e6 * tdiff)**2
     # self.timing_loss_weight
     
-    payload_loss = tf.concat([config.energy_loss_weight * energy_loss ,
+    payload_loss = energyweights * tf.concat([config.energy_loss_weight * energy_loss ,
                           config.position_loss_weight * pos_offs,
                           config.timing_loss_weight * tdiff], axis=-1)
     

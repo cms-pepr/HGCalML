@@ -126,6 +126,7 @@ def _parametrised_instance_loop(max_instances,
     if extra_beta_weights is not None:
         weights_ka = gather_for_obj_from_vert(tf.expand_dims(extra_beta_weights,axis=1),kalpha)
         weights_ka = tf.squeeze(weights_ka ,axis=1)
+        #weights_ka = normalize_weights(weights_ka)
 
     full_pll = None
     if payload_loss is not None:

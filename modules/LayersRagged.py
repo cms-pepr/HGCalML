@@ -120,12 +120,12 @@ class RaggedSelectThreshold(keras.layers.Layer):
         #in: th, feat, rs
         #out: feat, rs, scatter_idxs
         #print('input_shapes',input_shapes)
-        return [input_shapes[1][-1], None, [1]]  
+        return [input_shapes[1][-1], None, [1], [1]]  
     
     def call(self, x):
         xs,pl,rs = x[0], x[1], x[2]
-        newfeat, rs, scatter_idxs = SelectThreshold(xs,pl,rs,threshold=self.threshold)
-        return newfeat, rs, scatter_idxs
+        newfeat, rs, scatter_idxs, tvals = SelectThreshold(xs,pl,rs,threshold=self.threshold)
+        return newfeat, rs, scatter_idxs, tvals
      
        
     
@@ -353,7 +353,7 @@ class FusedRaggedGravNet(FusedRaggedGravNet_simple):
 
 class FusedRaggedGravNetAggAtt(FusedRaggedGravNet):
     '''
-    uses a third input between [0 1] (e.g. sigmoid) to determine for each vertex how strongly
+    uses a third input between >=0  to determine for each vertex how strongly
     it aggregates information for neighbour. done by scaling the distances
     with 1/(s+eps) , where s is the scaler.
     This effectively cuts off certain vertices from aggregating information
@@ -375,7 +375,7 @@ class FusedRaggedGravNetAggAtt(FusedRaggedGravNet):
         
         neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
 
-        distancesq /= scaler + 1e-3
+        distancesq /= scaler + 1e-3 #up to 10 times closer and ~inf times further away
 
         return self.create_output_features(x, neighbour_indices, distancesq), coordinates  
     
@@ -427,16 +427,14 @@ class FusedRaggedGravNetDistMod(FusedRaggedGravNet):
         self.dist_mod_dense = []
         for i in range(len(self.input_feature_transform)-1):
             with tf.name_scope(self.name+"/5/"+str(i)):
-                self.dist_mod_dense.append( tf.keras.layers.Dense(1, activation='relu') )
+                self.dist_mod_dense.append( tf.keras.layers.Dense(1, activation='sigmoid') ) #restrict variations a bit
         
     def build(self, input_shapes):
         input_shape = input_shapes[0]
         
-        
-        self.dist_mod_dense[0].build(input_shape)
         for i in range(len(self.dist_mod_dense)):
             with tf.name_scope(self.name+"/5/"+str(i)):
-                self.dist_mod_dense[i].build((input_shape[0],self.n_propagate[i]*2))
+                self.dist_mod_dense[i].build((input_shape[0],input_shape[1]+self.n_propagate[i]*2))
 
         super(FusedRaggedGravNetDistMod, self).build(input_shapes)
         
@@ -447,7 +445,8 @@ class FusedRaggedGravNetDistMod(FusedRaggedGravNet):
 
         for i in range(len(self.input_feature_transform)):
             if i:
-                distancesq *= self.dist_mod_dense[i-1](features) 
+                scale = 10.* self.dist_mod_dense[i-1](tf.concat([x,features],axis=-1) )
+                distancesq *= scale
             t = self.input_feature_transform[i]
             features = t(features)
             prev_feat = features
@@ -498,7 +497,7 @@ class FusedRaggedGravNetLinParsePool(FusedRaggedGravNetLinParse):
         if self.cut_off is not None:
             threshold_values = inputs[2]
             
-            selx, selrs, scatter_idxs = SelectThreshold(threshold_values, x, row_splits, hardness=self.hardness, threshold=self.cut_off)
+            selx, selrs, scatter_idxs,_ = SelectThreshold(threshold_values, x, row_splits, hardness=self.hardness, threshold=self.cut_off)
             
             selcoords = tf.gather_nd(coordinates,scatter_idxs)
         

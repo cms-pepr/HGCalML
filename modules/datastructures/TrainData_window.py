@@ -162,8 +162,8 @@ class TrainData_window(TrainData):
 
         # For calculating spectators
         rechitsSum = findRechitsSum(truthHitAssignementIdx, recHitEnergy, rs)
-        notSpectators = np.logical_or(np.greater(recHitEnergy, 0.01 * rechitsSum), np.less(np.abs(recHitZ), 330))
-
+        spectator = np.where(recHitEnergy < 0.0005 * rechitsSum, np.ones_like(recHitEnergy), np.zeros_like(recHitEnergy))
+        
         # If truth shower energy < 5% of sum of rechits, assign rechits sum to it instead
         truthShowerEnergies  = truthHitAssignedEnergies.copy()
         truthShowerEnergies[rechitsSum<0.25*truthHitAssignedEnergies] = rechitsSum[rechitsSum<0.25*truthHitAssignedEnergies]
@@ -193,8 +193,6 @@ class TrainData_window(TrainData):
         
         
         truth = np.concatenate([
-        #    np.expand_dims(frs,axis=1),
-        #    truthHitFractions        ,
             np.array(truthHitAssignementIdx, dtype='float32')   , # 0
             truthShowerEnergies ,
             truthHitAssignedX     ,
@@ -209,7 +207,7 @@ class TrainData_window(TrainData):
             truthHitAssignedDirEta,
             truthHitAssignedDirPhi, #12
             truthHitAssignedDirR,
-            np.logical_not(notSpectators),#14
+            spectator,#14
             truthHitAssignedEnergies,#15
             rechitsSum, #16
             np.array(ticlHitAssignementIdx, dtype='float32')   , #17

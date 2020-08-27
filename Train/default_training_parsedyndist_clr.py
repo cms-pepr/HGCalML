@@ -49,11 +49,9 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     feat = [x_basic,x]
     for i in range(n_gravnet_layers):
         n_filters = 196
-        n_propagate = [128,64,32,16,8,4,2]
-        n_neighbours = 64
-        n_dim = 4 - i
-        if n_dim < 2:
-            n_dim = 2
+        n_propagate = [64,64,64,64,32,16,8]
+        n_neighbours = 64 + 16* (i +1)
+        n_dim = 4 
 
         x,coords = FusedRaggedGravNetDistMod(n_neighbours=n_neighbours,
                                  n_dimensions=n_dim,
@@ -141,15 +139,15 @@ copyModules(train.outputDir)
 
 from betaLosses import config as loss_config
 
-loss_config.energy_loss_weight = 1e-6
+loss_config.energy_loss_weight = 1e-2
 loss_config.use_energy_weights = False
 loss_config.q_min = 1.5
 loss_config.no_beta_norm = False
 loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
-loss_config.position_loss_weight=1e-6
+loss_config.position_loss_weight=1e-3
 loss_config.use_spectators=False
-loss_config.beta_loss_scale = 1.
+loss_config.beta_loss_scale = 10.
 loss_config.payload_rel_threshold = 0.5
 loss_config.timing_loss_weight = 1e-6
 
@@ -187,11 +185,12 @@ model, history = train.trainModel(nepochs=1,
                                   additional_callbacks=callbacks+ 
                                   [CyclicLR (base_lr = learningrate,
                                   max_lr = learningrate*10.,
-                                  step_size = 100)])
+                                  step_size = 10)])
 
+loss_config.use_average_cc_pos=False
 
-loss_config.energy_loss_weight = 1e-2
-loss_config.position_loss_weight=1e-3
+loss_config.energy_loss_weight = 1e-1
+loss_config.position_loss_weight=1e-2
 loss_config.timing_loss_weight = 1e-6
 learningrate = 1e-5
 loss_config.beta_loss_scale = 10.
@@ -209,12 +208,11 @@ model, history = train.trainModel(nepochs=1+3,
                                  step_size = 10)])
 
 
-nbatch = 80000
-loss_config.use_average_cc_pos=False
+nbatch = 100000
 
-loss_config.energy_loss_weight = 1e-1
-loss_config.position_loss_weight=1e-2
-loss_config.timing_loss_weight = 1e-5
+loss_config.energy_loss_weight = 1.
+loss_config.position_loss_weight=1e-1
+loss_config.timing_loss_weight = 1e-6
 loss_config.q_min = .5
 
 

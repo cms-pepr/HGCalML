@@ -125,6 +125,9 @@ def make_cluster_coordinates_plot(plt, ax,
     
     if direct_color:
         rgba_cols = truthHitAssignementIdx
+        
+    if np.max(rgba_cols) >= 1.:
+        rgba_cols /= np.max(rgba_cols)+1e-3
     
     sorting = np.reshape(np.argsort(alphas, axis=0), [-1])
     
@@ -209,7 +212,8 @@ def make_original_truth_shower_plot(plt, ax,
         
         rgbcolor = np.concatenate([rgbcolor,alphas],axis=-1)
             
-        
+    if np.max(rgbcolor) >= 1.:
+        rgbcolor /= np.max(rgbcolor) 
 
     pl.set_data(x = recHitX , y=recHitY   , z=recHitZ, e=recHitEnergy , c =rgbcolor)
     pl.marker_scale=2.
