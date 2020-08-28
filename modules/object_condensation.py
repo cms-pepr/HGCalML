@@ -6,7 +6,7 @@ import sys
 import time
 
 
-
+from Loss_tools import huber
 
 def remove_zero_length_elements_from_ragged_tensors(row_splits):
     lengths = row_splits[1:] - row_splits[:-1]
@@ -109,7 +109,7 @@ def _parametrised_instance_loop(max_instances,
     distance = tf.sqrt(tf.reduce_sum((x_kalpha - x_s) ** 2, axis=-1) + 1e-6)  # K x V , d (tf.sqrt(0)) problem
     # print('distance',distance)
 
-    F_att = q_kalpha * tf.expand_dims(q_s, axis=0) * distance ** 2 * M  # K x V
+    F_att = q_kalpha * tf.expand_dims(q_s, axis=0) * huber(distance, 4) * M  # K x V
     # print('F_att',F_att.shape)
     F_att = is_obj_k * tf.reduce_sum(F_att, axis=1)  # K
     # print('F_att',F_att.shape)

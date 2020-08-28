@@ -168,7 +168,7 @@ class TrainData_window(TrainData):
         truthShowerEnergies  = truthHitAssignedEnergies.copy()
         truthShowerEnergies[rechitsSum<0.25*truthHitAssignedEnergies] = rechitsSum[rechitsSum<0.25*truthHitAssignedEnergies]
 
-
+        #truthShowerEnergies = rechitsSum
         #rs = self.padRowsplits(rs, recHitEnergy.shape[0], nevents)
         
         features = np.concatenate([

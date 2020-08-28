@@ -5,7 +5,7 @@ import keras
 import keras.backend as K
 from index_dicts import create_index_dict, split_feat_pred, create_feature_dict
 import time
-
+from Loss_tools import huber
 #factorise a bit
 
 
@@ -32,7 +32,6 @@ def printAsRagged(msg, S, C , row_splits):
 def get_one_over_sigma(beta, beta_min=1e-2):
     return (( 1. / (1. - beta + K.epsilon()) - 1.) + beta_min)
     
-
 
 
 
@@ -134,6 +133,7 @@ class _obj_cond_config(object):
         self.rel_energy_mse=False
         self.smooth_rep_loss=False
         self.pre_train=False
+        self.huber_energy_scale = 2.
 
 
 config = _obj_cond_config()
@@ -173,18 +173,24 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     #just to mitigate the biased sample
     energyweights = tf.where(d['truthHitAssignedEnergies']>10.,energyweights+0.1, energyweights*(d['truthHitAssignedEnergies']/10.+0.1))
     
-    #also using log now, scale back in evaluation
-    scaled_true_energy = d['truthHitAssignedEnergies'] #
+    #also using log now, scale back in evaluation #
     den_offset = 1.
     if config.log_energy:
         raise ValueError("loss config log_energy is not supported anymore. Please use the 'ExpMinusOne' layer within the model instead to scale the output.")
     
-    energy_diff = (d['predEnergy'] - scaled_true_energy) 
+    energy_diff = (d['predEnergy'] - d['truthHitAssignedEnergies']) 
     
+    scaled_true_energy = d['truthHitAssignedEnergies']
     if config.rel_energy_mse:
         scaled_true_energy *= scaled_true_energy
-        
-    energy_loss = energy_diff**2/(scaled_true_energy+den_offset**2)
+    sqrt_true_en = tf.sqrt(scaled_true_energy)
+    energy_loss = energy_diff/(sqrt_true_en+den_offset)
+    
+    if config.huber_energy_scale>0:
+        huber_scale = config.huber_energy_scale * sqrt_true_en
+        energy_loss = huber(energy_loss, huber_scale)
+    else:
+        energy_loss = energy_loss**2
     
     pos_offs = None
     payload_loss = None
