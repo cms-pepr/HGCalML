@@ -20,7 +20,7 @@ from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures
 
 
 # tf.compat.v1.disable_eager_execution()
-
+from model_blocks import  create_default_outputs
 
 
 def gravnet_model(Inputs, feature_dropout=-1.):
@@ -65,25 +65,9 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = Dense(64, activation='elu',name="dense_last_b")(x)
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
-    beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
     
-    eta = Dense(1, activation=None, name="dense_eta")(x)
-    phi = Dense(1, activation=None, name="dense_phi")(x)
-    ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
+    predictions = create_default_outputs(input_features, x, x_row_splits, energy_block=False)
     
-    x_en = Dense(64, activation='elu', name="dense_en_a")(x)#herer so the other names remain the same
-    input_energy = SelectFeatures(0,1, name="select_en")(input_features)
-    energy_condensates,idxs = CondensateAndSum(radius=0.5, min_beta=0.1, name="condensate_en")([ccoords, beta, input_energy, x_row_splits])
-    x_en = Concatenate(name="concat_en_cond")([ScalarMultiply(10, name="multi_en")(x_en),energy_condensates])
-    x_en = Dense(64, activation='elu',name="dense_en_b")(x_en)
-    energy = Dense(1, activation=None,name="dense_en_final")(x_en)
-
-    print('input_features', input_features.shape)
-
-    x = Concatenate(name="concat_final")([input_features, beta, energy, eta, phi, ccoords])
-
-    # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
-    predictions = x
 
     # outputs = tf.tuple([predictions, x_row_splits])
 
@@ -152,7 +136,6 @@ from configSaver import copyModules
 copyModules(train.outputDir)
 
 
-nbatch = 10000 
 
 loss_config.energy_loss_weight = 0.0001
 loss_config.use_energy_weights = False
@@ -165,7 +148,8 @@ loss_config.use_spectators=False
 loss_config.log_energy=False
 loss_config.beta_loss_scale = 1.
 
-train.change_learning_rate(3e-4)
+train.change_learning_rate(1e-5)
+nbatch = 15000 #quick first training with simple examples = low # hits
 
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
@@ -176,10 +160,10 @@ model, history = train.trainModel(nepochs=1,
                                   backup_after_batches=100,
                                   additional_callbacks=callbacks)
 
-loss_config.beta_loss_scale = 1.
+
 loss_config.energy_loss_weight = 0.001
 loss_config.position_loss_weight=0.0001
-train.change_learning_rate(1e-4)
+train.change_learning_rate(1e-5)
 
 model, history = train.trainModel(nepochs=1+3,
                                   run_eagerly=True,
@@ -194,14 +178,7 @@ model, history = train.trainModel(nepochs=1+3,
 nbatch = 50000
 
 loss_config.energy_loss_weight = 1.
-loss_config.use_energy_weights = False
-loss_config.q_min = 0.5
-loss_config.no_beta_norm = False
-loss_config.potential_scaling = 1.
-loss_config.s_b = 1.
 loss_config.position_loss_weight=0.01
-loss_config.use_spectators=False
-
 train.change_learning_rate(3e-5)
 
 model, history = train.trainModel(nepochs=10 + 3 +1,
@@ -215,13 +192,7 @@ model, history = train.trainModel(nepochs=10 + 3 +1,
 
 
 loss_config.energy_loss_weight = 2.
-loss_config.use_energy_weights = False
-loss_config.q_min = 0.5
-loss_config.no_beta_norm = False
-loss_config.potential_scaling = 1.
-loss_config.s_b = 1.
 loss_config.position_loss_weight=0.1
-loss_config.use_spectators=False
 
 train.change_learning_rate(1e-5)
 model, history = train.trainModel(nepochs=10 + 10 + 3 + 1,

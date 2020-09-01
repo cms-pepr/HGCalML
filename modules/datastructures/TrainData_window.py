@@ -93,6 +93,7 @@ class TrainData_window(TrainData):
             if t.GetEntries() < 1:
                 raise ValueError("")
         except Exception as e:
+            print(e)
             return False
         return True
 
@@ -106,48 +107,63 @@ class TrainData_window(TrainData):
         nevents = tree.numentries
         
         print("n entries: ",nevents )
-        select_truth = None
+        
+        selection = None
+        
         if onlytruth:
-            select_truth   = (tree["truthHitAssignementIdx"]).array()>-0.1  #0 
+            selection   = (tree["truthHitAssignementIdx"]).array()>-0.1  #0 
         
         
-        recHitEnergy , rs        = self.branchToFlatArray(tree["recHitEnergy"], True,select_truth)
-        recHitEta                = self.branchToFlatArray(tree["recHitEta"], False,select_truth)
-        recHitRelPhi             = self.branchToFlatArray(tree["recHitRelPhi"], False,select_truth)
-        recHitTheta              = self.branchToFlatArray(tree["recHitTheta"], False,select_truth)
-        recHitR                = self.branchToFlatArray(tree["recHitR"], False,select_truth)
-        recHitX                  = self.branchToFlatArray(tree["recHitX"], False,select_truth)
-        recHitY                  = self.branchToFlatArray(tree["recHitY"], False,select_truth)
-        recHitZ                  = self.branchToFlatArray(tree["recHitZ"], False,select_truth)
-        recHitDetID              = self.branchToFlatArray(tree["recHitDetID"], False,select_truth)
-        recHitTime               = self.branchToFlatArray(tree["recHitTime"], False,select_truth)
-        recHitID                 = self.branchToFlatArray(tree["recHitID"], False,select_truth)
-        recHitPad                = self.branchToFlatArray(tree["recHitPad"], False,select_truth)
+        
+        #remove zero energy hits from removing of bad simclusters
+        if selection is None:
+            selection = (tree["recHitEnergy"]).array() > 0
+        else:
+            selection = np.logical_and(selection, (tree["recHitEnergy"]).array() > 0)
+            
+        
+        recHitEnergy , rs        = self.branchToFlatArray(tree["recHitEnergy"], True,selection)
+        recHitEta                = self.branchToFlatArray(tree["recHitEta"], False,selection)
+        #recHitRelPhi             = self.branchToFlatArray(tree["recHitRelPhi"], False,selection)
+        recHitTheta              = self.branchToFlatArray(tree["recHitTheta"], False,selection)
+        recHitR                = self.branchToFlatArray(tree["recHitR"], False,selection)
+        recHitX                  = self.branchToFlatArray(tree["recHitX"], False,selection)
+        recHitY                  = self.branchToFlatArray(tree["recHitY"], False,selection)
+        recHitZ                  = self.branchToFlatArray(tree["recHitZ"], False,selection)
+        recHitDetID              = self.branchToFlatArray(tree["recHitDetID"], False,selection)
+        recHitTime               = self.branchToFlatArray(tree["recHitTime"], False,selection)
+        recHitID                 = self.branchToFlatArray(tree["recHitID"], False,selection)
+        recHitPad                = self.branchToFlatArray(tree["recHitPad"], False,selection)
         
         ## weird shape for this truthHitFractions        = self.branchToFlatArray(tree["truthHitFractions"], False)
-        truthHitAssignementIdx   = self.branchToFlatArray(tree["truthHitAssignementIdx"], False,select_truth)   #0 
-        truthHitAssignedEnergies = self.branchToFlatArray(tree["truthHitAssignedEnergies"], False,select_truth)  #1
-        truthHitAssignedX     = self.branchToFlatArray(tree["truthHitAssignedX"], False,select_truth)  #2
-        truthHitAssignedY     = self.branchToFlatArray(tree["truthHitAssignedY"], False,select_truth)  #3
-        truthHitAssignedZ     = self.branchToFlatArray(tree["truthHitAssignedZ"], False,select_truth)  #3
-        truthHitAssignedDirX   = self.branchToFlatArray(tree["truthHitAssignedDirX"], False,select_truth)  #4
-        truthHitAssignedDirY   = self.branchToFlatArray(tree["truthHitAssignedDirY"], False,select_truth)  #4
-        truthHitAssignedDirZ   = self.branchToFlatArray(tree["truthHitAssignedDirZ"], False,select_truth)  #4
-        truthHitAssignedEta     = self.branchToFlatArray(tree["truthHitAssignedEta"], False,select_truth)  #2
-        truthHitAssignedPhi     = self.branchToFlatArray(tree["truthHitAssignedPhi"], False,select_truth)  #3
-        truthHitAssignedR       = self.branchToFlatArray(tree["truthHitAssignedR"], False,select_truth)  #3
-        truthHitAssignedDirEta   = self.branchToFlatArray(tree["truthHitAssignedDirEta"], False,select_truth)  #4
-        truthHitAssignedDirPhi   = self.branchToFlatArray(tree["truthHitAssignedDirPhi"], False,select_truth)  #4
-        truthHitAssignedDirR    = self.branchToFlatArray(tree["truthHitAssignedDirR"], False,select_truth)  #4
+        truthHitAssignementIdx   = self.branchToFlatArray(tree["truthHitAssignementIdx"], False,selection)   #0 
+        truthHitAssignedEnergies = self.branchToFlatArray(tree["truthHitAssignedEnergies"], False,selection)  #1
+        truthHitAssignedX     = self.branchToFlatArray(tree["truthHitAssignedX"], False,selection)  #2
+        truthHitAssignedY     = self.branchToFlatArray(tree["truthHitAssignedY"], False,selection)  #3
+        truthHitAssignedZ     = self.branchToFlatArray(tree["truthHitAssignedZ"], False,selection)  #3
+        truthHitAssignedDirX   = self.branchToFlatArray(tree["truthHitAssignedDirX"], False,selection)  #4
+        truthHitAssignedDirY   = self.branchToFlatArray(tree["truthHitAssignedDirY"], False,selection)  #4
+        truthHitAssignedDirZ   = self.branchToFlatArray(tree["truthHitAssignedDirZ"], False,selection)  #4
+        truthHitAssignedEta     = self.branchToFlatArray(tree["truthHitAssignedEta"], False,selection)  #2
+        truthHitAssignedPhi     = self.branchToFlatArray(tree["truthHitAssignedPhi"], False,selection)  #3
+        #truthHitAssignedR       = self.branchToFlatArray(tree["truthHitAssignedR"], False,selection)  #3
+        truthHitAssignedDirEta   = self.branchToFlatArray(tree["truthHitAssignedDirEta"], False,selection)  #4
+        truthHitAssignedDirPhi   = self.branchToFlatArray(tree["truthHitAssignedDirPhi"], False,selection)  #4
+        truthHitAssignedDirR    = self.branchToFlatArray(tree["truthHitAssignedDirR"], False,selection)  #4
         ## weird shape for this truthHitAssignedPIDs     = self.branchToFlatArray(tree["truthHitAssignedPIDs"], False)
         #windowEta                =
         #windowPhi                =
+        
+        truthHitAssignedT   = self.branchToFlatArray(tree["truthHitAssignedT"], False,selection) 
+        
+        ticlHitAssignementIdx    = self.branchToFlatArray(tree["ticlHitAssignementIdx"], False,selection)  #4
+        ticlHitAssignedEnergies    = self.branchToFlatArray(tree["ticlHitAssignedEnergies"], False,selection)  #4
 
 
         # For calculating spectators
         rechitsSum = findRechitsSum(truthHitAssignementIdx, recHitEnergy, rs)
-        notSpectators = np.logical_or(np.greater(recHitEnergy, 0.01 * rechitsSum), np.less(np.abs(recHitZ), 330))
-
+        spectator = np.where(recHitEnergy < 0.0005 * rechitsSum, np.ones_like(recHitEnergy), np.zeros_like(recHitEnergy))
+        
         # If truth shower energy < 5% of sum of rechits, assign rechits sum to it instead
         truthShowerEnergies  = truthHitAssignedEnergies.copy()
         truthShowerEnergies[rechitsSum<0.25*truthHitAssignedEnergies] = rechitsSum[rechitsSum<0.25*truthHitAssignedEnergies]
@@ -158,7 +174,7 @@ class TrainData_window(TrainData):
         features = np.concatenate([
             recHitEnergy,
             recHitEta   ,
-            recHitRelPhi,
+            recHitPad, #no phi anymore!
             recHitTheta ,
             recHitR   ,
             recHitX     ,
@@ -173,11 +189,10 @@ class TrainData_window(TrainData):
         print("features",features.shape)
         
         del features
-
+        
+        
         
         truth = np.concatenate([
-        #    np.expand_dims(frs,axis=1),
-        #    truthHitFractions        ,
             np.array(truthHitAssignementIdx, dtype='float32')   , # 0
             truthShowerEnergies ,
             truthHitAssignedX     ,
@@ -188,13 +203,15 @@ class TrainData_window(TrainData):
             truthHitAssignedDirZ,
             truthHitAssignedEta     ,
             truthHitAssignedPhi,
-            truthHitAssignedR,  #10
+            truthHitAssignedT,  #10
             truthHitAssignedDirEta,
             truthHitAssignedDirPhi, #12
             truthHitAssignedDirR,
-            np.logical_not(notSpectators),#14
-            truthHitAssignedEnergies,
-            rechitsSum,
+            spectator,#14
+            truthHitAssignedEnergies,#15
+            rechitsSum, #16
+            np.array(ticlHitAssignementIdx, dtype='float32')   , #17
+            ticlHitAssignedEnergies, #18
         #    truthHitAssignedPIDs    
             ], axis=-1)
         
@@ -227,7 +244,13 @@ class TrainData_window(TrainData):
     def bla(self):
         print("hello")
     
-
+class TrainData_window_defaulttruth(TrainData_window):
+    def __init__(self):
+        TrainData_window.__init__(self)
+        
+    def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="WindowNTuplerDefaultTruth/tree"):
+        return self.base_convertFromSourceFile(filename, weighterobjects, istraining, onlytruth=False, treename=treename)
+    
 
 class TrainData_window_onlytruth(TrainData_window):
     def __init__(self):

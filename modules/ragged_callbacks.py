@@ -1,4 +1,5 @@
-
+import matplotlib
+matplotlib.use('Agg')
 
 from ragged_plotting_tools import make_cluster_coordinates_plot, make_original_truth_shower_plot, createRandomizedColors, make_eta_phi_projection_truth_plot
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
@@ -7,24 +8,39 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import random
 from multiprocessing import Process
+import numpy as np
+import tempfile
+import os
+
 
 class plotEventDuringTraining(PredictCallback): 
     def __init__(self, 
                  outputfile,
+                 log_energy=False,
                  cycle_colors=False,
+                 publish=None,
+                 n_keep = 3,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)
         self.outputfile=outputfile
         self.cycle_colors=cycle_colors
+        self.log_energy = log_energy
+        self.n_keep=n_keep
+        self.keep_counter=0
         if self.td.nElements()>1:
             raise ValueError("plotEventDuringTraining: only one event allowed")
         
         self.gs = gridspec.GridSpec(2, 2)
         self.plot_process=None
+        self.publish = publish
             
     def make_plot(self,counter,feat,predicted,truth):  
         if self.plot_process is not None:
             self.plot_process.join()
+        
+        self.keep_counter+=1
+        if self.keep_counter > self.n_keep:
+            self.keep_counter=0
             
         self.plot_process = Process(target=self._make_plot, args=(counter,feat,predicted,truth))
         self.plot_process.start()
@@ -49,6 +65,8 @@ class plotEventDuringTraining(PredictCallback):
             data = create_index_dict(truth, pred, usetf=False)
             feats = create_feature_dict(feat)
             
+            data['predBeta'] = np.clip(data['predBeta'],1e-6,1.-1e-6)
+            
             seed = truth.shape[0]
             if self.cycle_colors:
                 seed += counter
@@ -67,36 +85,69 @@ class plotEventDuringTraining(PredictCallback):
                                              feats['recHitX'],
                                              feats['recHitY'],
                                              feats['recHitZ'],
-                                             cmap=cmap)
+                                             cmap=cmap,
+                                             predBeta=data['predBeta'])
             
             angle_in=counter+60.
             while angle_in>=360: angle_in-=360
             while angle_in<=-360: angle_in-=360
             ax[0].view_init(30, angle_in)
             
+            predEnergy=data['predEnergy']
+            if self.log_energy:
+                predEnergy = np.exp(predEnergy) - 1
+                
+            def calc_eta(x,y,z):
+                rsq = np.sqrt(x**2 + y**2)
+                return -1 * np.sign(z) *np.log( rsq/np.abs(z+1e-3) / 2. )
+                
+            def calc_phi(x,y):
+                return np.arctan2(x,y)
             
+            predEta = calc_eta(data['predX']+feats['recHitX'], data['predY']+feats['recHitY'], np.sign(feats['recHitZ'])*322.1)
+            predPhi = calc_phi(data['predX']+feats['recHitX'], data['predY']+feats['recHitY']) 
+            
+            
+            trueEta = calc_eta(data['truthHitAssignedX'],data['truthHitAssignedY']+1e-3,data['truthHitAssignedZ']+1e-3)
+            truePhi = calc_phi(data['truthHitAssignedX'],data['truthHitAssignedY']+1e-3) 
+                
             make_eta_phi_projection_truth_plot(plt,ax[2],
                                                data['truthHitAssignementIdx'],                      
                                     feats['recHitEnergy'],                       
-                                    feats['recHitEta'],                       
-                                    feats['recHitRelPhi'], 
-                                    data['predEta']+feats['recHitEta'],
-                                    data['predPhi']+feats['recHitRelPhi'],
-                                    data['truthHitAssignedEtas'],
-                                    data['truthHitAssignedPhis'],
+                                    calc_eta(feats['recHitX'],feats['recHitY'],feats['recHitZ']),                    
+                                    calc_phi(feats['recHitX'],feats['recHitY']), 
+                                    predEta, #data['predEta']+feats['recHitEta'],
+                                    predPhi, #data['predPhi']+feats['recHitRelPhi'],
+                                    trueEta,
+                                    truePhi,
                                     data['truthHitAssignedEnergies'],
                                     data['predBeta'],               
                                     data['predCCoords'],            
                                     cmap=cmap,
-                                    identified=identified)
+                                    identified=identified,
+                                    predEnergy=predEnergy
+                                    )
             
             plt.tight_layout()
-            fig.savefig(self.outputfile+str(counter)+".pdf")
+            fig.savefig(self.outputfile+str(self.keep_counter)+".pdf")
+            
+            if self.publish is not None:
+                temp_name = next(tempfile._get_candidate_names())
+                temp_name = self.outputfile+temp_name+'.png'
+                fig.savefig(temp_name)
+                cpstring='cp -f '
+                if "@" in self.publish:
+                    cpstring='scp '
+                os.system(cpstring+temp_name+' '+self.publish+'.png')
+                os.system('rm -f '+temp_name)
+                
+            
             fig.clear()
             plt.close(fig)
             plt.clf()
             plt.cla()
             plt.close() 
+            
         
         except Exception as e:
             print(e)
@@ -111,6 +162,7 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
                  outputfile,
                  start_pred_index,
                  end_pred_index,
+                 n_keep = 3,
                  cycle_colors=False,
                  **kwargs):
         super(plotGravNetCoordinatesDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)
@@ -120,6 +172,9 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
         self.coordinates_b=[]
         self.coordinates_c=[]
         self.ndims=end_pred_index-start_pred_index
+        
+        self.n_keep=n_keep
+        self.keep_counter=0
         
         if self.ndims == 3:
             self.coordinates_a=[i+start_pred_index for i in range(self.ndims)]
@@ -148,6 +203,11 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
     
            
     def make_plot(self,counter,feat,predicted,truth):  
+        
+        self.keep_counter+=1
+        if self.keep_counter > self.n_keep:
+            self.keep_counter=0
+            
         if self.plot_process is not None:
             self.plot_process.join()
             
@@ -226,12 +286,14 @@ class plotGravNetCoordinatesDuringTraining(PredictCallback):
             
             
             plt.tight_layout()
-            fig.savefig(self.outputfile+str(counter)+".pdf")
+            fig.savefig(self.outputfile+str(self.keep_counter)+".pdf")
             fig.clear()
             plt.close(fig)
             plt.clf()
             plt.cla()
             plt.close() 
+            
+            
         
         except Exception as e:
             print(e)

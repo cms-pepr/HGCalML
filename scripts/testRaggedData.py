@@ -29,8 +29,8 @@ import random
 
 dc = DataCollection(infile)
 dc.setBatchSize(batchsize)
-dc.invokeGenerator()
-nbatches = dc.generator.getNBatches()
+gen = dc.invokeGenerator()
+nbatches = gen.getNBatches()
 
 if maxbatch >= nbatches:
     raise ValueError("maxbatch >= nbatches in sample")
@@ -42,7 +42,7 @@ lastev = -1
 n_plots_done=0
 print('scanning...')
 for i in range(nbatches):
-    f,t = next(dc.generatorFunction())
+    f,t = next(gen.feedNumpyData())
     rs = f[1]
     f = f[0]
     t = t[0]

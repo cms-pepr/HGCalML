@@ -67,8 +67,8 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
     
-    eta = Dense(1, activation=None, name="dense_eta")(x)
-    phi = Dense(1, activation=None, name="dense_phi")(x)
+    xy = Dense(2, activation=None, name="dense_xy")(x)
+    t = ScalarMultiply(1e-9)(Dense(1, activation=None, name="dense_t")(x))
     ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
     
     x_en = Dense(64, activation='elu', name="dense_en_a")(x)#herer so the other names remain the same
@@ -80,7 +80,7 @@ def gravnet_model(Inputs, feature_dropout=-1.):
 
     print('input_features', input_features.shape)
 
-    x = Concatenate(name="concat_final")([input_features, beta, energy, eta, phi, ccoords])
+    x = Concatenate(name="concat_final")([input_features, beta, energy, xy, t, ccoords])
 
     # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
     predictions = x
@@ -121,7 +121,6 @@ if not train.modelSet():
 
 
 
-from betaLosses import config as loss_config
 
 
 
@@ -153,20 +152,23 @@ from configSaver import copyModules
 copyModules(train.outputDir)
 
 
-nbatch = 10000 
 
-loss_config.energy_loss_weight = 0.001
+from betaLosses import config as loss_config
+
+loss_config.energy_loss_weight = 0.0001
 loss_config.use_energy_weights = False
 loss_config.q_min = 0.5
 loss_config.no_beta_norm = False
 loss_config.potential_scaling = 1.
 loss_config.s_b = 1.
-loss_config.position_loss_weight=0.001
+loss_config.position_loss_weight=0.00001
 loss_config.use_spectators=False
 loss_config.log_energy=False
-loss_config.beta_loss_scale = 10.
+loss_config.beta_loss_scale = 1.
 
-train.change_learning_rate(3e-4)
+
+train.change_learning_rate(1e-4)
+nbatch = 5000 #quick first training with simple examples = low # hits
 
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
@@ -178,7 +180,8 @@ model, history = train.trainModel(nepochs=1,
                                   additional_callbacks=callbacks)
 
 
-loss_config.beta_loss_scale = 1.
+loss_config.energy_loss_weight = 0.001
+loss_config.position_loss_weight=0.0001
 train.change_learning_rate(1e-4)
 
 model, history = train.trainModel(nepochs=1+3,
@@ -194,14 +197,7 @@ model, history = train.trainModel(nepochs=1+3,
 nbatch = 50000
 
 loss_config.energy_loss_weight = 1.
-loss_config.use_energy_weights = False
-loss_config.q_min = 0.5
-loss_config.no_beta_norm = False
-loss_config.potential_scaling = 1.
-loss_config.s_b = 1.
 loss_config.position_loss_weight=0.01
-loss_config.use_spectators=False
-
 train.change_learning_rate(3e-5)
 
 model, history = train.trainModel(nepochs=10 + 3 +1,
@@ -215,13 +211,7 @@ model, history = train.trainModel(nepochs=10 + 3 +1,
 
 
 loss_config.energy_loss_weight = 2.
-loss_config.use_energy_weights = False
-loss_config.q_min = 0.5
-loss_config.no_beta_norm = False
-loss_config.potential_scaling = 1.
-loss_config.s_b = 1.
 loss_config.position_loss_weight=0.1
-loss_config.use_spectators=False
 
 train.change_learning_rate(1e-5)
 model, history = train.trainModel(nepochs=10 + 10 + 3 + 1,
@@ -232,3 +222,5 @@ model, history = train.trainModel(nepochs=10 + 10 + 3 + 1,
                                   backup_after_batches=100,
                                   verbose=verbosity, 
                                   additional_callbacks=callbacks)
+
+

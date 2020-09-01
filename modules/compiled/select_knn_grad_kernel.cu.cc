@@ -103,9 +103,9 @@ static void select_knn_grad_selfloop_kernel(
 
     float self_contrib=0;
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
-        __syncthreads();
+
         int k = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
-        if(k<0) continue;
+        if(k<0) break;
 
         const float gik = d_grad_dist[I2D(i_v,i_i_n,n_neigh)];
         const float xknu = d_coord[I2D(k,nu_c,n_coords)];
@@ -144,7 +144,7 @@ static void select_knn_grad_neighloop_kernel(
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
         int m = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
-        if(m<0) continue;
+        if(m<0) break;//padded with -1
 
         const float gim = d_grad_dist[I2D(i_v,i_i_n,n_neigh)];
         const float xmnu = d_coord[I2D(m,nu_c,n_coords)];
@@ -182,12 +182,10 @@ struct SelectKnnGradOpFunctor<GPUDevice, dummy> {
 
         //just loop over n_rs, in a realistic setting these shouldn't be more than a handful entries
 
-        dim3 fgridzc(n_vert/128+1, n_coords/4+1);
-        if(n_coords==4)
-            fgridzc.y = 1;
-        dim3 fblockzc(128,4);
+        grid_and_block gb(n_vert,128,n_coords,4);
 
-        gpu::select_knn_grad_selfloop_kernel<<<fgridzc, fblockzc, 0, d.stream()>>>(
+
+        gpu::select_knn_grad_selfloop_kernel<<<gb.grid(),gb.block(), 0, d.stream()>>>(
                 d_grad_dist,
                 d_indices,
                 d_dist,
@@ -200,7 +198,7 @@ struct SelectKnnGradOpFunctor<GPUDevice, dummy> {
 
         cudaDeviceSynchronize();
 
-        gpu::select_knn_grad_neighloop_kernel<<<fgridzc, fblockzc, 0, d.stream()>>>(
+        gpu::select_knn_grad_neighloop_kernel<<<gb.grid(),gb.block(), 0, d.stream()>>>(
                 d_grad_dist,
                 d_indices,
                 d_dist,

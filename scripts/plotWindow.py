@@ -11,6 +11,7 @@ import math
 from numba import jit
 import copy
 from multiprocessing import Process
+import random
 
 def toXYZ(rho,eta,phi):
     x = rho * math.cos(phi)
@@ -65,28 +66,30 @@ def selectEvent(rs, feat, truth, event):
 
 def makePlot(outfile, 
              rechit_e, rechit_x, rechit_y, rechit_z,
-             truthasso,truthenergy,
+             truthasso_in,truthenergy,
              truthX,truthY,truthZ,
              truthdirX,truthdirY,truthdirZ,
              movie=False,
              scale=True,
              isetaphi=False,
-             drawarrows=True
+             drawarrows=True,
+             show=False
              ):
     
     #if e < 19: return
     #copy properly
+    truthasso = np.array(truthasso_in)
     
-    
-    fig = plt.figure(figsize=(20,8))
-    ax = [fig.add_subplot(1,2,1, projection='3d'), fig.add_subplot(1,2,2, projection='3d')]
+    fig = plt.figure(figsize=(24,8))
+    ax = [fig.add_subplot(1,4,1, projection='3d'), fig.add_subplot(1,4,2, projection='3d'),
+          fig.add_subplot(1,4,3), fig.add_subplot(1,4,4)]
 
     
     not_assigned = truthasso < 0
-    print('event', e)
+    #print('event', e)
     print('not assigned ',np.count_nonzero(not_assigned, axis=-1))
     
-    
+    print('truthZ',truthZ)
     selpos,select       = getpositions_and_select(truthX,truthY,truthZ,takeall=True)
     selpos = np.array(selpos, dtype='float32')
     select = np.array(select, dtype='float')
@@ -124,17 +127,40 @@ def makePlot(outfile,
     print('noisefraction ',noisefraction)
     print('noise energy ',totalenergy - nonoise_energy)
     
+    #randomise the colours a bit
+    
+    
+    rgbcolor = plt.get_cmap('prism')((truthasso+1.)/(np.max(truthasso)+1.))[:,:-1]
+
+    rgbcolor[truthasso<0]=[0.92,0.92,0.92]
+    
+    scatter_size = np.log(rechit_e + 1)+0.1
+    ax[2].scatter(rechit_x, rechit_y,
+              s=np.log(rechit_e + 1.)+0.1,
+              c=rgbcolor)
+    
+    scatter_size[not_assigned] = 0
+    ax[3].scatter(rechit_x, rechit_y,
+              s=scatter_size,
+              c=rgbcolor)
+    
+    
+    print('selpos',selpos)
+    ax[3].scatter(selpos[:,0],selpos[:,1],
+                  #s = 2.0,
+                  marker='+',
+                  c='k')
     
     
     
-    pl = plotter_3d(output_file=outdir+"/plot")
+    pl = plotter_3d(output_file=outdir+"/plot", colorscheme=None)
     
-    pl.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_e , c =truthasso)
+    pl.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_e , c =rgbcolor)
     pl.marker_scale=1.
     pl.plot3d(ax=ax[0])
     
     
-    pl.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_nonoise , c =truthasso)
+    pl.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_nonoise , c =rgbcolor)
     pl.plot3d(ax=ax[1])
     
     zoffset = 10
@@ -159,6 +185,12 @@ def makePlot(outfile,
                  alpha=0.5)
     
     addarrows(ax[1])
+    
+    
+    if show:
+        plt.show()
+    
+    
     fig.savefig(outfile+".pdf")
     plt.close()
     
@@ -181,6 +213,7 @@ parser = ArgumentParser('')
 parser.add_argument('inputFile')
 parser.add_argument('outputDir')
 parser.add_argument('--movie', help='Also create a movie', action='store_true' , default=False )
+parser.add_argument('--show', help='Also create a movie', action='store_true' , default=False )
 parser.add_argument('-n', help='Event', default='0' )
 parser.add_argument('--default', help='Use default simclusters (not hgctruth merged)', action='store_true' , default=False )
 args = parser.parse_args()
@@ -211,7 +244,10 @@ feat = feat_rs[0]
 rs = feat_rs[1][:,0]
 truth = truth_rs[0]
 
-def worker(eventno):
+nevents = min(td.nElements(),nevents)
+print('plotting',nevents,'events')
+
+def worker(eventno, show=False):
     pfeat, ptruth = selectEvent(rs,feat,truth,eventno)
     
     rechit_e = pfeat[:,0]
@@ -236,21 +272,24 @@ def worker(eventno):
     
     truthEta = ptruth[:,8]
     truthPhi = ptruth[:,9]
-    truthR = ptruth[:,10]
+    truthR =  truthZ / np.cos(2* np.arctan(np.exp(-truthEta)))
     truthdirEta = ptruth[:,11]
     truthdirPhi = ptruth[:,12]
     truthdirR = ptruth[:,13]
     
-    p = Process(target=makePlot, args=(outdir+str(eventno), 
+    ticlAsso = ptruth[:,17]
+    ticlE    = ptruth[:,18]
+    
+    makePlot(outdir+str(eventno), 
              rechit_e, rechit_x, rechit_y, rechit_z,
              truthasso,truthenergy,
              truthX,truthY,truthZ,
              truthdirX,truthdirY,truthdirZ,
-             make_movie))
-    p.start()
-    #makePlot()
+             make_movie,
+             show=show)
     
-    p2 = Process(target=makePlot,args=(outdir+"etaphir_"+str(eventno), 
+    
+    makePlot(outdir+"etaphir_"+str(eventno), 
              rechit_e, rechit_eta, rechit_phi, rechit_r,
              truthasso,truthenergy,
              truthEta,truthPhi,truthR,
@@ -258,18 +297,33 @@ def worker(eventno):
              make_movie,
              False,
              True,
-             False))
-    p2.start()
-    return p,p2
+             False,
+             show=show)
+    
+    
+    makePlot(outdir+"ticl_"+str(eventno), 
+             rechit_e, rechit_x, rechit_y, rechit_z,
+             ticlAsso,truthenergy,
+             truthX,truthY,truthZ,
+             truthdirX,truthdirY,truthdirZ,
+             make_movie,
+             show=show)
     
 
-#from multiprocessing import Pool
-#p = Pool()
-#print(p.map(worker, range(nevents)))
+    return True
+    
+if args.show:
+    for e in range(nevents):
+        worker(e, show=True)
+    exit()
+
+from multiprocessing import Pool
+p = Pool()
+print(p.map(worker, range(nevents)))
 
 #exit()
-for e in range(nevents):
-    worker(e)
+#for e in range(nevents):
+#    worker(e)
     
     
     

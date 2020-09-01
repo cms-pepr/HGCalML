@@ -11,7 +11,12 @@ global_layers_list['weighted_sum_layer']=weighted_sum_layer
 
 from LayersRagged import *
 
-global_layers_list['CondensateAndSum']=CondensateAndSum
+
+global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
+global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
+
+
+global_layers_list['GridMaxPoolReduction']=GridMaxPoolReduction
 global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 global_layers_list['RaggedConstructTensor']=RaggedConstructTensor
 global_layers_list['GraphShapeFilters']=GraphShapeFilters
@@ -19,11 +24,21 @@ global_layers_list['GraphFunctionFilters']=GraphFunctionFilters
 global_layers_list['VertexScatterer']=VertexScatterer
 global_layers_list['RaggedNeighborBuilder']=RaggedNeighborBuilder
 global_layers_list['RaggedVertexEater']=RaggedVertexEater
-global_layers_list['RaggedNeighborIndices']=RaggedNeighborIndices
+
+
+global_layers_list['RaggedSelectThreshold']=RaggedSelectThreshold
 
 
 global_layers_list['FusedRaggedGravNet']=FusedRaggedGravNet
 global_layers_list['FusedRaggedGravNet_simple']=FusedRaggedGravNet_simple
+global_layers_list['FusedMaskedRaggedGravNet']=FusedMaskedRaggedGravNet
+global_layers_list['FusedRaggedGravNetLinParse']=FusedRaggedGravNetLinParse
+global_layers_list['FusedRaggedGravNetLinParsePool']=FusedRaggedGravNetLinParsePool
+global_layers_list['FusedRaggedGravNetGarNetLike']=FusedRaggedGravNetGarNetLike
+global_layers_list['FusedRaggedGravNetAggAtt']=FusedRaggedGravNetAggAtt
+global_layers_list['FusedRaggedGravNetDistMod']=FusedRaggedGravNetDistMod
+
+
 
 
 
@@ -33,6 +48,23 @@ from keras.layers import Layer
 import keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
+
+
+
+
+class ExpMinusOne(Layer):
+    def __init__(self, **kwargs):
+        super(ExpMinusOne, self).__init__(**kwargs)
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    
+    def call(self, inputs):
+        return tf.math.expm1(inputs)
+    
+    
+global_layers_list['ExpMinusOne']=ExpMinusOne
+
 
 class CenterPhi(Layer):
     '''
