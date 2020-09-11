@@ -38,6 +38,9 @@ global_layers_list['FusedRaggedGravNetGarNetLike']=FusedRaggedGravNetGarNetLike
 global_layers_list['FusedRaggedGravNetAggAtt']=FusedRaggedGravNetAggAtt
 global_layers_list['FusedRaggedGravNetDistMod']=FusedRaggedGravNetDistMod
 
+global_layers_list['FusedRaggedGravNetRetDistLinParse']=FusedRaggedGravNetRetDistLinParse
+global_layers_list['FusedRaggedGravNetRetDistDistMod']=FusedRaggedGravNetRetDistDistMod
+
 
 
 
@@ -50,6 +53,24 @@ import tensorflow as tf
 from Loss_tools import deltaPhi
 
 
+
+class InputNormalization(Layer):
+    def __init__(self, 
+                 multipliers, 
+                 biases,
+                 **kwargs):
+        super(ExpMinusOne, self).__init__(**kwargs)
+        
+        self.multiplier = tf.constant(multipliers, dtype='float32')
+        self.multiplier = tf.expand_dims(self.multiplier, axis=0)
+        self.bias = tf.constant(biases, dtype='float32')
+        self.bias = tf.expand_dims(self.bias, axis=0)
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    
+    def call(self, inputs):
+        return (inputs - self.bias) * self.multiplier
 
 
 class ExpMinusOne(Layer):

@@ -21,324 +21,183 @@ def normalize_weights(weights):
     '''
     Input is X x V x X
     Outputs are X x V x X
+    normalises across V
     '''
-    weight_sum = tf.reduce_sum(weights, axis=1, keepdims=True) #K x 1
+    weight_sum = tf.reduce_sum(weights, axis=1, keepdims=True) #K x 1 x X
     return tf.math.divide_no_nan(weights,weight_sum)
     
 
-# bucket this guy with padded inputs maybe?
-# @tf.function
-def _parametrised_instance_loop(max_instances,
-                                instance_ids,
-                                no_noise_mask,
-                                x_s,
-                                classes_s,
-                                beta_s,
-                                q_s,
-                                extra_beta_weights=None,
-                                no_beta_norm=False,
-                                payload_loss=None,
-                                use_average_cc_pos=False,
-                                payload_rel_threshold=0,
-                                smooth_rep_loss=False):
-    # get an idea of all the shapes
+def payload_weight_function(w, w2, threshold):
+    '''
+    Input/output  K x V x 1
+    normalised in V
+    '''
+    w = tf.clip_by_value(w, 0., 1.-1e-6)
+    w = w2*tf.math.atanh(w)**2
+    w_max = tf.reduce_max(w, axis = 1, keepdims=True) # K x 1 x 1
+    w = tf.math.divide_no_nan(w, w_max)
+    if threshold>0:
+        w = tf.nn.relu(w-threshold)
+    return normalize_weights(w)
+    
 
-    # K      print('instance_ids',tf.shape(instance_ids))
-    # V x 2  print('x_s',tf.shape(x_s))
-    # V      print('classes_s',tf.shape(classes_s))
-    # V      print('beta_s',tf.shape(beta_s))
-    # 0      print('num_vertices',tf.shape(num_vertices))
-    # V      print('q_s',tf.shape(q_s))
-    # V      no_noise_mask
+def gather_for_obj_from_vert(v_prop, ids):
+    '''
+    In: V x X , ids
+    Out: K x 1 x X
+    '''
+    gathered = tf.gather_nd(tf.tile(tf.expand_dims(v_prop, axis=0), [ids.shape[0]]+[1]*len(v_prop.shape)), ids, batch_dims=1)
+    gathered = tf.expand_dims(gathered, axis=1)
+    return gathered
 
-    # move to convention of at least one feature axis
+def mean_N_K(x, N, K):
+    '''
+    Input: K x V x X
+    Output: X
+    '''
+    red = tf.reduce_sum(x, axis=0)#K
+    red = tf.reduce_sum(red, axis=0)#V
+    return tf.math.divide_no_nan(red, tf.expand_dims(N*K, axis=0))
+    
 
-    def gather_for_obj_from_vert(v_prop, ids):
-        return tf.gather_nd(tf.tile(tf.expand_dims(v_prop, axis=0), [kalpha.shape[0], 1, 1]), ids, batch_dims=1)
-
-    # instance ids > 0, do not include noise
-    # classes_s is 0 for noise
-    # create Mki: K x V matrix
-    M = tf.expand_dims(instance_ids, axis=1) - tf.expand_dims(classes_s, axis=0)
+def oc_per_batch_element(
+        beta,
+        x,
+        q_min,
+        object_weights, # V x 1 !!
+        truth_idx,
+        is_spectator,
+        payload_loss,
+        payload_weight_function = payload_weight_function,  #receives betas as K x V x 1 as input, and a threshold val
+        payload_weight_threshold = 0.8,
+        use_mean_x = False
+        ):
+    '''
+    all inputs
+    V x X , where X can be 1
+    '''
+    
+    #set all spectators invalid here, everything scales with beta, so:
+    beta_in = beta
+    beta = tf.clip_by_value(beta, 1e-9,1.-1e-4)
+    beta *= (1. - is_spectator)
+    q = tf.math.atanh(beta)**2 + q_min * (1. - is_spectator)
+    
+    
+    #determine object associations
+    obj_ids,_ = tf.unique(tf.squeeze(truth_idx,axis=1)) # K+1
+    obj_ids = obj_ids[obj_ids>-0.1]
+    
+    K = tf.cast(obj_ids.shape[0], dtype='float32') 
+    N = tf.cast(beta.shape[0], dtype='float32')
+    
+    #print('objects',K)
+    
+    obj_ids = tf.expand_dims(obj_ids, axis=1) #K x 1
+    
+    is_noise = tf.where(truth_idx<0., tf.zeros_like(truth_idx), 1.)#V x 1
+    N_nonoise = N - tf.cast(tf.math.count_nonzero(is_noise), dtype='float32') #()
+    
+    M = tf.expand_dims(obj_ids, axis=1) - tf.expand_dims(truth_idx, axis=0) # K x V x 1
+    M_not = tf.where(tf.abs(M) > 0.1, tf.zeros_like(M) + 1., tf.zeros_like(M))
     M = tf.where(tf.abs(M) < 0.1, tf.zeros_like(M) + 1., tf.zeros_like(M))
-    # K x V
-    # print('M',M.shape)
-    #
-    # Here add payload losses. they should already be in a per-vertex loss form, so V, containing a sum of all loss terms
-    #
-    
-    #
-    #
-    #
-    # if padding is applied, otherwise it's clear that it's an object
-    is_obj_k = tf.reduce_max(M, axis=1)
-    # K
-    # print('is_obj_k',is_obj_k.shape)
-    Nobj = tf.reduce_sum(is_obj_k, axis=0)
-    # print('Nobj',Nobj.shape)
     
     
+    kalpha = tf.argmax(M * tf.expand_dims(beta_in, axis=0), axis=1) # K x 1
+    
+    x_kalpha = gather_for_obj_from_vert(x, kalpha) # K x 1 x C
+    if use_mean_x:
+        x_kalpha = tf.reduce_sum( M * tf.expand_dims(x,axis=0), axis=1, keepdims=True) # K x 1 x C
+        x_kalpha = tf.math.divide_no_nan(x_kalpha, tf.reduce_sum(M, axis=1, keepdims=True)) # K x 1 x C
+    
+    q_kalpha = gather_for_obj_from_vert(q, kalpha) # K x 1 x 1
+    
+    beta_kalpha = gather_for_obj_from_vert(beta_in, kalpha) # K x 1 x 1
+    object_weights_kalpha = gather_for_obj_from_vert(object_weights, kalpha)# K x 1 x 1
+    
+    distance = tf.sqrt(tf.reduce_sum((x_kalpha - tf.expand_dims(x, axis=0)) ** 2, axis=-1, keepdims=True) + 1e-6)# K x V x 1
+    
+    V_att = M * q_kalpha * tf.expand_dims(q, axis=0) * huber(distance, 8)  # K x V x 1
+    V_att = mean_N_K(V_att, N, K) # ()
+    
+    V_rep = M_not * q_kalpha * tf.expand_dims(q, axis=0) * tf.nn.relu(1. - distance)   # K x V x 1
+    V_rep = mean_N_K(V_rep, N, K) # ()
+    
+    ##beta penalty
+    
+    #print('beta',tf.reduce_mean(beta))
+    #print('beta_kalpha',beta_kalpha)
+    #object_weights_kalpha = tf.zeros_like(object_weights_kalpha)+1
+    
+    B_pen = tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha)), 
+                                  tf.reduce_sum(object_weights_kalpha)) # ()
+    
+    ##noise penalty
+    Noise_pen = tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise))
+    
+    #### payload
+    ## beta_nograd kill beta gradient? maybe..?
+    
+    p_w = payload_weight_function(M * tf.expand_dims(beta,axis=0), 
+                                  tf.expand_dims(object_weights,axis=0), 
+                                  payload_weight_threshold) #K x V x 1
+    pll = p_w * tf.expand_dims(payload_loss, axis=0) #K x V x X
+    pll = tf.math.divide_no_nan(
+        tf.reduce_sum(pll,axis=[0,1]), K  )# (), weights are already normalised in V
+    
+    return V_att, V_rep, Noise_pen, B_pen, pll
 
-    Ntotal = tf.cast(tf.shape(beta_s)[0], dtype='float32')
-
-    kalpha = tf.argmax(M * tf.expand_dims(no_noise_mask * beta_s, axis=0), axis=1)
-    kalpha = tf.expand_dims(kalpha, axis=1)
-    # K x 1
-    # print('kalpha',kalpha.shape)
-
-    # gather everything
-    q_kalpha = gather_for_obj_from_vert(tf.expand_dims(q_s, axis=1),
-                                        kalpha)  # tf.gather_nd(tf.tile(tf.expand_dims(q_s,axis=0),[Nobj,1]) ,kalpha,batch_dims=1) # K x 1
-    # q_kalpha = tf.expand_dims(q_kalpha, axis=1) # K x 1 x 1
-    # print('q_kalpha',q_kalpha.shape)
-
-    beta_kalpha = gather_for_obj_from_vert(tf.expand_dims(beta_s, axis=1), kalpha)
-    beta_kalpha = tf.expand_dims(beta_kalpha, axis=1)  # K x 1 x 1
-    # print('beta_kalpha',beta_kalpha.shape)
-
-    x_kalpha = gather_for_obj_from_vert(x_s, kalpha)
-    x_kalpha = tf.expand_dims(x_kalpha, axis=1)  # K x 1 x 2
-    if use_average_cc_pos:
-        M_exp  = tf.expand_dims(M, axis=2) # K x V x 1
-        x_kalpha = tf.reduce_sum( M_exp * tf.expand_dims(x_s,axis=0), axis=1, keepdims=True) # K x 1 x 2
-        x_kalpha = tf.math.divide_no_nan(x_kalpha, tf.reduce_sum(M_exp, axis=1, keepdims=True))
+    
+def oc_loss(
+        x, 
+        beta, 
+        truth_indices, 
+        row_splits, 
+        is_spectator, 
+        payload_loss,
+        Q_MIN=0.1, 
+        S_B=1.,
+        energyweights=None,
+        use_average_cc_pos=False,
+        payload_rel_threshold=0.8
+        ):   
+    
+    if energyweights is None:
+        energyweights=tf.zeros_like(beta)+1.
         
-    x_s = tf.expand_dims(x_s, axis=0)
-    # print('x_s',x_s.shape)
-
-    distance = tf.sqrt(tf.reduce_sum((x_kalpha - x_s) ** 2, axis=-1) + 1e-6)  # K x V , d (tf.sqrt(0)) problem
-    # print('distance',distance)
-
-    F_att = q_kalpha * tf.expand_dims(q_s, axis=0) * huber(distance, 4) * M  # K x V
-    # print('F_att',F_att.shape)
-    F_att = is_obj_k * tf.reduce_sum(F_att, axis=1)  # K
-    # print('F_att',F_att.shape)
-    L_att = tf.reduce_sum(F_att, axis=0) / (Ntotal + 1e-6)
-    # print('L_att',L_att.shape)
-
-    F_rep = q_kalpha * tf.expand_dims(q_s, axis=0) * tf.nn.relu(1. - distance) * (1. - M)  # K x V
-    if smooth_rep_loss:
-        F_rep = q_kalpha * tf.expand_dims(q_s, axis=0) * tf.exp(-5.*distance**2) * (1. - M)
-    F_rep = is_obj_k * tf.reduce_sum(F_rep, axis=1)  # K
-    L_rep = tf.reduce_sum(F_rep, axis=0) / (Ntotal + 1e-6)
-
-    weights_ka = 1.
-    if extra_beta_weights is not None:
-        weights_ka = gather_for_obj_from_vert(tf.expand_dims(extra_beta_weights,axis=1),kalpha)
-        weights_ka = tf.squeeze(weights_ka ,axis=1)
-        #weights_ka = normalize_weights(weights_ka)
-
-    full_pll = None
-    if payload_loss is not None:
-
-        payload_loss = tf.expand_dims(payload_loss, axis=0) # 1 x V x F
-        M_exp = tf.expand_dims(M, axis=2) # K x V x 1
-        
-        weights = M * tf.math.atanh(tf.expand_dims(beta_s,axis=0))**2
-        weights = tf.expand_dims(weights,axis=2) #K x V x 1
-        
-        if payload_rel_threshold>0:
-            maxweight = tf.reduce_max(weights,axis=1, keepdims=True)#make max weight 1
-            weights = tf.math.divide_no_nan(weights,maxweight)# tf.where(maxweight>0, maxweight, 1.)
-            weights = tf.nn.relu(weights-payload_rel_threshold)
-        
-        weights = normalize_weights(weights)
-        
-        per_obj_vert_pll = M_exp * payload_loss # K x V x F
-        per_obj_pll = tf.reduce_sum(per_obj_vert_pll * weights, axis=1) 
-        #K x F
-        full_pll = tf.reduce_sum(per_obj_pll, axis=0) / (Nobj + 1e-3)# F
-        
-    # check broadcasting here
-    L_beta = tf.reduce_sum(weights_ka* is_obj_k * (1 - tf.squeeze(tf.squeeze(beta_kalpha, axis=1), axis=1)))
-    if not no_beta_norm:
-        L_beta /= (Nobj + 1e-6)
-
-    n_noise = tf.reduce_sum((1. - no_noise_mask))
-    L_suppnoise = L_beta*0.
-    if n_noise > 0:
-        L_suppnoise = tf.reduce_sum((1. - no_noise_mask) * beta_s, axis=0) / (n_noise + 1e-6)
-
-    # print(L_att, L_rep, L_beta, L_suppnoise)
-    # return V_att_segment, V_rep_segment, L_beta_f_segment
-    return L_att, L_rep, L_beta, L_suppnoise, full_pll
-
-
-def padded_parallel_instance_loop(instance_ids,
-                                  no_noise_mask,
-                                  x_s,
-                                  classes_s,
-                                  beta_s,
-                                  q_s):
-    # check length, pad add to predefined tf.function
-    # get an idea of all the shapes
-
-    # K      print('instance_ids',tf.shape(instance_ids))
-    # V x 2  print('x_s',tf.shape(x_s))
-    # V      print('classes_s',tf.shape(classes_s))
-    # V      print('beta_s',tf.shape(beta_s))
-    # V      print('q_s',tf.shape(q_s))
-    # V      no_noise_mask
-
-    # we just need to pad instance_ids with -1
-    #
-    #  still doesn't allow for tf function unfortunately
-
-    return _parametrised_instance_loop(tf.shape(instance_ids)[0], instance_ids, no_noise_mask, x_s, classes_s, beta_s,
-                                       q_s)
-
-    for count in [20, 40, 80, 100, 200]:
-        if (tf.shape(instance_ids)[0] <= count):
-            if (tf.shape(instance_ids)[0] < count):
-                instance_ids = tf.pad(instance_ids, [[0, 20 - tf.shape(instance_ids)[0]]], mode='CONSTANT',
-                                      constant_values=-1)
-            maxinst = tf.convert_to_tensor(count, dtype=tf.int64)
-            return _parametrised_instance_loop(maxinst, instance_ids, no_noise_mask, x_s, classes_s, beta_s, q_s)
-
-    return _parametrised_instance_loop(tf.shape(instance_ids)[0], instance_ids, no_noise_mask, x_s, classes_s, beta_s,
-                                       q_s)
-
-
-counter = 0
-
-
-def indiv_object_condensation_loss_2(output_space, beta_values, labels_classes, row_splits, spectators, 
-                                     payload_loss,
-                                     Q_MIN=0.1, S_B=1,
-                                     energyweights=None,
-                                     no_beta_norm=False,
-                                     ignore_spectators=False,
-                                     use_average_cc_pos=False,
-                                     payload_rel_threshold=0.,
-                                     smooth_rep_loss=False):
-    """
-    ####################################################################################################################
-    # Implements OBJECT CONDENSATION for ragged tensors
-    # For more, look into the paper
-    # https://arxiv.org/pdf/2002.03605.pdf
-    ####################################################################################################################
-
-    :param output_space: the clustering space (float32)
-    :param beta_values: beta values (float 32)
-    :param labels_classes: Labels: -1 for background [0 - num clusters) for foreground clusters
-    :param row_splits: row splits to construct ragged tensor such that it separates all the batch elements
-    :param Q_MIN: Q_min hyper parameter
-    :param S_B: s_b hyper parameter
-    :return:
-    """
-    global counter
-    print("started call ", counter, "batch size", len(output_space))
-
-    labels_classes += 1
-
     batch_size = row_splits.shape[0] - 1
-
-    V_att = tf.constant(0., tf.float32)
-    V_rep = tf.constant(0., tf.float32)
-
-    L_beta_f = tf.constant(0., tf.float32)
-    L_beta_s = tf.constant(0., tf.float32)
-
-    payload_loss_full = tf.constant(0., tf.float32)
     
-    beta_values = tf.clip_by_value(beta_values, 0. + 1e-5, 1. - 1e-5)
-
+    V_att, V_rep, Noise_pen, B_pen, pll = 5*[tf.constant(0., tf.float32)]
+    
     for b in tf.range(batch_size):
-        
-        #print('segment',b)
-        
-        x_s = output_space[row_splits[b]:row_splits[b + 1]]
-        classes_s = labels_classes[row_splits[b]:row_splits[b + 1]]
-        beta_s = beta_values[row_splits[b]:row_splits[b + 1]]
-        payload_loss_seg = payload_loss[row_splits[b]:row_splits[b + 1]]
-        
-        
-        e_weights = 1.
-        if energyweights is not None:
-            e_weights = energyweights[row_splits[b]:row_splits[b + 1]]
-        
-        # e_weights not used for now!
-        #num_vertices = tf.cast(row_splits[b + 1] - row_splits[b], tf.float32)
-
-        spectators_s = spectators[row_splits[b]:row_splits[b + 1]]
-        is_not_spectator = spectators_s<0.1
-        if ignore_spectators:
-            is_not_spectator = spectators_s > -1.
-
-        # Now filter TODO: Test
-        x_s = x_s[is_not_spectator]
-        classes_s = classes_s[is_not_spectator]
-        beta_s = beta_s[is_not_spectator]
-        payload_loss_seg = payload_loss_seg[is_not_spectator]
-        if energyweights is not None:
-            e_weights = e_weights[is_not_spectator]
+        att,rep,noise,bp,pl = oc_per_batch_element(
             
-        if len(x_s) == 0:
-            print("Warning >>>>NO TRUTH ASSOCIATED VERTICES IN THIS SEGMENT<<<< (just a warning though)")
-            continue
-
-
-        q_s = e_weights * ( tf.math.atanh(beta_s) ** 2 + Q_MIN ) 
-        #scaling per instance! just changes instance weighting towards high energy particles
-
-        instance_ids, _ = tf.unique(tf.reshape(classes_s, (-1,)))
-
-        if len(instance_ids) < 1:
-            print("Warning >>>>NO INSTANCES IN WINDOW<<<< (just a warning though)")
-            continue
-
-        instance_ids = tf.where(instance_ids < 0.1, tf.zeros_like(instance_ids) - 1., instance_ids)
-        
-        # instance_ids = tf.sort(instance_ids) #why?
-
-        no_noise_mask = tf.where(classes_s > 0.1, tf.zeros_like(classes_s) + 1., tf.zeros_like(classes_s))
-        # beta_maxs = []
-
-        V_att_segment, V_rep_segment, L_beta_f_segment, L_beta_s_segment, segment_payload_loss = _parametrised_instance_loop(
-            tf.shape(instance_ids)[0],
-            instance_ids,
-            no_noise_mask,
-            x_s,
-            classes_s,
-            beta_s,
-            q_s,
-            e_weights,
-            no_beta_norm,
-            payload_loss_seg,
-            use_average_cc_pos=use_average_cc_pos,
-            payload_rel_threshold=payload_rel_threshold,
-            smooth_rep_loss=smooth_rep_loss)
-
-        #L_beta_f_segment = tf.where(tf.math.is_nan(L_beta_f_segment), 0., L_beta_f_segment)
-        #L_beta_s_segment = tf.where(tf.math.is_nan(L_beta_s_segment), 0., L_beta_s_segment)
-        #
-        #V_att_segment = tf.where(tf.math.is_nan(V_att_segment), 0., V_att_segment)
-        #V_rep_segment = tf.where(tf.math.is_nan(V_rep_segment), 0., V_rep_segment)
-
-        L_beta_f += L_beta_f_segment
-        L_beta_s += L_beta_s_segment
-
-        V_att += V_att_segment
-        V_rep += V_rep_segment
-        
-        payload_loss_full += segment_payload_loss #tf.where(tf.math.is_nan(segment_payload_loss), 0., segment_payload_loss) 
-
-    batch_size = float(batch_size)
-    V_att = V_att / (batch_size + 1e-5)
-    V_rep = V_rep / (batch_size + 1e-5)
-    L_beta_s = L_beta_s / (batch_size + 1e-5)
-    L_beta_f = L_beta_f / (batch_size + 1e-5)
-
-    print("finished call ", counter)
-    counter += 1
-
-    return V_att, V_rep, L_beta_s, L_beta_f, payload_loss_full
-
-
-def object_condensation_loss(output_space, beta_values, labels_classes, row_splits, Q_MIN=0.1, S_B=1):
-    V_att, V_rep, L_beta_s, L_beta_f, payload_loss_full = indiv_object_condensation_loss(output_space, beta_values, labels_classes,
-                                                                      row_splits, Q_MIN, S_B)
-
-    losses = float(V_att.numpy()), float(V_rep.numpy()), float(L_beta_f.numpy()), float(L_beta_s.numpy())
-
-    return V_att + V_rep + L_beta_s + L_beta_f, losses
+            beta[row_splits[b]:row_splits[b + 1]],
+            x[row_splits[b]:row_splits[b + 1]],
+            
+            Q_MIN,
+            
+            energyweights[row_splits[b]:row_splits[b + 1]],
+            truth_indices[row_splits[b]:row_splits[b + 1]],
+            is_spectator[row_splits[b]:row_splits[b + 1]],
+            payload_loss[row_splits[b]:row_splits[b + 1]],
+            
+            payload_weight_function=payload_weight_function,
+            payload_weight_threshold=payload_rel_threshold,
+            
+            use_mean_x=use_average_cc_pos
+            )
+        V_att += att
+        V_rep += rep
+        Noise_pen += noise
+        B_pen += bp
+        pll += pl
+    
+    bsize = tf.cast(batch_size, dtype='float32') + 1e-6
+    V_att /= bsize
+    V_rep /= bsize
+    Noise_pen /= bsize
+    B_pen /= bsize
+    pll /= bsize
+    
+    return V_att, V_rep, Noise_pen, B_pen, pll

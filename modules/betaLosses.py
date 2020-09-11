@@ -6,41 +6,42 @@ import keras.backend as K
 from index_dicts import create_index_dict, split_feat_pred, create_feature_dict
 import time
 from Loss_tools import huber
-#factorise a bit
+from object_condensation import oc_loss
+
+class _obj_cond_config(object):
+    def __init__(self):
+        self.energy_loss_weight = 1.
+        self.use_energy_weights = False
+        self.q_min = 0.5
+        self.no_beta_norm = False
+        self.potential_scaling = 1.
+        self.repulsion_scaling = 1.
+        self.s_b = 1.
+        self.position_loss_weight = 1.
+        self.timing_loss_weight = 1.
+        self.use_spectators=True
+        self.beta_loss_scale=1.
+        self.use_average_cc_pos=False
+        self.payload_rel_threshold=0.9
+        self.rel_energy_mse=False
+        self.smooth_rep_loss=False
+        self.pre_train=False
+        self.huber_energy_scale = 2.
+        self.downweight_low_energy = True
+        self.n_ccoords=2
+        self.energy_den_offset=1.
+        
+        
+        self.log_energy=False
 
 
-#
-#
-#
-#  all inputs/outputs of dimension B x V x F (with F being 1 in some cases)
-#
-#
+config = _obj_cond_config()
 
-def create_loss_dict(truth, pred):
-    return create_index_dict(truth, pred)
-
-def killNan(a):
-    return a
-
-
-def printAsRagged(msg, S, C , row_splits):
-    print(msg, tf.RaggedTensor.from_row_splits(values=tf.RaggedTensor.from_row_splits(values =   S, row_splits=C), 
-                                                     row_splits=row_splits))
-    
-
-
-def get_one_over_sigma(beta, beta_min=1e-2):
-    return (( 1. / (1. - beta + K.epsilon()) - 1.) + beta_min)
-    
-
-
-
-###### keras trick
 
 pre_training_loss_counter=0
 def pre_training_loss(truth, pred):
     feat,pred = split_feat_pred(pred)
-    d = create_loss_dict(truth, pred)
+    d = create_index_dict(truth, pred)
     feat = create_feature_dict(feat)
     
     truthxy = tf.concat([d['truthHitAssignedX'],d['truthHitAssignedY']],axis=-1)
@@ -58,36 +59,7 @@ def pre_training_loss(truth, pred):
     tf.print('pretrain loss',loss, 'posl**2', tf.reduce_mean(posl))
     return loss
     
-    
-def batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling):
-    
-    
-    t_l_in = tf.reduce_sum(b_beta_scaling*b_istruth*b_l_in)#  1
-    t_den =  tf.reduce_sum(b_istruth*b_beta_scaling) # 1
-    t_den = tf.where(t_den==0, 1e-6, t_den)
-    return t_l_in/t_den
 
-
-#this needs to be per ragged batch! same for spectators   
-#but we're in eager so whatever 
-def beta_weighted_truth_mean(l_in, d, row_splits, beta_scaling, is_not_spectator=None):#l_in  V x 1
-    
-    batch_size = row_splits.shape[0] - 1
-    out = tf.constant(0., tf.float32)
-    istruth = d['truthNoNoise']
-    if is_not_spectator is not None:
-        istruth *= is_not_spectator
-    
-    for b in tf.range(batch_size):
-        b_beta_scaling = beta_scaling[row_splits[b]:row_splits[b + 1]]
-        b_istruth = istruth[row_splits[b]:row_splits[b + 1]]
-        b_l_in = l_in[row_splits[b]:row_splits[b + 1]]
-        if tf.reduce_max(b_istruth) == 0:
-            continue
-        out += batch_beta_weighted_truth_mean(b_l_in,b_istruth,b_beta_scaling)
-    
-    out /= float(batch_size)+1e-5
-    return out
 
 def batch_spectator_penalty(isspect,beta):
     out = tf.reduce_sum(isspect * beta )
@@ -107,61 +79,32 @@ def spectator_penalty(d,row_splits):
     
     out /= float(batch_size)+1e-3
     return out
-    
-def null_loss(truth, pred):
-    return 0*tf.reduce_mean(pred)+0*tf.reduce_mean(truth)
-
-from LayersRagged import RaggedConstructTensor
-ragged_constructor=RaggedConstructTensor()
-
-class _obj_cond_config(object):
-    def __init__(self):
-        self.energy_loss_weight = 1.
-        self.use_energy_weights = False
-        self.q_min = 0.5
-        self.no_beta_norm = False
-        self.potential_scaling = 1.
-        self.repulsion_scaling = 1.
-        self.s_b = 1.
-        self.position_loss_weight = 1.
-        self.timing_loss_weight = 1.
-        self.use_spectators=True
-        self.log_energy=False
-        self.beta_loss_scale=1.
-        self.use_average_cc_pos=False
-        self.payload_rel_threshold=0.9
-        self.rel_energy_mse=False
-        self.smooth_rep_loss=False
-        self.pre_train=False
-        self.huber_energy_scale = 2.
 
 
-config = _obj_cond_config()
+
 
 g_time = time.time()
-
+full_obj_cond_loss_counter=0
 def full_obj_cond_loss(truth, pred_in, rowsplits):
-    
-    
+    global full_obj_cond_loss_counter
+    full_obj_cond_loss_counter+=1
     start_time = time.time()
     
     if truth.shape[0] is None: 
         return tf.constant(0., tf.float32)
     
-    from object_condensation import indiv_object_condensation_loss_2
-
     rowsplits = tf.cast(rowsplits, tf.int64)#just for first loss evaluation from stupid keras
     
     feat,pred = split_feat_pred(pred_in)
-    d = create_loss_dict(truth, pred)
+    d = create_index_dict(truth, pred, n_ccoords=config.n_ccoords)
     feat = create_feature_dict(feat)
     #print('feat',feat.shape)
     
-    d['predBeta'] = tf.clip_by_value(d['predBeta'],1e-6,1.-1e-6)
-
-    truthIsSpectator = d['truthIsSpectator'][:, 0]
+    #d['predBeta'] = tf.clip_by_value(d['predBeta'],1e-6,1.-1e-6)
     
-    classes, row_splits = d['truthHitAssignementIdx'][...,0], rowsplits[ : rowsplits[-1,0],0]
+    row_splits = rowsplits[ : rowsplits[-1,0],0]
+    
+    classes = d['truthHitAssignementIdx'][...,0]
     
     energyweights = d['truthHitAssignedEnergies']
     energyweights = tf.math.log(0.1 * energyweights + 1.)
@@ -172,9 +115,14 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     
     #just to mitigate the biased sample
     energyweights = tf.where(d['truthHitAssignedEnergies']>10.,energyweights+0.1, energyweights*(d['truthHitAssignedEnergies']/10.+0.1))
+    if not config.downweight_low_energy:
+        energyweights = tf.zeros_like(energyweights) + 1.
+        if config.use_energy_weights:
+            energyweights = tf.math.log(0.1 * d['truthHitAssignedEnergies'] + 1.)
+    
     
     #also using log now, scale back in evaluation #
-    den_offset = 1.
+    den_offset = config.energy_den_offset
     if config.log_energy:
         raise ValueError("loss config log_energy is not supported anymore. Please use the 'ExpMinusOne' layer within the model instead to scale the output.")
     
@@ -183,7 +131,7 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     scaled_true_energy = d['truthHitAssignedEnergies']
     if config.rel_energy_mse:
         scaled_true_energy *= scaled_true_energy
-    sqrt_true_en = tf.sqrt(scaled_true_energy)
+    sqrt_true_en = tf.sqrt(scaled_true_energy + 1e-6)
     energy_loss = energy_diff/(sqrt_true_en+den_offset)
     
     if config.huber_energy_scale>0:
@@ -204,26 +152,33 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     tdiff = (1e6 * tdiff)**2
     # self.timing_loss_weight
     
-    payload_loss = energyweights * tf.concat([config.energy_loss_weight * energy_loss ,
+    payload_loss = tf.concat([config.energy_loss_weight * energy_loss ,
                           config.position_loss_weight * pos_offs,
                           config.timing_loss_weight * tdiff], axis=-1)
     
     
     
-    attractive_loss, rep_loss, noise_loss, min_beta_loss, payload_loss_full  = indiv_object_condensation_loss_2(d['predCCoords'], #
-                                                                                             d['predBeta'][...,0],  #remove last 1 dim
-                                                                                             classes, 
-                                                                                             row_splits,
-                                                                                             truthIsSpectator,
-                                                                                             Q_MIN=config.q_min, 
-                                                                                             S_B=config.s_b,
-                                                                                             energyweights=energyweights[...,0],
-                                                                                             no_beta_norm=config.no_beta_norm,
-                                                                                             payload_loss=payload_loss,
-                                                                                             ignore_spectators=not config.use_spectators,
-                                                                                             use_average_cc_pos=config.use_average_cc_pos,
-                                                                                             payload_rel_threshold=config.payload_rel_threshold,
-                                                                                             smooth_rep_loss=config.smooth_rep_loss)
+    
+    if not config.use_spectators:
+        d['truthIsSpectator'] = tf.zeros_like(d['truthIsSpectator'])
+    
+    
+    attractive_loss, rep_loss, noise_loss, min_beta_loss, payload_loss_full = oc_loss(
+        
+        x = d['predCCoords'],
+        beta = d['predBeta'], 
+        truth_indices = d['truthHitAssignementIdx'], 
+        row_splits=row_splits, 
+        is_spectator = d['truthIsSpectator'], 
+        payload_loss=payload_loss,
+        Q_MIN=config.q_min, 
+        S_B=config.s_b,
+        energyweights=energyweights,
+        use_average_cc_pos=config.use_average_cc_pos,
+        payload_rel_threshold=config.payload_rel_threshold
+        
+        )
+    
     
     attractive_loss *= config.potential_scaling
     rep_loss *= config.potential_scaling * config.repulsion_scaling
@@ -258,6 +213,7 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
          loss /= 10.
          loss += preloss
          
+    print('call ',full_obj_cond_loss_counter)
     print('loss',loss.numpy(), 
           'attractive_loss',attractive_loss.numpy(),
           'rep_loss', rep_loss.numpy(), 

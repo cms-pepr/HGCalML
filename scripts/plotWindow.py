@@ -8,7 +8,7 @@ from DeepJetCore.TrainData import TrainData
 import numpy as np
 import matplotlib.pyplot as plt
 import math
-from numba import jit
+from numba import jit, njit
 import copy
 from multiprocessing import Process
 import random
@@ -26,26 +26,31 @@ def toXYZ(rho,eta,phi):
 
 
 
+@njit
+def firstmatch(array, item):
+    for idx, val in np.ndenumerate(array):
+        if val == item:
+            return idx
 
-
-@jit(nopython=True)   
-def getpositions_and_select(vx,vy,vz, takeall):
+#@jit(nopython=True)   
+def getpositions_and_select(vx,vy,vz, takeall,truthasso):
     
     selected= [0 for i in range(len(vx))]
-    def distance2(x,y,z, x1,y1,z1):
-        return (x-x1)**2 + (y-y1)**2 + (z-z1)**2
-    selected_pos=[]
-    for e in range(len(vx)):
+    selected_pos= [[0.,0.,0.] for i in range(len(vx))]
+    
+    unique_truth = np.unique(truthasso)
+    
+    for i in unique_truth:
+        if i < 0:
+            continue
+        e = firstmatch(truthasso, i)
+        #print(e)
+        e = e[0]
+        selected[e] = 1.
+        
         x,y,z = vx[e],vy[e],vz[e]
-        use=True
-        for s in selected_pos:
-            if distance2(s[0],s[1],s[2],x,y,z) < 0.0001:
-                use=False
-                break
-        if use:
-            selected[e] = 1
-        if use or takeall:
-            selected_pos.append([x,y,z])
+        selected_pos[e]=[x,y,z]
+    
         
     return selected_pos,selected
   
@@ -60,7 +65,7 @@ def selectEvent(rs, feat, truth, event):
     #get event
     feat = feat[rs[event]:rs[event+1],...]
     
-    print(feat.shape)
+    #print(feat.shape)
     return feat, truth[rs[event]:rs[event+1],...]
 
 
@@ -89,24 +94,25 @@ def makePlot(outfile,
     
     not_assigned = truthasso < 0
     #print('event', e)
-    print('not assigned ',np.count_nonzero(not_assigned, axis=-1))
+    print('not assigned ',np.count_nonzero(not_assigned, axis=-1),' of total ',len(truthasso))
     
-    print('truthZ',truthZ)
-    selpos,select       = getpositions_and_select(truthX,truthY,truthZ,takeall=True)
+    #print('truthZ',truthZ)
+    selpos,select       = getpositions_and_select(truthX,truthY,truthZ,takeall=True,truthasso=truthasso)
+    
     selpos = np.array(selpos, dtype='float32')
     select = np.array(select, dtype='float')
     
     #select[truthenergy<1]=0.
     
-    print('selpos',selpos.shape)
-    print('select',select.shape)
+    #print('selpos',selpos.shape)
+    #print('select',select.shape)
     
     selpos=selpos[select>0.1]
     
-    seldirs,_  = getpositions_and_select(truthdirX,truthdirY,truthdirZ,takeall=True)
+    seldirs,_  = getpositions_and_select(truthdirX,truthdirY,truthdirZ,takeall=True,truthasso=truthasso)
     seldirs = np.array(seldirs , dtype='float32')
     seldirs = seldirs[select>0.1]
-    truth_sel = np.abs(selpos[:,2])>300
+    truth_sel = np.abs(selpos[:,2])>0
     selpos = selpos[truth_sel]
     seldirs = seldirs[truth_sel]
     
@@ -115,8 +121,8 @@ def makePlot(outfile,
         seldirs[:,0] -= selpos[:,0]
         seldirs[:,1] -= selpos[:,1]
     
-    print('seldirs',seldirs.shape)
-    print('selpos',selpos.shape)
+    #print('seldirs',seldirs.shape)
+    #print('selpos',selpos.shape)
     
     
     
@@ -147,9 +153,9 @@ def makePlot(outfile,
               c=rgbcolor)
     
     
-    print('selpos',selpos)
+    #print('selpos',selpos)
     ax[3].scatter(selpos[:,0],selpos[:,1],
-                  #s = 2.0,
+                  s = 1.0,
                   marker='+',
                   c='k')
     
@@ -158,14 +164,20 @@ def makePlot(outfile,
     if real_truth_energy is not None:
         sel_real_truth_e = real_truth_energy[select>0.1][truth_sel]
     sel_truth_asso = truthasso[select>0.1][truth_sel]
-    print('showers',sel_truth_asso)
+    #print('showers',sel_truth_asso)
+    total_impact_E=0
+    total_reco_E=0
+    total_dep_energies=[]
+    
+    fontsize=2#'x-small'
+    
     for i in range(len(sel_truth_e)):
             #predicted
             ax[3].text(selpos[i,0],selpos[i,1],
                     s = str(round(sel_truth_e[i])),
                     verticalalignment='bottom', horizontalalignment='right',
                     rotation=10,
-                    fontsize='x-small',
+                    fontsize=fontsize,
                     fontstyle='italic')
             
             if sel_real_truth_e is not None:
@@ -173,23 +185,26 @@ def makePlot(outfile,
                         s = str(round(sel_real_truth_e[i])),
                         verticalalignment='top', horizontalalignment='left',
                         rotation=10,
-                        fontsize='x-small',
+                        fontsize=fontsize,
                         fontstyle='normal')
                 
+            total_impact_E += sel_real_truth_e[i]
             #recalculate
             thisidx = sel_truth_asso[i]
             allreco = np.sum(rechit_e[truthasso == thisidx])
+            total_dep_energies.append(allreco)
+            total_reco_E += allreco
             
             ax[3].text(selpos[i,0],selpos[i,1],
                     s = str(round(allreco))[:4],
                     verticalalignment='top', horizontalalignment='right',
                     rotation=10,
-                    fontsize='x-small',
+                    fontsize=fontsize,
                     fontstyle='italic')
             
-            print('shower', thisidx, 'has deposited energy of',allreco,' precalc depo of',sel_truth_e[i], 'impact of',sel_real_truth_e[i])
+            #print('shower', thisidx, 'has deposited energy of',allreco,' precalc depo of',sel_truth_e[i], 'impact of',sel_real_truth_e[i])
             
-            
+    print('total reco non-noise E', total_reco_E, ' vs total impact E', total_impact_E)        
     
     
     pl = plotter_3d(output_file=outdir+"/plot", colorscheme=None)
@@ -246,6 +261,17 @@ def makePlot(outfile,
         pl2.set_data(x = rechit_x , y=rechit_y   , z=rechit_z, e=rechit_nonoise , c =truthasso)
         mm2 = movie_maker(pl2, output_file=outfile+"_mm_nonoise", silent=False, axfunc=addarrows, dpi=600)
         mm2.make_movie()
+        
+    print('plotting energy')
+    
+    def plot_loghist(x, bins):
+        hist, bins = np.histogram(x, bins=bins)
+        logbins = np.logspace(np.log10(bins[0]),np.log10(bins[-1]),len(bins))
+        plt.hist(x, bins=logbins)
+        plt.xscale('log')
+  
+    plot_loghist(total_dep_energies,20)
+    plt.savefig(outfile+"_depE.pdf")
     
 
 parser = ArgumentParser('')
