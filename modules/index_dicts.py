@@ -4,6 +4,11 @@ import tensorflow as tf
 import numpy as np
 
 
+
+feature_length=9
+pred_length=6
+n_classes=6
+
 def create_feature_dict(feat):
     '''
     recHitEnergy,
@@ -50,12 +55,15 @@ def create_truth_dict(truth, usetf=False):
     outdict['truthRechitsSum']      =  truth[:,16:17]
     outdict['truthRealEnergy']      =  truth[:,15:16]
     outdict['truthIsSpectator']      =  truth[:,14:15]
+    
+    
+    outdict['truthClasses']      =  truth[:,19:19+n_classes]
 
     return outdict
 
 
 
-def create_index_dict(truth, pred, usetf=True):
+def create_index_dict(truth, pred, usetf=True, n_ccoords=2):
     '''
     input features as
     B x V x F
@@ -109,7 +117,7 @@ def create_index_dict(truth, pred, usetf=True):
     outdict['ticlHitAssignementIdx']      =  truth[:,17:18]
     outdict['ticlHitAssignedEnergies']      =  truth[:,18:19]
 
-
+    outdict['truthClasses']      =  truth[:,19:19+n_classes]
     #(None, 9) (None, 1) (None, 1) (None, 3) (None, 2)
     #print(raw_inputs.shape, beta.shape, energy.shape, xyt.shape, ccoords.shape)
     outdict['predBeta']       = pred[:,0:1]
@@ -121,19 +129,14 @@ def create_index_dict(truth, pred, usetf=True):
     outdict['predX']        = pred[:,2:3]
     outdict['predY']        = pred[:,3:4]
     outdict['predT']        = pred[:,4:5]
-    outdict['predCCoords']    = pred[:,5:7]
-    outdict['predAdditional'] = pred[:,7:]
+    outdict['predCCoords']    = pred[:,5:5+n_ccoords]
+    outdict['predClasses'] = pred[:,5+n_ccoords:5+n_ccoords+n_classes]
         
-
-    
+        
 
     return outdict
 
 
-
-
-feature_length=9
-pred_length=6
 
 
 def split_feat_pred(pred):

@@ -25,7 +25,8 @@ def c_collectoverthresholds(betas,
                             ccoords, 
                             sorting,
                             betasel,
-                          beta_threshold, in_distance_threshold):
+                          beta_threshold, in_distance_threshold,
+                          n_ccoords):
     
     distance_threshold = in_distance_threshold**2
     for e in range(len(betasel)):
@@ -34,7 +35,9 @@ def c_collectoverthresholds(betas,
             i = sorting[e][si]
             use=True
             for s in selected:
-                distance =  (s[0]-ccoords[e][i][0])**2 +  (s[1]-ccoords[e][i][1])**2 
+                distance=0
+                for cci in range(n_ccoords):
+                    distance +=  (s[cci]-ccoords[e][i][cci])**2
                 if distance  < distance_threshold:
                     use=False
                     break
@@ -56,11 +59,14 @@ def collectoverthresholds(data,
     
     betasel = betas > beta_threshold
     
+    
     bsel =  c_collectoverthresholds(betas, 
                             ccoords, 
                             sorting,
                             betasel,
-                          beta_threshold, distance_threshold)
+                          beta_threshold, distance_threshold,
+                          data['predCCoords'].shape[2]
+                          )
     
     
     return np.reshape(bsel , [data['predBeta'].shape[0], data['predBeta'].shape[1], data['predBeta'].shape[2]])
@@ -105,7 +111,8 @@ def make_cluster_coordinates_plot(plt, ax,
     if np.max(predBeta)>1.:
         raise ValueError("make_cluster_coordinates_plot: at least one beta value is above 1. Check your model!")
     
-    ax.set_aspect(aspect=1.)
+    if predCCoords.shape[1] == 2:
+        ax.set_aspect(aspect=1.)
     #print(truthHitAssignementIdx)
     if cmap is None:
         rgbcolor = plt.get_cmap('prism')((truthHitAssignementIdx+1.)/(np.max(truthHitAssignementIdx)+1.))[:,:-1]
@@ -134,11 +141,19 @@ def make_cluster_coordinates_plot(plt, ax,
 
     sorting = np.reshape(np.argsort(alphas, axis=0), [-1])
     
-    ax.scatter(predCCoords[:,0][sorting],
-              predCCoords[:,1][sorting],
-              s=.25*matplotlib.rcParams['lines.markersize'] ** 2,
-              c=rgba_cols[sorting])
-    
+    if predCCoords.shape[1] == 2:
+        ax.scatter(predCCoords[:,0][sorting],
+                  predCCoords[:,1][sorting],
+                  s=.25*matplotlib.rcParams['lines.markersize'] ** 2,
+                  c=rgba_cols[sorting])
+    elif predCCoords.shape[1] == 3:
+        ax.scatter(predCCoords[:,0][sorting],
+                  predCCoords[:,1][sorting],
+                  predCCoords[:,2][sorting],
+                  s=.25*matplotlib.rcParams['lines.markersize'] ** 2,
+                  c=rgba_cols[sorting])
+        
+        
     
     if beta_threshold < 0. or beta_threshold > 1 or distance_threshold<0:
         return
@@ -151,22 +166,35 @@ def make_cluster_coordinates_plot(plt, ax,
         #run the inference part
         identified = collectoverthresholds(data,beta_threshold,distance_threshold)[0,:,0] #V
 
-
-        ax.scatter(predCCoords[:,0][identified],
+        if predCCoords.shape[1] == 2:
+            ax.scatter(predCCoords[:,0][identified],
                   predCCoords[:,1][identified],
+                  s=2.*matplotlib.rcParams['lines.markersize'] ** 2,
+                  c='#000000',#rgba_cols[identified],
+                  marker='+')
+        elif predCCoords.shape[1] == 3:
+            ax.scatter(predCCoords[:,0][identified],
+                  predCCoords[:,1][identified],
+                  predCCoords[:,2][identified],
                   s=2.*matplotlib.rcParams['lines.markersize'] ** 2,
                   c='#000000',#rgba_cols[identified],
                   marker='+')
 
         return identified
     else:
-        ax.scatter(identified_coords[:, 0],
+        if predCCoords.shape[1] == 2:
+            ax.scatter(identified_coords[:, 0],
                    identified_coords[:, 1],
                   s=2.*matplotlib.rcParams['lines.markersize'] ** 2,
                   c='#000000',#rgba_cols[identified],
                   marker='+')
-        for plus in identified_coords:
-            ax.add_artist(plt.Circle((plus[0], plus[1]), distance_threshold,  color='black', fill=False))
+        elif predCCoords.shape[1] == 3:
+            ax.scatter(identified_coords[:, 0],
+                   identified_coords[:, 1],
+                   identified_coords[:, 3],
+                  s=2.*matplotlib.rcParams['lines.markersize'] ** 2,
+                  c='#000000',#rgba_cols[identified],
+                  marker='+')
 
 
 def make_original_truth_shower_plot(plt, ax,

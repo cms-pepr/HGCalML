@@ -4,6 +4,7 @@ matplotlib.use('Agg')
 from ragged_plotting_tools import make_cluster_coordinates_plot, make_original_truth_shower_plot, createRandomizedColors, make_eta_phi_projection_truth_plot
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 from index_dicts import create_index_dict, create_feature_dict, split_feat_pred
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import random
@@ -20,12 +21,14 @@ class plotEventDuringTraining(PredictCallback):
                  cycle_colors=False,
                  publish=None,
                  n_keep = 3,
+                 n_ccoords=2,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot,**kwargs)
         self.outputfile=outputfile
         self.cycle_colors=cycle_colors
         self.log_energy = log_energy
         self.n_keep=n_keep
+        self.n_ccoords=n_ccoords
         self.keep_counter=0
         if self.td.nElements()>1:
             raise ValueError("plotEventDuringTraining: only one event allowed")
@@ -47,6 +50,16 @@ class plotEventDuringTraining(PredictCallback):
         #self._make_plot(counter,feat,predicted,truth)
         
     def _make_plot(self,counter,feat,predicted,truth):
+        
+        #make sure it gets reloaded in the fork
+        #doesn't really seem to help though
+        #from importlib import reload 
+        #global matplotlib
+        #matplotlib=reload(matplotlib)
+        #matplotlib.use('Agg')
+        #import matplotlib.pyplot as plt
+        #import matplotlib.gridspec as gridspec
+        
 
         #exception handling is weird for keras fit right now... explicitely print exceptions at the end
         try:
@@ -54,16 +67,23 @@ class plotEventDuringTraining(PredictCallback):
             feat = feat[0] #remove row splits
             truth = truth[0]#remove row splits, anyway one event
             
+            _, pred = split_feat_pred(pred)    
+            data = create_index_dict(truth, pred, usetf=False, n_ccoords=self.n_ccoords)
+            feats = create_feature_dict(feat)
             
             fig = plt.figure(figsize=(10,8))
-            ax = [fig.add_subplot(self.gs[0,0], projection='3d'), 
-                  fig.add_subplot(self.gs[0,1]), 
-                  fig.add_subplot(self.gs[1,:])]
+            ax = None
+            if self.n_ccoords == 2:
+                ax = [fig.add_subplot(self.gs[0,0], projection='3d'), 
+                      fig.add_subplot(self.gs[0,1]), 
+                      fig.add_subplot(self.gs[1,:])]
+            elif self.n_ccoords == 3:
+                ax = [fig.add_subplot(self.gs[0,0], projection='3d'), 
+                      fig.add_subplot(self.gs[0,1], projection='3d'), 
+                      fig.add_subplot(self.gs[1,:])]
+                
             
             
-            _, pred = split_feat_pred(pred)    
-            data = create_index_dict(truth, pred, usetf=False)
-            feats = create_feature_dict(feat)
             
             data['predBeta'] = np.clip(data['predBeta'],1e-6,1.-1e-6)
             
@@ -138,7 +158,7 @@ class plotEventDuringTraining(PredictCallback):
                 cpstring='cp -f '
                 if "@" in self.publish:
                     cpstring='scp '
-                os.system(cpstring+temp_name+' '+self.publish+'.png')
+                os.system(cpstring+temp_name+' '+self.publish+'.png > /dev/null')
                 os.system('rm -f '+temp_name)
                 
             

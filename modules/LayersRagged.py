@@ -414,6 +414,9 @@ class FusedRaggedGravNetLinParse(FusedRaggedGravNet):
                              max_radius= -1.0, tf_compatible=False) 
         return idx,dist
     
+    
+    
+    
 class FusedRaggedGravNetDistMod(FusedRaggedGravNet):
     '''
     allows distances after each passing operation to be dynamically adjusted.
@@ -463,6 +466,47 @@ class FusedRaggedGravNetDistMod(FusedRaggedGravNet):
         idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius= -1.0, tf_compatible=False) 
         return idx,dist
+
+
+
+
+class FusedRaggedGravNetRetDist(FusedRaggedGravNet):
+    
+    
+    def priv_call(self, inputs):
+        x = inputs[0]
+        row_splits = inputs[1]
+
+        coordinates = self.input_spatial_transform(x)
+        
+        neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+        sorted_distsq = tf.sort(tf.reshape(distancesq,(tf.shape(x)[0],self.n_neighbours)),axis=-1)
+        sorted_distsq = tf.reshape(sorted_distsq,(tf.shape(x)[0],self.n_neighbours))
+        sorted_distsq = tf.stop_gradient(sorted_distsq)
+        
+        return self.create_output_features(x, 
+                                           neighbour_indices, 
+                                           distancesq), coordinates, sorted_distsq
+    
+    def call(self, inputs):
+        f,c,d = self.priv_call(inputs)
+        #print(f.shape,c.shape,d.shape)
+        return tf.concat([f,d], axis=-1), c
+
+    def compute_output_shape(self, input_shapes):
+        return (self.output_feature_transform.units[-1]+self.n_neighbours,), (self.n_dimensions, )
+    
+    def build(self, input_shapes):
+        super(FusedRaggedGravNetRetDist, self).build(input_shapes)
+
+class FusedRaggedGravNetRetDistLinParse(FusedRaggedGravNetRetDist,FusedRaggedGravNetLinParse):
+    pass
+
+
+class FusedRaggedGravNetRetDistDistMod(FusedRaggedGravNetRetDist,FusedRaggedGravNetDistMod):
+    pass
+    
+    
 
 class FusedRaggedGravNetLinParsePool(FusedRaggedGravNetLinParse):
     def __init__(self,
