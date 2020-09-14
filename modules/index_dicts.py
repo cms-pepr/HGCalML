@@ -106,6 +106,10 @@ def create_index_dict(truth, pred, usetf=True):
     outdict['truthIsSpectator']      =  truth[:,14:15]
 
 
+    outdict['ticlHitAssignementIdx']      =  truth[:,17:18]
+    outdict['ticlHitAssignedEnergies']      =  truth[:,18:19]
+
+
     #(None, 9) (None, 1) (None, 1) (None, 3) (None, 2)
     #print(raw_inputs.shape, beta.shape, energy.shape, xyt.shape, ccoords.shape)
     outdict['predBeta']       = pred[:,0:1]
