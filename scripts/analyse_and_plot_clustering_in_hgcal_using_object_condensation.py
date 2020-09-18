@@ -16,6 +16,7 @@ from DeepJetCore.training.gpuTools import DJCSetGPUs
 from obc_data import build_dataset_analysis_dict, build_window_analysis_dict, append_window_dict_to_dataset_dict, build_window_visualization_dict
 import copy
 import networkx as nx
+import index_dicts
 
 from ragged_plotting_tools import make_plots_from_object_condensation_clustering_analysis
 
@@ -152,8 +153,8 @@ def match_to_truth(truth_showers, unique_showers, unique_showers_e, unique_showe
 
     unique_labels = np.unique(labels)
 
-    print("HELLO")
-    print(unique_labels)
+    # print("HELLO")
+    # print(unique_labels)
 
 
 
@@ -177,6 +178,11 @@ def match_to_truth(truth_showers, unique_showers, unique_showers_e, unique_showe
             # sum_predicted = np.sum(rechit_energies_this_segment * (labels_for_all == index_shower_prediction))
             overlap = np.sum(rechit_energies * (truth_showers == unique_showers_this_segment[i]) * (labels == index_shower_prediction)) / np.sum(rechit_energies * np.logical_or((truth_showers == unique_showers_this_segment[i]), (labels == index_shower_prediction)))
 
+            nume = np.sum(rechit_energies * (truth_showers == unique_showers_this_segment[i]) * (labels == index_shower_prediction))
+            deno = np.sum(rechit_energies * np.logical_or((truth_showers == unique_showers_this_segment[i]), (labels == index_shower_prediction)))
+
+
+
             if overlap > iou_threshold:
                 G.add_edge('p%d'%index_shower_prediction, 't%d'%unique_showers_this_segment[i], weight=overlap)
 
@@ -189,7 +195,7 @@ def match_to_truth(truth_showers, unique_showers, unique_showers_e, unique_showe
             truth_index = int(x[1:])
             prediction_index = int(y[1:])
 
-        print(x,y, truth_index, prediction_index)
+        # print(x,y, truth_index, prediction_index)
 
         truth_showers_found[truth_index] = prediction_index
         predicted_showers_found[prediction_index] = truth_index
@@ -197,25 +203,36 @@ def match_to_truth(truth_showers, unique_showers, unique_showers_e, unique_showe
     return truth_showers_found, predicted_showers_found
 
 
+window_id = 0
 def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, should_return_visualization_data=False, input_log_energy=True):
+    global window_id
     results_dict = build_window_analysis_dict()
 
+    seg_f, seg_p = index_dicts.split_feat_pred(pred_this_segment)
+    pred_and_truth_dict = index_dicts.create_index_dict(y_this_segment, seg_p)
+    feature_dict = index_dicts.create_feature_dict(x_this_segment)
+
     unique_showers_this_segment,unique_showers_indices = np.unique(truth_showers_this_segment, return_index=True)
-    truth_energies_this_segment = y_this_segment[:, 1]
+
+    # TODO: confirm
+    truth_energies_this_segment = pred_and_truth_dict['truthHitAssignedEnergies'][:, 0]
+
+    truth_energies_sum_this_segment = pred_and_truth_dict['truthRechitsSum'][:,0] # Flatten it
     unique_showers_energies = truth_energies_this_segment[unique_showers_indices]
-    unique_showers_eta = y_this_segment[:, 9][unique_showers_indices]
-
-    rechit_energies_this_segment = x_this_segment[:, 0]
-
-
-
-
-    beta_all = pred_this_segment[:, -6]
+    unique_showers_eta = pred_and_truth_dict['truthHitAssignedEtas'][unique_showers_indices][:, 0]
+    unique_showers_phi = pred_and_truth_dict['truthHitAssignedPhis'][unique_showers_indices][:, 0]
+    rechit_energies_this_segment = feature_dict['recHitEnergy'][:, 0]
+    beta_all = pred_and_truth_dict['predBeta'][:, 0]
+    energy_regressed_all = pred_and_truth_dict['predEnergy'][:, 0]
 
 
-    energy_regressed_all = pred_this_segment[:, -5]
-    eta_regressed_all = pred_this_segment[:, -4] + x_this_segment[:, 1]
-    phi_regressed_all = pred_this_segment[:, -3] + x_this_segment[:, 2]
+    # TODO: verification required and change to x (important)
+    eta_regressed_allx = pred_this_segment[:, -4] + x_this_segment[:, 1]
+    eta_regressed_all = pred_and_truth_dict['predX'][:, 0]
+
+    # TODO: verification required and change to x (important)
+    phi_regressed_allx = pred_this_segment[:, -3] + x_this_segment[:, 2]
+    phi_regressed_all = pred_and_truth_dict['predY']
 
     is_spectator = beta_all>beta_threshold
 
@@ -224,16 +241,19 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     # print(y_this_segment.shape)
 
-
-    energy_truth_all = y_this_segment[:, 1]
-    eta_truth_all = y_this_segment[:, 8]
-    phi_truth_all = y_this_segment[:, 9]
+    # TODO: verification required and change eta to x
+    energy_truth_all = pred_and_truth_dict['truthHitAssignedEnergies'][:, 0]
+    eta_truth_all = pred_and_truth_dict['truthHitAssignedX'][:, 0]
+    phi_truth_all = pred_and_truth_dict['truthHitAssignedY'][:, 0]
 
 
     use_ticl = True
     try:
-        ticl_instance_id = y_this_segment[:, 17]
-        ticl_true_energy = y_this_segment[:, 18]
+        ticl_instance_id = pred_and_truth_dict['ticlHitAssignementIdx'][:, 0]
+        ticl_true_energy = pred_and_truth_dict['ticlHitAssignedEnergies'][:, 0]
+
+        ticl_instance_id[ticl_true_energy > 10 * truth_energies_sum_this_segment] = 0
+        ticl_true_energy[ticl_true_energy > 10 * truth_energies_sum_this_segment] = 0
     except Exception:
         use_ticl = False
 
@@ -243,17 +263,19 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     eta_regressed_filtered = eta_regressed_all[is_spectator==1]
     phi_regressed_filtered = phi_regressed_all[is_spectator==1]
 
-    energy_truth_filtered = energy_truth_all[is_spectator==1]
-    eta_truth_filtered = eta_truth_all[is_spectator==1]
-    phi_truth_filtered = phi_truth_all[is_spectator==1]
+    # energy_truth_filtered = energy_truth_all[is_spectator==1]
+    # eta_truth_filtered = eta_truth_all[is_spectator==1]
+    # phi_truth_filtered = phi_truth_all[is_spectator==1]
+    #
+    # y_all_filtered = y_this_segment[is_spectator==1]
+    # x_filtered = x_this_segment[is_spectator==1]
+    #
+    # prediction_filtered = pred_this_segment[is_spectator==1]
 
-    y_all_filtered = y_this_segment[is_spectator==1]
-    x_filtered = x_this_segment[is_spectator==1]
 
-    prediction_filtered = pred_this_segment[is_spectator==1]
+    clustering_coords_all = pred_and_truth_dict['predCCoords']
 
 
-    clustering_coords_all = pred_this_segment[:, -2:]
     clustering_coords_all_filtered = clustering_coords_all[is_spectator==1, :]
 
     labels, representative_indices = find_uniques_from_betas(beta_all_filtered, clustering_coords_all_filtered, dist_threshold=distance_threshold)
@@ -261,17 +283,40 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     unique_labels = np.unique(labels_for_all)
 
+
+
     truth_showers_found = {}
     truth_showers_found_e = {}
+    truth_showers_found_e_sum = {}
     truth_showers_found_eta = {}
+    truth_showers_found_closest_particle_distance = {}
+    truth_showers_found_local_density = {}
     iii = 0
     for x in unique_showers_this_segment:
         truth_showers_found[x] = -1
         truth_showers_found_e[x] = unique_showers_energies[iii]
+        truth_showers_found_e_sum[x] = np.sum(rechit_energies_this_segment[truth_showers_this_segment==x])
         truth_showers_found_eta[x] = unique_showers_eta[iii]
+
+        # print(unique_showers_eta[iii])
+
+
+        distances_with_other_truths = np.sqrt((unique_showers_eta[iii] - unique_showers_eta) ** 2  + (unique_showers_phi[iii] - unique_showers_phi)**2)
+        distances_with_other_truths_excluduing_me = distances_with_other_truths[distances_with_other_truths!=0]
+        distance_to_closest_truth = np.min(distances_with_other_truths_excluduing_me)
+
+        density = unique_showers_energies[iii]/np.sum(unique_showers_energies[distances_with_other_truths<0.5])
+        truth_showers_found_closest_particle_distance[x] = distance_to_closest_truth
+        truth_showers_found_local_density[x] = density
+
+
+
+
+
         iii += 1
         results_dict['num_rechits_per_truth_shower'].append(len(truth_showers_this_segment[truth_showers_this_segment == x]))
     results_dict['num_rechits_per_window'] = len(truth_showers_this_segment)
+
 
 
     predicted_showers_found = {}
@@ -279,11 +324,6 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     for x in unique_labels:
         predicted_showers_found[x] = -1
         predicted_showers_representative_index[x] = -1
-
-
-    print("12345")
-    print(predicted_showers_found)
-    print()
 
     representative_coords = []
     G = nx.Graph()
@@ -298,6 +338,11 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
             # sum_predicted = np.sum(rechit_energies_this_segment * (labels_for_all == index_shower_prediction))
             overlap = np.sum(rechit_energies_this_segment * (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == index_shower_prediction)) / np.sum(rechit_energies_this_segment * np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == index_shower_prediction)))
 
+
+            overlap2 = np.sum((truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == index_shower_prediction)) / np.sum(np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == index_shower_prediction)))
+
+            # print(overlap, overlap2)
+
             if overlap > iou_threshold:
                 G.add_edge('p%d'%index_shower_prediction, 't%d'%unique_showers_this_segment[i], weight=overlap)
 
@@ -310,16 +355,11 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
             truth_index = int(x[1:])
             prediction_index = int(y[1:])
 
-        print(x,y, truth_index, prediction_index)
+        # print(x,y, truth_index, prediction_index)
 
         truth_showers_found[truth_index] = prediction_index
         predicted_showers_found[prediction_index] = truth_index
         predicted_showers_representative_index[prediction_index] = representative_indices[prediction_index]
-
-
-    print("Hello XYZ")
-    print(predicted_showers_found)
-    print()
 
 
     if use_ticl:
@@ -328,37 +368,76 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
 
     num_found = 0.
+    num_found_ticl = 0.
     num_missed = 0.
+    num_missed_ticl = 0.
     num_gt_showers = 0.
 
     num_fakes = 0.
+    num_fakes_ticl = 0.
     num_predicted_showers = 0.
+    num_predicted_showers_ticl = 0.
 
-
+    predicted_truth_total = 0
 
     for k,v in truth_showers_found.items():
         results_dict['truth_shower_energies'].append(truth_showers_found_e[k])
+        results_dict['truth_shower_energies_sum'].append(truth_showers_found_e_sum[k])
+        predicted_truth_total += truth_showers_found_e[k]
+
         results_dict['truth_shower_etas'].append(truth_showers_found_eta[k])
+        results_dict['truth_shower_local_density'].append(truth_showers_found_local_density[k])
+        results_dict['truth_shower_closest_particle_distance'].append(truth_showers_found_closest_particle_distance[k])
 
         if v > -1:
+            predicted_energy = energy_regressed_filtered[predicted_showers_representative_index[v]]
+
             results_dict['truth_showers_found_or_not'].append(True)
+            results_dict['truth_shower_matched_energies_sum'].append(np.sum(rechit_energies_this_segment[labels_for_all==v]))
+            results_dict['truth_shower_matched_energies_regressed'].append(predicted_energy)
 
             num_found += 1
         else:
             results_dict['truth_showers_found_or_not'].append(False)
+            results_dict['truth_shower_matched_energies_sum'].append(-1)
+            results_dict['truth_shower_matched_energies_regressed'].append(-1)
+
             num_missed += 1
+
+
+        if use_ticl:
+            ticl_found = truth_to_ticl[k]
+
+            if ticl_found > -1:
+                predicted_energy = ticl_true_energy[ticl_instance_id==ticl_found][0]
+
+                results_dict['truth_showers_found_or_not_ticl'].append(True)
+                results_dict['truth_shower_matched_energies_sum_ticl'].append(np.sum(rechit_energies_this_segment[ticl_instance_id==v]))
+                results_dict['truth_shower_matched_energies_regressed_ticl'].append(predicted_energy)
+
+                num_found_ticl += 1
+            else:
+                results_dict['truth_showers_found_or_not_ticl'].append(False)
+                results_dict['truth_shower_matched_energies_sum_ticl'].append(-1)
+                results_dict['truth_shower_matched_energies_regressed_ticl'].append(-1)
+
+
+                num_missed_ticl += 1
 
         num_gt_showers += 1
 
 
-    results_dict['found_showers_predicted_energies'] = []
-    results_dict['found_showers_target_energies'] = []
-    results_dict['found_showers_predicted_sum'] = []
-    results_dict['found_showers_truth_sum'] = []
-    results_dict['found_showers_predicted_phi'] = []
-    results_dict['found_showers_target_phi'] = []
-    results_dict['found_showers_predicted_eta'] = []
-    results_dict['found_showers_target_eta'] = []
+    results_dict['truth_showers_sample_id'] = (window_id + 0*np.array(results_dict['truth_shower_energies'])).tolist()
+
+
+    # results_dict['found_showers_predicted_energies'] = []
+    # results_dict['found_showers_target_energies'] = []
+    # results_dict['found_showers_predicted_sum'] = []
+    # results_dict['found_showers_truth_sum'] = []
+    # results_dict['found_showers_predicted_phi'] = []
+    # results_dict['found_showers_target_phi'] = []
+    # results_dict['found_showers_predicted_eta'] = []
+    # results_dict['found_showers_target_eta'] = []
 
 
 
@@ -370,15 +449,78 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     results_dict['predicted_showers_matched_phi'] = []
     results_dict['predicted_showers_regressed_eta'] = []
     results_dict['predicted_showers_matched_eta'] = []
+    results_dict['predicted_showers_sample_id'] = []
 
+
+    results_dict['ticl_showers_regressed_energy'] = []
+    results_dict['ticl_showers_matched_energy'] = []
+    results_dict['ticl_showers_predicted_energy_sum'] = []
+    results_dict['ticl_showers_matched_energy_sum'] = []
+    results_dict['ticl_showers_regressed_phi'] = []
+    results_dict['ticl_showers_matched_phi'] = []
+    results_dict['ticl_showers_regressed_eta'] = []
+    results_dict['ticl_showers_matched_eta'] = []
+    results_dict['ticl_showers_sample_id'] = []
+
+
+    predicted_ticl_total = 0
+    if use_ticl:
+        for k, v in ticl_to_truth.items():
+            shower_energy_predicted = ticl_true_energy[ticl_instance_id==k][0]
+            predicted_ticl_total += shower_energy_predicted
+            # if input_log_energy:
+            #     shower_energy_predicted = np.exp(shower_energy_predicted) - 1
+
+            shower_eta_predicted = 0#eta_regressed_filtered[filtered_index_predicted]
+            shower_phi_predicted = 0#phi_regressed_filtered[filtered_index_predicted]
+            shower_energy_sum_predicted = np.sum(rechit_energies_this_segment[ticl_instance_id == k])
+
+            results_dict['ticl_showers_regressed_energy'].append(shower_energy_predicted)
+            results_dict['ticl_showers_predicted_energy_sum'].append(shower_energy_sum_predicted)
+            results_dict['ticl_showers_regressed_phi'].append(shower_phi_predicted)
+            results_dict['ticl_showers_regressed_eta'].append(shower_eta_predicted)
+
+            if v > -1:
+                shower_energy_truth = energy_truth_all[truth_showers_this_segment == v][0]
+                shower_eta_truth = eta_truth_all[truth_showers_this_segment == v][0]
+                shower_phi_truth = phi_truth_all[truth_showers_this_segment == v][0]
+                shower_energy_sum_truth = np.sum(rechit_energies_this_segment[truth_showers_this_segment == v])
+
+
+                results_dict['ticl_showers_matched_energy'].append(shower_energy_truth)
+                results_dict['ticl_showers_matched_energy_sum'].append(shower_energy_sum_truth)
+                results_dict['ticl_showers_matched_phi'].append(shower_phi_truth)
+                results_dict['ticl_showers_matched_eta'].append(shower_eta_truth)
+
+                # print(shower_eta_predicted, shower_eta_truth, shower_phi_predicted, shower_phi_truth)
+
+            else:
+                num_fakes_ticl += 1
+                results_dict['ticl_showers_matched_energy'].append(-1)
+                results_dict['ticl_showers_matched_energy_sum'].append(-1)
+                results_dict['ticl_showers_matched_phi'].append(-1)
+                results_dict['ticl_showers_matched_eta'].append(-1)
+
+            num_predicted_showers_ticl += 1
+
+        results_dict['ticl_showers_sample_id'] = (window_id + 0 * np.array(results_dict['ticl_showers_regressed_energy'])).tolist()
+
+        # try:
+        #     print("T", num_found_ticl / num_gt_showers, num_missed_ticl / num_gt_showers, num_fakes_ticl / num_predicted_showers_ticl)
+        # except ZeroDivisionError:
+        #     pass
+
+
+    predicted_total_obc = 0
 
     for k, v in predicted_showers_found.items():
         filtered_index_predicted = predicted_showers_representative_index[k]
-        
+
         shower_energy_predicted = energy_regressed_filtered[filtered_index_predicted]
+        predicted_total_obc += shower_energy_predicted
         if input_log_energy:
             shower_energy_predicted = np.exp(shower_energy_predicted) - 1
-        
+
         shower_eta_predicted = eta_regressed_filtered[filtered_index_predicted]
         shower_phi_predicted = phi_regressed_filtered[filtered_index_predicted]
         shower_energy_sum_predicted = np.sum(rechit_energies_this_segment[labels_for_all==k])
@@ -394,14 +536,14 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
             shower_phi_truth = phi_truth_all[truth_showers_this_segment==v][0]
             shower_energy_sum_truth = np.sum(rechit_energies_this_segment[truth_showers_this_segment==v])
 
-            results_dict['found_showers_predicted_sum'].append(shower_energy_sum_predicted)
-            results_dict['found_showers_truth_sum'].append(shower_energy_sum_truth)
-            results_dict['found_showers_predicted_energies'].append(shower_energy_predicted)
-            results_dict['found_showers_target_energies'].append(shower_energy_truth)
-            results_dict['found_showers_predicted_phi'].append(shower_phi_predicted)
-            results_dict['found_showers_target_phi'].append(shower_phi_truth)
-            results_dict['found_showers_predicted_eta'].append(shower_eta_predicted)
-            results_dict['found_showers_target_eta'].append(shower_eta_truth)
+            # results_dict['found_showers_predicted_sum'].append(shower_energy_sum_predicted)
+            # results_dict['found_showers_truth_sum'].append(shower_energy_sum_truth)
+            # results_dict['found_showers_predicted_energies'].append(shower_energy_predicted)
+            # results_dict['found_showers_target_energies'].append(shower_energy_truth)
+            # results_dict['found_showers_predicted_phi'].append(shower_phi_predicted)
+            # results_dict['found_showers_target_phi'].append(shower_phi_truth)
+            # results_dict['found_showers_predicted_eta'].append(shower_eta_predicted)
+            # results_dict['found_showers_target_eta'].append(shower_eta_truth)
 
             results_dict['predicted_showers_matched_energy'].append(shower_energy_truth)
             results_dict['predicted_showers_matched_energy_sum'].append(shower_energy_sum_truth)
@@ -420,16 +562,28 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
         num_predicted_showers += 1
 
-    try:
-        print(num_found / num_gt_showers, num_missed / num_gt_showers, num_fakes / num_predicted_showers)
-    except ZeroDivisionError:
-        pass
+    results_dict['predicted_showers_sample_id'] = (
+                window_id + 0 * np.array(results_dict['predicted_showers_regressed_energy'])).tolist()
+    # try:
+    #     print(num_found / num_gt_showers, num_missed / num_gt_showers, num_fakes / num_predicted_showers)
+    # except ZeroDivisionError:
+    #     pass
 
     results_dict['num_real_showers'] = num_gt_showers
     results_dict['num_found_showers'] = num_found
     results_dict['num_missed_showers'] = num_missed
     results_dict['num_fake_showers'] = num_fakes
     results_dict['num_predicted_showers'] = num_predicted_showers
+
+
+    results_dict['num_found_showers_ticl'] = num_found_ticl
+    results_dict['num_missed_showers_ticl'] = num_missed_ticl
+    results_dict['num_fake_showers_ticl'] = num_fakes_ticl
+    results_dict['num_predicted_showers_ticl'] = num_predicted_showers_ticl
+
+    results_dict['predicted_total_obc'] = predicted_total_obc
+    results_dict['predicted_total_ticl'] = predicted_ticl_total
+    results_dict['predicted_total_truth'] = predicted_truth_total
 
     representative_coords = np.array(representative_coords)
 
@@ -446,13 +600,13 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
                 start_secondary_indicing_from += 1
         replace_dictionary = replace_dictionary_2
 
-        print("===============")
-        print(np.unique(labels_for_all), replace_dictionary)
+        # print("===============")
+        # print(np.unique(labels_for_all), replace_dictionary)
         vis_dict['predicted_showers'] = replace(labels_for_all, replace_dictionary)
 
-        print(predicted_showers_found)
+        # print(predicted_showers_found)
 
-        print(np.mean((labels_for_all==-1)).astype(np.float))
+        # print(np.mean((labels_for_all==-1)).astype(np.float))
 
         if use_ticl:
             replace_dictionary = copy.deepcopy(ticl_to_truth)
@@ -464,20 +618,21 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
                     start_secondary_indicing_from += 1
             replace_dictionary = replace_dictionary_2
 
-            print(np.unique(ticl_instance_id), replace_dictionary)
+            # print(np.unique(ticl_instance_id), replace_dictionary)
             vis_dict['ticl_showers'] = replace(ticl_instance_id, replace_dictionary)
         else:
             vis_dict['ticl_showers'] = labels_for_all*10
 
-        vis_dict['x'] = x_this_segment
-        vis_dict['y'] = y_this_segment
-        vis_dict['prediction_all'] = pred_this_segment
+        vis_dict['pred_and_truth_dict'] = pred_and_truth_dict
+        vis_dict['feature_dict'] = feature_dict
+
         vis_dict['coords_representatives'] = representative_coords
         vis_dict['identified_vertices'] = labels_for_all
 
 
         results_dict['visualization_data'] = vis_dict
 
+    window_id += 1
     return results_dict
 
 
@@ -531,9 +686,7 @@ def main(files, pdfpath, dumppath,input_log_energy=True):
         with gzip.open(file, 'rb') as f:
             data_dict = pickle.load(f)
             analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'], input_log_energy=input_log_energy)
-            break
-
-    make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict)
+            # break
 
     if len(dumppath) > 0:
         print("Dumping analysis to bin file", dumppath)
@@ -543,7 +696,7 @@ def main(files, pdfpath, dumppath,input_log_energy=True):
     else:
         print("WARNING: No analysis output path specified. Skipped dumping of analysis.")
 
-
+    make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict)
 
 
 
@@ -561,7 +714,8 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', help='GPU', default='')
     args = parser.parse_args()
 
-    input_log_energy = not args.notlogE
+    input_log_energy = False
+
     # DJCSetGPUs(args.gpu)
     num_segments_to_visualize = int(args.v)
     num_visualized_segments = 0
