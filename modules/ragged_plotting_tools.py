@@ -395,15 +395,16 @@ def histogram_total_window_resolution(plt, ax, total_truth_energies, total_obc_e
     response_ticl[response_ticl>3] = 3
     response_obc[response_obc>3] = 3
 
-    plt.figure()
+    plt.subplots(figsize=(7,5.4))
+    plt.axvline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
     plt.hist(response_obc, bins=bins, histtype='step', label='Object condensation')
     plt.hist(response_ticl, bins=bins, histtype='step', label='ticl')
-    plt.xlabel("Response")
+    plt.xlabel("Response (predicted showers' energy sum / truth showers' energy sum)")
     plt.ylabel("Frequency")
 
     sx = '' if energy_filter==0 else ' - truth energy > %.2f GeV' % energy_filter
 
-    plt.title('Total energy response'+sx)
+    plt.title('Total energy response over a window'+sx)
     plt.legend()
 
 
@@ -617,7 +618,7 @@ def make_energy_response_curve_as_a_function_of_truth_energy(plt, ax, energies, 
     plt.plot(centers, mean, linewidth=0.7, marker='o', ls='--', markersize=3)
     plt.xticks(centers)
     plt.xlabel('Shower energy')
-    plt.ylabel('Response')
+    plt.ylabel('Response ($e_{predicted}/e_{true}$)')
     plt.title('Function of energy' + (' - ticl' if ticl else ''))
 
 
@@ -733,7 +734,7 @@ def make_energy_response_curve_as_a_function_of_closest_particle_distance(plt, a
 
     plt.plot(centers, mean, linewidth=0.7, marker='o', ls='--', markersize=3)
     plt.xticks(centers)
-    plt.xlabel('Closest particle distance')
+    plt.xlabel('Closest particle distance ($\Delta R$)')
     plt.ylabel('Response')
     plt.title('Function of closest particle distance' + (' - ticl' if ticl else ''))
 
@@ -761,7 +762,6 @@ def make_found_showers_plot_as_function_of_closest_particle_distance(plt, ax, cl
         mean.append(m)
         std.append(np.std(filtered_found))
         centers.append(l+0.03)
-
 
     plt.plot(centers, mean, linewidth=0.7, marker='o', ls='--', markersize=3)
     plt.xticks(centers)
@@ -890,7 +890,7 @@ def efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _loc
         ax2.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
         ax2.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-        ax2.set_ylabel('Number of showers')
+        ax2.set_ylabel('Number of showers (bin width divided)')
         ax2.set_ylim(0,np.max(hist_values)*1.3)
         ax1.set_title('Efficiency comparison '+sx)
 
@@ -901,6 +901,7 @@ def efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _loc
         ax1.set_xlabel('Local shower energy fraction ($\\frac{e_s}{\\sum_{i}^{} e_i \mid \Delta R(s, i) < 0.5 }$)')
         ax1.set_ylabel('Reconstruction efficiency')
         ax1.legend(loc = 'center right')
+        ax1.set_ylim(0, 1.04)
 
 
 def efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, ax, _found_or_not, _found_or_not_ticl, _truth_energies, energy_filter=0):
@@ -937,7 +938,10 @@ def efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, ax, _found
         filtered_found_ticl = found_or_not_ticl[filter].astype(np.float)
 
 
+
         m = np.mean(filtered_found)
+        print(np.sum(filtered_found), len(filtered_found), m, l, h)
+
         mt = np.mean(filtered_found_ticl)
         mean.append(m)
         mean_ticl.append(mt)
@@ -958,7 +962,7 @@ def efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, ax, _found
     ax2.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
     ax2.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-    ax2.set_ylabel('Number of showers')
+    ax2.set_ylabel('Number of showers (bin width divided)')
     ax2.set_ylim(0,np.max(hist_values)*1.3)
     ax1.set_title('Efficiency comparison '+sx)
 
@@ -966,9 +970,10 @@ def efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, ax, _found
     ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
     ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
     ax1.set_xticks(e_bins_ticks)
-    ax1.set_xlabel('Truth energy')
+    ax1.set_xlabel('Truth energy [GeV]')
     ax1.set_ylabel('Reconstruction efficiency')
     ax1.legend(loc = 'center right')
+    ax1.set_ylim(0, 1.04)
 
 
 def efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(plt, ax, _closest_particle_distance, _found_or_not, _found_or_not_ticl, _truth_energies, energy_filter=0, make_segments=False):
@@ -1063,7 +1068,7 @@ def efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(pl
         ax2.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
         ax2.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-        ax2.set_ylabel('Number of showers')
+        ax2.set_ylabel('Number of showers (bin width divided)')
         ax2.set_ylim(0,np.max(hist_values)*1.3)
         ax1.set_title('Efficiency comparison '+sx)
 
@@ -1071,9 +1076,10 @@ def efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(pl
         ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
         ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
         ax1.set_xticks(e_bins_ticks)
-        ax1.set_xlabel('Closest particle distance')
+        ax1.set_xlabel('Closest particle distance ($\Delta R$)')
         ax1.set_ylabel('Reconstruction efficiency')
         ax1.legend(loc = 'center right')
+        ax1.set_ylim(0, 1.04)
 
 
 
@@ -1215,9 +1221,10 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
         ax2.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
         ax2.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-        ax2.set_ylabel('Number of showers')
+        ax2.set_ylabel('Number of showers (bin width divided)')
         ax2.set_ylim(0,np.max(hist_values)*1.3)
 
+        ax1.axhline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
 
         ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
         ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
@@ -1226,6 +1233,8 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
         ax1.set_ylabel('$<e_{pred} / e_{true}>$')
         ax1.legend(loc = 'center right')
 
+        ax1.set_ylim(0, ax1.get_ylim()[1])
+
         ax22_twin = ax22.twinx()
         hist_values,_ = np.histogram(local_densities, bins=e_bins)
         hist_values = (hist_values / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
@@ -1233,9 +1242,10 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
         ax22_twin.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
         ax22_twin.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-        ax22_twin.set_ylabel('Number of showers')
+        ax22_twin.set_ylabel('Number of showers (bin width divided)')
 
         ax22_twin.set_ylim(0,np.max(hist_values)*1.3)
+
 
 
         ax22.step(e_bins, [var[0]] + var, label='Object condensation')
@@ -1382,17 +1392,19 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
         ax2.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
         ax2.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-        ax2.set_ylabel('Number of showers')
+        ax2.set_ylabel('Number of showers (bin width divided)')
 
         ax2.set_ylim(0,np.max(hist_values)*1.3)
 
 
+        ax1.axhline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
         ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
         ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
         ax1.set_xticks(e_bins_ticks)
-        ax1.set_xlabel('Closest particle distance')
+        ax1.set_xlabel('Closest particle distance ($\Delta R$)')
         ax1.set_ylabel('$<e_{pred} / e_{true}>$')
         ax1.legend(loc = 'center right')
+        ax1.set_ylim(0, ax1.get_ylim()[1])
 
         ax22_twin = ax22.twinx()
         hist_values,_ = np.histogram(closest_particle_distance, bins=e_bins)
@@ -1401,7 +1413,7 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
         ax22_twin.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
         ax22_twin.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-        ax22_twin.set_ylabel('Number of showers')
+        ax22_twin.set_ylabel('Number of showers (bin width divided)')
 
         ax22_twin.set_ylim(0,np.max(hist_values)*1.3)
 
@@ -1409,7 +1421,7 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
         ax22.step(e_bins, [var[0]] + var, label='Object condensation')
         ax22.step(e_bins, [var_ticl[0]] + var_ticl, label='ticl')
         ax22.set_xticks(e_bins_ticks)
-        ax22.set_xlabel('Closest particle distance')
+        ax22.set_xlabel('Closest particle distance ($\Delta R$)')
         ax22.set_ylabel('$\\frac{\sigma (e_{pred} / e_{true})}{<e_{pred} / e_{true}>}$')
         ax22.legend(loc = 'center right')
 
@@ -1506,17 +1518,17 @@ def response_curve_comparison_with_distribution_fo_energy(plt, ax, energy_truth,
     ax2.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
     ax2.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-    ax2.set_ylabel('Number of showers')
+    ax2.set_ylabel('Number of showers (bin width divided)')
     ax2.set_ylim(0,np.max(hist_values)*1.3)
 
-
-
+    ax1.axhline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
     ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
     ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
     ax1.set_xticks(e_bins_ticks)
-    ax1.set_xlabel('Truth energy')
+    ax1.set_xlabel('Truth energy [GeV]')
     ax1.set_ylabel('$<e_{pred} / e_{true}>$')
     ax1.legend(loc = 'center right')
+    ax1.set_ylim(0, ax1.get_ylim()[1])
 
 
 
@@ -1529,13 +1541,13 @@ def response_curve_comparison_with_distribution_fo_energy(plt, ax, energy_truth,
     ax22_twin.set_ylim(0,np.max(hist_values)*1.3)
 
 
-    ax22_twin.set_ylabel('Number of showers')
+    ax22_twin.set_ylabel('Number of showers (bin width divided)')
 
 
     ax22.step(e_bins, [var[0]] + var, label='Object condensation')
     ax22.step(e_bins, [var_ticl[0]] + var_ticl, label='ticl')
     ax22.set_xticks(e_bins_ticks)
-    ax22.set_xlabel('Truth energy')
+    ax22.set_xlabel('Truth energy [GeV]')
     ax22.set_ylabel('$\\frac{\sigma (e_{pred} / e_{true})}{<e_{pred} / e_{true}>}$')
     ax22.legend(loc = 'center right')
 
@@ -1638,7 +1650,7 @@ def fake_rate_comparison_with_distribution_fo_energy(plt, ax, predicted_energies
     legend_elements = [Patch(facecolor='#1f77b4', label='Object condensation', alpha=0.2),
                        Patch(facecolor='#ff7f0e', label='ticl', alpha=0.2)]
 
-    ax2.set_ylabel('Number of showers')
+    ax2.set_ylabel('Number of showers (bin width divided')
 
     ax2.legend(handles=legend_elements, loc=(0.675,0.34))
 
@@ -1650,9 +1662,11 @@ def fake_rate_comparison_with_distribution_fo_energy(plt, ax, predicted_energies
     ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
     ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
     ax1.set_xticks(e_bins_ticks)
-    ax1.set_xlabel('Predicted energy')
+    ax1.set_xlabel('Predicted energy [GeV]')
     ax1.set_ylabel('Fake rate')
     ax1.legend(loc = 'center right')
+    ax1.set_ylim(0, 1.04)
+
 
 def make_fake_rate_plot_as_function_of_fake_energy(plt, ax, predicted_energies, matched_energies, is_sum, ticl=False):
     predicted_energies = np.array(predicted_energies)
