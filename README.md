@@ -48,3 +48,13 @@ Be careful, a bunch of plots will be produced (this  can be changed in the lower
 
 
 
+Analysis and plots
+===========
+Assuming that the prediction files are in `/mnt/ceph/users/sqasim/Workspace/NextCal/HGCalML/srq/test_files/out`, use this to make plots
+
+
+``python3 analyse_and_plot_clustering_in_hgcal_using_object_condensation.py /mnt/ceph/users/sqasim/Workspace/NextCal/HGCalML/srq/test_files/out -p jan_9_14_2.pdf -v 10 --analysisoutpath dump.bin``
+
+This will also generate dump.bin file to dump plot data. You can use it directly to make plots faster using:
+
+``python3 plot_from_dump.py dump.bin jan_9_14.pdf``
