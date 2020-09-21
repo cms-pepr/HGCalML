@@ -4,7 +4,11 @@ from __future__ import print_function
 
 import tensorflow as tf
 # from K import Layer
+import numpy
+numpy.set_printoptions(threshold=500)
 import numpy as np
+np.set_printoptions(threshold=500)
+numpy.set_printoptions(threshold=500)
 from LayersRagged import RaggedConstructTensor
 import os
 import argparse
@@ -17,6 +21,7 @@ from obc_data import build_dataset_analysis_dict, build_window_analysis_dict, ap
 import copy
 import networkx as nx
 import index_dicts
+import time
 
 from ragged_plotting_tools import make_plots_from_object_condensation_clustering_analysis
 
@@ -28,6 +33,7 @@ from scipy.sparse.csgraph import connected_components
 from ragged_callbacks import plotEventDuringTraining
 from DeepJetCore.DJCLayers import ScalarMultiply
 
+from numba import jit
 
 # tf.compat.v1.disable_eager_execution()
 
@@ -61,44 +67,8 @@ def find_uniques_from_betas(betas, coords, dist_threshold, beta_threshold, soft)
         ridx = representative_indices[i]
         labels[asso_idx == ridx] = i
         
-    return labels,representative_indices
+    return labels,representative_indices, asso_idx.numpy()
     
-    
-    n2_distances = np.sqrt(np.sum(np.square(np.expand_dims(coords, axis=0) - np.expand_dims(coords, axis=1)), axis=-1))
-    betas_checked = np.zeros_like(betas) - 1
-
-    index = 0
-
-    arange_vector = np.arange(len(betas))
-
-    representative_indices = []
-
-    while True:
-        betas_remaining = betas[betas_checked==-1]
-        arange_remaining = arange_vector[betas_checked==-1]
-
-        if len(betas_remaining)==0:
-            break
-
-        max_beta = arange_remaining[np.argmax(betas_remaining)]
-
-        representative_indices.append(max_beta)
-
-
-        n2 = n2_distances[max_beta]
-
-        distances_less = np.logical_and(n2<dist_threshold, betas_checked==-1)
-        betas_checked[distances_less] = index
-
-        index += 1
-
-
-    print('find_uniques_from_betas end')
-    #representative_indices = np.sort(representative_indices)
-    print(representative_indices,comp[1],'\n')
-    print(betas_checked,comp[0],comp[2])
-    exit()
-    return betas_checked, representative_indices
 
 def replace(arr, rep_dict):
     """Assumes all elements of "arr" are keys of rep_dict"""
@@ -112,61 +82,44 @@ def replace(arr, rep_dict):
     return rep_vals[idces]
 
 
-def assign_prediction_labels_to_full_unfiltered_vertices(beta_all, clustering_coords_all, labels, clustering_coords_all_filtered, betas_filtered, distance_threshold):
-    print('assign_prediction_labels_to_full_unfiltered_vertices')
-    unique_labels = np.unique(labels)
-
-    labels_all = np.zeros_like(beta_all) - 1
-
-    centers = []
-    labelsc = []
-
-    replacedict = {}
-    iii = 0
-
-    replacedict[-1] = -1
-
-    for x in unique_labels:
-        if x == -1:
-            continue
-        center = clustering_coords_all_filtered[labels==x][np.argmax(betas_filtered[labels==x])]
-        centers.append(center[np.newaxis, ...])
-        labelsc.append(x)
-
-        replacedict[iii] = x
-
-
-        distances = np.sqrt(np.sum(np.square(clustering_coords_all - center[np.newaxis, ...]), axis=-1))
-        labels_all[distances < distance_threshold] = x
-
-        iii += 1
-
-    # centers = np.concatenate(centers, axis=0)
-
-    # labels_all = np.argmin(np.sqrt(np.sum(np.square(np.expand_dims(clustering_coords_all, axis=1) - np.expand_dims(centers, axis=0)), axis=-1)), axis=-1)
-    labels_all = replace(labels_all, replacedict)
-    
-    print('assign_prediction_labels_to_full_unfiltered_vertices end')
-    return labels_all
-
-
-
-# found_truth_energies_energies_truth = []
-# found_truth_energies_is_it_found = []
-#
-# found_2_truth_energies_predicted_sum = []
-# found_2_truth_energies_truth_sum = []
-#
-# found_2_truth_target_energies = []
-# found_2_truth_predicted_energies = []
-#
-# found_2_truth_rotational_distance = []
-
 
 beta_threshold = 0.1
 distance_threshold = 0.5
 iou_threshold = 0.1
 
+@jit(nopython=True)
+def calculate_all_iou(index_shower_prediction, representative_indices, 
+                  unique_showers_this_segment,
+                  truth_showers_this_segment,
+                  labels_for_all,
+                  hit_weight,
+                  iou_threshold):
+    
+    #hit_weight =  rechit_energies_this_segment * beta_all
+    
+    all_iou=[]
+    
+    for index_shower_prediction in range(len(representative_indices)):
+
+        for i in range(len(unique_showers_this_segment)):
+            if unique_showers_this_segment[i] == -1:
+                continue
+            
+            intersection = (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == index_shower_prediction)
+            
+            if not np.any(intersection): #no intersection
+                continue
+            
+            union = np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == index_shower_prediction))
+            
+            overlap = np.sum(hit_weight * intersection) / np.sum(hit_weight * union)
+
+
+            if overlap > iou_threshold:
+                all_iou.append( (index_shower_prediction,unique_showers_this_segment[i],overlap) )
+                #G.add_edge('p%d'%index_shower_prediction, 't%d'%unique_showers_this_segment[i], weight=overlap)
+
+    return all_iou
 
 def match_to_truth(truth_showers, unique_showers, unique_showers_e, unique_shower_eta, labels, clustering_coords_all_filtered, representative_indices, rechit_energies):
     print('match_to_truth')
@@ -222,6 +175,7 @@ def match_to_truth(truth_showers, unique_showers, unique_showers_e, unique_showe
             if overlap > iou_threshold:
                 G.add_edge('p%d'%index_shower_prediction, 't%d'%unique_showers_this_segment[i], weight=overlap)
 
+
     X = nx.algorithms.max_weight_matching(G)
     for x,y in X:
         if x[0] == 'p':
@@ -240,90 +194,93 @@ def match_to_truth(truth_showers, unique_showers, unique_showers_e, unique_showe
     return truth_showers_found, predicted_showers_found
 
 
+
+
 window_id = 0
-def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, 
+def analyse_one_window_cut(truth_id, features, truth, prediction, beta_threshold, 
                            distance_threshold, should_return_visualization_data=False, soft=False):
     global window_id
     print('analyse_one_window_cut', window_id)
+    
+    
+    '''
+    
+    some naming conventions:
+    
+    *never* use 'segment' anywhere in here. the whole function works on one segment, so no need to blow up variable names
+    
+    pred_foo always refers to per-hit prediction (dimension V x ... or V)
+    pred_shower_foo  alywas refers to predicted shower quantities  (dimension N_predshowers x ... or N_predshowers)
+    
+    truth_bar always refers to per-hit truth (dimension V x ... or V)
+    truth_shower_bar alywas refers to shower quantities  (dimension N_trueshowers x ... or N_trueshowers)
+    
+    keep variable names in singular, in the end these are almost all vectors anyway
+    
+    always indicate if an array is an index array by appending "_idx". Not "idxs", "indices" or nothing
+    
+    if indices refer to the hit vector, call them ..._hit_idx
+    
+    for better distinction between indices referring to vectors and simple "ids" given to showers, call the "id" showers .._id
+    (for example 
+    
+    '''
 
     
     results_dict = build_window_analysis_dict()
 
-    seg_f, seg_p = index_dicts.split_feat_pred(pred_this_segment)
-    pred_and_truth_dict = index_dicts.create_index_dict(y_this_segment, seg_p)
-    feature_dict = index_dicts.create_feature_dict(x_this_segment)
+    features, prediction = index_dicts.split_feat_pred(prediction)
+    pred_and_truth_dict = index_dicts.create_index_dict(truth, prediction)
+    feature_dict = index_dicts.create_feature_dict(features)
 
-    unique_showers_this_segment,unique_showers_indices = np.unique(truth_showers_this_segment, return_index=True)
+    truth_shower_id,unique_truth_shower_hit_idx = np.unique(truth_id, return_index=True)
     
-    print('truth_showers_this_segment',truth_showers_this_segment.shape)
-    print('unique_showers_indices',unique_showers_indices.shape)
+    print('truth_id',truth_id.shape)
+    print('unique_truth_shower_hit_idx',unique_truth_shower_hit_idx.shape)
     print("pred_and_truth_dict['predEnergy'][:, 0]",pred_and_truth_dict['predEnergy'][:, 0].shape)
 
     # TODO: confirm
-    truth_energies_this_segment = pred_and_truth_dict['truthHitAssignedEnergies'][:, 0]
-
-    truth_energies_sum_this_segment = pred_and_truth_dict['truthRechitsSum'][:,0] # Flatten it
-    unique_showers_energies = truth_energies_this_segment[unique_showers_indices]
-    unique_showers_eta = pred_and_truth_dict['truthHitAssignedEtas'][unique_showers_indices][:, 0]
-    unique_showers_phi = pred_and_truth_dict['truthHitAssignedPhis'][unique_showers_indices][:, 0]
-    rechit_energies_this_segment = feature_dict['recHitEnergy'][:, 0]
-    beta_all = pred_and_truth_dict['predBeta'][:, 0]
-    energy_regressed_all = pred_and_truth_dict['predEnergy'][:, 0]
-
-
-    # TODO: verification required and change to x (important)
-    eta_regressed_allx = pred_this_segment[:, -4] + x_this_segment[:, 1]
-    eta_regressed_all = pred_and_truth_dict['predX'][:, 0]
-
-    # TODO: verification required and change to x (important)
-    phi_regressed_allx = pred_this_segment[:, -3] + x_this_segment[:, 2]
-    phi_regressed_all = pred_and_truth_dict['predY']
+    
+    truth_dep_energy = pred_and_truth_dict['truthRechitsSum'][:,0] # Flatten it
+    
+    truth_shower_energy = pred_and_truth_dict['truthHitAssignedEnergies'][:, 0][unique_truth_shower_hit_idx]
+    truth_shower_eta = pred_and_truth_dict['truthHitAssignedEtas'][unique_truth_shower_hit_idx][:, 0]
+    truth_shower_phi = pred_and_truth_dict['truthHitAssignedPhis'][unique_truth_shower_hit_idx][:, 0]
+    
+    hit_energy = feature_dict['recHitEnergy'][:, 0]
+    
+    pred_beta = pred_and_truth_dict['predBeta'][:, 0]
+    pred_energy = pred_and_truth_dict['predEnergy'][:, 0]
+    pred_x = (pred_and_truth_dict['predX'] + feature_dict["recHitX"])[:, 0]
+    pred_y = (pred_and_truth_dict['predY'] + feature_dict["recHitY"])[:, 0]
+    pred_ccoords = pred_and_truth_dict['predCCoords']
 
 
-    # print(y_this_segment.shape)
+    # print(truth.shape)
 
     # TODO: verification required and change eta to x
-    energy_truth_all = pred_and_truth_dict['truthHitAssignedEnergies'][:, 0]
-    eta_truth_all = pred_and_truth_dict['truthHitAssignedX'][:, 0]
-    phi_truth_all = pred_and_truth_dict['truthHitAssignedY'][:, 0]
+    truth_energy = pred_and_truth_dict['truthHitAssignedEnergies'][:, 0]
+    truth_x = pred_and_truth_dict['truthHitAssignedX'][:, 0]
+    truth_y = pred_and_truth_dict['truthHitAssignedY'][:, 0]
 
 
     use_ticl = True
     try:
-        ticl_instance_id = pred_and_truth_dict['ticlHitAssignementIdx'][:, 0]
-        ticl_true_energy = pred_and_truth_dict['ticlHitAssignedEnergies'][:, 0]
+        ticl_id = pred_and_truth_dict['ticlHitAssignementIdx'][:, 0]
+        ticl_energy = pred_and_truth_dict['ticlHitAssignedEnergies'][:, 0]
 
-        ticl_instance_id[ticl_true_energy > 10 * truth_energies_sum_this_segment] = 0
-        ticl_true_energy[ticl_true_energy > 10 * truth_energies_sum_this_segment] = 0
+        ticl_id[ticl_energy > 10 * truth_dep_energy] = 0
+        ticl_energy[ticl_energy > 10 * truth_dep_energy] = 0
     except Exception:
         use_ticl = False
 
 
-    #this does nothing now
-    is_spectator = beta_all>-1.#beta_threshold
-    beta_all_filtered = beta_all[is_spectator==1]
-    energy_regressed_filtered = energy_regressed_all[is_spectator==1]
-    eta_regressed_filtered = eta_regressed_all[is_spectator==1]
-    phi_regressed_filtered = phi_regressed_all[is_spectator==1]
-
-    
-
-
-    clustering_coords_all = pred_and_truth_dict['predCCoords']
-
-
-    clustering_coords_all_filtered = clustering_coords_all[is_spectator==1, :]
-
-    labels, representative_indices = find_uniques_from_betas(beta_all_filtered, clustering_coords_all_filtered,
+    pred_sid, representative_indices, assoidx = find_uniques_from_betas(pred_beta, pred_ccoords,
                                                              dist_threshold=distance_threshold, 
                                                              beta_threshold=beta_threshold,
                                                              soft=soft)
-    labels_for_all = assign_prediction_labels_to_full_unfiltered_vertices(beta_all, clustering_coords_all, 
-                                                                          labels, clustering_coords_all_filtered, 
-                                                                          beta_all_filtered, 
-                                                                          distance_threshold=distance_threshold)
-
-    unique_labels = np.unique(labels_for_all)
+    
+    pred_shower_id = np.unique(pred_sid)
 
 
     print('calc distances')
@@ -333,65 +290,53 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     truth_showers_found_eta = {}
     truth_showers_found_closest_particle_distance = {}
     truth_showers_found_local_density = {}
+    
     iii = 0
-    for x in unique_showers_this_segment:
+    for x in truth_shower_id:
         truth_showers_found[x] = -1
-        truth_showers_found_e[x] = unique_showers_energies[iii]
-        truth_showers_found_e_sum[x] = np.sum(rechit_energies_this_segment[truth_showers_this_segment==x])
-        truth_showers_found_eta[x] = unique_showers_eta[iii]
+        truth_showers_found_e[x] = truth_shower_energy[iii]
+        truth_showers_found_e_sum[x] = np.sum(hit_energy[truth_id==x])
+        truth_showers_found_eta[x] = truth_shower_eta[iii]
 
-        # print(unique_showers_eta[iii])
+        # print(truth_shower_eta[iii])
 
-
-        distances_with_other_truths = np.sqrt((unique_showers_eta[iii] - unique_showers_eta) ** 2  + (unique_showers_phi[iii] - unique_showers_phi)**2)
+        # fixme. this needs to be deltaphi! not just a simple phiA-phiB!
+        distances_with_other_truths = np.sqrt((truth_shower_eta[iii] - truth_shower_eta) ** 2  + (truth_shower_phi[iii] - truth_shower_phi)**2)
         distances_with_other_truths_excluduing_me = distances_with_other_truths[distances_with_other_truths!=0]
         distance_to_closest_truth = np.min(distances_with_other_truths_excluduing_me)
 
-        density = unique_showers_energies[iii]/(np.sum(unique_showers_energies[distances_with_other_truths<0.5])+1e-6)
+        density = truth_shower_energy[iii]/(np.sum(truth_shower_energy[distances_with_other_truths<0.5])+1e-6)
         truth_showers_found_closest_particle_distance[x] = distance_to_closest_truth
         truth_showers_found_local_density[x] = density
 
-
-
-
-
         iii += 1
-        results_dict['num_rechits_per_truth_shower'].append(len(truth_showers_this_segment[truth_showers_this_segment == x]))
-    results_dict['num_rechits_per_window'] = len(truth_showers_this_segment)
+        results_dict['num_rechits_per_truth_shower'].append(len(truth_id[truth_id == x]))
+    results_dict['num_rechits_per_window'] = len(truth_id)
 
 
+    #fill representative coordinates
+    representative_coords = []
+    for index_shower_prediction in range(len(representative_indices)):
+        representative_coords.append(pred_ccoords[representative_indices[index_shower_prediction]])
 
     print('match fill') ##this one is slow like hell!
     predicted_showers_found = {}
     predicted_showers_representative_index = {}
-    for x in unique_labels:
+    for x in pred_shower_id:
         predicted_showers_found[x] = -1
         predicted_showers_representative_index[x] = -1
 
-    representative_coords = []
+    # use the same truth matching for ticl!
+    # reduces time by a factor of 4-5
     G = nx.Graph()
-    for index_shower_prediction in range(len(representative_indices)):
-        representative_coords.append(clustering_coords_all_filtered[representative_indices[index_shower_prediction]])
-
-        for i in range(len(unique_showers_this_segment)):
-            if unique_showers_this_segment[i] == -1:
-                continue
-        
-            hit_weight =  rechit_energies_this_segment * beta_all
-            
-            intersection = (truth_showers_this_segment == unique_showers_this_segment[i]) * (labels_for_all == index_shower_prediction)
-            
-            if not np.any(intersection): #no intersection
-                continue
-            
-            union = np.logical_or((truth_showers_this_segment == unique_showers_this_segment[i]), (labels_for_all == index_shower_prediction))
-            
-            overlap = np.sum(hit_weight * intersection) / np.sum(hit_weight * union)
+    start = time.time()
+    hit_weight = hit_energy * pred_beta
+    all_iou = calculate_all_iou(index_shower_prediction, representative_indices, truth_shower_id, truth_id, pred_sid, hit_weight, iou_threshold)    
+    for iou in all_iou:
+        G.add_edge('p%d'%iou[0], 't%d'%iou[1], weight=iou[2])
 
 
-            if overlap > iou_threshold:
-                G.add_edge('p%d'%index_shower_prediction, 't%d'%unique_showers_this_segment[i], weight=overlap)
-
+    print('match fill', time.time()-start, 's')
     print('match resolve')
     X = nx.algorithms.max_weight_matching(G)
     for x,y in X:
@@ -411,8 +356,8 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     if use_ticl:
         print('match ticl')
-        truth_to_ticl, ticl_to_truth = match_to_truth(truth_showers_this_segment, unique_showers_this_segment, unique_showers_energies, unique_showers_eta, ticl_instance_id, clustering_coords_all_filtered,
-                       representative_indices, rechit_energies_this_segment)
+        truth_to_ticl, ticl_to_truth = match_to_truth(truth_id, truth_shower_id, truth_shower_energy, truth_shower_eta, ticl_id, pred_ccoords,
+                       representative_indices, hit_energy)
 
 
     num_found = 0.
@@ -440,10 +385,10 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
         results_dict['truth_shower_closest_particle_distance'].append(truth_showers_found_closest_particle_distance[k])
 
         if v > -1:
-            predicted_energy = energy_regressed_filtered[predicted_showers_representative_index[v]]
+            predicted_energy = pred_energy[predicted_showers_representative_index[v]]
 
             results_dict['truth_showers_found_or_not'].append(True)
-            results_dict['truth_shower_matched_energies_sum'].append(np.sum(rechit_energies_this_segment[labels_for_all==v]))
+            results_dict['truth_shower_matched_energies_sum'].append(np.sum(hit_energy[pred_sid==v]))
             results_dict['truth_shower_matched_energies_regressed'].append(predicted_energy)
 
             num_found += 1
@@ -459,10 +404,10 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
             ticl_found = truth_to_ticl[k]
 
             if ticl_found > -1:
-                predicted_energy = ticl_true_energy[ticl_instance_id==ticl_found][0]
+                predicted_energy = ticl_energy[ticl_id==ticl_found][0]
 
                 results_dict['truth_showers_found_or_not_ticl'].append(True)
-                results_dict['truth_shower_matched_energies_sum_ticl'].append(np.sum(rechit_energies_this_segment[ticl_instance_id==v]))
+                results_dict['truth_shower_matched_energies_sum_ticl'].append(np.sum(hit_energy[ticl_id==v]))
                 results_dict['truth_shower_matched_energies_regressed_ticl'].append(predicted_energy)
 
                 num_found_ticl += 1
@@ -516,12 +461,12 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     predicted_ticl_total = 0
     if use_ticl:
         for k, v in ticl_to_truth.items():
-            shower_energy_predicted = ticl_true_energy[ticl_instance_id==k][0]
+            shower_energy_predicted = ticl_energy[ticl_id==k][0]
             predicted_ticl_total += shower_energy_predicted
             
-            shower_eta_predicted = 0#eta_regressed_filtered[filtered_index_predicted]
-            shower_phi_predicted = 0#phi_regressed_filtered[filtered_index_predicted]
-            shower_energy_sum_predicted = np.sum(rechit_energies_this_segment[ticl_instance_id == k])
+            shower_eta_predicted = 0#pred_x[filtered_index_predicted]
+            shower_phi_predicted = 0#pred_y[filtered_index_predicted]
+            shower_energy_sum_predicted = np.sum(hit_energy[ticl_id == k])
 
             results_dict['ticl_showers_regressed_energy'].append(shower_energy_predicted)
             results_dict['ticl_showers_predicted_energy_sum'].append(shower_energy_sum_predicted)
@@ -529,10 +474,10 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
             results_dict['ticl_showers_regressed_eta'].append(shower_eta_predicted)
 
             if v > -1:
-                shower_energy_truth = energy_truth_all[truth_showers_this_segment == v][0]
-                shower_eta_truth = eta_truth_all[truth_showers_this_segment == v][0]
-                shower_phi_truth = phi_truth_all[truth_showers_this_segment == v][0]
-                shower_energy_sum_truth = np.sum(rechit_energies_this_segment[truth_showers_this_segment == v])
+                shower_energy_truth = truth_energy[truth_id == v][0]
+                shower_eta_truth = truth_x[truth_id == v][0]
+                shower_phi_truth = truth_y[truth_id == v][0]
+                shower_energy_sum_truth = np.sum(hit_energy[truth_id == v])
 
 
                 results_dict['ticl_showers_matched_energy'].append(shower_energy_truth)
@@ -564,12 +509,12 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
     for k, v in predicted_showers_found.items():
         filtered_index_predicted = predicted_showers_representative_index[k]
 
-        shower_energy_predicted = energy_regressed_filtered[filtered_index_predicted]
+        shower_energy_predicted = pred_energy[filtered_index_predicted]
         predicted_total_obc += shower_energy_predicted
 
-        shower_eta_predicted = eta_regressed_filtered[filtered_index_predicted]
-        shower_phi_predicted = phi_regressed_filtered[filtered_index_predicted]
-        shower_energy_sum_predicted = np.sum(rechit_energies_this_segment[labels_for_all==k])
+        shower_eta_predicted = pred_x[filtered_index_predicted]
+        shower_phi_predicted = pred_y[filtered_index_predicted]
+        shower_energy_sum_predicted = np.sum(hit_energy[pred_sid==k])
 
         results_dict['predicted_showers_regressed_energy'].append(shower_energy_predicted)
         results_dict['predicted_showers_predicted_energy_sum'].append(shower_energy_sum_predicted)
@@ -577,10 +522,10 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
         results_dict['predicted_showers_regressed_eta'].append(shower_eta_predicted)
 
         if v > -1:
-            shower_energy_truth = energy_truth_all[truth_showers_this_segment==v][0]
-            shower_eta_truth = eta_truth_all[truth_showers_this_segment==v][0]
-            shower_phi_truth = phi_truth_all[truth_showers_this_segment==v][0]
-            shower_energy_sum_truth = np.sum(rechit_energies_this_segment[truth_showers_this_segment==v])
+            shower_energy_truth = truth_energy[truth_id==v][0]
+            shower_eta_truth = truth_x[truth_id==v][0]
+            shower_phi_truth = truth_y[truth_id==v][0]
+            shower_energy_sum_truth = np.sum(hit_energy[truth_id==v])
 
             # results_dict['found_showers_predicted_sum'].append(shower_energy_sum_predicted)
             # results_dict['found_showers_truth_sum'].append(shower_energy_sum_truth)
@@ -638,11 +583,11 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
 
     if should_return_visualization_data:
         vis_dict = build_window_visualization_dict()
-        vis_dict['truth_showers'] = truth_showers_this_segment# replace(truth_showers_this_segment, replace_dictionary)
+        vis_dict['truth_showers'] = truth_id# replace(truth_id, replace_dictionary)
 
         replace_dictionary = copy.deepcopy(predicted_showers_found)
         replace_dictionary_2 = copy.deepcopy(replace_dictionary)
-        start_secondary_indicing_from = np.max(truth_showers_this_segment) + 1
+        start_secondary_indicing_from = np.max(truth_id) + 1
         for k, v in replace_dictionary.items():
             if v == -1 and k != -1:
                 replace_dictionary_2[k] = start_secondary_indicing_from
@@ -650,33 +595,33 @@ def analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_se
         replace_dictionary = replace_dictionary_2
 
         # print("===============")
-        # print(np.unique(labels_for_all), replace_dictionary)
-        vis_dict['predicted_showers'] = replace(labels_for_all, replace_dictionary)
+        # print(np.unique(pred_sid), replace_dictionary)
+        vis_dict['predicted_showers'] = replace(pred_sid, replace_dictionary)
 
         # print(predicted_showers_found)
 
-        # print(np.mean((labels_for_all==-1)).astype(np.float))
+        # print(np.mean((pred_sid==-1)).astype(np.float))
 
         if use_ticl:
             replace_dictionary = copy.deepcopy(ticl_to_truth)
             replace_dictionary_2 = copy.deepcopy(replace_dictionary)
-            start_secondary_indicing_from = np.max(truth_showers_this_segment) + 1
+            start_secondary_indicing_from = np.max(truth_id) + 1
             for k, v in replace_dictionary.items():
                 if v == -1 and k != -1:
                     replace_dictionary_2[k] = start_secondary_indicing_from
                     start_secondary_indicing_from += 1
             replace_dictionary = replace_dictionary_2
 
-            # print(np.unique(ticl_instance_id), replace_dictionary)
-            vis_dict['ticl_showers'] = replace(ticl_instance_id, replace_dictionary)
+            # print(np.unique(ticl_id), replace_dictionary)
+            vis_dict['ticl_showers'] = replace(ticl_id, replace_dictionary)
         else:
-            vis_dict['ticl_showers'] = labels_for_all*10
+            vis_dict['ticl_showers'] = pred_sid*10
 
         vis_dict['pred_and_truth_dict'] = pred_and_truth_dict
         vis_dict['feature_dict'] = feature_dict
 
         vis_dict['coords_representatives'] = representative_coords
-        vis_dict['identified_vertices'] = labels_for_all
+        vis_dict['identified_vertices'] = pred_sid
 
 
         results_dict['visualization_data'] = vis_dict
@@ -693,7 +638,7 @@ num_rechits_per_segment = []
 num_rechits_per_shower = []
 
 
-def analyse_one_file(features, predictions, truth, soft=False):
+def analyse_one_file(features, predictions, truth_in, soft=False):
     global num_visualized_segments, num_segments_to_visualize
     global dataset_analysis_dict
 
@@ -701,25 +646,30 @@ def analyse_one_file(features, predictions, truth, soft=False):
 
     row_splits = features[1][:, 0]
 
-    x_data, _ = ragged_constructor((features[0], row_splits))
-    y_data, _ = ragged_constructor((truth[0], row_splits))
-    truth_showers, row_splits = ragged_constructor((truth[0][:, 0][..., tf.newaxis], row_splits))
-
-    truth_showers = tf.cast(truth_showers[:, 0], tf.int32)
+    features, _ = ragged_constructor((features[0], row_splits))
+    truth, _ = ragged_constructor((truth_in[0], row_splits))
+    
+    hit_assigned_truth_id, row_splits = ragged_constructor((truth_in[0][:, 0][..., tf.newaxis], row_splits))
+    
+    #make 100% sure the cast doesn't hit the fan
+    hit_assigned_truth_id = tf.where(hit_assigned_truth_id<-0.1, hit_assigned_truth_id - 0.1, hit_assigned_truth_id+0.1)
+    hit_assigned_truth_id = tf.cast(hit_assigned_truth_id[:, 0], tf.int32)
 
     num_unique = []
     shower_sizes = []
 
+    # here ..._s refers to quantities per window/segment
+    #
     for i in range(len(row_splits) - 1):
-        truth_showers_this_segment = truth_showers[row_splits[i]:row_splits[i + 1]].numpy()
-        x_this_segment = x_data[row_splits[i]:row_splits[i + 1]].numpy()
-        y_this_segment = y_data[row_splits[i]:row_splits[i + 1]].numpy()
-        pred_this_segment = predictions[row_splits[i]:row_splits[i + 1]].numpy()
+        hit_assigned_truth_id_s = hit_assigned_truth_id[row_splits[i]:row_splits[i + 1]].numpy()
+        features_s = features[row_splits[i]:row_splits[i + 1]].numpy()
+        truth_s = truth[row_splits[i]:row_splits[i + 1]].numpy()
+        prediction_s = predictions[row_splits[i]:row_splits[i + 1]].numpy()
 
         if num_visualized_segments < num_segments_to_visualize:
-            window_analysis_dict = analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, True, soft=soft)
+            window_analysis_dict = analyse_one_window_cut(hit_assigned_truth_id_s, features_s, truth_s, prediction_s, beta_threshold, distance_threshold, True, soft=soft)
         else:
-            window_analysis_dict = analyse_one_window_cut(truth_showers_this_segment, x_this_segment, y_this_segment, pred_this_segment, beta_threshold, distance_threshold, False, soft=soft)
+            window_analysis_dict = analyse_one_window_cut(hit_assigned_truth_id_s, features_s, truth_s, prediction_s, beta_threshold, distance_threshold, False, soft=soft)
 
         append_window_dict_to_dataset_dict(dataset_analysis_dict, window_analysis_dict)
         num_visualized_segments += 1
