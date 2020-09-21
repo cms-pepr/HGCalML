@@ -940,7 +940,7 @@ def efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, ax, _found
 
 
         m = np.mean(filtered_found)
-        print(np.sum(filtered_found), len(filtered_found), m, l, h)
+        #print(np.sum(filtered_found), len(filtered_found), m, l, h)
 
         mt = np.mean(filtered_found_ticl)
         mean.append(m)
@@ -2123,14 +2123,14 @@ def draw_text_page(plt, s):
 
 
 def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict):
-    global truth_energies, found_truth_energies_is_it_found, found_truth_energies_energies_truth
-    global  num_real_showers, num_predicted_showers
-    global  num_found_g, num_missed_g, num_fakes_g, pdf
-    global found_2_truth_energies_predicted_sum, found_2_truth_energies_truth_sum
-    global found_2_truth_rotational_distance
-    global found_2_truth_predicted_energies
-    global found_2_truth_target_energies
-    global num_rechits_per_shower, num_rechits_per_segment
+    #global truth_energies, found_truth_energies_is_it_found, found_truth_energies_energies_truth
+    #global  num_real_showers, num_predicted_showers
+    #global  num_found_g, num_missed_g, num_fakes_g, pdf
+    #global found_2_truth_energies_predicted_sum, found_2_truth_energies_truth_sum
+    #global found_2_truth_rotational_distance
+    #global found_2_truth_predicted_energies
+    #global found_2_truth_target_energies
+    #global num_rechits_per_shower, num_rechits_per_segment
 
     dataset_analysis_dict = convert_dataset_dict_elements_to_numpy(dataset_analysis_dict)
     pdf = PdfPages(pdfpath)
@@ -2164,161 +2164,6 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
     fake_rate_comparison_with_distribution_fo_energy(plt, ax,dataset_analysis_dict['predicted_showers_regressed_energy'], dataset_analysis_dict['predicted_showers_matched_energy'], dataset_analysis_dict['ticl_showers_regressed_energy'], dataset_analysis_dict['ticl_showers_matched_energy'], energy_filter=2)
     pdf.savefig()
     #################################################################################
-
-
-    # fig = plt.figure()
-    # make_truth_energy_histogram(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'])
-    # pdf.savefig()
-    #
-    #
-    # print("XYZ", len(dataset_analysis_dict['predicted_showers_predicted_energy_sum']), len(dataset_analysis_dict['predicted_showers_matched_energy']))
-    #
-    # a = np.array(dataset_analysis_dict['predicted_showers_predicted_energy_sum'])
-    # b =  np.array(dataset_analysis_dict['predicted_showers_regressed_energy'])
-    # c =  np.array(dataset_analysis_dict['predicted_showers_matched_energy'])
-    #
-    # a = a[c==-1]
-    # b = b[c==-1]
-    # fig = plt.figure()
-    # make_fake_energy_sum_histogram(plt, fig.axes, a)
-    # pdf.savefig()
-    # fig = plt.figure()
-    # make_fake_energy_regressed_histogram(plt, fig.axes, b)
-    # pdf.savefig()
-    #
-    #
-    # a = np.array(dataset_analysis_dict['ticl_showers_predicted_energy_sum'])
-    # b =  np.array(dataset_analysis_dict['ticl_showers_regressed_energy'])
-    # c =  np.array(dataset_analysis_dict['ticl_showers_matched_energy'])
-    #
-    # a = a[c==-1]
-    # b = b[c==-1]
-    # fig = plt.figure()
-    # make_fake_energy_sum_histogram(plt, fig.axes, a, ticl=True)
-    # pdf.savefig()
-    # fig = plt.figure()
-    # make_fake_energy_regressed_histogram(plt, fig.axes, b, ticl=True)
-    # pdf.savefig()
-    #
-    #
-    #
-    # fig = plt.figure()
-    # make_fake_rate_plot_as_function_of_fake_energy(plt, fig.axes, dataset_analysis_dict['predicted_showers_regressed_energy'], dataset_analysis_dict['predicted_showers_matched_energy'], False)
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_fake_rate_plot_as_function_of_fake_energy(plt, fig.axes, dataset_analysis_dict['ticl_showers_regressed_energy'], dataset_analysis_dict['ticl_showers_matched_energy'], False, ticl=True)
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_fake_rate_plot_as_function_of_fake_energy(plt, fig.axes, dataset_analysis_dict['predicted_showers_predicted_energy_sum'], dataset_analysis_dict['predicted_showers_matched_energy_sum'], True)
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_fake_rate_plot_as_function_of_fake_energy(plt, fig.axes, dataset_analysis_dict['ticl_showers_predicted_energy_sum'], dataset_analysis_dict['ticl_showers_matched_energy_sum'], True, ticl=True)
-    # pdf.savefig()
-    #
-    #
-    #
-    # fig = plt.figure()
-    # make_energy_hists(plt, fig.axes, dataset_analysis_dict['predicted_showers_predicted_energy_sum'], dataset_analysis_dict['predicted_showers_matched_energy_sum'], dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_showers_found_or_not'], True)
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_energy_hists(plt, fig.axes, dataset_analysis_dict['ticl_showers_predicted_energy_sum'], dataset_analysis_dict['ticl_showers_matched_energy_sum'], dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_showers_found_or_not_ticl'], True, ticl=True)
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_response_histograms(plt, fig.axes, dataset_analysis_dict['predicted_showers_predicted_energy_sum'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['predicted_showers_matched_energy_sum'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['predicted_showers_regressed_energy'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['predicted_showers_matched_energy'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1])
-    # pdf.savefig()
-    #
-    #
-    #
-    #
-    # fig = plt.figure()
-    # make_response_histograms(plt, fig.axes, dataset_analysis_dict['ticl_showers_predicted_energy_sum'][dataset_analysis_dict['ticl_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['ticl_showers_matched_energy_sum'][dataset_analysis_dict['ticl_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['ticl_showers_regressed_energy'][dataset_analysis_dict['ticl_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['ticl_showers_matched_energy'][dataset_analysis_dict['ticl_showers_matched_energy_sum']!=-1], ticl=True)
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_response_histograms_energy_segmented(plt, fig.axes, dataset_analysis_dict['predicted_showers_predicted_energy_sum'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['predicted_showers_matched_energy_sum'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['predicted_showers_regressed_energy'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['predicted_showers_matched_energy'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1])
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_response_histograms_energy_segmented(plt, fig.axes, dataset_analysis_dict['ticl_showers_predicted_energy_sum'][dataset_analysis_dict['ticl_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['ticl_showers_matched_energy_sum'][dataset_analysis_dict['ticl_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['ticl_showers_regressed_energy'][dataset_analysis_dict['ticl_showers_matched_energy_sum']!=-1],
-    #                          dataset_analysis_dict['ticl_showers_matched_energy'][dataset_analysis_dict['ticl_showers_matched_energy_sum']!=-1], ticl=True)
-    # pdf.savefig()
-    #
-    #
-    #
-    # fig = plt.figure()
-    # # make_truth_predicted_rotational_distance_histogram(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_truth_rotational_difference'])
-    # make_truth_predicted_rotational_distance_histogram(
-    #     plt, fig.axes, dataset_analysis_dict['predicted_showers_regressed_eta'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                    dataset_analysis_dict['predicted_showers_matched_eta'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                    dataset_analysis_dict['predicted_showers_regressed_phi'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    #                    dataset_analysis_dict['predicted_showers_matched_phi'][dataset_analysis_dict['predicted_showers_matched_energy_sum']!=-1],
-    # )
-    # pdf.savefig()
-    #
-    #
-    #
-    # fig = plt.figure()
-    # # make_truth_predicted_rotational_distance_histogram(plt, fig.axes, dataset_analysis_dict['found_showers_predicted_truth_rotational_difference'])
-    # make_truth_predicted_rotational_distance_histogram(
-    #     plt, fig.axes, dataset_analysis_dict['ticl_showers_regressed_eta'][dataset_analysis_dict['ticl_showers_matched_eta']!=-1],
-    #                    dataset_analysis_dict['ticl_showers_matched_eta'][dataset_analysis_dict['ticl_showers_matched_eta']!=-1],
-    #                    dataset_analysis_dict['ticl_showers_regressed_phi'][dataset_analysis_dict['ticl_showers_matched_eta']!=-1],
-    #                    dataset_analysis_dict['ticl_showers_matched_phi'][dataset_analysis_dict['ticl_showers_matched_eta']!=-1],
-    # )
-    # pdf.savefig()
-    #
-    #
-    # for vis_dict in dataset_analysis_dict['visualized_segments']:
-    #     visualize_the_segment(plt, vis_dict['truth_showers'], vis_dict['pred_and_truth_dict'], vis_dict['feature_dict'],
-    #         vis_dict['ticl_showers'], vis_dict['predicted_showers'], vis_dict['coords_representatives'], dataset_analysis_dict['distance_threshold'])
-    #     pdf.savefig()
-
-
-    # pdf2 = PdfPages("separate.pdf")
-    # for vis_dict in dataset_analysis_dict['visualized_segments']:
-    #     visualize_the_segment_separate(pdf2, plt, vis_dict['truth_showers'], vis_dict['x'], vis_dict['y'],
-    #         vis_dict['prediction_all'], vis_dict['ticl_showers'], vis_dict['predicted_showers'], vis_dict['coords_representatives'], dataset_analysis_dict['distance_threshold'])
-    #     # pdf.savefig()
-    # pdf2.close()
-    #
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_energy(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_showers_found_or_not'])
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_energy(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_showers_found_or_not_ticl'], ticl=True)
-    # pdf.savefig()
-    #
-    #
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_local_density(plt, fig.axes, dataset_analysis_dict['truth_shower_local_density'], dataset_analysis_dict['truth_showers_found_or_not'])
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_local_density(plt, fig.axes, dataset_analysis_dict['truth_shower_local_density'], dataset_analysis_dict['truth_showers_found_or_not_ticl'], ticl=True)
-    # pdf.savefig()
 
 
 
@@ -2428,109 +2273,6 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
     pdf.savefig()
 
     #################################################################################
-
-    #
-    # fig, ax = plt.subplots()
-    # hist_2d_found_efficiency_vs_local_fraction_and_truth_shower_energy(plt, ax, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_shower_local_density'], dataset_analysis_dict['truth_showers_found_or_not'], dataset_analysis_dict['truth_showers_found_or_not_ticl'])
-    # pdf.savefig()
-
-
-
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_closest_particle_distance(plt, fig.axes, dataset_analysis_dict['truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_showers_found_or_not'])
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_closest_particle_distance(plt, fig.axes, dataset_analysis_dict['truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_showers_found_or_not_ticl'], ticl=True)
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_energy_response_curve_as_a_function_of_truth_energy(plt, fig.axes, dataset_analysis_dict[
-    #     'truth_shower_energies'], dataset_analysis_dict['truth_shower_matched_energies_regressed'])
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_energy_response_curve_as_a_function_of_truth_energy(plt, fig.axes, dataset_analysis_dict[
-    #     'truth_shower_energies'], dataset_analysis_dict['truth_shower_matched_energies_regressed_ticl'], ticl=True)
-    # pdf.savefig()
-
-    # fig = plt.figure()
-    # make_energy_response_curve_as_a_function_of_closest_particle_distance(plt, fig.axes, dataset_analysis_dict[
-    #     'truth_shower_closest_particle_distance'], dataset_analysis_dict[
-    #     'truth_shower_energies_sum'], dataset_analysis_dict['truth_shower_matched_energies_sum'])
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_energy_response_curve_as_a_function_of_closest_particle_distance(plt, fig.axes, dataset_analysis_dict[
-    #     'truth_shower_closest_particle_distance'], dataset_analysis_dict[
-    #     'truth_shower_energies_sum'], dataset_analysis_dict['truth_shower_matched_energies_sum_ticl'], ticl=True)
-    # pdf.savefig()
-    #
-    #
-    #
-    # fig = plt.figure()
-    # make_energy_response_curve_as_a_function_of_local_energy_density(plt, fig.axes, dataset_analysis_dict[
-    #     'truth_shower_local_density'], dataset_analysis_dict[
-    #     'truth_shower_energies_sum'], dataset_analysis_dict['truth_shower_matched_energies_sum'])
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_energy_response_curve_as_a_function_of_local_energy_density(plt, fig.axes, dataset_analysis_dict[
-    #     'truth_shower_local_density'], dataset_analysis_dict[
-    #     'truth_shower_energies_sum'], dataset_analysis_dict['truth_shower_matched_energies_sum_ticl'], ticl=True)
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_pt(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_shower_etas'], dataset_analysis_dict['truth_showers_found_or_not'])
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_pt(plt, fig.axes, dataset_analysis_dict['truth_shower_energies'], dataset_analysis_dict['truth_shower_etas'], dataset_analysis_dict['truth_showers_found_or_not_ticl'], ticl=True)
-    # pdf.savefig()
-    #
-    #
-    #
-    #
-    # fig = plt.figure()
-    # make_real_predicted_number_of_showers_histogram(plt, fig.axes, dataset_analysis_dict['num_real_showers'], dataset_analysis_dict['num_predicted_showers'])
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_real_predicted_number_of_showers_histogram(plt, fig.axes, dataset_analysis_dict['num_real_showers'], dataset_analysis_dict['num_predicted_showers_ticl'], ticl=True)
-    # pdf.savefig()
-    #
-    #
-    #
-    # fig = plt.figure()
-    # make_histogram_of_number_of_rechits_per_shower(plt, fig.axes, dataset_analysis_dict['num_rechits_per_truth_shower'])
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_histogram_of_number_of_rechits_per_segment(plt, fig.axes, dataset_analysis_dict['num_rechits_per_window'])
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_histogram_of_number_of_showers_per_segment(plt, fig.axes, dataset_analysis_dict['num_real_showers'])
-    # pdf.savefig()
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_number_of_truth_showers(plt, fig.axes, dataset_analysis_dict['num_real_showers'], dataset_analysis_dict['num_found_showers'], dataset_analysis_dict['num_missed_showers'], dataset_analysis_dict['num_fake_showers'], dataset_analysis_dict['num_predicted_showers'])
-    # pdf.savefig()
-    #
-    #
-    # fig = plt.figure()
-    # make_found_showers_plot_as_function_of_number_of_truth_showers(plt, fig.axes, dataset_analysis_dict['num_real_showers'], dataset_analysis_dict['num_found_showers_ticl'], dataset_analysis_dict['num_missed_showers_ticl'], dataset_analysis_dict['num_fake_showers_ticl'], dataset_analysis_dict['num_predicted_showers_ticl'], ticl=True)
-    # pdf.savefig()
-    #
-    # # fig = plt.figure()
-    # # make_found_showers_plot_as_function_of_number_of_truth_showers_2(plt, fig.axes, dataset_analysis_dict['num_real_showers'], dataset_analysis_dict['num_found_showers_ticl'], dataset_analysis_dict['num_missed_showers_ticl'], dataset_analysis_dict['num_fake_showers_ticl'], dataset_analysis_dict['num_predicted_showers_ticl'], ticl=True)
-    # # pdf.savefig()
-    #
 
 
     pdf.close()

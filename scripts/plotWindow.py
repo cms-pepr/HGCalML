@@ -63,15 +63,16 @@ def normalise(directions):
 def selectEvent(rs, feat, truth, event):
     
     #get event
-    feat = feat[rs[event]:rs[event+1],...]
+    featout = feat[rs[event]:rs[event+1],...]
     
     #print(feat.shape)
-    return feat, truth[rs[event]:rs[event+1],...]
+    return featout, truth[rs[event]:rs[event+1],...]
 
 
 
 def makePlot(outfile, 
              rechit_e, rechit_x, rechit_y, rechit_z,
+             is_track,
              truthasso_in,truthenergy,
              truthX,truthY,truthZ,
              truthdirX,truthdirY,truthdirZ,
@@ -134,7 +135,7 @@ def makePlot(outfile,
     print('totalenergy ',totalenergy)
     print('noisefraction ',noisefraction)
     print('noise energy ',totalenergy - nonoise_energy)
-    
+    print('tracks',np.sum(is_track))
     #randomise the colours a bit
     
     
@@ -147,6 +148,12 @@ def makePlot(outfile,
               s=np.log(rechit_e + 1.)+0.1,
               c=rgbcolor)
     
+    
+    ax[2].scatter(rechit_x[is_track], rechit_y[is_track],
+              s=scatter_size[is_track]*10.,
+              c=rgbcolor[is_track]/2.,
+              marker='x')
+    
     scatter_size[not_assigned] = 0
     ax[3].scatter(rechit_x, rechit_y,
               s=scatter_size,
@@ -158,6 +165,11 @@ def makePlot(outfile,
                   s = 1.0,
                   marker='+',
                   c='k')
+    
+    ax[3].scatter(rechit_x[is_track], rechit_y[is_track],
+              s=scatter_size[is_track]*10.,
+              c=rgbcolor[is_track]/2.,
+              marker='x')
     
     sel_truth_e = truthenergy[select>0.1][truth_sel]
     sel_real_truth_e=None
@@ -295,31 +307,25 @@ if args.default:
 
 
 td = TrainData()
-recHitPhi=None
+
 if infile[-5:] == "djctd":
     td.readFromFile(infile)
 else:
-    from datastructures import TrainData_window
-    td=TrainData_window()
+    from datastructures import TrainData_window, TrainData_window_tracks
+    td=TrainData_window_tracks()
     td.readFromSourceFile(infile, treename=treename)
     print("nelements",td.nElements())
     
-    tree = uproot.open(infile)[treename]
-    selection = (tree["recHitEnergy"]).array() > 0
-    recHitPhi  = td.branchToFlatArray(tree["recHitPhi"], False,selection)
 #td.skim(event)
 feat_rs = td.transferFeatureListToNumpy()
 truth_rs = td.transferTruthListToNumpy()
 
 
-
 feat = feat_rs[0]
+hitid = feat[:,2:3].copy()
+feat[:,2]=np.arctan2(feat[:,6], feat[:,5])#swapped somehow
 
-if recHitPhi is not None:
-    feat[:,2]=recHitPhi[:,0]
-else:
-    feat[:,2]=np.arctan2(feat[:,6], feat[:,5])#swapped somehow
-
+feat = np.concatenate([feat,hitid],axis=-1)
 rs = feat_rs[1][:,0]
 truth = truth_rs[0]
 
@@ -340,6 +346,7 @@ def worker(eventno, show=False):
     
     #just to get the plot right
     phi_mean = np.arctan2(np.mean(rechit_x),np.mean(rechit_y))
+    is_track = pfeat[:,-1] < 0
     
     #rechit_phi -= phi_mean
     #rechit_phi = np.unwrap(rechit_phi)
@@ -373,7 +380,7 @@ def worker(eventno, show=False):
     #with plt.xkcd():
     print('>>>>>>>>>>>>>> plotting x/y')
     makePlot(outdir+str(eventno), 
-             rechit_e.copy(), rechit_x.copy(), rechit_y.copy(), rechit_z.copy(),
+             rechit_e.copy(), rechit_x.copy(), rechit_y.copy(), rechit_z.copy(),is_track.copy(),
              truthasso.copy(),truthenergy.copy(),
              truthX.copy(),truthY.copy(),truthZ.copy(),
              truthdirX.copy(),truthdirY.copy(),truthdirZ.copy(),
@@ -384,7 +391,7 @@ def worker(eventno, show=False):
     
     print('>>>>>>>>>>>>>> plotting eta/phi')
     makePlot(outdir+"etaphir_"+str(eventno), 
-             rechit_e.copy(), rechit_eta.copy(), rechit_phi.copy(), rechit_r.copy(),
+             rechit_e.copy(), rechit_eta.copy(), rechit_phi.copy(), rechit_r.copy(),is_track.copy(),
              truthasso.copy(),truthenergy.copy(),
              truthEta.copy(),truthPhi.copy(),truthR.copy(),
              truthdirEta.copy(),truthdirPhi.copy(),truthdirR.copy(),
@@ -397,7 +404,7 @@ def worker(eventno, show=False):
     
     print('>>>>>>>>>>>>>> plotting ticl')
     makePlot(outdir+"ticl_"+str(eventno), 
-             rechit_e.copy(), rechit_x.copy(), rechit_y.copy(), rechit_z.copy(),
+             rechit_e.copy(), rechit_x.copy(), rechit_y.copy(), rechit_z.copy(),is_track.copy(),
              ticlAsso.copy(),truthenergy.copy(),
              truthX.copy(),truthY.copy(),truthZ.copy(),
              truthdirX.copy(),truthdirY.copy(),truthdirZ.copy(),

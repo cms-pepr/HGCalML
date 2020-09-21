@@ -41,8 +41,9 @@ def indep_energy_block(x, ccoords, beta, x_row_splits):
     energy = energy #linear
     return energy
 
-def indep_energy_block2(x, energy, ccoords, beta, x_row_splits, energy_proxy=None):
-    x = StopGradient()(x)
+def indep_energy_block2(x, energy, ccoords, beta, x_row_splits, energy_proxy=None, stopxgrad=False):
+    if stopxgrad:
+        x = StopGradient()(x)
     energy = StopGradient()(energy)
     ccoords = StopGradient()(ccoords)
     beta = StopGradient()(beta)
@@ -60,6 +61,7 @@ def indep_energy_block2(x, energy, ccoords, beta, x_row_splits, energy_proxy=Non
     sx = Dense(128, activation='elu',name="dense_set_sum_input_b")(sx)
     sx = Dense(128, activation='elu',name="dense_set_sum_input_c")(sx)
     
+    #deep set like approach
     sx = Concatenate()([RaggedSumAndScatter()([sx, psrs, belongs_to_prs]) ,sx])
                                                    
     feat.append(VertexScatterer()([sx, sids, sx]))
@@ -83,7 +85,7 @@ def indep_energy_block2(x, energy, ccoords, beta, x_row_splits, energy_proxy=Non
     
     x = Dense(64, activation='elu',name="dense_last_enblock_1")(x)
     x = Dense(64, activation='elu',name="dense_last_enblock_2")(x)
-    energy = None
+    #energy = None
 
     energy = Dense(1, activation=None,name="predicted_energy")(x)
     
@@ -132,7 +134,9 @@ def create_default_outputs(raw_inputs, x, x_row_splits, energy_block=True, n_cco
     
     #x_raw = BatchNormalization(momentum=0.6,name="pre_ccoords_bn")(raw_inputs)
     #pre_ccoords = Dense(64, activation='elu',name="pre_ccords")(Concatenate()([x,x_raw]))
-    ccoords = Dense(n_ccoords, activation=None, name="predicted_ccoords")(x)
+    ccoords = Dense(2, activation=None, name="predicted_ccoords")(x)
+    if n_ccoords>2:
+        ccoords = Concatenate()([ccoords,Dense(n_ccoords-2, activation=None, name="predicted_ccoords_add")(x)])
     
     xy = Dense(2, activation=None, name="predicted_positions",kernel_initializer='zeros')(x)
     t = Dense(1, activation=None, name="predicted_time",kernel_initializer='zeros')(x)

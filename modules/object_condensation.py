@@ -81,7 +81,7 @@ def oc_per_batch_element(
     beta_in = beta
     beta = tf.clip_by_value(beta, 1e-9,1.-1e-4)
     beta *= (1. - is_spectator)
-    q = tf.math.atanh(beta)**2 + q_min * (1. - is_spectator)
+    q = tf.math.atanh(beta)**2 + q_min * (1. - is_spectator) # V x 1
     
     
     #determine object associations
@@ -106,9 +106,9 @@ def oc_per_batch_element(
     kalpha = tf.argmax(M * tf.expand_dims(beta_in, axis=0), axis=1) # K x 1
     
     x_kalpha = gather_for_obj_from_vert(x, kalpha) # K x 1 x C
-    if use_mean_x:
-        x_kalpha = tf.reduce_sum( M * tf.expand_dims(x,axis=0), axis=1, keepdims=True) # K x 1 x C
-        x_kalpha = tf.math.divide_no_nan(x_kalpha, tf.reduce_sum(M, axis=1, keepdims=True)) # K x 1 x C
+    if use_mean_x: #q weighted mean here
+        x_kalpha = tf.reduce_sum( M * tf.expand_dims(q, axis=0) * tf.expand_dims(x,axis=0), axis=1, keepdims=True) # K x 1 x C
+        x_kalpha = tf.math.divide_no_nan(x_kalpha, tf.reduce_sum(M * tf.expand_dims(q, axis=0), axis=1, keepdims=True)) # K x 1 x C
     
     q_kalpha = gather_for_obj_from_vert(q, kalpha) # K x 1 x 1
     

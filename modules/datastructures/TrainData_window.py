@@ -30,8 +30,11 @@ def _findRechitsSum(showerIdx, recHitEnergy, rs):
         irechitEnergySums = np.zeros_like(irechitEnergy)
         for j in range(len(uniques)):
             s=uniques[j]
+            
             energySum = np.sum(irechitEnergy[ishowerIdx==s])
             irechitEnergySums[ishowerIdx==s] = energySum
+            if s < 0:
+                irechitEnergySums[ishowerIdx==s] = 0
 
         rechitEnergySums.append(irechitEnergySums)
     return rechitEnergySums
@@ -121,7 +124,8 @@ class TrainData_window(TrainData):
 
     
     
-    def base_convertFromSourceFile(self, filename, weighterobjects, istraining, onlytruth, treename="WindowNTupler/tree"):
+    def base_convertFromSourceFile(self, filename, weighterobjects, istraining, onlytruth, treename="WindowNTupler/tree",
+                                   removeTracks=True):
         
         fileTimeOut(filename, 10)#10 seconds for eos to recover 
         
@@ -142,6 +146,10 @@ class TrainData_window(TrainData):
             selection = (tree["recHitEnergy"]).array() > 0
         else:
             selection = np.logical_and(selection, (tree["recHitEnergy"]).array() > 0)
+            
+        
+        if removeTracks:
+            selection = np.logical_and(selection, (tree["recHitID"]).array() > -0.5)
             
         
         recHitEnergy , rs        = self.branchToFlatArray(tree["recHitEnergy"], True,selection)
@@ -170,7 +178,7 @@ class TrainData_window(TrainData):
         truthHitAssignedPhi     = self.branchToFlatArray(tree["truthHitAssignedPhi"], False,selection)  #3
         #truthHitAssignedR       = self.branchToFlatArray(tree["truthHitAssignedR"], False,selection)  #3
         truthHitAssignedDirEta   = self.branchToFlatArray(tree["truthHitAssignedDirEta"], False,selection)  #4
-        truthHitAssignedDirPhi   = self.branchToFlatArray(tree["truthHitAssignedDirPhi"], False,selection)  #4
+        truthHitAssignedDepEnergies   = self.branchToFlatArray(tree["truthHitAssignedDepEnergies"], False,selection)  #4
         truthHitAssignedDirR    = self.branchToFlatArray(tree["truthHitAssignedDirR"], False,selection)  #4
         ## weird shape for this truthHitAssignedPIDs     = self.branchToFlatArray(tree["truthHitAssignedPIDs"], False)
         
@@ -193,6 +201,29 @@ class TrainData_window(TrainData):
         #type_charged_hadron,
         #type_neutral_hadron,
         
+        # For tracks
+        #
+        #     *(data++) = t->obj->p();                  *(data++) = recHit->hit->energy();
+        ####  *(data++) = t->pos.eta();                 *(data++) = recHit->pos.eta();
+        ####  *(data++) = t->pos.phi();                 *(data++) = recHit->pos.phi();
+        ####  *(data++) = t->pos.theta();               *(data++) = recHit->pos.theta();
+        ####  *(data++) = t->pos.mag();                 *(data++) = recHit->pos.mag();
+        ####  *(data++) = t->pos.x();                   *(data++) = recHit->pos.x();
+        ####  *(data++) = t->pos.y();                   *(data++) = recHit->pos.y();
+        ####  *(data++) = t->pos.z();                   *(data++) = recHit->pos.z();
+        ####  *(data++) = t->obj->charge();             *(data++) = (float)recHit->hit->detid();
+        ####  *(data++) = t->obj->chi2();               *(data++) = recHit->hit->time();
+        ####  *(data++) = -1.; //track ID bit           *(data++) = 0.; //rechit ID bit
+        ####  *(data++) = 0.; //pad                     *(data++) = 0.; //pad
+        #
+        
+        #
+        #
+        
+        
+        #make these the only spectators, and set 'energy' to zero
+        
+        
 
         
         truthHitAssignedT   = self.branchToFlatArray(tree["truthHitAssignedT"], False,selection) 
@@ -202,8 +233,18 @@ class TrainData_window(TrainData):
 
 
         # For calculating spectators
-        rechitsSum = findRechitsSum(truthHitAssignementIdx, recHitEnergy, rs)
-        spectator = np.where(recHitEnergy < 0.0005 * rechitsSum, np.ones_like(recHitEnergy), np.zeros_like(recHitEnergy))
+        #rechitsSum = findRechitsSum(truthHitAssignementIdx, recHitEnergy, rs)
+        #spectator = np.where(recHitEnergy < 0.0005 * rechitsSum, np.ones_like(recHitEnergy), np.zeros_like(recHitEnergy))
+        
+        
+        ############ special track treatment for now
+        #make tracks spectators
+        isTrack = recHitID < 0
+        spectator = np.where(isTrack, np.ones_like(isTrack), np.zeros_like(isTrack))
+        recHitEnergy[isTrack] = 0. #don't use track momenta just use as seeds
+        ##############
+        
+    
         
         # If truth shower energy < 5% of sum of rechits, assign rechits sum to it instead
         truthShowerEnergies  = truthHitAssignedEnergies.copy()
@@ -212,13 +253,14 @@ class TrainData_window(TrainData):
         #truthShowerEnergies[rechitsSum<0.25*truthHitAssignedEnergies] = rechitsSum[rechitsSum<0.25*truthHitAssignedEnergies]
 
         #for now!
-        truthShowerEnergies = rechitsSum
-
+        truthShowerEnergies = truthHitAssignedDepEnergies #for now rechitsSum
+        
+        
         
         features = np.concatenate([
             recHitEnergy,
             recHitEta   ,
-            recHitPad, #no phi anymore!
+            recHitID, #indicator if it is track or not
             recHitTheta ,
             recHitR   ,
             recHitX     ,
@@ -226,6 +268,7 @@ class TrainData_window(TrainData):
             recHitZ     ,
             recHitTime  
             ], axis=-1)
+        
         
         farr = simpleArray()
         farr.createFromNumpy(features, rs)
@@ -249,15 +292,17 @@ class TrainData_window(TrainData):
             truthHitAssignedPhi,
             truthHitAssignedT,  #10
             truthHitAssignedDirEta,
-            truthHitAssignedDirPhi, #12
+            np.zeros_like(truthHitAssignedDirEta), #12
             truthHitAssignedDirR,
             spectator,#14
             truthHitAssignedEnergies,#15
-            rechitsSum, #16
+            truthHitAssignedDepEnergies, #16
             ticlHitAssignementIdx  , #17
             ticlHitAssignedEnergies, #18
             truthHitAssignedPIDs    #19 - 19+n_classes
             ], axis=-1)
+        
+        
         
         tarr = simpleArray()
         tarr.createFromNumpy(truth, rs)
@@ -288,6 +333,17 @@ class TrainData_window(TrainData):
     def bla(self):
         print("hello")
     
+    
+    
+class TrainData_window_tracks(TrainData_window):
+    def __init__(self):
+        TrainData_window.__init__(self)
+        
+    def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="WindowNTupler/tree"):
+        return self.base_convertFromSourceFile(filename, weighterobjects, istraining, onlytruth=False, treename=treename,
+                                               removeTracks=False)
+ 
+     
 class TrainData_window_defaulttruth(TrainData_window):
     def __init__(self):
         TrainData_window.__init__(self)
