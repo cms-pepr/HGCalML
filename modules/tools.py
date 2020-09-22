@@ -8,6 +8,20 @@ import gc
 import copy
 import ctypes
 import matplotlib.pyplot as plt
+import math
+
+
+
+def delta_phi(phi1, phi2):
+    delta = phi1-phi2
+    while delta > math.pi:
+        delta -=2*math.pi
+    while delta < -math.pi:
+        delta +=2*math.pi
+    return delta
+
+
+
 
 def make_shared(arr):
     fulldim=1

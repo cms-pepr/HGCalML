@@ -41,7 +41,7 @@ def indep_energy_block(x, ccoords, beta, x_row_splits):
     energy = energy #linear
     return energy
 
-def indep_energy_block2(x, energy, ccoords, beta, x_row_splits, energy_proxy=None, stopxgrad=False):
+def indep_energy_block2(x, energy, ccoords, beta, x_row_splits, energy_proxy=None, stopxgrad=True):
     if stopxgrad:
         x = StopGradient()(x)
     energy = StopGradient()(energy)
