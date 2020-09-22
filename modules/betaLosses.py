@@ -63,7 +63,7 @@ def pre_training_loss(truth, pred):
 
 def batch_spectator_penalty(isspect,beta):
     out = tf.reduce_sum(isspect * beta )
-    out /= tf.reduce_sum(isspect)+1e-3
+    out = tf.math.divide_no_nan(out,tf.reduce_sum(isspect))
     return out
 
 def spectator_penalty(d,row_splits):
