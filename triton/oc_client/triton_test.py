@@ -95,7 +95,7 @@ if __name__ == '__main__':
     np_rs_type = 'int64'
     tr_rs_type = 'INT64'
         
-    nbatches = 2
+    nbatches = 10
 
 
     datadir = "/oc_client/testdata/"

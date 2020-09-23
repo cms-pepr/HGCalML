@@ -2,7 +2,7 @@
 
 docker network create oc-network
 
-docker run --rm -it -p8000:8000 -p8001:8001 -p8002:8002 \ # add --gpus=all to turn on GPUs, you'll need nvidia driver 450.51
+docker run --rm -it --gpus=all -p8000:8000 -p8001:8001 -p8002:8002 \
        -v`pwd`/oc_models:/oc_models \
        --network oc-network \
        --name ocserver \
