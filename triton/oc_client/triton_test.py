@@ -64,12 +64,6 @@ if __name__ == '__main__':
                         required=False,
                         default=False,
                         help='Enable verbose output')
-    parser.add_argument('-i',
-                        '--int',
-                        action="store_true",
-                        required=False,
-                        default=False,
-                        help='Use int row splits instead of float')
     parser.add_argument('-m',
                         '--model_name',
                         type=str,
@@ -98,29 +92,47 @@ if __name__ == '__main__':
 
     model_name = FLAGS.model_name 
     
-    np_rs_type = 'float32'
-    tr_rs_type = 'FP32'
-    if FLAGS.int:    
-        np_rs_type = 'int64'
-        tr_rs_type = 'INT64'
+    np_rs_type = 'int64'
+    tr_rs_type = 'INT64'
         
+    nbatches = 2
+
+
+    datadir = "/oc_client/testdata/"
+    def getSample(idx):
+        d = np.load(datadir+"np_"+str(idx)+"_feat_0.npy")
+        rs = np.load(datadir+"np_"+str(idx)+"_feat_1.npy")
+        return d,rs
+
+    print('loading data')
+    data=[]
+    for i in range(nbatches):
+        data.append(getSample(i))
+    
 
     mconf = triton_client.get_model_config(model_name, as_json=True)
     print('config:\n', mconf)
     
-    nbatches = 10
     # Loop over testdata and send inferences
     for i in range(nbatches): #just one batch per call for now
         
         inputs = []
         outputs = []
         
-        nhits = 5000
-        hit_data = np.random.rand(nhits,9).astype(np.float32)
+        #nhits = 10000
+        #hit_data = np.random.rand(nhits,9).astype(np.float32)
+        #print(hit_data.shape)
+        #row_splits = np.array([[0],[nhits]],dtype=np_rs_type)#this should be int but lets try for now
+        #row_splits = np.zeros((nhits,1), dtype=np_rs_type)
+        #row_splits[1,0] = nhits
+        #row_splits[-1,0] = 2
+        #print(row_splits.shape)
+    
+        hit_data = data[i][0]
+        row_splits = data[i][1]
         print(hit_data.shape)
-        row_splits = np.array([[0],[nhits]],dtype=np_rs_type)#this should be int but lets try for now
         print(row_splits.shape)
-        
+
         inputs.append(tritongrpcclient.InferInput('input_1', hit_data.shape, 'FP32'))
         inputs.append(tritongrpcclient.InferInput('input_2', row_splits.shape, tr_rs_type)) #INT64
 
@@ -137,7 +149,13 @@ if __name__ == '__main__':
             outputs=outputs
             )
         output0_data = results.as_numpy('predicted_final')
-        print(output0_data)
+        print('output',output0_data,output0_data.shape)
+        
+        print('pass through ok',np.all(output0_data[:,0:9] == hit_data))
+        beta = output0_data[:,9]
+        energy = output0_data[:,10]
+        print('beta min/mean/max', np.min(beta),np.mean(beta),np.max(beta))
+        print('energy min/mean/max', np.min(energy),np.mean(energy),np.max(energy))
         del output0_data
 
     statistics = triton_client.get_inference_statistics(model_name=model_name)
