@@ -46,6 +46,9 @@ def findRechitsSum(showerIdx, recHitEnergy, rs):
 class TrainData_window(TrainData):
     def __init__(self):
         TrainData.__init__(self)
+        
+        #don't use for now
+        #self.input_names=["input_hits","input_row_splits"]
 
 
     
