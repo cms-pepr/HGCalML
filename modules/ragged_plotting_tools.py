@@ -97,7 +97,8 @@ def make_cluster_coordinates_plot(plt, ax,
                                   beta_threshold=0.2, distance_threshold=0.8,
                                   cmap=None,
                                   noalpha=False,
-                                  direct_color=False
+                                  direct_color=False,
+                                  beta_plot_threshold=1e-2
                                   ):
     # data = create_index_dict(truth,pred,usetf=False)
 
@@ -119,11 +120,9 @@ def make_cluster_coordinates_plot(plt, ax,
     rgbcolor[truthHitAssignementIdx < 0] = [0.92, 0.92, 0.92]
     # print(rgbcolor)
     # print(rgbcolor.shape)
-    alphas = predBeta
+    betasel = predBeta > beta_plot_threshold
+    alphas = predBeta**2
     alphas = np.clip(alphas, a_min=1e-2, a_max=1. - 1e-2)
-    # alphas = np.arctanh(alphas)/np.arctanh(1.-1e-2)
-    # alphas *= alphas
-    alphas[alphas < 0.01] = 0.01
     alphas = np.expand_dims(alphas, axis=1)
     if noalpha:
         alphas = np.ones_like(alphas)
@@ -138,18 +137,19 @@ def make_cluster_coordinates_plot(plt, ax,
         rgba_cols /= np.max(rgba_cols) + 1e-3
 
     sorting = np.reshape(np.argsort(alphas, axis=0), [-1])
+    sorted_betasel=betasel[sorting]
 
     if predCCoords.shape[1] == 2:
-        ax.scatter(predCCoords[:, 0][sorting],
-                   predCCoords[:, 1][sorting],
+        ax.scatter(predCCoords[:, 0][sorting][sorted_betasel],
+                   predCCoords[:, 1][sorting][sorted_betasel],
                    s=.25 * matplotlib.rcParams['lines.markersize'] ** 2,
-                   c=rgba_cols[sorting])
+                   c=rgba_cols[sorting][sorted_betasel])
     elif predCCoords.shape[1] == 3:
-        ax.scatter(predCCoords[:, 0][sorting],
-                   predCCoords[:, 1][sorting],
-                   predCCoords[:, 2][sorting],
+        ax.scatter(predCCoords[:, 0][sorting][sorted_betasel],
+                   predCCoords[:, 1][sorting][sorted_betasel],
+                   predCCoords[:, 2][sorting][sorted_betasel],
                    s=.25 * matplotlib.rcParams['lines.markersize'] ** 2,
-                   c=rgba_cols[sorting])
+                   c=rgba_cols[sorting][sorted_betasel])
 
     if beta_threshold < 0. or beta_threshold > 1 or distance_threshold < 0:
         return

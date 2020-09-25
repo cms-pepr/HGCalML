@@ -151,6 +151,8 @@ if __name__ == '__main__':
         output0_data = results.as_numpy('predicted_final')
         print('output',output0_data,output0_data.shape)
         
+        np.savetxt("out"+str(i)+".txt",output0_data,header=str(output0_data.shape[0])+" "+str(output0_data.shape[1]),comments='')
+        
         print('pass through ok',np.all(output0_data[:,0:9] == hit_data))
         beta = output0_data[:,9]
         energy = output0_data[:,10]

@@ -97,6 +97,8 @@ class plotEventDuringTraining(PredictCallback):
                                           data['truthHitAssignementIdx'], #[ V  x 1] or [ V ]
                                           data['predBeta'],               #[ V  x 1] or [ V ]
                                           data['predCCoords'],
+                                          beta_threshold=0.5, distance_threshold=0.75,
+                                          beta_plot_threshold=0.01,
                                           cmap=cmap)
             
             make_original_truth_shower_plot(plt, ax[0], 
@@ -108,10 +110,12 @@ class plotEventDuringTraining(PredictCallback):
                                              cmap=cmap,
                                              predBeta=data['predBeta'])
             
-            angle_in=counter+60.
+            angle_in=10.*counter+60.
             while angle_in>=360: angle_in-=360
             while angle_in<=-360: angle_in-=360
             ax[0].view_init(30, angle_in)
+            if self.n_ccoords == 3:
+                ax[1].view_init(30, angle_in)
             
             predEnergy=data['predEnergy']
             if self.log_energy:

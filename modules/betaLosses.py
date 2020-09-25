@@ -22,7 +22,7 @@ class _obj_cond_config(object):
         self.use_spectators=True
         self.beta_loss_scale=1.
         self.use_average_cc_pos=False
-        self.payload_rel_threshold=0.9
+        self.payload_rel_threshold=0.1
         self.rel_energy_mse=False
         self.smooth_rep_loss=False
         self.pre_train=False
@@ -30,7 +30,8 @@ class _obj_cond_config(object):
         self.downweight_low_energy = True
         self.n_ccoords=2
         self.energy_den_offset=1.
-        
+        self.noise_scaler=1.
+        self.too_much_beta_scale=0.1
         
         self.log_energy=False
 
@@ -163,7 +164,7 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
         d['truthIsSpectator'] = tf.zeros_like(d['truthIsSpectator'])
     
     
-    attractive_loss, rep_loss, noise_loss, min_beta_loss, payload_loss_full = oc_loss(
+    attractive_loss, rep_loss, noise_loss, min_beta_loss, payload_loss_full, too_much_beta_loss = oc_loss(
         
         x = d['predCCoords'],
         beta = d['predBeta'], 
@@ -183,8 +184,10 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     attractive_loss *= config.potential_scaling
     rep_loss *= config.potential_scaling * config.repulsion_scaling
     min_beta_loss *= config.beta_loss_scale
+    noise_loss *= config.noise_scaler
+    too_much_beta_loss *= config.too_much_beta_scale
     
-    spectator_beta_penalty = 0.
+    spectator_beta_penalty = tf.constant(0.)
     if config.use_spectators:
         spectator_beta_penalty =  0.1 * spectator_penalty(d,row_splits)
         spectator_beta_penalty = tf.where(tf.math.is_nan(spectator_beta_penalty),0,spectator_beta_penalty)
@@ -203,7 +206,7 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
     #energy_loss *= 0.0000001
     
     # neglect energy loss almost fully
-    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss + time_loss + pos_loss + spectator_beta_penalty
+    loss = attractive_loss + rep_loss +  min_beta_loss +  noise_loss  + energy_loss + time_loss + pos_loss + spectator_beta_penalty + too_much_beta_loss
     
     loss = tf.debugging.check_numerics(loss,"loss has nan")
 
@@ -222,7 +225,8 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
           'energy_loss', energy_loss.numpy(), 
           'pos_loss', pos_loss.numpy(), 
           'time_loss', time_loss.numpy(), 
-          'spectator_beta_penalty', spectator_beta_penalty)
+          'spectator_beta_penalty', spectator_beta_penalty.numpy(), 
+          'too_much_beta_loss', too_much_beta_loss.numpy())
     
     
     print('time for this loss eval',int((time.time()-start_time)*1000),'ms')

@@ -132,6 +132,13 @@ def oc_per_batch_element(
     B_pen = tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha)), 
                                   tf.reduce_sum(object_weights_kalpha)) # ()
     
+    # beta_in V x 1
+    # object_weights V x 1
+    
+    to_much_B_pen = tf.reduce_sum( beta_in*object_weights ) - tf.reduce_sum(object_weights_kalpha)
+    to_much_B_pen = tf.nn.relu(to_much_B_pen)#min=0
+    to_much_B_pen = tf.math.divide_no_nan(to_much_B_pen,tf.reduce_sum(object_weights))
+    
     ##noise penalty
     Noise_pen = tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise))
     
@@ -145,7 +152,7 @@ def oc_per_batch_element(
     pll = tf.math.divide_no_nan(
         tf.reduce_sum(pll,axis=[0,1]), K  )# (), weights are already normalised in V
     
-    return V_att, V_rep, Noise_pen, B_pen, pll
+    return V_att, V_rep, Noise_pen, B_pen, pll, to_much_B_pen
 
     
 def oc_loss(
@@ -167,10 +174,10 @@ def oc_loss(
         
     batch_size = row_splits.shape[0] - 1
     
-    V_att, V_rep, Noise_pen, B_pen, pll = 5*[tf.constant(0., tf.float32)]
+    V_att, V_rep, Noise_pen, B_pen, pll,to_much_B_pen = 6*[tf.constant(0., tf.float32)]
     
     for b in tf.range(batch_size):
-        att,rep,noise,bp,pl = oc_per_batch_element(
+        att,rep,noise,bp,pl,tmb = oc_per_batch_element(
             
             beta[row_splits[b]:row_splits[b + 1]],
             x[row_splits[b]:row_splits[b + 1]],
@@ -192,6 +199,7 @@ def oc_loss(
         Noise_pen += noise
         B_pen += bp
         pll += pl
+        to_much_B_pen += tmb
     
     bsize = tf.cast(batch_size, dtype='float32') + 1e-6
     V_att /= bsize
@@ -199,5 +207,6 @@ def oc_loss(
     Noise_pen /= bsize
     B_pen /= bsize
     pll /= bsize
+    to_much_B_pen /= bsize
     
-    return V_att, V_rep, Noise_pen, B_pen, pll
+    return V_att, V_rep, Noise_pen, B_pen, pll, to_much_B_pen

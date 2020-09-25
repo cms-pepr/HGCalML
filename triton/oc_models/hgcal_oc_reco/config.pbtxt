@@ -21,13 +21,13 @@ input:
 output:
 [
     {
-        name: "predicted_final",
+        name: "output",
 	data_type: TYPE_FP32,
 	dims:[ -1, 16 ]
     },
     {
-        name: "predicted_final_1",
-	data_type: TYPE_FP32,
-	dims:[ -1, 16 ]
+        name: "output_1",
+	data_type: TYPE_INT32,
+	dims:[ -1, 1 ]
     }
 ]
