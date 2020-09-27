@@ -11,7 +11,7 @@ done
 
 fi
 
-path=/eos/home-j/jkiesele/singularity/triton/
+path=`pwd` #/eos/home-j/jkiesele/singularity/triton/
 image=/eos/home-j/jkiesele/singularity/triton/tritonserver_20.08-tfpepr-py3.sif
 #this is a singularity problem only fixed recently
 unset LD_LIBRARY_PATH
@@ -19,6 +19,8 @@ unset PYTHONPATH
 sing=`which singularity`
 unset PATH
 cd 
-echo "If you see the following error: \"container creation failed: mount /proc/self/fd/10->/var/singularity/mnt/session/rootfs error ...\" please just try again"
-$sing run -B /eos  --nv $image  tritonserver --model-repository=$path/oc_models --backend-config=tensorflow,version=2 --log-verbose=1 --log-error=1 --log-info=1
+
+$sing run -B /afs -B /eos -B $path:/oc_triton  --nv $image /oc_triton/cmssw_sing_runcommand.sh
+
+#tritonserver --model-repository=/oc_triton/oc_models --backend-config=tensorflow,version=2 --log-verbose=1 --log-error=1 --log-info=1
 

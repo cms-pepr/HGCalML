@@ -4,21 +4,21 @@
 #wait for server
 
 fifo_location="/dev/shm/${1}"
-server=dockerbuild.cern.ch
+server=localhost #cmg-gpu0180.cern.ch
 port=8001
 
 #wait for server to be available
+echo waiting for $server:$port to become available...
 check=`nc -vz ${server} 8001  2>&1 | grep "Connected to"`
 while [[ ! $check ]]
 do
 sleep 1
-echo $check
 check=`nc -vz ${server} 8001  2>&1 | grep "Connected to"`
 done
 
 
 path=`pwd`
-echo "connecting to triton server"
+echo "running test"
 sing=`which singularity`
 sys_rm=`which rm`
 unset PATH

@@ -77,18 +77,20 @@ if __name__ == '__main__':
                         help='Inference server URL. Default is localhost:8001.')
 
     FLAGS = parser.parse_args()
+    print("Attempting to connect...")
     try:
         triton_client = tritongrpcclient.InferenceServerClient(url=FLAGS.url,
                                                                verbose=FLAGS.verbose)
     except Exception as e:
         print("channel creation failed: " + str(e))
         sys.exit()
+    
+    print("...success.\nServer info:")
 
     print(dir(triton_client))
     print(triton_client.get_model_repository_index())
     print(triton_client.get_server_metadata())
 
-    print('Trying get_model_config now...')
 
     model_name = FLAGS.model_name 
     
@@ -110,6 +112,7 @@ if __name__ == '__main__':
         data.append(getSample(i))
     
 
+    print('Trying get_model_config now...')
     mconf = triton_client.get_model_config(model_name, as_json=True)
     print('config:\n', mconf)
     
@@ -156,6 +159,7 @@ if __name__ == '__main__':
         print('pass through ok',np.all(output0_data[:,0:9] == hit_data))
         beta = output0_data[:,9]
         energy = output0_data[:,10]
+        print('full output',output0_data)
         print('beta min/mean/max', np.min(beta),np.mean(beta),np.max(beta))
         print('energy min/mean/max', np.min(energy),np.mean(energy),np.max(energy))
         del output0_data
