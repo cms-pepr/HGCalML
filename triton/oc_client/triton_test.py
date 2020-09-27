@@ -139,8 +139,8 @@ if __name__ == '__main__':
         inputs[0].set_data_from_numpy(hit_data)
         inputs[1].set_data_from_numpy(row_splits)
 
-        outputs.append(tritongrpcclient.InferRequestedOutput('predicted_final'))
-        outputs.append(tritongrpcclient.InferRequestedOutput('predicted_final_1'))
+        outputs.append(tritongrpcclient.InferRequestedOutput('output'))
+        outputs.append(tritongrpcclient.InferRequestedOutput('output_1'))
         # predicted_final_1 doesn't matter
 
         results = triton_client.infer(
@@ -148,7 +148,7 @@ if __name__ == '__main__':
             inputs=inputs,
             outputs=outputs
             )
-        output0_data = results.as_numpy('predicted_final')
+        output0_data = results.as_numpy('output')
         print('output',output0_data,output0_data.shape)
         
         np.savetxt("out"+str(i)+".txt",output0_data,header=str(output0_data.shape[0])+" "+str(output0_data.shape[1]),comments='')
