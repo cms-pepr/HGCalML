@@ -21,11 +21,19 @@ check=`nc -vz ${server} 8001  2>&1 | grep "Connected to"`
 done
 
 #clean pipes
-rm -f $fifo_location "${fifo_location}_pred"
+
+
+sys_rm=`which rm`
+
+function finish {
+$sys_rm -f $fifo_location "${fifo_location}_pred"
+}
+finish
+
+trap finish EXIT SIGHUP SIGKILL SIGTERM
 
 echo "connecting to triton server"
 sing=`which singularity`
-sys_rm=`which rm`
 unset PATH
 cd 
 
@@ -34,5 +42,5 @@ $sing run  \
        /eos/home-j/jkiesele/singularity/triton/tritonserver_20.08-py3-clientsdk.sif \
        python /oc_client/triton_forward_client.py -u $server:$port -f $fifo_location -m hgcal_oc_reco
 
+finish
        
-$sys_rm -f $fifo_location "${fifo_location}_pred"

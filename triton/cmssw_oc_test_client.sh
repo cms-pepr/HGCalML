@@ -5,6 +5,12 @@
 
 fifo_location="/dev/shm/${1}"
 server=localhost #cmg-gpu0180.cern.ch
+
+if [[ $1 ]]
+then
+server=$1
+fi
+
 port=8001
 
 #wait for server to be available
