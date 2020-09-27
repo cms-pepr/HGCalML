@@ -2036,6 +2036,19 @@ def draw_text_page(plt, s):
              fontdict=text_font)
 
 
+def draw_settings(plt, b, d, i, soft):
+    text_font = {'fontname': 'Arial', 'size': '14', 'color': 'black', 'weight': 'normal',
+                 'verticalalignment': 'bottom'}
+    fig, ax = plt.subplots(figsize=(8, 3))
+    fig.patch.set_visible(False)
+    ax.axis('off')
+
+    s = 'Beta threshold: %.2f\nDist threshold: %.2f\niou  threshold: %.2f\n Is soft: %r' % (b,d,i,soft)
+
+    plt.text(0.5, 0.5, s, horizontalalignment='center', verticalalignment='center', transform=ax.transAxes,
+             fontdict=text_font)
+
+
 def plot_total_response_diff_fractions(plt, truth_sample_id, truth_sid, truth_energies, pred_sample_id, pred_sid,
                                        pred_energies, ticl_sample_id, ticl_sid, ticl_energies):
     num_samples = int(np.max(truth_sample_id))
@@ -2088,7 +2101,13 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
     # global num_rechits_per_shower, num_rechits_per_segment
 
     dataset_analysis_dict = convert_dataset_dict_elements_to_numpy(dataset_analysis_dict)
+
+
     pdf = PdfPages(pdfpath)
+
+    draw_settings(plt, dataset_analysis_dict['beta_threshold'], dataset_analysis_dict['distance_threshold'], dataset_analysis_dict['iou_threshold'], dataset_analysis_dict['soft'])
+    pdf.savefig()
+
 
     #################################################################################
     draw_text_page(plt, 'Total energy response')

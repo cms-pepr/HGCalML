@@ -142,7 +142,6 @@ def calculate_all_iou_tf_3(truth_idx,
 def match_to_truth_2(truth_sid, pred_sid, pred_shower_sid, hit_weight):
     print('match_to_truth')
 
-    global iou_threshold
     truth_shower_sid_to_pred_shower_sid = {}
     truth_shower_sid = np.unique(truth_sid)
     for x in truth_shower_sid:
@@ -155,6 +154,7 @@ def match_to_truth_2(truth_sid, pred_sid, pred_shower_sid, hit_weight):
     G = nx.Graph()
     all_iou = calculate_all_iou_tf_3(truth_sid, pred_sid, hit_weight, iou_threshold)
     for iou in all_iou:
+        # print(iou)
         G.add_edge('p%d' % iou[0], 't%d' % iou[1], weight=iou[2])
 
     X = nx.algorithms.max_weight_matching(G)
@@ -229,13 +229,22 @@ class WindowAnalyser:
         self.results_dict = build_window_analysis_dict()
 
     def compute_and_match_predicted_showers(self):
+
+        # pred_shower_representative_hit_idxx = np.arange(len(self.pred_beta))
+        # clustering_coords_all_filtered = self.pred_ccoords[self.pred_beta>self.beta_threshold]
+        # beta_fil = self.pred_beta[self.pred_beta>self.beta_threshold]
+        # pred_shower_representative_hit_idxx = pred_shower_representative_hit_idxx[self.pred_beta>self.beta_threshold]
         pred_sid, pred_shower_representative_hit_idx, assoidx = find_uniques_from_betas(self.pred_beta,
                                                                                         self.pred_ccoords,
-                                                                                        dist_threshold=distance_threshold,
-                                                                                        beta_threshold=beta_threshold,
+                                                                                        dist_threshold=self.distance_threshold,
+                                                                                        beta_threshold=self.beta_threshold,
                                                                                         soft=self.is_soft)
-
-
+        #
+        # pred_shower_representative_hit_idx = np.array([int(pred_shower_representative_hit_idxx[i]) for i in pred_shower_representative_hit_idx])
+        # pred_sid = assign_prediction_labels_to_full_unfiltered_vertices(self.pred_beta, self.pred_ccoords, pred_sid,
+        #                                                                       clustering_coords_all_filtered,
+        #                                                                       beta_fil,
+        #                                                                       distance_threshold=self.distance_threshold)
 
         pred_shower_sid = [pred_sid[x] for x in pred_shower_representative_hit_idx]
         pred_representative_coords = [self.pred_ccoords[x] for x in pred_shower_representative_hit_idx]
@@ -382,6 +391,7 @@ class WindowAnalyser:
                 shower_energy_truth = self.truth_shower_energy[truth_match_shower_idx]
                 shower_eta_truth = self.truth_shower_eta[truth_match_shower_idx]
                 shower_phi_truth = self.truth_shower_phi[truth_match_shower_idx]
+                print(self.truth_shower_sid[truth_match_shower_idx], sid)
 
                 shower_energy_sum_truth = np.sum(self.hit_energy[self.truth_sid == sid])
 
@@ -609,6 +619,7 @@ def main(files, pdfpath, dumppath, soft):
             data_dict = pickle.load(f)
             analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'], soft=soft)
             file_index += 1
+            # if file_index == 3:
             # break
 
     if len(dumppath) > 0:
@@ -650,8 +661,10 @@ if __name__ == '__main__':
     iou_threshold = iou_threshold * 0 + float(args.i)
 
     dataset_analysis_dict['distance_threshold'] = distance_threshold
-    dataset_analysis_dict['beta_threshold'] = distance_threshold
-    dataset_analysis_dict['iou_threshold'] = distance_threshold
+    dataset_analysis_dict['beta_threshold'] = beta_threshold
+    dataset_analysis_dict['iou_threshold'] = iou_threshold
+    dataset_analysis_dict['soft'] = bool(args.soft)
+
 
     files_to_be_tested = []
     pdfpath = ''
