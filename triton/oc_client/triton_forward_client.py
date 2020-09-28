@@ -128,12 +128,14 @@ def encode_prediction(data_arr):
     enc=""
     shape = data_arr.shape
     enc += str(shape[0])+" "+str(shape[1])+"\n"
-    a = np.reshape(data_arr,[-1])
-    white = ""
-    for i in a:
-        enc += white+str(i)
-        white = " "
-    enc+='\n'
+    #a = np.reshape(data_arr,[-1])
+    #white = ""
+    for a in data_arr:
+        white=""
+        for i in a:
+            enc += white+str(i)
+            white = " "
+        enc+='\n'
     return enc
 
 if __name__ == '__main__':
@@ -173,10 +175,11 @@ if __name__ == '__main__':
     
     
     print('Triton forward client started. Waiting for data...')
-    try:
-        os.mkfifo(FIFO)
-        os.mkfifo(FIFO_out)
-        while True:
+    
+    os.mkfifo(FIFO)
+    os.mkfifo(FIFO_out)
+    while True:
+        try:
             with open(FIFO) as fifo:
                 data = np.loadtxt(fifo)
                 
@@ -185,18 +188,21 @@ if __name__ == '__main__':
             rs[1] = max(data.shape[0],3)
             rs[-1]=2
             
-            print('request eval')
-            predicted = request_eval(data,rs, triton_client, model_name)
+        except Exception as e:
+            print(e)
+            print('waiting for next data batch')
+            continue
+        
+        print('request eval')
+        predicted = request_eval(data,rs, triton_client, model_name)
+        
+        enc = encode_prediction(predicted)
+        #print(enc)
+        with open(FIFO_out,'w') as fifo:
+            fifo.write(enc)
             
-            enc = encode_prediction(predicted)
-            #print(enc)
-            with open(FIFO_out,'w') as fifo:
-                fifo.write(enc)
+        print('result ready')
                 
-            print('data ready')
-                
-    except Exception as e:
-        raise e
     
     
     
