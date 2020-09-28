@@ -70,7 +70,8 @@ def oc_per_batch_element(
         payload_loss,
         payload_weight_function = payload_weight_function,  #receives betas as K x V x 1 as input, and a threshold val
         payload_weight_threshold = 0.8,
-        use_mean_x = False
+        use_mean_x = False,
+        cont_beta_loss=False,
         ):
     '''
     all inputs
@@ -125,11 +126,13 @@ def oc_per_batch_element(
     
     ##beta penalty
     
-    #print('beta',tf.reduce_mean(beta))
-    #print('beta_kalpha',beta_kalpha)
-    #object_weights_kalpha = tf.zeros_like(object_weights_kalpha)+1
-    
-    B_pen = tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha)), 
+    beta_kalpha_sm = beta_kalpha
+    if cont_beta_loss:
+        b_exp = M * tf.expand_dims(beta_in, axis=0) #K x V x 1
+        b_exp = tf.nn.softmax(b_exp, axis=1)**2 # K x V x 1
+        beta_kalpha_sm = tf.reduce_sum(b_exp, axis=1, keepdims=True)#K x 1 x 1
+        
+    B_pen = tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha_sm)), 
                                   tf.reduce_sum(object_weights_kalpha)) # ()
     
     # beta_in V x 1

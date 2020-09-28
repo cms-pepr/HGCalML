@@ -13,6 +13,7 @@ from LayersRagged import *
 
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
+global_layers_list['Condensate']=Condensate
 global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
 
 

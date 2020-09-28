@@ -26,6 +26,58 @@ class RaggedSumAndScatter(keras.layers.Layer):
         ragged = tf.reduce_mean(ragged,axis=1)
         gath = tf.gather_nd(ragged, indices) 
         return tf.reshape(gath, tf.shape(data))#so that shape is known to keras
+
+
+
+class Condensate(tf.keras.layers.Layer):
+    def __init__(self, t_d, t_b, soft, feature_length, **kwargs):
+        print("Condensate Layer: warning, do not use this in the model, a bunch of hardcoded stuff!")
+        self.t_d = t_d
+        self.t_b = t_b
+        self.soft = soft
+        self.feature_length=feature_length
+        super(Condensate, self).__init__(**kwargs)
+        
+    def get_config(self):
+        config = {'t_d': self.t_d,
+                  't_b': self.t_b,
+                  'soft': self.soft,
+                  'feature_length': self.feature_length}
+        base_config = super(Condensate, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+        
+    def compute_output_shape(self, input_shapes): # data, rs
+        return input_shapes[0], (None,) #condensates and row splits
+    
+    def call(self, inputs):
+        x, row_splits = inputs[0], inputs[1]
+        
+        
+        n_ccoords = x.shape[-1] - 14 #FIXME: make this less static
+        x_pred = x[:,self.feature_length:]
+        n_pred = x_pred.shape[-1]
+        
+        betas = x_pred[:,0:1]
+        print('betas min, mean, max', tf.reduce_min(betas),tf.reduce_mean(betas),tf.reduce_max(betas))
+        ccoords = x_pred[:,n_pred-n_ccoords:n_pred]
+        
+        print('n cluster coordinates', n_ccoords)
+        
+        _, row_splits = RaggedConstructTensor()([x, row_splits])
+        row_splits = tf.cast(row_splits,dtype='int32')
+        
+        asso, iscond, ncond = BuildCondensates(ccoords, betas, row_splits, 
+                                               radius=self.t_d, min_beta=self.t_b, 
+                                               soft=self.soft)
+        iscond = tf.reshape(iscond, (-1,))
+        ncond = tf.reshape(ncond, (-1,1))
+
+        zero = tf.constant([[0]],dtype='int32')
+        ncond = tf.concat([zero,ncond],axis=0,name='output_row_splits')
+        dout = x[iscond>0]
+        dout = tf.reshape(dout,[-1,dout.shape[-1]], name="predicted_final_condensates")
+        
+        return dout, ncond 
         
 
 class CondensateToPseudoRS(keras.layers.Layer):

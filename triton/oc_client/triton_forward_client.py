@@ -95,8 +95,8 @@ def request_eval(hit_data,row_splits, triton_client, model_name):
     outputs = []
     
     
-    print(hit_data.shape)
-    print(row_splits.shape)
+    #print(hit_data.shape)
+    #print(row_splits.shape)
     
     inputs.append(tritongrpcclient.InferInput('input_1', hit_data.shape, 'FP32'))
     inputs.append(tritongrpcclient.InferInput('input_2', row_splits.shape, tr_rs_type)) #INT64
@@ -120,7 +120,7 @@ def request_eval(hit_data,row_splits, triton_client, model_name):
     #condensates = results.as_numpy('predicted_final_condensates')
     #rs = results.as_numpy('output_row_splits')
     
-    print('output',condensates,condensates.shape)
+    #print('output',condensates,condensates.shape)
     return condensates
     
 
@@ -178,22 +178,22 @@ if __name__ == '__main__':
         os.mkfifo(FIFO_out)
         while True:
             with open(FIFO) as fifo:
-                print("FIFO opened")
                 data = np.loadtxt(fifo)
                 
             data = np.array(data,dtype='float32')
             rs = np.zeros((data.shape[0],1),dtype="int64")
-            rs[1] = min(len(data),3)
+            rs[1] = max(data.shape[0],3)
             rs[-1]=2
-            print(rs)
             
+            print('request eval')
             predicted = request_eval(data,rs, triton_client, model_name)
             
             enc = encode_prediction(predicted)
             #print(enc)
             with open(FIFO_out,'w') as fifo:
                 fifo.write(enc)
-                print('done write')
+                
+            print('data ready')
                 
     except Exception as e:
         raise e

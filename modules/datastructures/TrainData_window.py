@@ -273,6 +273,7 @@ class TrainData_window(TrainData):
             ], axis=-1)
         
         
+        np.savetxt("textarr.txt",features[0:rs[1]])
         farr = simpleArray()
         farr.createFromNumpy(features, rs)
         #farr.cout()
@@ -333,8 +334,10 @@ class TrainData_window(TrainData):
             pickle.dump(outdict, mypicklefile)
         print("Done")
     
-    def bla(self):
-        print("hello")
+    def readPredicted(self, predfile):
+        with gzip.open(predfile) as mypicklefile:
+            return pickle.load(mypicklefile)
+        
     
     
     

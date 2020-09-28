@@ -32,7 +32,7 @@ finish
 
 trap finish EXIT SIGHUP SIGKILL SIGTERM
 
-echo "connecting to triton server"
+echo "server found... connecting to triton"
 sing=`which singularity`
 unset PATH
 cd 
