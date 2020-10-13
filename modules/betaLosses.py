@@ -32,7 +32,7 @@ class _obj_cond_config(object):
         self.energy_den_offset=1.
         self.noise_scaler=1.
         self.too_much_beta_scale=0.1
-        
+        self.cont_beta_loss=False
         self.log_energy=False
 
 
@@ -176,8 +176,8 @@ def full_obj_cond_loss(truth, pred_in, rowsplits):
         S_B=config.s_b,
         energyweights=energyweights,
         use_average_cc_pos=config.use_average_cc_pos,
-        payload_rel_threshold=config.payload_rel_threshold
-        
+        payload_rel_threshold=config.payload_rel_threshold,
+        cont_beta_loss=config.cont_beta_loss
         )
     
     
