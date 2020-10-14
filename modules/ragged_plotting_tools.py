@@ -3424,18 +3424,38 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
 import os
 
 
+def running_mean(x, y, N):
+    cumsum = np.cumsum(np.insert(y, 0, 0))
+    return x[N-1:], (cumsum[N:] - cumsum[:-N]) / float(N)
 
-def plot_scalar_metrics(plt, scalar_metrics):
+
+def plot_scalar_metrics(plt, scalar_metrics, average_scalars_over):
     fig, (ax1, ax2, ax3) = plt.subplots(3,1, figsize=(8, 17))
     # plt.axvline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
-    ax1.plot(scalar_metrics['efficiency'], label='Object condensation', c='#1f77b4')
-    ax1.plot(scalar_metrics['efficiency_ticl'], label='ticl', c='#ff7f0e')
 
-    ax2.plot(scalar_metrics['fake_rate'], label='Object condensation', c='#1f77b4')
-    ax2.plot(scalar_metrics['fake_rate_ticl'], label='ticl', c='#ff7f0e')
+    effciency = scalar_metrics['efficiency']
+    efficiency_ticl = scalar_metrics['efficiency_ticl']
+    fake_rate = scalar_metrics['fake_rate']
+    fake_rate_ticl = scalar_metrics['fake_rate_ticl']
+    var_response = scalar_metrics['var_response']
+    var_response_ticl = scalar_metrics['var_response_ticl']
 
-    ax3.plot(scalar_metrics['var_response'], label='Object condensation', c='#1f77b4')
-    ax3.plot(scalar_metrics['var_response_ticl'], label='ticl', c='#ff7f0e')
+    if len(scalar_metrics['iteration']) > 2 * average_scalars_over and average_scalars_over > 1:
+        itr, effciency = running_mean(scalar_metrics['iteration'], effciency, average_scalars_over)
+        _, efficiency_ticl = running_mean(scalar_metrics['iteration'], efficiency_ticl, average_scalars_over)
+        _, fake_rate = running_mean(scalar_metrics['iteration'], fake_rate, average_scalars_over)
+        _, fake_rate_ticl = running_mean(scalar_metrics['iteration'], fake_rate_ticl, average_scalars_over)
+        _, var_response = running_mean(scalar_metrics['iteration'], var_response, average_scalars_over)
+        _, var_response_ticl = running_mean(scalar_metrics['iteration'], var_response_ticl, average_scalars_over)
+
+    ax1.plot(itr, effciency, label='Object condensation', c='#1f77b4')
+    ax1.plot(itr, efficiency_ticl, label='ticl', c='#ff7f0e')
+
+    ax2.plot(itr, fake_rate, label='Object condensation', c='#1f77b4')
+    ax2.plot(itr, fake_rate_ticl, label='ticl', c='#ff7f0e')
+
+    ax3.plot(itr, var_response, label='Object condensation', c='#1f77b4')
+    ax3.plot(itr, var_response_ticl, label='ticl', c='#ff7f0e')
 
     ax1.legend()
     ax2.legend()
@@ -3451,14 +3471,14 @@ def plot_scalar_metrics(plt, scalar_metrics):
     # plt.title('Training metrics (on validation set)')
 
 
-def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics):
+def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, average_scalars_over):
     plt.cla()
     plt.clf()
 
     dataset_analysis_dict = convert_dataset_dict_elements_to_numpy(dataset_analysis_dict)
 
     fig = plt.figure()
-    plot_scalar_metrics(plt, scalar_metrics)
+    plot_scalar_metrics(plt, scalar_metrics, average_scalars_over)
     plt.savefig(os.path.join(output_dir, 'scalar_metrics.png'))
 
 
