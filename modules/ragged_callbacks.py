@@ -35,7 +35,8 @@ class plotRunningPerformanceMetrics(Callback):
                  n_windows_for_scalar_metrics=5000000,
                  outputdir=None,
                  publish = None,
-                 n_ccoords=None
+                 n_ccoords=None,
+                 n_average_over_samples=5,
                  ):
         """
 
@@ -51,6 +52,7 @@ class plotRunningPerformanceMetrics(Callback):
         :param outputdir: the output directory where to store results
         :param publish: where to publish, could be ssh'able path
         :param n_ccoords: n coords for plots
+        :param n_average_over_samples: average scalar metrics over samples
         """
         super(plotRunningPerformanceMetrics, self).__init__()
         self.samplefile = samplefile
@@ -105,6 +107,8 @@ class plotRunningPerformanceMetrics(Callback):
         self.scalar_metrics['var_response'] = []
         self.scalar_metrics['var_response_ticl'] = []
         self.scalar_metrics['iteration'] = []
+
+        self.n_average_over_samples = n_average_over_samples
 
         self.plot_process = None
 
@@ -174,7 +178,7 @@ class plotRunningPerformanceMetrics(Callback):
                 for x in window_analysis_dicts:
                     dataset_analysis_dict = append_window_dict_to_dataset_dict(dataset_analysis_dict, x)
 
-                make_running_plots(self.outputdir, dataset_analysis_dict, scalar_metrics)
+                make_running_plots(self.outputdir, dataset_analysis_dict, scalar_metrics, self.n_average_over_samples)
 
                 if self.publish is not None:
                     for f in os.listdir(self.outputdir):
