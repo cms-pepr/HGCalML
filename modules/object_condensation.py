@@ -128,19 +128,32 @@ def oc_per_batch_element(
     
     beta_kalpha_sm = beta_kalpha
     if cont_beta_loss:
-        b_exp = M * tf.expand_dims(beta_in, axis=0) #K x V x 1
-        b_exp = tf.nn.softmax(b_exp, axis=1)**2 # K x V x 1
-        beta_kalpha_sm = tf.reduce_sum(b_exp, axis=1, keepdims=True)#K x 1 x 1
         
+        b_exp = M * tf.expand_dims(beta, axis=0)
+        maxb = beta_kalpha
+        meanb = tf.math.divide_no_nan(tf.reduce_sum(b_exp, axis = 1, keepdims=True),
+                                      tf.reduce_sum(M,  axis = 1, keepdims=True))
+        sqsum = tf.reduce_sum(b_exp**2, axis = 1, keepdims=True)
+        beta_kalpha_sm = 1. - (tf.math.divide_no_nan(meanb+0.2, maxb+0.1) + tf.math.exp(-sqsum))
+        #b_exp = M * tf.expand_dims(beta, axis=0)
+        #b_exp_sum = tf.reduce_sum(b_exp, axis=1, keepdims=True) # K x 1 x 1
+        #b_exp_prod = tf.reduce_prod(b_exp, axis=1, keepdims=True)  # K x 1 x 1
+        #
+        ## 1 - X here to compensate 1 - down there
+        #beta_kalpha_sm = 1. - tf.math.exp(-b_exp_sum)+0.5*b_exp_prod-tf.math.exp(tf.constant([[[-1.]]])) # K x 1 x 1
+        
+
     B_pen = tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha_sm)), 
                                   tf.reduce_sum(object_weights_kalpha)) # ()
     
     # beta_in V x 1
     # object_weights V x 1
     
-    to_much_B_pen = tf.reduce_sum( beta_in*object_weights ) - tf.reduce_sum(object_weights_kalpha)
-    to_much_B_pen = tf.nn.relu(to_much_B_pen)#min=0
-    to_much_B_pen = tf.math.divide_no_nan(to_much_B_pen,tf.reduce_sum(object_weights))
+    to_much_B_pen = tf.constant([0.],dtype='float32')
+    if not cont_beta_loss:
+        to_much_B_pen = tf.reduce_sum( beta_in*object_weights ) - tf.reduce_sum(object_weights_kalpha)
+        to_much_B_pen = tf.nn.relu(to_much_B_pen)#min=0
+        to_much_B_pen = tf.math.divide_no_nan(to_much_B_pen,tf.reduce_sum(object_weights))
     
     ##noise penalty
     Noise_pen = tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise))
@@ -169,7 +182,8 @@ def oc_loss(
         S_B=1.,
         energyweights=None,
         use_average_cc_pos=False,
-        payload_rel_threshold=0.8
+        payload_rel_threshold=0.1,
+        cont_beta_loss=False
         ):   
     
     if energyweights is None:
@@ -195,7 +209,8 @@ def oc_loss(
             payload_weight_function=payload_weight_function,
             payload_weight_threshold=payload_rel_threshold,
             
-            use_mean_x=use_average_cc_pos
+            use_mean_x=use_average_cc_pos,
+            cont_beta_loss=cont_beta_loss
             )
         V_att += att
         V_rep += rep

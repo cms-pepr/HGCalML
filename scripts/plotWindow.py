@@ -154,9 +154,10 @@ def makePlot(outfile,
               c=rgbcolor[is_track]/2.,
               marker='x')
     
-    scatter_size[not_assigned] = 0
+    scatter_size_assigned = scatter_size
+    scatter_size_assigned[not_assigned] = 0
     ax[3].scatter(rechit_x, rechit_y,
-              s=scatter_size,
+              s=scatter_size_assigned,
               c=rgbcolor)
     
     
@@ -219,6 +220,9 @@ def makePlot(outfile,
     print('total reco non-noise E', total_reco_E, ' vs total impact E', total_impact_E)        
     
     
+    
+    
+    
     pl = plotter_3d(output_file=outdir+"/plot", colorscheme=None)
     
     pl.set_data(x = rechit_x.copy() , y=rechit_y.copy()   , z=rechit_z.copy(), e=rechit_e.copy() , c =rgbcolor)
@@ -252,6 +256,8 @@ def makePlot(outfile,
     
     addarrows(ax[1])
     
+
+    
     
     if show:
         plt.show()
@@ -260,6 +266,17 @@ def makePlot(outfile,
     fig.savefig(outfile+".pdf")
     plt.close()
     
+    plt.figure(figsize=(12,4))
+    plt.scatter( rechit_y,rechit_x,
+              s=1.5*(np.log(rechit_e + 1.)+0.1),
+              c=rgbcolor)
+    plt.scatter(selpos[:,1],selpos[:,0],
+                  s = 25.0,
+                  marker='+',
+                  c='k')
+    plt.xlabel("$\phi$")
+    plt.ylabel("$\eta$")
+    plt.savefig(outfile+"_indiv.pdf")
     
     
     
