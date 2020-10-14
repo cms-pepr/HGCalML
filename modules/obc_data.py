@@ -38,7 +38,9 @@ def build_dataset_analysis_dict():
     data_dict['pred_shower_regressed_eta'] = []
     data_dict['pred_shower_matched_eta'] = []
     data_dict['pred_shower_sid'] = []
+    data_dict['pred_shower_sid_merged'] = []
     data_dict['pred_shower_sample_id'] = []
+
 
     data_dict['ticl_shower_regressed_energy'] = []
     data_dict['ticl_shower_matched_energy'] = []
@@ -49,6 +51,7 @@ def build_dataset_analysis_dict():
     data_dict['ticl_shower_regressed_eta'] = []
     data_dict['ticl_shower_matched_eta'] = []
     data_dict['ticl_shower_sid'] = []
+    data_dict['ticl_shower_sid_merged'] = []
     data_dict['ticl_shower_sample_id'] = []
 
     data_dict['window_num_truth_showers'] = []
@@ -103,7 +106,9 @@ def build_window_analysis_dict():
     data_dict['pred_shower_regressed_eta'] = []
     data_dict['pred_shower_matched_eta'] = []
     data_dict['pred_shower_sid'] = []
+    data_dict['pred_shower_sid_merged'] = []
     data_dict['pred_shower_sample_id'] = []
+
 
     data_dict['ticl_shower_regressed_energy'] = []
     data_dict['ticl_shower_matched_energy'] = []
@@ -114,6 +119,7 @@ def build_window_analysis_dict():
     data_dict['ticl_shower_regressed_eta'] = []
     data_dict['ticl_shower_matched_eta'] = []
     data_dict['ticl_shower_sid'] = []
+    data_dict['ticl_shower_sid_merged'] = []
     data_dict['ticl_shower_sample_id'] = []
 
     data_dict['found_showers_predicted_truth_rotational_difference'] = []
@@ -167,6 +173,7 @@ def convert_dataset_dict_elements_to_numpy(dataset_dict):
     dataset_dict['pred_shower_regressed_eta'] = np.array(dataset_dict['pred_shower_regressed_eta'])
     dataset_dict['pred_shower_matched_eta'] = np.array(dataset_dict['pred_shower_matched_eta'])
     dataset_dict['pred_shower_sid'] = np.array(dataset_dict['pred_shower_sid'])
+    dataset_dict['pred_shower_sid_merged'] = np.array(dataset_dict['pred_shower_sid_merged'])
     dataset_dict['pred_shower_sample_id'] = np.array(dataset_dict['pred_shower_sample_id'])
 
     dataset_dict['ticl_shower_regressed_energy'] = np.array(dataset_dict['ticl_shower_regressed_energy'])
@@ -178,6 +185,7 @@ def convert_dataset_dict_elements_to_numpy(dataset_dict):
     dataset_dict['ticl_shower_regressed_eta'] = np.array(dataset_dict['ticl_shower_regressed_eta'])
     dataset_dict['ticl_shower_matched_eta'] = np.array(dataset_dict['ticl_shower_matched_eta'])
     dataset_dict['ticl_shower_sid'] = np.array(dataset_dict['ticl_shower_sid'])
+    dataset_dict['ticl_shower_sid_merged'] = np.array(dataset_dict['ticl_shower_sid_merged'])
     dataset_dict['ticl_shower_sample_id'] = np.array(dataset_dict['ticl_shower_sample_id'])
 
     dataset_dict['window_num_truth_showers'] = np.array(dataset_dict['window_num_truth_showers'])
@@ -233,6 +241,7 @@ def append_window_dict_to_dataset_dict(dataset_dict, window_dict):
     dataset_dict['pred_shower_regressed_eta'] += window_dict['pred_shower_regressed_eta']
     dataset_dict['pred_shower_matched_eta'] += window_dict['pred_shower_matched_eta']
     dataset_dict['pred_shower_sid'] += window_dict['pred_shower_sid']
+    dataset_dict['pred_shower_sid_merged'] += window_dict['pred_shower_sid_merged']
     dataset_dict['pred_shower_sample_id'] += window_dict['pred_shower_sample_id']
 
     dataset_dict['ticl_shower_regressed_energy'] += window_dict['ticl_shower_regressed_energy']
@@ -244,6 +253,7 @@ def append_window_dict_to_dataset_dict(dataset_dict, window_dict):
     dataset_dict['ticl_shower_regressed_eta'] += window_dict['ticl_shower_regressed_eta']
     dataset_dict['ticl_shower_matched_eta'] += window_dict['ticl_shower_matched_eta']
     dataset_dict['ticl_shower_sid'] += window_dict['ticl_shower_sid']
+    dataset_dict['ticl_shower_sid_merged'] += window_dict['ticl_shower_sid_merged']
     dataset_dict['ticl_shower_sample_id'] += window_dict['ticl_shower_sample_id']
 
     dataset_dict['window_num_truth_showers'].append(window_dict['window_num_truth_showers'])
@@ -264,18 +274,18 @@ def append_window_dict_to_dataset_dict(dataset_dict, window_dict):
     if window_dict['visualization_data'] != -1:
         dataset_dict['visualized_segments'].append(window_dict['visualization_data'])
 
-    return window_dict
+    return dataset_dict
 
 
 def build_window_visualization_dict():
     vis_dict = dict()
-    vis_dict['truth_showers'] = -1
+    vis_dict['truth_sid'] = -1
 
     vis_dict['pred_and_truth_dict'] = -1
     vis_dict['feature_dict'] = -1
 
-    vis_dict['predicted_showers'] = -1
-    vis_dict['ticl_showers'] = -1
+    vis_dict['pred_sid'] = -1
+    vis_dict['ticl_sid'] = -1
     vis_dict['coords_representatives'] = -1
     vis_dict['identified_vertices'] = -1
 
