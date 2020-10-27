@@ -10,6 +10,7 @@ global_layers_list['GarNet']=GarNet
 global_layers_list['weighted_sum_layer']=weighted_sum_layer
 
 from LayersRagged import *
+from GravNetLayersRagged import RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -41,6 +42,13 @@ global_layers_list['FusedRaggedGravNetDistMod']=FusedRaggedGravNetDistMod
 
 global_layers_list['FusedRaggedGravNetRetDistLinParse']=FusedRaggedGravNetRetDistLinParse
 global_layers_list['FusedRaggedGravNetRetDistDistMod']=FusedRaggedGravNetRetDistDistMod
+
+
+
+global_layers_list['RaggedGravNet']=RaggedGravNet
+global_layers_list['MessagePassing']=MessagePassing
+global_layers_list['DynamicDistanceMessagePassing']=DynamicDistanceMessagePassing
+global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePassing
 
 
 
