@@ -61,7 +61,6 @@ class RaggedGravNet(tf.keras.layers.Layer):
         allfeat = []
         features = x
 
-
         features = self.input_feature_transform(features)
         prev_feat = features
         features = self.collect_neighbours(features, neighbour_indices, distancesq)
@@ -87,8 +86,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         return self.priv_call(inputs)
 
     def compute_output_shape(self, input_shapes):
-        input_shape = input_shapes[0]
-        return (self.output_feature_transform.units[-1],)
+        return (input_shapes[0], self.n_filters)
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
         #
