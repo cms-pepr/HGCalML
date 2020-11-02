@@ -15,8 +15,8 @@ class LossLayerBase(tf.keras.layers.Layer):
     The 'scale' argument determines a global sale factor for the loss. 
     """
     
-    def __init__(self, active=True, scaler=1.**kwargs):
-        super(LossLayerBase, self).__init__(**kwargs)
+    def __init__(self, active=True, scale=1., **kwargs):
+        super(LossLayerBase, self).__init__(dynamic=True, **kwargs)
         
         self.active = active
         self.scale = scale
@@ -35,6 +35,11 @@ class LossLayerBase(tf.keras.layers.Layer):
         return 0.
 
 
+
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0]
+
+
 #naming scheme: LL<what the layer is supposed to do>
 class LLClusterCoordinates(LossLayerBase):
     '''
@@ -42,12 +47,11 @@ class LLClusterCoordinates(LossLayerBase):
     '''
     def __init__(self, **kwargs):
         super(LLClusterCoordinates, self).__init__(**kwargs)
-    
+
     def loss(self, inputs):
-        x, coords, truth, row_splits = inputs
-        
-        truth_indices = ... #FIXME, depends on the truth input
-        
+        x, coords, truth_indices, row_splits = inputs
+
+        print(x.shape, coords.shape, truth_indices.shape, row_splits.shape)
         zeros = tf.zeros_like(coords[:,0:1])
         
         V_att, V_rep,_,_,_,_=oc_loss(coords, zeros+1./2., #beta constant

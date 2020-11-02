@@ -148,3 +148,36 @@ def split_feat_pred(pred):
     
     
 
+
+
+def create_ragged_cal_feature_dict(feat, truth):
+    outdict = {}
+
+    outdict['recHitEnergy'] = feat[:, 0]
+    outdict['recHitEta'] = feat[:, 1]
+    outdict['recHitRelPhi'] = feat[:, 2]
+    outdict['recHitTheta'] = feat[:, 3]
+    outdict['recHitR'] = feat[:, 4]
+    outdict['recHitX'] = feat[:, 5]
+    outdict['recHitY'] = feat[:, 6]
+    outdict['recHitZ'] = feat[:, 7]
+    outdict['recHitTime'] = feat[:, 8]
+
+    outdict['truthHitAssignementIdx'] = truth[:, 0]
+    outdict['truthIsNoise'] = truth[:, 1]
+    outdict['truthNoNoise'] = truth[:, 2]
+    outdict['truthHitAssignedEnergies'] = truth[:, 3]
+    outdict['truthHitAssignedX'] = truth[:, 4]
+    outdict['truthHitAssignedY'] = truth[:, 5]
+    outdict['truthHitAssignedZ'] = truth[:, 6]
+    outdict['truthHitAssignedT'] = truth[:, 7]
+    outdict['truthHitAssignedEtas'] = truth[:, 8]
+    outdict['truthHitAssignedPhis'] = truth[:, 9]
+    outdict['truthRechitsSum'] = truth[:, 10]
+    outdict['truthRealEnergy'] = truth[:, 11]
+    outdict['truthIsSpectator'] = truth[:, 12]
+    outdict['truthClasses'] = truth[:, 13]
+    outdict['ticlHitAssignementIdx'] = truth[:, 14]
+    outdict['ticlHitAssignedEnergies'] = truth[:, 15]
+
+    return outdict
