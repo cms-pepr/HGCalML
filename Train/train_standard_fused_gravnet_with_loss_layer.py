@@ -11,6 +11,7 @@ from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
 
+
 from DeepJetCore.modeltools import fixLayersContaining
 # from tensorflow.keras.models import load_model
 from DeepJetCore.training.training_base import custom_objects_list
@@ -24,8 +25,8 @@ from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures, ReduceSumEntir
 from clr_callback import CyclicLR
 from Layers import ExpMinusOne, GridMaxPoolReduction
 from model_blocks import  create_output_layers
-from lossLayers import LLClusterCoordinates
-from index_dicts import create_ragged_cal_feature_dict
+from lossLayers import LLObjectCondensation
+from index_dicts import create_ragged_cal_feature_dict, create_ragged_cal_truth_dict, create_ragged_cal_pred_dict
 
 # tf.compat.v1.disable_eager_execution()
 
@@ -91,13 +92,13 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = Dense(64, activation='elu',name="dense_last_b")(x)
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
-    beta, _, _, ccoords = create_output_layers(x, x_row_splits, energy_block=False, n_ccoords=n_ccoords, scale_exp_e=False)
+    x = create_output_layers(x, x_row_splits, n_ccoords=n_ccoords, scale_exp_e=False)
 
-    truth_indices = create_ragged_cal_feature_dict(I_feat, I_truth)['truthHitAssignementIdx'][..., tf.newaxis]
+    truth_dict = create_ragged_cal_truth_dict(I_truth)
+    pred_dict = create_ragged_cal_pred_dict(x, n_ccoords=n_ccoords)
+    feat_dict = create_ragged_cal_feature_dict(I_feat)
 
-    x = LLClusterCoordinates()([x, ccoords, truth_indices, x_row_splits])
-
-
+    x = LLObjectCondensation()([x, truth_dict, pred_dict, feat_dict, x_row_splits])
 
     # outputs = tf.tuple([predictions, x_row_splits])
 
