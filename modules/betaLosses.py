@@ -8,7 +8,7 @@ import time
 from Loss_tools import huber
 from object_condensation import oc_loss
 
-class construct_obj_cond_config(object):
+class _obj_cond_config(object):
     def __init__(self):
         self.energy_loss_weight = 1.
         self.use_energy_weights = False
@@ -36,7 +36,7 @@ class construct_obj_cond_config(object):
         self.log_energy=False
 
 
-config = construct_obj_cond_config()
+config = _obj_cond_config()
 
 
 pre_training_loss_counter=0
