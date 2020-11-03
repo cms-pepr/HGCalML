@@ -1,6 +1,6 @@
 import tensorflow as tf
 from object_condensation import oc_loss
-from betaLosses import obj_cond_loss
+from betaLosses import obj_cond_loss, full_obj_cond_loss
 
 
 class LossLayerBase(tf.keras.layers.Layer):
@@ -76,7 +76,7 @@ class LLObjectCondensation(LossLayerBase):
                  use_spectators=True, beta_loss_scale=1., use_average_cc_pos=False, payload_rel_threshold=0.1,
                  rel_energy_mse=False, smooth_rep_loss=False, pre_train=False, huber_energy_scale=2.,
                  downweight_low_energy=True, n_ccoords=2, energy_den_offset=1., noise_scaler=1.,
-                 too_much_beta_scale=0.1, cont_beta_loss=False, log_energy=False, standard_configutation=None,
+                 too_much_beta_scale=0.1, cont_beta_loss=False, log_energy=False, standard_configuration=None,
                  **kwargs):
         super(LLObjectCondensation, self).__init__(**kwargs)
 
@@ -105,7 +105,7 @@ class LLObjectCondensation(LossLayerBase):
         self.cont_beta_loss = cont_beta_loss
         self.log_energy = log_energy
 
-        if standard_configutation is not None:
+        if standard_configuration is not None:
             raise NotImplemented('Not implemented yet')
 
     def loss(self, inputs):
@@ -139,6 +139,7 @@ class LLObjectCondensation(LossLayerBase):
         }
 
         loss = obj_cond_loss(truth_dict, pred_dict, feat_dict, row_splits, config)
+        loss = full_obj_cond_loss(truth_dict, pred_dict, feat_dict, row_splits)
         return loss
 
     def get_config(self):
