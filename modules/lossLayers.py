@@ -139,7 +139,6 @@ class LLObjectCondensation(LossLayerBase):
         }
 
         loss = obj_cond_loss(truth_dict, pred_dict, feat_dict, row_splits, config)
-        loss = full_obj_cond_loss(truth_dict, pred_dict, feat_dict, row_splits)
         return loss
 
     def get_config(self):
