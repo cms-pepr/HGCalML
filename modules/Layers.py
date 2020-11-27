@@ -52,7 +52,7 @@ global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePass
 
 
 
-global_layers_list['DistanceWeightedMessagePassing']=LLObjectCondensation
+global_layers_list['LLObjectCondensation']=LLObjectCondensation
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LossLayerBase']=LossLayerBase
 
