@@ -17,7 +17,7 @@ class LossLayerBase(tf.keras.layers.Layer):
     """
     
     def __init__(self, active=True, scale=1., **kwargs):
-        super(LossLayerBase, self).__init__(dynamic=True, **kwargs)
+        super(LossLayerBase, self).__init__(**kwargs)
         
         self.active = active
         self.scale = scale
@@ -71,13 +71,48 @@ class LLObjectCondensation(LossLayerBase):
     Cluster using truth index and coordinates
     '''
 
-    def __init__(self, energy_loss_weight=1., use_energy_weights=False, q_min=0.5, no_beta_norm=False,
-                 potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1., timing_loss_weight=1.,
-                 use_spectators=True, beta_loss_scale=1., use_average_cc_pos=False, payload_rel_threshold=0.1,
-                 rel_energy_mse=False, smooth_rep_loss=False, pre_train=False, huber_energy_scale=2.,
-                 downweight_low_energy=True, n_ccoords=2, energy_den_offset=1., noise_scaler=1.,
-                 too_much_beta_scale=0.1, cont_beta_loss=False, log_energy=False, standard_configuration=None,
+    def __init__(self, *, energy_loss_weight=1., use_energy_weights=False, q_min=0.5, no_beta_norm=False,
+                 potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
+                 classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
+                 use_average_cc_pos=False, payload_rel_threshold=0.1, rel_energy_mse=False, smooth_rep_loss=False,
+                 pre_train=False, huber_energy_scale=2., downweight_low_energy=True, n_ccoords=2, energy_den_offset=1.,
+                 noise_scaler=1., too_much_beta_scale=0.1, cont_beta_loss=False, log_energy=False, n_classes=0,
+                 standard_configuration=None,
                  **kwargs):
+        """
+        Read carefully before changing parameters
+
+        :param energy_loss_weight:
+        :param use_energy_weights:
+        :param q_min:
+        :param no_beta_norm:
+        :param potential_scaling:
+        :param repulsion_scaling:
+        :param s_b:
+        :param position_loss_weight:
+        :param classification_loss_weight:
+        :param timing_loss_weight:
+        :param use_spectators:
+        :param beta_loss_scale:
+        :param use_average_cc_pos:
+        :param payload_rel_threshold:
+        :param rel_energy_mse:
+        :param smooth_rep_loss:
+        :param pre_train:
+        :param huber_energy_scale:
+        :param downweight_low_energy:
+        :param n_ccoords:
+        :param energy_den_offset:
+        :param noise_scaler:
+        :param too_much_beta_scale:
+        :param cont_beta_loss:
+        :param log_energy:
+        :param n_classes: give the real number of classes, in the truth labelling, class 0 is always ignored so if you
+                          have 6 classes, label them from 1 to 6 not 0 to 5. If n_classes is 0, no classification loss
+                          is applied
+        :param standard_configuration:
+        :param kwargs:
+        """
         super(LLObjectCondensation, self).__init__(**kwargs)
 
         self.energy_loss_weight = energy_loss_weight
@@ -88,6 +123,7 @@ class LLObjectCondensation(LossLayerBase):
         self.repulsion_scaling = repulsion_scaling
         self.s_b = s_b
         self.position_loss_weight = position_loss_weight
+        self.classification_loss_weight = classification_loss_weight
         self.timing_loss_weight = timing_loss_weight
         self.use_spectators = use_spectators
         self.beta_loss_scale = beta_loss_scale
@@ -104,6 +140,7 @@ class LLObjectCondensation(LossLayerBase):
         self.too_much_beta_scale = too_much_beta_scale
         self.cont_beta_loss = cont_beta_loss
         self.log_energy = log_energy
+        self.n_classes = n_classes
 
         if standard_configuration is not None:
             raise NotImplemented('Not implemented yet')
@@ -120,6 +157,7 @@ class LLObjectCondensation(LossLayerBase):
             'repulsion_scaling': self.repulsion_scaling,
             's_b': self.s_b,
             'position_loss_weight': self.position_loss_weight,
+            'classification_loss_weight' : self.classification_loss_weight,
             'timing_loss_weight': self.timing_loss_weight,
             'use_spectators': self.use_spectators,
             'beta_loss_scale': self.beta_loss_scale,
@@ -136,6 +174,7 @@ class LLObjectCondensation(LossLayerBase):
             'too_much_beta_scale': self.too_much_beta_scale,
             'cont_beta_loss': self.cont_beta_loss,
             'log_energy': self.log_energy,
+            'n_classes': self.n_classes
         }
 
         loss = obj_cond_loss(truth_dict, pred_dict, feat_dict, row_splits, config)
@@ -151,6 +190,7 @@ class LLObjectCondensation(LossLayerBase):
             'repulsion_scaling': self.repulsion_scaling,
             's_b': self.s_b,
             'position_loss_weight': self.position_loss_weight,
+            'classification_loss_weight' : self.classification_loss_weight,
             'timing_loss_weight': self.timing_loss_weight,
             'use_spectators': self.use_spectators,
             'beta_loss_scale': self.beta_loss_scale,
@@ -167,6 +207,7 @@ class LLObjectCondensation(LossLayerBase):
             'too_much_beta_scale': self.too_much_beta_scale,
             'cont_beta_loss': self.cont_beta_loss,
             'log_energy': self.log_energy,
+            'n_classes': self.n_classes
         }
         base_config = super(LLObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

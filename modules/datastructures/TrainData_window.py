@@ -517,6 +517,8 @@ class TrainData_window_truthinjected  (TrainData_window):
         print("truth",truth.shape)
                 
         return [farr],[tarr],[]
+
+
     
       
     

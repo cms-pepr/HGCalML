@@ -302,12 +302,14 @@ def pretrain_obj_cond_loss_truth(truth, pred):
     return  0.*tf.reduce_mean(pred)
 
 
+
 def obj_cond_loss(truth_dict, pred_dict, feat, rowsplits, config):
     start_time = time.time()
 
     rowsplits = tf.cast(rowsplits, tf.int64)  # just for first loss evaluation from stupid keras
 
-    classes = truth_dict['truthHitAssignementIdx'][..., 0]
+
+
 
     energyweights = truth_dict['truthHitAssignedEnergies']
     energyweights = tf.math.log(0.1 * energyweights + 1.)
@@ -338,6 +340,19 @@ def obj_cond_loss(truth_dict, pred_dict, feat, rowsplits, config):
     sqrt_true_en = tf.sqrt(scaled_true_energy + 1e-6)
     energy_loss = energy_diff / (sqrt_true_en + den_offset)
 
+
+    if config['n_classes'] > 0:
+        print("Classification loss will be applied")
+        truth_classes_label_encoding = truth_dict['truthClasses'][:, 0] - 1
+        tf.debugging.Assert(tf.greater_equal(tf.reduce_min(truth_classes_label_encoding), 0), 'Problem in labels (make sure they don\'t start at 0')
+        tf.debugging.Assert(tf.greater_equal(tf.reduce_max(truth_classes_label_encoding), config['n_classes']-1), 'Problem in labels (make sure they don\'t start at 0')
+        truth_classes_one_hot = tf.one_hot(tf.cast(truth_classes_label_encoding, tf.int32), depth=config['n_classes'])
+        pred_classes_probab_scores = pred_dict['predClasses']
+
+        classification_loss = tf.nn.softmax_cross_entropy_with_logits(labels=truth_classes_one_hot, logits=pred_classes_probab_scores)[..., tf.newaxis]
+    else:
+        classification_loss = tf.zeros((energyweights.shape[0], 1)) # Just a zeros vector - should result in zero error
+
     if config['huber_energy_scale'] > 0:
         huber_scale = config['huber_energy_scale'] * sqrt_true_en
         energy_loss = huber(energy_loss, huber_scale)
@@ -349,6 +364,11 @@ def obj_cond_loss(truth_dict, pred_dict, feat, rowsplits, config):
 
     xdiff = pred_dict['predX'] + feat['recHitX'] - truth_dict['truthHitAssignedX']
     ydiff = pred_dict['predY'] + feat['recHitY'] - truth_dict['truthHitAssignedY']
+
+    # print("Pred ", tf.reduce_mean(pred_dict['predX']), tf.reduce_mean(pred_dict['predY']))
+    # print("Feat ", tf.reduce_mean(feat['recHitX']), tf.reduce_mean(feat['recHitY']))
+    # print("Truth", tf.reduce_mean(truth_dict['truthHitAssignedX']), tf.reduce_mean(truth_dict['truthHitAssignedY']))
+
     pos_offs = tf.reduce_sum(tf.concat([xdiff, ydiff], axis=-1) ** 2, axis=-1, keepdims=True)
 
     tdiff = pred_dict['predT'] - truth_dict['truthHitAssignedT']
@@ -358,7 +378,8 @@ def obj_cond_loss(truth_dict, pred_dict, feat, rowsplits, config):
 
     payload_loss = tf.concat([config['energy_loss_weight'] * energy_loss,
                               config['position_loss_weight'] * pos_offs,
-                              config['timing_loss_weight'] * tdiff], axis=-1)
+                              config['timing_loss_weight'] * tdiff,
+                              config['classification_loss_weight'] * classification_loss], axis=-1)
 
     if not config['use_spectators']:
         truth_dict['truthIsSpectator'] = tf.zeros_like(truth_dict['truthIsSpectator'])
@@ -399,6 +420,7 @@ def obj_cond_loss(truth_dict, pred_dict, feat, rowsplits, config):
     energy_loss = payload_loss_full[0]
     pos_loss = payload_loss_full[1]
     time_loss = payload_loss_full[2]
+    class_loss = payload_loss_full[3]
     # energy_loss *= 0.0000001
 
     # neglect energy loss almost fully
@@ -418,6 +440,7 @@ def obj_cond_loss(truth_dict, pred_dict, feat, rowsplits, config):
           'noise_loss', noise_loss.numpy(),
           'energy_loss', energy_loss.numpy(),
           'pos_loss', pos_loss.numpy(),
+          'class_loss', class_loss.numpy(),
           'time_loss', time_loss.numpy(),
           'spectator_beta_penalty', spectator_beta_penalty.numpy(),
           'too_much_beta_loss', too_much_beta_loss.numpy())

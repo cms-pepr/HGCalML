@@ -163,7 +163,7 @@ def create_default_outputs(raw_inputs, x, x_row_splits, energy_block=True, n_cco
 
 def create_output_layers(x, x_row_splits, n_ccoords=2,
                            add_beta=None, add_beta_weight=0.2, use_e_proxy=False,
-                           scale_exp_e=True):
+                           scale_exp_e=True, n_classes=0):
     beta = None
     if add_beta is not None:
 
@@ -208,12 +208,11 @@ def create_output_layers(x, x_row_splits, n_ccoords=2,
     else:
         energy = ScalarMultiply(100.)(energy)
 
-    # (None, 9) (None, 1) (None, 1) (None, 3) (None, 2)
-    # return Concatenate(name="predicted_final")([raw_inputs, beta, energy, xyt, ccoords])
-
-    # return beta, energy, xyt, ccoords
-
-    return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords])
+    if n_classes > 0:
+        classes_scores = Dense(n_classes, activation=None, name="predicted_classification_scores")(x)
+        return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords, classes_scores])
+    else:
+        return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords])
 
 
 
