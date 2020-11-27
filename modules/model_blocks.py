@@ -161,6 +161,62 @@ def create_default_outputs(raw_inputs, x, x_row_splits, energy_block=True, n_cco
     return Concatenate(name="predicted_final")([raw_inputs, beta, energy, xyt, ccoords])
 
 
+def create_output_layers(x, x_row_splits, n_ccoords=2,
+                           add_beta=None, add_beta_weight=0.2, use_e_proxy=False,
+                           scale_exp_e=True, n_classes=0):
+    beta = None
+    if add_beta is not None:
+
+        # the exact weighting can be learnt, but there has to be a positive correlation
+        from tensorflow.keras.constraints import non_neg
+
+        assert add_beta_weight < 1
+        n_adds = float(len(add_beta))
+        if isinstance(add_beta, list):
+            add_beta = Concatenate()(add_beta)
+            add_beta = ScalarMultiply(1. / n_adds)(add_beta)
+        add_beta = Dense(1, activation='sigmoid', name="predicted_add_beta",
+                         kernel_constraint=non_neg(),  # maybe it figures it out...?
+                         kernel_initializer='ones'
+                         )(add_beta)
+
+        # tf.print(add_beta)
+
+        add_beta = ScalarMultiply(add_beta_weight)(add_beta)
+
+        beta = Dense(1, activation='sigmoid', name="pre_predicted_beta")(x)
+        beta = ScalarMultiply(1 - add_beta_weight)(beta)
+        beta = Add(name="predicted_beta")([beta, add_beta])
+
+    else:
+        beta = Dense(1, activation='sigmoid', name="predicted_beta")(x)
+
+    # x_raw = BatchNormalization(momentum=0.6,name="pre_ccoords_bn")(raw_inputs)
+    # pre_ccoords = Dense(64, activation='elu',name="pre_ccords")(Concatenate()([x,x_raw]))
+    ccoords = Dense(2, activation=None, name="predicted_ccoords")(x)
+    if n_ccoords > 2:
+        ccoords = Concatenate()([ccoords, Dense(n_ccoords - 2, activation=None, name="predicted_ccoords_add")(x)])
+
+    xy = Dense(2, activation=None, name="predicted_positions", kernel_initializer='zeros')(x)
+    t = Dense(1, activation=None, name="predicted_time", kernel_initializer='zeros')(x)
+    t = ScalarMultiply(1e-9)(t)
+    xyt = Concatenate()([xy, t])
+
+    energy = Dense(1, activation=None)(x)
+    if scale_exp_e:
+        energy = ExpMinusOne(name='predicted_energy')(energy)
+    else:
+        energy = ScalarMultiply(100.)(energy)
+
+    if n_classes > 0:
+        classes_scores = Dense(n_classes, activation=None, name="predicted_classification_scores")(x)
+        return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords, classes_scores])
+    else:
+        return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords])
+
+
+
+
 
 
 

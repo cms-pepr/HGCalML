@@ -299,7 +299,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
 
     def get_config(self):
         config = {'n_feature_transformation': self.n_feature_transformation,
-}
+        }
         base_config = super(DistanceWeightedMessagePassing, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -340,4 +340,10 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         x, neighbor_indices, distancesq = inputs
         return self.create_output_features(x, neighbor_indices, distancesq)
 
+
+    def get_config(self):
+        config = {'n_feature_transformation': self.n_feature_transformation,
+                  }
+        base_config = super(DistanceWeightedMessagePassing, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
