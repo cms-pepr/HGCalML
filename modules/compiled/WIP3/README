@@ -1,0 +1,6 @@
+N: 50k - 400k
+K: 50 - 200
+
+in the least busy event (50K) for k=200 --> 250x200 = 500k --> one can split up to 250 bins!
+
+make parallelization per bin!
