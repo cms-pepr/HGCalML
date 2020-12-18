@@ -2,7 +2,113 @@ import tensorflow as tf
 from caloGraphNN import gauss_of_lin
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
+from local_cluster_op import LocalCluster
 
+
+############# Local clustering section
+
+class LocalClustering(tf.keras.layers.Layer):
+    def __init__(self,
+                 **kwargs):
+        """
+        Inputs are: 
+         - neighbour indices (V x K)
+         - hierarchy tensor (V x 1) to determine the clustering hierarchy
+         - row splits
+         
+        Call will return:
+         - indices to select the cluster centres, 
+         - updated row splits for after applying the selection
+         - indices to gather back the original dimensionality by repition
+        
+        no parameters.
+        
+        """
+        super(LocalClustering, self).__init__(**kwargs)
+        
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0], input_shapes[2]
+    
+    def build(self, input_shapes):
+        super(LocalClustering, self).build(input_shapes)
+        
+    def call(self, inputs):
+        neighs, hier, row_splits = inputs
+        
+        hierarchy_idxs=[]
+        for i in range(len(row_splits.numpy())-1):
+            a = tf.argsort(hier[row_splits[i]:row_splits[i+1]],axis=0)
+            hierarchy_idxs.append(a+row_splits[i])
+        hierarchy_idxs = tf.concat(hierarchy_idxs,axis=0)
+        
+        rs,sel,ggather = LocalCluster(neighs, hierarchy_idxs, row_splits)
+        return sel, rs, ggather
+        
+class CreateGlobalIndices(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):    
+        """
+        Inputs are:
+         - a tensor to determine the total dimensionality in the first dimension
+        """  
+        super(CreateGlobalIndices, self).__init__(**kwargs)
+        
+    def compute_output_shape(self, input_shape):
+        s = input_shape
+        s[-1] = 1
+        return s
+    
+    def build(self, input_shapes):
+        super(CreateGlobalIndices, self).build(input_shapes)
+    
+    def call(self, input):
+        return tf.expand_dims(tf.range(tf.shape(input)[0]), axis=1)
+    
+    
+class SelectFromIndices(tf.keras.layers.Layer): 
+    def __init__(self, **kwargs):    
+        """
+        Inputs are:
+         - the selection indices
+         - a list of tensors the selection should be applied to (extending the indices)
+        """  
+        super(SelectFromIndices, self).__init__(**kwargs) 
+        
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[1:] #all but first (indices)
+    
+    def build(self, input_shapes):
+        super(SelectFromIndices, self).build(input_shapes)
+          
+    def call(self, inputs):
+        indices = inputs[0]
+        outs=[]
+        for i in range(1,len(inputs)):
+            outs.append( tf.gather_nd( inputs[i], indices) )
+        return outs
+        
+class MultiBackGather(tf.keras.layers.Layer):  
+    def __init__(self, **kwargs):    
+        """
+        Inputs are:
+         - the data to gather back to larger dimensionality by repitition
+        """  
+        self.gathers=[]
+        super(MultiBackGather, self).__init__(**kwargs) 
+        
+    def compute_output_shape(self, input_shape):
+        return input_shape #batch dim is None anyway
+    
+    def append(self, idxs):
+        self.gathers.append(idxs)
+        
+    def call(self, input):
+        sel_gidx=input
+        for k in range(len(self.gathers)):
+            l = len(self.gathers) - k - 1
+            sel_gidx = SelectFromIndices()([ self.gathers[l], sel_gidx] )[0]
+        return sel_gidx
+    
+############# Local clustering section ends
 
 class RaggedGravNet(tf.keras.layers.Layer):
     def __init__(self,

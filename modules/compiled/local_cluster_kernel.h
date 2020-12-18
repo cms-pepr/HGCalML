@@ -39,7 +39,7 @@ struct LocalClusterOpFunctor {
 
 
             //globals for bookkeeping. dimension n_global_vert_g!
-            int *d_out_cluster_asso_idxs_g, //which global index each vertex is associated to V x 1
+            int *d_out_backscatter, //which global index each vertex is associated to V x 1
             int n_global_vert_g
     );
 

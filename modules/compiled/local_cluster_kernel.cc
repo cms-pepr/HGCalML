@@ -41,9 +41,8 @@ struct LocalClusterOpFunctor<CPUDevice, dummy> {
             const int n_neigh,
             const int n_row_splits,
 
-
             //globals for bookkeeping. dimension n_global_vert_g!
-            int *d_out_cluster_asso_idxs_g, //which global index each vertex is associated to V x 1
+            int *d_out_backgather, //which global index each vertex is associated to V x 1
             int n_global_vert_g
     ){
 
@@ -52,21 +51,20 @@ struct LocalClusterOpFunctor<CPUDevice, dummy> {
         for(int i_v=0;i_v<n_in_vert; i_v++)
             mask[i_v]=0;
 
+
         d_out_row_splits[0]=0;
         for(int i_rs=0; i_rs<n_row_splits-1;i_rs++){
             //row splits only relevant for parallelisation
 
-            int sel_this_rs=0;
             for(int _i_v=d_row_splits[i_rs];_i_v<d_row_splits[i_rs+1]; _i_v++){
                 int i_v = d_hierarchy_idxs[_i_v];
                 if(mask[i_v])
                     continue;
 
                 d_out_selection_idxs[nseltotal] = i_v;
-                nseltotal++;
-                sel_this_rs++;
                 int v_gl_idx = d_global_idxs[i_v];
-                d_out_cluster_asso_idxs_g[v_gl_idx] = v_gl_idx; //global self-associate
+                d_out_backgather[v_gl_idx] = nseltotal; //global self-associate
+
 
                 for(int i_n=0;i_n<n_neigh;i_n++){
 
@@ -79,11 +77,12 @@ struct LocalClusterOpFunctor<CPUDevice, dummy> {
                     //mask
                     mask[nidx]=1;
                     int ngl_idx = d_global_idxs[nidx];
-                    d_out_cluster_asso_idxs_g[ngl_idx] = v_gl_idx; //global associate
+                    d_out_backgather[ngl_idx] = nseltotal; //global associate
                 }
+                nseltotal++;
             }
 
-            d_out_row_splits[i_rs+1] = sel_this_rs;
+            d_out_row_splits[i_rs+1] = nseltotal;
         }
 
         *n_sel_vtx=nseltotal;
@@ -122,6 +121,7 @@ public:
     .Input("hierarchy_idxs: int32")
     .Input("global_idxs: int32")
     .Input("row_splits: int32")
+    .Input("prev_asso: int32")
     .Output("out_row_splits: int32")
     .Output("selection_idxs: int32")
     .Output("cluster_asso_idxs: int32");
@@ -151,15 +151,15 @@ public:
 
 
         Tensor *t_out_row_splits = NULL;
-        Tensor *t_out_cluster_asso_idxs_g = NULL;
+        Tensor *t_out_backgather_idxs_g = NULL;
 
         OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({
             n_rs
         }), &t_out_row_splits));
 
         OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({
-            n_global_idxs
-        }), &t_out_cluster_asso_idxs_g));
+            n_global_idxs,1
+        }), &t_out_backgather_idxs_g));
 
 
         int nseltotal=0;
@@ -184,16 +184,15 @@ public:
 
 
                         //globals for bookkeeping. dimension n_global_vert_g!
-                        t_out_cluster_asso_idxs_g->flat<int>().data(), //which global index each vertex is associated to V x 1
+                        t_out_backgather_idxs_g->flat<int>().data(), //which global index each vertex is associated to V x 1
                         n_global_idxs
 
                         );
 
-        DEBUGCOUT(nseltotal);
 
         Tensor *t_selection_idxs = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({
-            nseltotal
+            nseltotal, 1
         }), &t_selection_idxs));
 
         LocalClusterTruncateOpFunctor<Device,int>()(

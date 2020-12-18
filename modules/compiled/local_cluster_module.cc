@@ -11,7 +11,7 @@ REGISTER_OP("LocalCluster")
     .Input("row_splits: int32")
     .Output("out_row_splits: int32")
     .Output("selection_idxs: int32")
-    .Output("cluster_asso_idxs: int32");
+    .Output("backscatter_idxs: int32");
 
 
 

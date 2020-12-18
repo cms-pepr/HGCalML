@@ -935,10 +935,13 @@ class VertexScatterer(keras.layers.Layer):
             return x_data 
         
         scatter_idcs_n = tf.cast(scatter_idcs,dtype='int64')
-        shape = tf.cast(tf.shape(protoshape),dtype='int64')[:-1]
-        shape = tf.concat([shape,tf.cast(tf.shape(x_data)[1:2],dtype='int64')],axis=-1)
+        shape=tf.cast(tf.shape(protoshape),dtype='int64')
         
-        tf.print(self.name, 'is scattering', x_data.shape, 'to', shape)
+        if len(tf.shape(x_data))>1:
+            shape = tf.cast(tf.shape(protoshape),dtype='int64')[:-1]
+            shape = tf.concat([shape,tf.cast(tf.shape(x_data)[1:2],dtype='int64')],axis=-1)
+        
+        tf.print(self.name, 'is scattering', x_data.shape, 'to', shape, 'with idxs', scatter_idcs_n.shape)
         
         return tf.scatter_nd(indices=scatter_idcs_n, updates=x_data, shape=shape)
 

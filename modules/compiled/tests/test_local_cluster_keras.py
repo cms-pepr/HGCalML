@@ -9,6 +9,8 @@ from LayersRagged import VertexScatterer
 from sklearn.utils import shuffle
 import os
 
+from GravNetLayersRagged import LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather
+
 def makecolours(asso):
     uasso = np.unique(asso)
     uasso = shuffle(uasso)
@@ -34,7 +36,7 @@ def plots(gidx, row_splits, glcoords, vidx, outdir, onlyFirst=False):
         
         plt.scatter(predCCoords[:,0],predCCoords[:,1],c=truthHitAssignementIdx,cmap='jet')
         #plt.show()
-        plt.savefig(outdir+'/0000'+str(vidx)+'.png')
+        plt.savefig(outdir+'/'+str(i)+'_0000'+str(vidx)+'.png')
         plt.close(fig)
         #if onlyFirst:
         #    break
@@ -43,20 +45,14 @@ def plots(gidx, row_splits, glcoords, vidx, outdir, onlyFirst=False):
 radius=0.1
 nvert=10000
 K=1000
-outdir='lc_cpu'
+outdir='lc_cpu_keras'
 
 def applyClustering(K, incoords, hier, row_splits):
     
-    hierarchy_idxs=[]
-    for i in range(len(row_splits.numpy())-1):
-        a = tf.argsort(hier[row_splits[i]:row_splits[i+1]],axis=0)
-        hierarchy_idxs.append(a+row_splits[i])
-    hierarchy_idxs = tf.concat(hierarchy_idxs,axis=0)
-    print('hierarchy_idxs',hierarchy_idxs.shape)
-    print('incoords',incoords.shape)
-    assert incoords.shape[0] == hierarchy_idxs.shape[0]
     neighs,_ = SelectKnn(K = K, coords=incoords,  row_splits=row_splits, tf_compatible=False,max_radius=radius)
-    rs,sel,gscatidx = lc(neighs, hierarchy_idxs, row_splits)
+    
+    
+    sel,rs,gscatidx = LocalClustering()([neighs, hier, row_splits])
     
     return rs,sel, gscatidx
 
@@ -116,35 +112,39 @@ coords = gl_coords
 row_splits = gl_row_splits
 gidx = global_idxs
 scatters=[]
-for i in range(0):
+
+bglayer = MultiBackGather()
+for i in range(10):
 
     row_splits,sel,backscatter = applyClustering(K, coords, hier, row_splits)
-    scatters.append(backscatter)
-    print('coords pre sel ',coords.shape)
-    print('sel',sel.shape)
-    hier = tf.gather_nd(hier,sel)
-    coords = tf.gather_nd(coords,sel)
-    #this gives back the original indices after backgather
-    gidx = tf.gather_nd(gidx,sel)
+    bglayer.append(backscatter)
+    #scatters.append(backscatter)
+    
+    hier, coords, gidx = SelectFromIndices()([sel, hier, coords, gidx])
+    
     coords /= 2. #shift stuff closer together
     print('row_splits',row_splits.numpy())
     print('coords',coords.shape)
     print('hier',hier.shape)
-    print('backscatter',backscatter.shape)
     
-    sel_gidx = gidx
-    for k in range(len(scatters)):
-        l = len(scatters) - k - 1
-        print('scatters[l]',scatters[l].shape)
-        sel_gidx = tf.gather_nd(sel_gidx, scatters[l] )
-        print('scattered to', sel_gidx.shape)
     
-    print(sel_gidx.numpy())
+    #sel_gidx = gidx
+    #for k in range(len(scatters)):
+    #    l = len(scatters) - k - 1
+    #    print('scatters[l]',scatters[l].shape)
+    #    sel_gidx = tf.gather_nd(sel_gidx, scatters[l] )
+    #    print('scattered to', sel_gidx.shape)
+    
+    sel_gidx = bglayer(gidx)
+    print('scat to',sel_gidx.shape)
+    print('plotting...')
     plots(sel_gidx.numpy(), gl_row_splits, gl_coords, i, outdir,onlyFirst=True)
+    #plots(gidx.numpy(), row_splits, coords, i, outdir+'_loc',onlyFirst=True)
+    print('plots done')
     if len(sel) < 4:
         break
 
-
+exit()
 #timing test
 vs=[]
 ts=[]
