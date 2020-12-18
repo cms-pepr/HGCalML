@@ -4,6 +4,47 @@ from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
 
+#just for the moment
+from index_dicts import create_truth_dict
+#### helper###
+
+
+def check_type_return_shape(s):
+    if not isinstance(s, tf.TensorSpec):
+        raise TypeError('Only TensorSpec signature types are supported, '
+                      'but saw signature entry: {}.'.format(s))
+    return s.shape
+
+
+############# Some layers for convenience ############
+
+class ExtractTruthContributions(tf.keras.layers.Layer):
+    def __init__(self,
+                 **kwargs):
+        """
+        Inputs are: 
+         - Full truth array
+         
+        Call will return:
+         - truth association indices (as float right now (FIXME, with other changes downstream))
+         - truth energy
+         - truth position (x,y,t)
+         - truth classes (not as one-hot)
+        
+        no parameters.
+        
+        """
+        super(ExtractTruthContributions, self).__init__(**kwargs)
+        
+    def compute_output_shape(self, input_shapes):
+        return (1,), (1,), (3,), (1,)
+    
+    def call(self, input):
+        d = create_truth_dict(input)
+        idx = d['truthHitAssignementIdx']
+        e = d['truthHitAssignedEnergies']
+        x = d['truthHitAssignedX']
+        return d,idx,e,x
 
 ############# Local clustering section
 
@@ -24,24 +65,42 @@ class LocalClustering(tf.keras.layers.Layer):
         no parameters.
         
         """
-        super(LocalClustering, self).__init__(**kwargs)
+        super(LocalClustering, self).__init__(dynamic=False,**kwargs)
         
     def compute_output_shape(self, input_shapes):
-        return input_shapes[0], input_shapes[2]
+        print('>>>>CALLING compute_output_shape')
+        return input_shapes[1], input_shapes[2], input_shapes[1]
     
+    def _keras_tensor_symbolic_call(self, inputs, input_masks, args, kwargs):
+        print('>>>>CALLING SYMBOLIC')
+        return super(LocalClustering, self). _keras_tensor_symbolic_call( inputs, input_masks, args, kwargs)
+    
+    def compute_output_signature(self, input_signature):
+        
+        print("CALLING compute_output_signature")
+        input_shapes = [x.shape for x in input_spec]
+        output_shapes = self.compute_output_shape(input_shapes)
+
+        return [tf.TensorSpec(dtype=tf.int32, shape=output_shapes[i]) for i in range(len(output_shape))]
+    
+   
     def build(self, input_shapes):
         super(LocalClustering, self).build(input_shapes)
         
     def call(self, inputs):
         neighs, hier, row_splits = inputs
         
+        if row_splits.shape[0] is None:
+            return tf.zeros_like(hier, dtype='int32'), row_splits, tf.zeros_like(hier, dtype='int32')
+        
         hierarchy_idxs=[]
-        for i in range(len(row_splits.numpy())-1):
+        for i in range(row_splits.shape[0] - 1):
             a = tf.argsort(hier[row_splits[i]:row_splits[i+1]],axis=0)
             hierarchy_idxs.append(a+row_splits[i])
         hierarchy_idxs = tf.concat(hierarchy_idxs,axis=0)
         
         rs,sel,ggather = LocalCluster(neighs, hierarchy_idxs, row_splits)
+        print('called', self.name)
         return sel, rs, ggather
         
 class CreateGlobalIndices(tf.keras.layers.Layer):
@@ -50,12 +109,18 @@ class CreateGlobalIndices(tf.keras.layers.Layer):
         Inputs are:
          - a tensor to determine the total dimensionality in the first dimension
         """  
-        super(CreateGlobalIndices, self).__init__(**kwargs)
+        super(CreateGlobalIndices, self).__init__(dynamic=True,**kwargs)
         
     def compute_output_shape(self, input_shape):
-        s = input_shape
-        s[-1] = 1
+        s = (input_shape[0],1)
         return s
+    
+    
+    def compute_output_signature(self, input_signature):
+        print('>>>>>CreateGlobalIndices input_signature',input_signature)
+        input_shape = tf.nest.map_structure(check_type_return_shape, input_signature)
+        output_shape = self.compute_output_shape(input_shape)
+        return [tf.TensorSpec(dtype=tf.int32, shape=output_shape[i]) for i in range(len(output_shape))]
     
     def build(self, input_shapes):
         super(CreateGlobalIndices, self).build(input_shapes)
@@ -71,10 +136,17 @@ class SelectFromIndices(tf.keras.layers.Layer):
          - the selection indices
          - a list of tensors the selection should be applied to (extending the indices)
         """  
-        super(SelectFromIndices, self).__init__(**kwargs) 
+        super(SelectFromIndices, self).__init__(dynamic=True,**kwargs) 
         
     def compute_output_shape(self, input_shapes):
         return input_shapes[1:] #all but first (indices)
+    
+    
+    def compute_output_signature(self, input_signature):
+        print('>>>>>SelectFromIndices input_signature',input_signature)
+        input_shape = tf.nest.map_structure(check_type_return_shape, input_signature)
+        output_shape = self.compute_output_shape(input_shape)
+        return [tf.TensorSpec(dtype=tf.int32, shape=output_shape[i]) for i in range(len(output_shape))]
     
     def build(self, input_shapes):
         super(SelectFromIndices, self).build(input_shapes)
@@ -180,11 +252,10 @@ class RaggedGravNet(tf.keras.layers.Layer):
     def priv_call(self, inputs):
         x = inputs[0]
         row_splits = inputs[1]
-
+        
         coordinates = self.input_spatial_transform(x)
 
         neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
-
 
         return self.create_output_features(x, neighbour_indices, distancesq), coordinates, neighbour_indices, distancesq
 

@@ -34,7 +34,7 @@ def create_feature_dict(feat):
     return outdict
     
 
-def create_truth_dict(truth, usetf=False):
+def create_truth_dict(truth, usetf=True):
     outdict={}
     outdict['truthHitAssignementIdx']    =  truth[:,0:1]
     if usetf:
@@ -48,16 +48,15 @@ def create_truth_dict(truth, usetf=False):
                                                      np.zeros_like(truth[:,0:1]))
     outdict['truthNoNoise'] = 1. - outdict['truthIsNoise']
     outdict['truthHitAssignedEnergies']  =  truth[:,1:2]
-    outdict['truthHitAssignedEtas']      =  truth[:,8:9]
-    outdict['truthHitAssignedPhis']      =  truth[:,9:10]
 
-    # New
-    outdict['truthRechitsSum']      =  truth[:,16:17]
-    outdict['truthRealEnergy']      =  truth[:,15:16]
-    outdict['truthIsSpectator']      =  truth[:,14:15]
+    outdict['truthHitAssignedX']      =  truth[:,2:3]
+    outdict['truthHitAssignedY']      =  truth[:,3:4]
+    outdict['truthHitAssignedZ']      =  truth[:,4:5]
+    outdict['truthHitAssignedT']      =  truth[:,10:11]
+
     
     
-    outdict['truthClasses']      =  truth[:,19:19+n_classes]
+    #outdict['truthClasses']      =  truth[:,19:19+n_classes]
 
     return outdict
 
@@ -138,7 +137,6 @@ def create_index_dict(truth, pred, usetf=True, n_ccoords=2):
 
 
 
-
 def split_feat_pred(pred):
     '''
     returns features, prediction
@@ -163,6 +161,7 @@ def create_ragged_cal_feature_dict(feat):
 
 
 def create_ragged_cal_truth_dict(truth):
+    raise ValueError("these indices do not match the other dicts. This exception is a reminder to check that!")
     outdict = {}
 
     outdict['truthHitAssignementIdx'] = truth[:, 0:1]

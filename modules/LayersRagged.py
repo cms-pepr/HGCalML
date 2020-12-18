@@ -222,6 +222,7 @@ class RaggedConstructTensor(keras.layers.Layer):
         num_elements = tf.cast(row_splits[-1], tf.int32)
         data = tf.slice(x_data, [0, 0], [num_elements, self.num_features])
 
+        row_splits = tf.cast(row_splits, tf.int32)
         return data, row_splits
 
     def compute_output_shape(self, input_shape):

@@ -210,15 +210,27 @@ def create_output_layers(x, x_row_splits, n_ccoords=2,
 
     if n_classes > 0:
         classes_scores = Dense(n_classes, activation=None, name="predicted_classification_scores")(x)
+       
         return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords, classes_scores])
     else:
         return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords])
 
 
 
-
-
-
+#new format!
+def create_outputs(x, n_ccoords=3, n_classes=6):
+    '''
+    returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
+    '''
+    
+    pred_beta = Dense(1, activation='sigmoid')(x)
+    pred_ccoords = Dense(n_ccoords)(x)
+    pred_energy = Dense(1)(x)
+    pred_pos = Dense(2)(x) 
+    pred_time = ScalarMultiply(10.)(Dense(1)(x)) 
+    pred_id = Dense(n_classes, activation="softmax")(x)
+    
+    return pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
 
 
 
