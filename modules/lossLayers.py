@@ -17,15 +17,18 @@ class LossLayerBase(tf.keras.layers.Layer):
     The 'scale' argument determines a global sale factor for the loss. 
     """
     
-    def __init__(self, active=True, scale=1., **kwargs):
+    def __init__(self, active=True, scale=1., 
+                 print_loss=False, **kwargs):
         super(LossLayerBase, self).__init__(**kwargs)
         
         self.active = active
         self.scale = scale
+        self.print_loss = print_loss
         
     def get_config(self):
         config = {'active': self.active ,
-                  'scale': self.scale}
+                  'scale': self.scale,
+                  'print_loss': self.print_loss}
         base_config = super(LossLayerBase, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
@@ -55,7 +58,7 @@ class LLClusterCoordinates(LossLayerBase):
         self.repulsion_contrib=repulsion_contrib
         assert repulsion_contrib <= 1. and repulsion_contrib>= 0.
         
-        super(LLClusterCoordinates, self).__init__(**kwargs)
+        super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
 
     def loss(self, inputs):
         coords, truth_indices, row_splits = inputs
@@ -68,7 +71,12 @@ class LLClusterCoordinates(LossLayerBase):
                 zeros, zeros,Q_MIN=1.0, S_B=0.,energyweights=None,
                 use_average_cc_pos=True,payload_rel_threshold=0.01)
         
-        return (1.-self.repulsion_contrib)*V_att+self.repulsion_contrib*V_rep
+        att = (1.-self.repulsion_contrib)*V_att
+        rep = self.repulsion_contrib*V_rep
+        loss = att + rep
+        if self.print_loss:
+            print(self.name, loss.numpy(), 'att loss:', att.numpy(), 'rep loss:',rep.numpy())
+        return loss
 
     def get_config(self):
         config = { 'repulsion_contrib': self.repulsion_contrib }
@@ -122,7 +130,7 @@ class LLObjectCondensation(LossLayerBase):
         :param standard_configuration:
         :param kwargs:
         """
-        super(LLObjectCondensation, self).__init__(**kwargs)
+        super(LLObjectCondensation, self).__init__(dynamic=True,**kwargs)
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights
@@ -241,7 +249,6 @@ class LLFullObjectCondensation(LossLayerBase):
                  use_average_cc_pos=False, payload_rel_threshold=0.1, rel_energy_mse=False, smooth_rep_loss=False,
                  pre_train=False, huber_energy_scale=2., downweight_low_energy=True, n_ccoords=2, energy_den_offset=1.,
                  noise_scaler=1., too_much_beta_scale=0.1, cont_beta_loss=False, log_energy=False, n_classes=0,
-                 print_loss=True,
                  print_time=True,
                  standard_configuration=None,
                  **kwargs):
@@ -307,8 +314,9 @@ class LLFullObjectCondensation(LossLayerBase):
         self.cont_beta_loss = cont_beta_loss
         self.log_energy = log_energy
         self.n_classes = n_classes
-        self.print_loss = print_loss
         self.print_time = print_time
+
+        self.loc_time=time.time()
 
         if standard_configuration is not None:
             raise NotImplemented('Not implemented yet')
@@ -329,7 +337,7 @@ class LLFullObjectCondensation(LossLayerBase):
 
     
     def calc_position_loss(self, t_pos, pred_pos):
-        return tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)
+        return tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) #is in cm
     
     def calc_timing_loss(self, t_time, pred_time):
         return (t_time*1e9 - pred_time)**2 #rechit time is in ns, true time in s
@@ -398,7 +406,9 @@ class LLFullObjectCondensation(LossLayerBase):
         loss = tf.debugging.check_numerics(loss, "loss has nan")
         
         if self.print_time:
-            print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/10.,'ms')
+            print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms')
+            print('loss layer info:',self.name,'batch took',int((time.time()-self.loc_time)*100000.)/100.,'ms')
+            self.loc_time = time.time()
             
         if self.print_loss:
             print('loss', loss.numpy(),
@@ -410,7 +420,7 @@ class LLFullObjectCondensation(LossLayerBase):
                   'pos_loss', pos_loss.numpy(),
                   'time_loss', time_loss.numpy(),
                   'class_loss', class_loss.numpy(),
-                  'exceed_beta', exceed_beta.numpy())
+                  'exceed_beta', exceed_beta.numpy(),'\n')
 
         return loss
 
@@ -442,7 +452,6 @@ class LLFullObjectCondensation(LossLayerBase):
             'cont_beta_loss': self.cont_beta_loss,
             'log_energy': self.log_energy,
             'n_classes': self.n_classes,
-            'print_loss': self.print_loss,
             'print_time' : self.print_time
         }
         base_config = super(LLFullObjectCondensation, self).get_config()

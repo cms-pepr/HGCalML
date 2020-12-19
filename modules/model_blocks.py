@@ -1,5 +1,5 @@
 
-from tensorflow.keras.layers import Dense, Concatenate, BatchNormalization, Add
+from tensorflow.keras.layers import Dense, Concatenate, BatchNormalization, Add, Multiply
 from Layers import ExpMinusOne, CondensateToPseudoRS, RaggedSumAndScatter, FusedRaggedGravNetLinParse, VertexScatterer, FusedRaggedGravNetAggAtt
 from DeepJetCore.DJCLayers import  StopGradient, SelectFeatures, ScalarMultiply
 
@@ -218,14 +218,14 @@ def create_output_layers(x, x_row_splits, n_ccoords=2,
 
 
 #new format!
-def create_outputs(x, n_ccoords=3, n_classes=6):
+def create_outputs(x, energy, n_ccoords=3, n_classes=6):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
     
     pred_beta = Dense(1, activation='sigmoid')(x)
     pred_ccoords = Dense(n_ccoords)(x)
-    pred_energy = Dense(1)(x)
+    pred_energy = Multiply()([Dense(1)(x),energy])
     pred_pos = Dense(2)(x) 
     pred_time = ScalarMultiply(10.)(Dense(1)(x)) 
     pred_id = Dense(n_classes, activation="softmax")(x)

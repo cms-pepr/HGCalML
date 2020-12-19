@@ -48,8 +48,11 @@ class ExtractTruthContributions(tf.keras.layers.Layer):
 
 ############# Local clustering section
 
+
+
 class LocalClustering(tf.keras.layers.Layer):
     def __init__(self,
+                 print_reduction=False,
                  **kwargs):
         """
         Inputs are: 
@@ -66,18 +69,19 @@ class LocalClustering(tf.keras.layers.Layer):
         
         """
         super(LocalClustering, self).__init__(dynamic=False,**kwargs)
+        self.print_reduction=print_reduction
+        
+    def get_config(self):
+        config = {'print_reduction': self.print_reduction}
+        base_config = super(LocalClustering, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
         
     def compute_output_shape(self, input_shapes):
-        print('>>>>CALLING compute_output_shape')
-        return input_shapes[1], input_shapes[2], input_shapes[1]
+        return (None,1), (None,), (None,1)
     
-    def _keras_tensor_symbolic_call(self, inputs, input_masks, args, kwargs):
-        print('>>>>CALLING SYMBOLIC')
-        return super(LocalClustering, self). _keras_tensor_symbolic_call( inputs, input_masks, args, kwargs)
     
     def compute_output_signature(self, input_signature):
         
-        print("CALLING compute_output_signature")
         input_shapes = [x.shape for x in input_spec]
         output_shapes = self.compute_output_shape(input_shapes)
 
@@ -93,14 +97,24 @@ class LocalClustering(tf.keras.layers.Layer):
         if row_splits.shape[0] is None:
             return tf.zeros_like(hier, dtype='int32'), row_splits, tf.zeros_like(hier, dtype='int32')
         
+        if hier.shape[1] > 1:
+            raise ValueError(self.name+' received wrong hierarchy shape')
+        
         hierarchy_idxs=[]
         for i in range(row_splits.shape[0] - 1):
-            a = tf.argsort(hier[row_splits[i]:row_splits[i+1]],axis=0)
+            a = tf.argsort(hier[row_splits[i]:row_splits[i+1]],axis=0, direction='DESCENDING')
             hierarchy_idxs.append(a+row_splits[i])
         hierarchy_idxs = tf.concat(hierarchy_idxs,axis=0)
         
+        
         rs,sel,ggather = LocalCluster(neighs, hierarchy_idxs, row_splits)
-        print('called', self.name)
+        
+        #keras does not like gather_nd outputs
+        sel = tf.reshape(sel, [-1,1])
+        rs = tf.reshape(rs, [-1])
+        ggather = tf.reshape(ggather, [-1,1])
+        if self.print_reduction:
+            tf.print(self.name,'reduction',float(sel.shape[0])/float(ggather.shape[0]),'to',sel.shape[0])
         return sel, rs, ggather
         
 class CreateGlobalIndices(tf.keras.layers.Layer):
@@ -109,7 +123,7 @@ class CreateGlobalIndices(tf.keras.layers.Layer):
         Inputs are:
          - a tensor to determine the total dimensionality in the first dimension
         """  
-        super(CreateGlobalIndices, self).__init__(dynamic=True,**kwargs)
+        super(CreateGlobalIndices, self).__init__(dynamic=False,**kwargs)
         
     def compute_output_shape(self, input_shape):
         s = (input_shape[0],1)
@@ -126,7 +140,9 @@ class CreateGlobalIndices(tf.keras.layers.Layer):
         super(CreateGlobalIndices, self).build(input_shapes)
     
     def call(self, input):
-        return tf.expand_dims(tf.range(tf.shape(input)[0]), axis=1)
+        ins = tf.cast(input*0.,dtype='int32')[:,0:1]
+        add = tf.expand_dims(tf.range(tf.shape(input)[0],dtype='int32'), axis=1)
+        return ins+add
     
     
 class SelectFromIndices(tf.keras.layers.Layer): 
@@ -136,26 +152,32 @@ class SelectFromIndices(tf.keras.layers.Layer):
          - the selection indices
          - a list of tensors the selection should be applied to (extending the indices)
         """  
-        super(SelectFromIndices, self).__init__(dynamic=True,**kwargs) 
+        super(SelectFromIndices, self).__init__(dynamic=False,**kwargs) 
         
-    def compute_output_shape(self, input_shapes):
-        return input_shapes[1:] #all but first (indices)
+    def compute_output_shape(self, input_shapes):#these are tensors shapes
+        ts = tf.python.framework.tensor_shape.TensorShape
+        outshapes = [ts([None, ] +s.as_list()[1:]) for s in input_shapes][1:]
+        return outshapes #all but first (indices)
     
     
     def compute_output_signature(self, input_signature):
         print('>>>>>SelectFromIndices input_signature',input_signature)
         input_shape = tf.nest.map_structure(check_type_return_shape, input_signature)
         output_shape = self.compute_output_shape(input_shape)
-        return [tf.TensorSpec(dtype=tf.int32, shape=output_shape[i]) for i in range(len(output_shape))]
+        input_dtypes=[i.dtype for i in input_signature]
+        return [tf.TensorSpec(dtype=input_dtypes[i+1], shape=output_shape[i]) for i in range(0,len(output_shape))]
     
     def build(self, input_shapes):
         super(SelectFromIndices, self).build(input_shapes)
+        self.outshapes = self.compute_output_shape(input_shapes)
           
     def call(self, inputs):
         indices = inputs[0]
         outs=[]
+        #outshapes = self.compute_output_shape([tf.shape(i) for i in inputs])
         for i in range(1,len(inputs)):
-            outs.append( tf.gather_nd( inputs[i], indices) )
+            g = tf.gather_nd( inputs[i], indices)
+            outs.append(g) 
         return outs
         
 class MultiBackGather(tf.keras.layers.Layer):  
@@ -165,7 +187,7 @@ class MultiBackGather(tf.keras.layers.Layer):
          - the data to gather back to larger dimensionality by repitition
         """  
         self.gathers=[]
-        super(MultiBackGather, self).__init__(**kwargs) 
+        super(MultiBackGather, self).__init__(dynamic=False,**kwargs) 
         
     def compute_output_shape(self, input_shape):
         return input_shape #batch dim is None anyway
@@ -174,13 +196,51 @@ class MultiBackGather(tf.keras.layers.Layer):
         self.gathers.append(idxs)
         
     def call(self, input):
-        sel_gidx=input
-        for k in range(len(self.gathers)):
+        sel_gidx, gathers = input
+        for k in range(len(gathers)):
             l = len(self.gathers) - k - 1
-            sel_gidx = SelectFromIndices()([ self.gathers[l], sel_gidx] )[0]
+            sel_gidx = SelectFromIndices()([ gathers[l], sel_gidx] )[0]
         return sel_gidx
     
 ############# Local clustering section ends
+
+
+class KNN(tf.keras.layers.Layer):
+    def __init__(self,K: int, radius: float, **kwargs):
+        """
+        Call will return 
+         - self + K neighbour indices of K neighbours within max radius
+         - distances to self+K neighbours
+        
+        Inputs: coordinates, row_splits
+        
+        :param K: number of nearest neighbours
+        :param radius: maximum distance of nearest neighbours
+        """
+        super(KNN, self).__init__(**kwargs) 
+        self.K = K
+        self.radius = radius
+        
+        
+    def get_config(self):
+        config = {'K': self.K,
+                  'radius': self.radius}
+        base_config = super(KNN, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def compute_output_shape(self, input_shapes):
+        return (None, self.K+1),(None, self.K+1)
+
+    def call(self, inputs):
+        coordinates, row_splits = inputs
+        idx,dist = SelectKnn(self.K+1, coordinates,  row_splits,
+                             max_radius= self.radius, tf_compatible=False)
+
+        idx = tf.reshape(idx, [-1,self.K+1])
+        dist = tf.reshape(dist, [-1,self.K+1])
+        return idx,dist
+
+######## generic neighbours
 
 class RaggedGravNet(tf.keras.layers.Layer):
     def __init__(self,
@@ -380,14 +440,31 @@ class DynamicDistanceMessagePassing(tf.keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+class CollectNeighbourAverageAndMax(tf.keras.layers.Layer):
+    def __init__(self,**kwargs):
+        '''
+        Simply accumulates all neighbour index information (including self if in the neighbour indices)
+        Output will be divded by K, but not explicitly averaged if the number of neighbours is <K for
+        particular vertices
+        
+        Inputs:  data, idxs
+        '''
+        super(CollectNeighbourAverageAndMax, self).__init__(**kwargs)
 
-
-
+    def compute_output_shape(self, input_shapes): # data, idxs
+        return (input_shapes[0][0],2*input_shapes[0][-1])
+    
+    def call(self, inputs):
+        x, idxs = inputs
+        f,_ = AccumulateKnn(tf.cast(idxs*0, tf.float32),  x, idxs, n_moments=0)
+        return tf.reshape(f, [-1,2*x.shape[-1]])
+    
 
 class MessagePassing(tf.keras.layers.Layer):
     '''
-    allows distances after each passing operation to be dynamically adjusted.
-    this similar to FusedRaggedGravNetAggAtt, but incorporates the scaling in the message passing loop
+    Inputs: x, neighbor_indices
+    
+    
     '''
 
     def __init__(self, n_feature_transformation,
@@ -430,7 +507,7 @@ class MessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices):
-        f,_ = AccumulateKnn(1. + tf.cast(neighbour_indices*0, tf.float32),  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(tf.cast(neighbour_indices*0, tf.float32),  features, neighbour_indices, n_moments=0)
         return f
 
     def call(self, inputs):
@@ -446,8 +523,7 @@ class MessagePassing(tf.keras.layers.Layer):
 
 class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
     '''
-    allows distances after each passing operation to be dynamically adjusted.
-    this similar to FusedRaggedGravNetAggAtt, but incorporates the scaling in the message passing loop
+
     '''
 
     def __init__(self, n_feature_transformation,
