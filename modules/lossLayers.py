@@ -58,18 +58,36 @@ class LLClusterCoordinates(LossLayerBase):
         self.repulsion_contrib=repulsion_contrib
         assert repulsion_contrib <= 1. and repulsion_contrib>= 0.
         
-        super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
+        if 'dynamic' in kwargs:
+            super(LLClusterCoordinates, self).__init__(**kwargs)
+        else:
+            super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
 
     def loss(self, inputs):
-        coords, truth_indices, row_splits = inputs
+        
+        use_avg_cc=True
+        coords, truth_indices, row_splits, beta_like = None, None, None, None
+        if len(inputs) == 3:
+            coords, truth_indices, row_splits = inputs
+        elif len(inputs) == 4:
+            coords, truth_indices, beta_like, row_splits = inputs
+            use_avg_cc = False
+        else:
+            raise ValueError("LLClusterCoordinates requires 3 or 4 inputs")
 
         zeros = tf.zeros_like(coords[:,0:1])
+        if beta_like is None:
+            beta_like = zeros+1./2.
+        else:
+            beta_like = tf.nn.sigmoid(beta_like)
+            beta_like = tf.stop_gradient(beta_like)#just informing, no grad # 0 - 1
+            beta_like = 0.1* beta_like + 0.5 #just a slight scaling
         
         #this takes care of noise through truth_indices < 0
-        V_att, V_rep,_,_,_,_=oc_loss(coords, zeros+1./2., #beta constant
+        V_att, V_rep,_,_,_,_=oc_loss(coords, beta_like, #beta constant
                 truth_indices, row_splits, 
                 zeros, zeros,Q_MIN=1.0, S_B=0.,energyweights=None,
-                use_average_cc_pos=True,payload_rel_threshold=0.01)
+                use_average_cc_pos=use_avg_cc,payload_rel_threshold=0.01)
         
         att = (1.-self.repulsion_contrib)*V_att
         rep = self.repulsion_contrib*V_rep
@@ -130,7 +148,10 @@ class LLObjectCondensation(LossLayerBase):
         :param standard_configuration:
         :param kwargs:
         """
-        super(LLObjectCondensation, self).__init__(dynamic=True,**kwargs)
+        if 'dynamic' in kwargs:
+            super(LLObjectCondensation, self).__init__(**kwargs)
+        else:
+            super(LLObjectCondensation, self).__init__(dynamic=True,**kwargs)
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights
@@ -231,6 +252,17 @@ class LLObjectCondensation(LossLayerBase):
 
 
 
+### LLSelectedDistances
+# slim
+# takes neighbour indices and distances, and (truth) ass idx
+# make indices TF compat by 
+#   overwrite = tile( tf range)
+#   tf.where(idx<0, overwrite, idx)
+# gather asso idx
+# select asso idx (no rs necessary already taken care of by kNN)
+# repulsive/attractive using distances (will be 0 for self index)
+#
+
 
 class LLFullObjectCondensation(LossLayerBase):
     '''
@@ -248,7 +280,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
                  use_average_cc_pos=False, payload_rel_threshold=0.1, rel_energy_mse=False, smooth_rep_loss=False,
                  pre_train=False, huber_energy_scale=2., downweight_low_energy=True, n_ccoords=2, energy_den_offset=1.,
-                 noise_scaler=1., too_much_beta_scale=0.1, cont_beta_loss=False, log_energy=False, n_classes=0,
+                 noise_scaler=1., too_much_beta_scale=0., cont_beta_loss=False, log_energy=False, n_classes=0,
                  print_time=True,
                  standard_configuration=None,
                  **kwargs):
@@ -286,7 +318,10 @@ class LLFullObjectCondensation(LossLayerBase):
         :param standard_configuration:
         :param kwargs:
         """
-        super(LLFullObjectCondensation, self).__init__(dynamic=True,**kwargs)
+        if 'dynamic' in kwargs:
+            super(LLFullObjectCondensation, self).__init__(**kwargs)
+        else:
+            super(LLFullObjectCondensation, self).__init__(dynamic=True,**kwargs)
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights

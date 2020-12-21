@@ -18,33 +18,29 @@ def check_type_return_shape(s):
 
 ############# Some layers for convenience ############
 
-class ExtractTruthContributions(tf.keras.layers.Layer):
+class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
                  **kwargs):
         """
         Inputs are: 
-         - Full truth array
+         - Features
          
         Call will return:
-         - truth association indices (as float right now (FIXME, with other changes downstream))
-         - truth energy
-         - truth position (x,y,t)
-         - truth classes (not as one-hot)
+         - processed features
         
-        no parameters.
+        will apply some simple fixed preprocessing to the standard TrainData_OC features
         
         """
-        super(ExtractTruthContributions, self).__init__(**kwargs)
+        super(ProcessFeatures, self).__init__(**kwargs)
         
-    def compute_output_shape(self, input_shapes):
-        return (1,), (1,), (3,), (1,)
+    def compute_output_shape(self, input_shape):
+        return input_shape
     
     def call(self, input):
-        d = create_truth_dict(input)
-        idx = d['truthHitAssignementIdx']
-        e = d['truthHitAssignedEnergies']
-        x = d['truthHitAssignedX']
-        return d,idx,e,x
+        #please make sure in TrainData_OC that this is consistent
+        all, time = inputs[:,:-1], tf.expand_dims(inputs[:,-1],axis=1)
+        time = tf.nn.relu(time)#remove -1 default and set to zero
+        return tf.concat([all, time],axis=-1)
 
 ############# Local clustering section
 
@@ -68,7 +64,10 @@ class LocalClustering(tf.keras.layers.Layer):
         no parameters.
         
         """
-        super(LocalClustering, self).__init__(dynamic=False,**kwargs)
+        if 'dynamic' in kwargs:
+            super(LocalClustering, self).__init__(d**kwargs)
+        else:
+            super(LocalClustering, self).__init__(dynamic=False,**kwargs)
         self.print_reduction=print_reduction
         
     def get_config(self):
@@ -123,7 +122,10 @@ class CreateGlobalIndices(tf.keras.layers.Layer):
         Inputs are:
          - a tensor to determine the total dimensionality in the first dimension
         """  
-        super(CreateGlobalIndices, self).__init__(dynamic=False,**kwargs)
+        if 'dynamic' in kwargs:
+            super(CreateGlobalIndices, self).__init__(**kwargs)
+        else:
+            super(CreateGlobalIndices, self).__init__(dynamic=False,**kwargs)
         
     def compute_output_shape(self, input_shape):
         s = (input_shape[0],1)
@@ -152,7 +154,10 @@ class SelectFromIndices(tf.keras.layers.Layer):
          - the selection indices
          - a list of tensors the selection should be applied to (extending the indices)
         """  
-        super(SelectFromIndices, self).__init__(dynamic=False,**kwargs) 
+        if 'dynamic' in kwargs:
+            super(SelectFromIndices, self).__init__(**kwargs)
+        else:
+            super(SelectFromIndices, self).__init__(dynamic=False,**kwargs)
         
     def compute_output_shape(self, input_shapes):#these are tensors shapes
         ts = tf.python.framework.tensor_shape.TensorShape
@@ -187,7 +192,10 @@ class MultiBackGather(tf.keras.layers.Layer):
          - the data to gather back to larger dimensionality by repitition
         """  
         self.gathers=[]
-        super(MultiBackGather, self).__init__(dynamic=False,**kwargs) 
+        if 'dynamic' in kwargs:
+            super(MultiBackGather, self).__init__(**kwargs) 
+        else:
+            super(MultiBackGather, self).__init__(dynamic=False,**kwargs) 
         
     def compute_output_shape(self, input_shape):
         return input_shape #batch dim is None anyway

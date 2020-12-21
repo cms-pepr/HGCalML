@@ -11,7 +11,7 @@ global_layers_list['weighted_sum_layer']=weighted_sum_layer
 
 from LayersRagged import *
 from GravNetLayersRagged import KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
-from lossLayers import LLObjectCondensation, LLClusterCoordinates, LossLayerBase
+from lossLayers import LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
 global_layers_list['Condensate']=Condensate
@@ -61,6 +61,7 @@ global_layers_list['CollectNeighbourAverageAndMax']=CollectNeighbourAverageAndMa
 
 global_layers_list['LLObjectCondensation']=LLObjectCondensation
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
+global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 global_layers_list['LossLayerBase']=LossLayerBase
 
 
