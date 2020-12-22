@@ -4,6 +4,7 @@ from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
 
+from local_distance_op import LocalDistance
 #just for the moment
 from index_dicts import create_truth_dict
 #### helper###
@@ -113,7 +114,7 @@ class LocalClustering(tf.keras.layers.Layer):
         rs = tf.reshape(rs, [-1])
         ggather = tf.reshape(ggather, [-1,1])
         if self.print_reduction:
-            tf.print(self.name,'reduction',float(sel.shape[0])/float(ggather.shape[0]),'to',sel.shape[0])
+            tf.print(self.name,'reduction',round(float(sel.shape[0])/float(ggather.shape[0]),2),'to',sel.shape[0])
         return sel, rs, ggather
         
 class CreateGlobalIndices(tf.keras.layers.Layer):
@@ -248,6 +249,73 @@ class KNN(tf.keras.layers.Layer):
         dist = tf.reshape(dist, [-1,self.K+1])
         return idx,dist
 
+
+### soft pixel section
+
+
+class SoftPixelCNN(tf.keras.layers.Layer):
+    def __init__(self, length_scale: float=1., **kwargs):
+        """
+        Call will return 
+         - soft pixel CNN outputs, mean (V x (dim(coords)[1]*2 +1) * features)
+        
+        Inputs: coordinates, features, neighour_indices
+        
+        :param length_scale: scale of the distances that are expected
+        
+        Inspired by 1611.08097 , even though this is only presented for 2D manifolds, we can use 
+        the simple approximation and just one Gaus in each (signed) dimension
+        """
+        super(SoftPixelCNN, self).__init__(**kwargs) 
+        assert length_scale >= 0
+        self.length_scale = length_scale
+        self.ndim = None 
+        self.offsets = None
+        
+    def get_config(self):
+        config = {'length_scale': self.length_scale}
+        base_config = super(SoftPixelCNN, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def build(self, input_shapes):
+        self.ndim = input_shapes[0][1]
+        self.nfeat = input_shapes[1][1]
+        self.offsets=[]
+        
+        self.offsets.append(tf.constant([[0. for _ in range(self.ndim)]], dtype='float32'))#midpoint
+        
+        for i in range(self.ndim):
+            self.offsets.append(tf.constant([[ 0.3*self.length_scale if i==j else 0. 
+                                              for j in range(self.ndim)]], dtype='float32'))
+            self.offsets.append(tf.constant([[-0.3*self.length_scale if i==j else 0. 
+                                              for j in range(self.ndim)]], dtype='float32'))
+            
+        super(SoftPixelCNN, self).build(input_shapes)
+        
+    def compute_output_shape(self, input_shapes):
+        noutvert = input_shapes[2][0]
+        ncoords = input_shapes[0][1]
+        nfeat = input_shapes[1][1]
+        outshape = (noutvert, (ncoords*2 +1)*nfeat)
+        return (noutvert, (ncoords*2 +1)*nfeat)
+
+    def call(self, inputs):
+        coordinates, features, neighbour_indices = inputs
+        #create coordinate offsets
+        out=[]
+        for o in self.offsets:
+            distancesq = LocalDistance(coordinates+o, neighbour_indices)
+            f,_ = AccumulateKnn(10./(self.length_scale**2)*distancesq,  features, neighbour_indices, n_moments=0) # V x F
+            f = f[:,:self.nfeat]
+            f = tf.reshape(f, [-1, self.nfeat])
+            out.append(f) #only mean
+        out = tf.concat(out,axis=-1)
+        return out
+
+
+
+
+
 ######## generic neighbours
 
 class RaggedGravNet(tf.keras.layers.Layer):
@@ -324,6 +392,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
         coordinates = self.input_spatial_transform(x)
 
         neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+        neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours-1]) #for proper output shape for keras
+        distancesq = tf.reshape(distancesq, [-1, self.n_neighbours-1])
 
         return self.create_output_features(x, neighbour_indices, distancesq), coordinates, neighbour_indices, distancesq
 
@@ -331,7 +401,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
         return self.priv_call(inputs)
 
     def compute_output_shape(self, input_shapes):
-        return (input_shapes[0], self.n_filters)
+        return (input_shapes[0][0], 2*self.n_filters),\
+               (input_shapes[0][0], self.n_dimensions),\
+               (input_shapes[0][0], self.n_neighbours-1),\
+               (input_shapes[0][0], self.n_neighbours-1)
+              
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
         #
@@ -353,8 +427,6 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         return idx,dist
 
-
-        return idx, distancesq
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
 

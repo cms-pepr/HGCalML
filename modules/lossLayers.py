@@ -91,15 +91,75 @@ class LLClusterCoordinates(LossLayerBase):
         
         att = (1.-self.repulsion_contrib)*V_att
         rep = self.repulsion_contrib*V_rep
-        loss = att + rep
+        lossval = att + rep
         if self.print_loss:
-            print(self.name, loss.numpy(), 'att loss:', att.numpy(), 'rep loss:',rep.numpy())
-        return loss
+            print(self.name, lossval.numpy(), 'att loss:', att.numpy(), 'rep loss:',rep.numpy())
+        return lossval
 
     def get_config(self):
         config = { 'repulsion_contrib': self.repulsion_contrib }
         base_config = super(LLClusterCoordinates, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+class LLLocalClusterCoordinates(LossLayerBase):
+    '''
+    Cluster using truth index and coordinates
+    Inputs: distances, neighbour indices, truth_indices
+    
+    The loss will be calculated w.r.t. the reference vertex at position [:,0] in the neighbour
+    indices unless add_self_reference is set to True. In this case, the vertex at position i will 
+    be used for all neighbours [i,:] as reference vertex
+    (for GravNet set add_self_reference=True, for local clustering set it to False because the 
+    reference vertex is already included in the indices)
+    
+    '''
+    def __init__(self, add_self_reference, repulsion_contrib=0.5, **kwargs):
+        self.repulsion_contrib=repulsion_contrib
+        self.add_self_reference=add_self_reference
+        assert repulsion_contrib <= 1. and repulsion_contrib>= 0.
+        
+        if 'dynamic' in kwargs:
+            super(LLLocalClusterCoordinates, self).__init__(**kwargs)
+        else:
+            super(LLLocalClusterCoordinates, self).__init__(dynamic=kwargs['print_loss'],**kwargs)
+
+    def loss(self, inputs):
+        distances, neighbour_indices, truth_indices = inputs
+        
+        #make neighbour_indices TF compatible (replace -1 with own index)
+        own = tf.expand_dims(tf.range(tf.shape(truth_indices)[0],dtype='int32'),axis=1)
+        neighbour_indices = tf.where(neighbour_indices<0, own, neighbour_indices) #does broadcasting to the righ thing here?
+        
+        #reference might already be there, but just to be sure
+        if self.add_self_reference:
+            neighbour_indices = tf.concat([own,neighbour_indices],axis=-1)
+        else: #remove self-distance
+            distances = distances[:,1:]
+            
+        neighbour_indices = tf.expand_dims(neighbour_indices,axis=2)#tf like
+        
+        firsttruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,0:1]),axis=2)
+        neightruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,1:] ),axis=2)
+        
+        #distances are actuallt distances**2
+        att_proto = (1.-self.repulsion_contrib)*distances
+        rep_proto = self.repulsion_contrib*tf.nn.relu(1-tf.sqrt(distances + 1e-3))
+        
+        lossval = tf.where(tf.abs(firsttruth-neightruth)<0.1, att_proto, rep_proto)
+        lossval = tf.reduce_mean(lossval)
+        
+        if self.print_loss:
+            print(self.name, lossval.numpy())
+        return lossval
+
+    def get_config(self):
+        config = {'add_self_reference': self.add_self_reference,
+                  'repulsion_contrib': self.repulsion_contrib }
+        base_config = super(LLLocalClusterCoordinates, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
 
 class LLObjectCondensation(LossLayerBase):
     '''
@@ -437,8 +497,8 @@ class LLFullObjectCondensation(LossLayerBase):
         time_loss = tf.debugging.check_numerics(payload[2], "time loss has NaN")
         class_loss = tf.debugging.check_numerics(payload[3], "classification loss has NaN")
         
-        loss = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta
-        loss = tf.debugging.check_numerics(loss, "loss has nan")
+        lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta
+        lossval = tf.debugging.check_numerics(lossval, "loss has nan")
         
         if self.print_time:
             print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms')
@@ -446,7 +506,7 @@ class LLFullObjectCondensation(LossLayerBase):
             self.loc_time = time.time()
             
         if self.print_loss:
-            print('loss', loss.numpy(),
+            print('loss', lossval.numpy(),
                   'attractive_loss', att.numpy(),
                   'rep_loss', rep.numpy(),
                   'min_beta_loss', min_b.numpy(),
@@ -457,7 +517,7 @@ class LLFullObjectCondensation(LossLayerBase):
                   'class_loss', class_loss.numpy(),
                   'exceed_beta', exceed_beta.numpy(),'\n')
 
-        return loss
+        return lossval
 
     def get_config(self):
         config = {
