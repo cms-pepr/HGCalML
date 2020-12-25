@@ -1,8 +1,7 @@
 
 from __future__ import print_function
 import tensorflow as tf
-import keras
-import keras.backend as K
+import tensorflow.keras.backend as K
 from index_dicts import create_index_dict, split_feat_pred, create_feature_dict
 import time
 from Loss_tools import huber

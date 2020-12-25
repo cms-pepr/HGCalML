@@ -1,16 +1,10 @@
 
-from caloGraphNN_keras import weighted_sum_layer,GlobalExchange,GravNet,GarNet
 
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
-global_layers_list['GlobalExchange']=GlobalExchange
-global_layers_list['GravNet']=GravNet
-global_layers_list['GarNet']=GarNet
-global_layers_list['weighted_sum_layer']=weighted_sum_layer
-
 from LayersRagged import *
-from GravNetLayersRagged import SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -59,6 +53,9 @@ global_layers_list['KNN']=KNN
 global_layers_list['CollectNeighbourAverageAndMax']=CollectNeighbourAverageAndMax
 global_layers_list['SoftPixelCNN']=SoftPixelCNN
 
+global_layers_list['SortAndSelectNeighbours']=SortAndSelectNeighbours
+global_layers_list['GraphClusterReshape']=GraphClusterReshape
+
 
 
 global_layers_list['LLObjectCondensation']=LLObjectCondensation
@@ -70,8 +67,8 @@ global_layers_list['LossLayerBase']=LossLayerBase
 
 
 
-from keras.layers import Layer
-import keras.backend as K
+from tensorflow.keras.layers import Layer
+import tensorflow.keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
 

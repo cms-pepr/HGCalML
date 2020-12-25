@@ -250,6 +250,87 @@ class KNN(tf.keras.layers.Layer):
         return idx,dist
 
 
+class SortAndSelectNeighbours(tf.keras.layers.Layer):
+    def __init__(self,K: int, radius: float, **kwargs):
+        """
+        Call will return 
+         - neighbour distances sorted by distance (increasing)
+         - neighbour indices sorted by distance (increasing)
+        
+        Inputs: distances, neighbour indices
+        
+        :param K: number of nearest neighbours, will do no selection if K<1
+        :param radius: maximum distance of nearest neighbours (no effect if < 0)
+        """
+        super(SortAndSelectNeighbours, self).__init__(**kwargs) 
+        self.K = K
+        self.radius = radius
+        
+        
+    def get_config(self):
+        config = {'K': self.K,
+                  'radius': self.radius}
+        base_config = super(SortAndSelectNeighbours, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def compute_output_shape(self, input_shapes):
+        if self.K > 0:
+            return (None, self.K),(None, self.K)
+        else:
+            return input_shapes
+
+    def call(self, inputs):
+        distances, nidx = inputs
+        
+        #make TF compatible
+        
+        tfdist = tf.where(nidx<0, 1e9, distances) #make sure the -1 end up at the end
+        if self.radius > 0:
+            pass #TBI
+        sorting = tf.argsort(tfdist, axis=1)
+        snidx = tf.gather_nd(nidx,sorting)
+        sdist = tf.gather_nd(distances,sorting)
+        if self.K > 0:
+            snidx = snidx[:,:K]
+            sdist = sdist[:,:K]
+            
+        if self.radius > 0:
+            snidx = tf.where(sdist > self.radius, -1, snidx)
+            sdist = tf.where(sdist > self.radius, 0 , sdist)
+            
+        return sdist, snidx
+
+
+
+
+class GraphClusterReshape(tf.keras.layers.Layer):
+    '''
+    Use zero padding for -1 neighbours
+    
+    - replace -1 with 0
+    - then tf.where orig_nidx<0, 0, real gather otherwise
+    
+    
+    '''
+    def __init__(self, **kwargs):
+        super(GraphClusterReshape, self).__init__(**kwargs) 
+    #has no init
+    def build(self, input_shapes):
+        super(GraphClusterReshape, self).build(input_shapes)
+        
+    def compute_output_shape(self, input_shapes): #features, nidx = inputs
+        return (None, input_shapes[0][1]*input_shapes[1][1])
+        
+    def call(self, inputs):
+        features, nidx = inputs
+        TFnidx = tf.expand_dims(tf.where(nidx<0,0,nidx),axis=2)
+        gfeat = tf.gather_nd(features, TFnidx)
+        out = tf.where(nidx<0, 0, gfeat)
+        return out
+        
+        
+
+
 ### soft pixel section
 
 
