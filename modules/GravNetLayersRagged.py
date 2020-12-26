@@ -24,6 +24,9 @@ class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
                  **kwargs):
         """
+        THIS LAYER IS NOT READY YET, JUST AN EXAMPLE IF WE WANT TO GO DOWN THAT PATH
+        
+        
         Inputs are: 
          - Features
          
@@ -53,17 +56,30 @@ class LocalClustering(tf.keras.layers.Layer):
                  print_reduction=False,
                  **kwargs):
         """
+        
+        This layer performs a local clustering (a bit similar to object condensation):
+        
         Inputs are: 
          - neighbour indices (V x K)
          - hierarchy tensor (V x 1) to determine the clustering hierarchy
          - row splits
          
+        The layer will select all neighbours and assign them to the vertex with the highest hierarchy score.
+        These vertices cannot give rise to a new cluster anymore, nor can be part of any other cluster.
+        The process gets repeated following the hierarchy score (decreasing) until there are no vertices left.
+        
+         
         Call will return:
          - indices to select the cluster centres, 
          - updated row splits for after applying the selection
-         - indices to gather back the original dimensionality by repition
+         - indices to gather back the original dimensionality by repetion
         
-        no parameters.
+        This layer does *not* introduce any new gradients on anything (e.g. the hierarchy score),
+        so that needs to be done by hand. (e.g. using LLLocalClusterCoordinates).
+        
+        Since this layers functionality is inherently sequential, it will run on CPU. Right now, 
+        the implementation (local_cluster_xx) can still be optimised for using multiple CPU cores.
+        A simple way of (mild) parallelising would be given by the row splits.
         
         """
         if 'dynamic' in kwargs:
@@ -122,8 +138,14 @@ class LocalClustering(tf.keras.layers.Layer):
 class CreateGlobalIndices(tf.keras.layers.Layer):
     def __init__(self, **kwargs):    
         """
+        
+        This layer just simply creates global vertex indices per batch.
+        These can e.g. be used in conjunction with the selection given by LocalClustering
+        to determine which vertices out of all global ones were selected.
+        
         Inputs are:
          - a tensor to determine the total dimensionality in the first dimension
+         
         """  
         if 'dynamic' in kwargs:
             super(CreateGlobalIndices, self).__init__(**kwargs)
@@ -153,9 +175,17 @@ class CreateGlobalIndices(tf.keras.layers.Layer):
 class SelectFromIndices(tf.keras.layers.Layer): 
     def __init__(self, **kwargs):    
         """
+        
+        This layer selects a set of vertices.
+        
         Inputs are:
          - the selection indices
          - a list of tensors the selection should be applied to (extending the indices)
+         
+        This layer is useful in combination with e.g. LocalClustering, to apply the clustering selection
+        to other tensors (e.g. the output of a GravNet layer, or a SoftPixelCNN layer)
+        
+         
         """  
         if 'dynamic' in kwargs:
             super(SelectFromIndices, self).__init__(**kwargs)
@@ -194,8 +224,21 @@ class SelectFromIndices(tf.keras.layers.Layer):
 class MultiBackGather(tf.keras.layers.Layer):  
     def __init__(self, **kwargs):    
         """
+        
+        This layer gathers back vertices that were previously clustered using the output of LocalClustering.
+        E.g. if vertices 0,1,2, and 3 ended up in the same cluster with 0 being the cluster centre, and 4,5,6 ended
+        up in a cluster with 4 being the cluster centre, there will be two clusters: A and B.
+        This layer will create a vector of the previous dimensionality containing:
+        [A,A,A,A,B,B,B] so that the cluster properties of A and B are gathered back to the positions of their
+        constituents.
+        
+        If multiple clusterings were performed, the layer can operate on a list of backgather indices.
+        (internally the order of this list will be inverted) 
+        
         Inputs are:
-         - the data to gather back to larger dimensionality by repitition
+         - The data to gather back to larger dimensionality by repetition
+         - A list of backgather indices (one index tensor for each repetition).
+         
         """  
         self.gathers=[]
         if 'dynamic' in kwargs:
@@ -206,10 +249,19 @@ class MultiBackGather(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         return input_shape #batch dim is None anyway
     
-    def append(self, idxs):
-        self.gathers.append(idxs)
         
     def call(self, input):
+        '''
+        reimplement call of SelectFromIndices here to avoid recreation of layers
+        indices = inputs[0]
+        outs=[]
+        outshapes = self.outshapes # self.compute_output_shape([tf.shape(i) for i in inputs])
+        for i in range(1,len(inputs)):
+            g = tf.gather_nd( inputs[i], indices)
+            g = tf.reshape(g, outshapes[i-1]) #[-1]+inputs[i].shape[1:])
+            outs.append(g) 
+        return outs
+        '''
         x, gathers = input
         for k in range(len(gathers)):
             l = len(self.gathers) - k - 1
@@ -223,6 +275,9 @@ class MultiBackGather(tf.keras.layers.Layer):
 class KNN(tf.keras.layers.Layer):
     def __init__(self,K: int, radius: float, **kwargs):
         """
+        
+        Select K nearest neighbours, with possible radius constraint.
+        
         Call will return 
          - self + K neighbour indices of K neighbours within max radius
          - distances to self+K neighbours
@@ -259,14 +314,20 @@ class KNN(tf.keras.layers.Layer):
 class SortAndSelectNeighbours(tf.keras.layers.Layer):
     def __init__(self,K: int, radius: float, **kwargs):
         """
+        
+        This layer will sort neighbour indices by distance and possibly select neighbours
+        within a radius, or the closest ones up to K neighbours.
+        
+        Inputs: distances, neighbour indices
+        
         Call will return 
          - neighbour distances sorted by distance (increasing)
          - neighbour indices sorted by distance (increasing)
         
-        Inputs: distances, neighbour indices
         
         :param K: number of nearest neighbours, will do no selection if K<1
         :param radius: maximum distance of nearest neighbours (no effect if < 0)
+        
         """
         super(SortAndSelectNeighbours, self).__init__(**kwargs) 
         self.K = K
@@ -327,10 +388,24 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
 
 class GraphClusterReshape(tf.keras.layers.Layer):
     '''
-    Use zero padding for -1 neighbours
     
-    - replace -1 with 0
-    - then tf.where orig_nidx<0, 0, real gather otherwise
+    This layer implements a graph reshaping. 
+    
+    Inputs:
+    - features
+    - neighbour indices
+    
+    The first dimention of neighbour indices can be smaller than of features 
+    (e.g. as selected clusters from LocalCluster).
+    The features of all neighbours are flattenend to the new features of the whole
+    cluster. In case there are less neighbours than the second dimension of neighbour indices,
+    the corresponding entries are zero-padded.
+    (technically, <K neighbours are implemented as -1 indices in this all other layers)
+    
+    (There is no information loss, therefore 'reshaping')
+    
+    Output:
+    - reshaped features
     
     
     '''
@@ -369,6 +444,16 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
                  print_loss=False,
                  **kwargs):
         '''
+        
+        This layer is a simple, but handy combination of: 
+        - SortAndSelectNeighbours
+        - LocalClustering
+        - SelectFromIndices
+        - GraphClusterReshape
+        
+        and comes with it's own loss layer (LLLocalClusterCoordinates) to implement
+        a gradient on all operations and inputs.
+        
         Inputs:
          - features
          - distances
@@ -379,6 +464,20 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
          
          - truth idx (can be dummy if loss is disabled
          
+        
+        When applied, the layer graph reshapes a max. selected number of neighbours (K),
+        within a maximum radius. At the same time, other features of the new found cluster
+        centres can be selected in one go.
+        
+        The included loss function implements a gradient on the input distances, and the hierarchy feature
+        following a similar approach as object condensation (but applied only locally to selected neighbours).
+        Those vertices within the same neighbourhood (given by neighbour indices) that have the same truth
+        index are pulled together while others are being pushed away. The corresponding loss per vertex is scaled
+        by the hierarchy index (which receives a penalty to be >0 at the same time) such that it can be interpreted
+        as a confidence measure that the corresponding grouping is valid.
+        
+        As a consequence, this layer will aim to reshape the graph in a way that vertices from the same object form
+        groups.
          
         Outputs:
          - reshaped features
@@ -494,15 +593,23 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
 class SoftPixelCNN(tf.keras.layers.Layer):
     def __init__(self, length_scale: float=1., **kwargs):
         """
+        Inputs: 
+        - coordinates
+        - features
+        - neighour_indices
+        
+        This layer is strongly inspired by 1611.08097 (even though this is only presented for 2D manifolds).
+        It implements "soft pixels" for each direction given by the input coordinates plus one central "pixel".
+        Each "pixel" is represented by a Gaussian weighting of the inputs.
+        For D coordinate dimensions, 2*D + 1 "pixels" are formed (e.g. one for position x direction one for neg x etc).
+        
+        
         Call will return 
-         - soft pixel CNN outputs, mean (V x (dim(coords)[1]*2 +1) * features)
+         - soft pixel CNN outputs:  (V x (dim(coords)[1]*2 +1) * features)
         
-        Inputs: coordinates, features, neighour_indices
+        :param length_scale: scale of the distances that are expected. The "pixels" Gaussian tails 
+                             will die off at this scale.
         
-        :param length_scale: scale of the distances that are expected
-        
-        Inspired by 1611.08097 , even though this is only presented for 2D manifolds, we can use 
-        the simple approximation and just one Gaus in each (signed) dimension
         """
         super(SoftPixelCNN, self).__init__(**kwargs) 
         assert length_scale >= 0
