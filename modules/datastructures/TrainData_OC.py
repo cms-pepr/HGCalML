@@ -226,7 +226,9 @@ class TrainData_OC(TrainData):
         'recHitX'     : feat[:,5:6] ,          #recHitX     ,
         'recHitY'     : feat[:,6:7] ,          #recHitY     ,
         'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
-        'recHitTime'  : feat[:,8:9]            #recHitTime  
+        'recHitTime'  : feat[:,8:9] ,            #recHitTime  
+        #combined
+        'recHitXY'  : feat[:,5:7]            #recHitTime  
         }
     
     def createTruthDict(self, truth):

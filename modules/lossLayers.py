@@ -18,24 +18,33 @@ class LossLayerBase(tf.keras.layers.Layer):
     """
     
     def __init__(self, active=True, scale=1., 
-                 print_loss=False, **kwargs):
+                 print_loss=False,
+                 return_lossval=False, **kwargs):
         super(LossLayerBase, self).__init__(**kwargs)
         
         self.active = active
         self.scale = scale
         self.print_loss = print_loss
+        self.return_lossval=return_lossval
         
     def get_config(self):
         config = {'active': self.active ,
                   'scale': self.scale,
-                  'print_loss': self.print_loss}
+                  'print_loss': self.print_loss,
+                  'return_lossval': self.return_lossval}
         base_config = super(LossLayerBase, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
     def call(self, inputs):
+        lossval = tf.constant([0.],dtype='float32')
         if self.active:
-            self.add_loss(self.scale * self.loss(inputs))
-        return inputs[0]
+            lossval = self.scale * self.loss(inputs)
+            if not self.return_lossval:
+                self.add_loss(lossval)
+        if self.return_lossval:
+            return inputs[0], lossval
+        else:
+            return inputs[0]
     
     def loss(self, inputs):
         '''
@@ -43,10 +52,13 @@ class LossLayerBase(tf.keras.layers.Layer):
         Input: always a list of inputs, the first entry in the list will be returned, and should be the features.
         The rest is free (but will probably contain the truth somewhere)
         '''
-        return 0.
+        return tf.constant(0.,dtype='float32')
 
     def compute_output_shape(self, input_shapes):
-        return input_shapes[0]
+        if self.return_lossval:
+            return input_shapes[0], (None,)
+        else:
+            return input_shapes[0]
 
 
 #naming scheme: LL<what the layer is supposed to do>
@@ -105,7 +117,7 @@ class LLClusterCoordinates(LossLayerBase):
 class LLLocalClusterCoordinates(LossLayerBase):
     '''
     Cluster using truth index and coordinates
-    Inputs: distances, neighbour indices, truth_indices
+    Inputs: distances, hierarchy tensor, neighbour indices, truth_indices
     
     The loss will be calculated w.r.t. the reference vertex at position [:,0] in the neighbour
     indices unless add_self_reference is set to True. In this case, the vertex at position i will 
@@ -125,7 +137,7 @@ class LLLocalClusterCoordinates(LossLayerBase):
             super(LLLocalClusterCoordinates, self).__init__(dynamic=kwargs['print_loss'],**kwargs)
 
     def loss(self, inputs):
-        distances, neighbour_indices, truth_indices = inputs
+        distances, hierarchy, neighbour_indices, truth_indices = inputs
         
         #make neighbour_indices TF compatible (replace -1 with own index)
         own = tf.expand_dims(tf.range(tf.shape(truth_indices)[0],dtype='int32'),axis=1)
@@ -146,11 +158,16 @@ class LLLocalClusterCoordinates(LossLayerBase):
         att_proto = (1.-self.repulsion_contrib)*distances
         rep_proto = self.repulsion_contrib*tf.nn.relu(1-tf.sqrt(distances + 1e-3))
         
-        lossval = tf.where(tf.abs(firsttruth-neightruth)<0.1, att_proto, rep_proto)
-        lossval = tf.reduce_mean(lossval)
+        potential = tf.where(tf.abs(firsttruth-neightruth)<0.1, att_proto, rep_proto)
+        potential = hierarchy * tf.reduce_mean(potential, axis=1, keepdims=True)
+        potential = tf.reduce_mean(potential)
+        penalty = 1. - hierarchy
+        penalty = tf.reduce_mean(penalty)
+        
+        lossval = penalty + potential
         
         if self.print_loss:
-            print(self.name, lossval.numpy())
+            print(self.name, lossval.numpy(), 'potential', potential.numpy(), 'penalty',penalty.numpy())
         return lossval
 
     def get_config(self):
@@ -499,6 +516,7 @@ class LLFullObjectCondensation(LossLayerBase):
         
         lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta
         lossval = tf.debugging.check_numerics(lossval, "loss has nan")
+        lossval = tf.reduce_mean(lossval)
         
         if self.print_time:
             print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms')
