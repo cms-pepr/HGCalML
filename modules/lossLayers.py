@@ -1,8 +1,14 @@
 import tensorflow as tf
 from object_condensation import oc_loss
-from betaLosses import obj_cond_loss, full_obj_cond_loss
-from Loss_tools import huber
+from betaLosses import obj_cond_loss
 import time
+
+
+def huber(x, d):
+    losssq  = x**2   
+    absx = tf.abs(x)                
+    losslin = d**2 + 2. * d * (absx - d)
+    return tf.where(absx < d, losssq, losslin)
 
 class LossLayerBase(tf.keras.layers.Layer):
     """Base class for HGCalML loss layers.

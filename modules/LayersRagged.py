@@ -1,7 +1,9 @@
+
+print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL", "move layers still in usage to GravNetLayersRagged")
+
 import tensorflow as tf
 import tensorflow.keras as keras
 from caloGraphNN import gauss_of_lin
-import uuid
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from condensate_op import BuildCondensates

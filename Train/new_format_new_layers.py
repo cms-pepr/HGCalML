@@ -7,7 +7,7 @@ import tensorflow as tf
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
-from LayersRagged import RaggedConstructTensor, RaggedGlobalExchange
+from LayersRagged  import RaggedConstructTensor
 from GravNetLayersRagged import SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
 from tensorflow.keras.layers import Dense, Concatenate, GaussianDropout
 from DeepJetCore.modeltools import DJCKerasModel

@@ -1,4 +1,5 @@
 
+print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL")
 
 import tensorflow as tf
 import numpy as np
