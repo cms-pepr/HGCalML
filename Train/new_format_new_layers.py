@@ -1,4 +1,8 @@
-
+'''
+First training file using new format (check the prediction).
+Can be trained using the *latest* deepjetcore (there was a minor change to allow for an arbitrary number of predictions for keras models).
+A dataset can be found here: /eos/home-j/jkiesele/DeepNtuples/HGCal/Sept2020_19_production_1x1
+'''
 import tensorflow as tf
 # from K import Layer
 import numpy as np
