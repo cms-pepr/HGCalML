@@ -1,5 +1,4 @@
 import tensorflow as tf
-from caloGraphNN import gauss_of_lin
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
@@ -7,7 +6,6 @@ from local_cluster_op import LocalCluster
 from local_distance_op import LocalDistance
 from lossLayers import LLLocalClusterCoordinates
 #just for the moment
-from index_dicts import create_truth_dict
 #### helper###
 
 
@@ -41,14 +39,13 @@ class ProcessFeatures(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         return input_shape
     
-    def call(self, input):
+    def call(self, inputs):
         #please make sure in TrainData_OC that this is consistent
         all, time = inputs[:,:-1], tf.expand_dims(inputs[:,-1],axis=1)
         time = tf.nn.relu(time)#remove -1 default and set to zero
         return tf.concat([all, time],axis=-1)
 
 ############# Local clustering section
-
 
 
 class LocalClustering(tf.keras.layers.Layer):
@@ -108,14 +105,13 @@ class LocalClustering(tf.keras.layers.Layer):
     def build(self, input_shapes):
         super(LocalClustering, self).build(input_shapes)
         
-    def call(self, inputs):
-        neighs, hier, row_splits = inputs
-        
+    @staticmethod
+    def raw_call(neighs, hier, row_splits,print_reduction,name):
         if row_splits.shape[0] is None:
             return tf.zeros_like(hier, dtype='int32'), row_splits, tf.zeros_like(hier, dtype='int32')
         
         if hier.shape[1] > 1:
-            raise ValueError(self.name+' received wrong hierarchy shape')
+            raise ValueError(name+' received wrong hierarchy shape')
         
         hierarchy_idxs=[]
         for i in range(row_splits.shape[0] - 1):
@@ -131,9 +127,14 @@ class LocalClustering(tf.keras.layers.Layer):
         rs = tf.reshape(rs, [-1])
         rs = tf.cast(rs, tf.int32) #just so keras knows
         ggather = tf.reshape(ggather, [-1,1])
-        if self.print_reduction:
-            tf.print(self.name,'reduction',round(float(sel.shape[0])/float(ggather.shape[0]),2),'to',sel.shape[0])
+        if print_reduction:
+            tf.print(name,'reduction',round(float(sel.shape[0])/float(ggather.shape[0]),2),'to',sel.shape[0])
         return sel, rs, ggather
+        
+    def call(self, inputs):
+        neighs, hier, row_splits = inputs
+        return LocalClustering.raw_call(neighs, hier, row_splits,self.print_reduction,self.name)
+        
         
 class CreateGlobalIndices(tf.keras.layers.Layer):
     def __init__(self, **kwargs):    
@@ -166,9 +167,9 @@ class CreateGlobalIndices(tf.keras.layers.Layer):
     def build(self, input_shapes):
         super(CreateGlobalIndices, self).build(input_shapes)
     
-    def call(self, input):
-        ins = tf.cast(input*0.,dtype='int32')[:,0:1]
-        add = tf.expand_dims(tf.range(tf.shape(input)[0],dtype='int32'), axis=1)
+    def call(self, inputs):
+        ins = tf.cast(inputs*0.,dtype='int32')[:,0:1]
+        add = tf.expand_dims(tf.range(tf.shape(inputs)[0],dtype='int32'), axis=1)
         return ins+add
     
     
@@ -209,17 +210,22 @@ class SelectFromIndices(tf.keras.layers.Layer):
         super(SelectFromIndices, self).build(input_shapes)
         outshapes = self.compute_output_shape(input_shapes)
         
-        self.outshapes = [(-1,) + s[1:] for s in outshapes] 
+        self.outshapes = [[-1,] + list(s[1:]) for s in outshapes] 
           
-    def call(self, inputs):
-        indices = inputs[0]
+    @staticmethod  
+    def raw_call(indices, inputs, outshapes):
         outs=[]
-        outshapes = self.outshapes # self.compute_output_shape([tf.shape(i) for i in inputs])
-        for i in range(1,len(inputs)):
+        for i in range(0,len(inputs)):
             g = tf.gather_nd( inputs[i], indices)
-            g = tf.reshape(g, outshapes[i-1]) #[-1]+inputs[i].shape[1:])
+            g = tf.reshape(g, outshapes[i]) #[-1]+inputs[i].shape[1:])
             outs.append(g) 
         return outs
+        
+    def call(self, inputs):
+        indices = inputs[0]
+        outshapes = self.outshapes # self.compute_output_shape([tf.shape(i) for i in inputs])
+        return SelectFromIndices.raw_call(indices, inputs[1:], outshapes)
+        
         
 class MultiBackGather(tf.keras.layers.Layer):  
     def __init__(self, **kwargs):    
@@ -249,25 +255,20 @@ class MultiBackGather(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         return input_shape #batch dim is None anyway
     
-        
-    def call(self, input):
-        '''
-        reimplement call of SelectFromIndices here to avoid recreation of layers
-        indices = inputs[0]
-        outs=[]
-        outshapes = self.outshapes # self.compute_output_shape([tf.shape(i) for i in inputs])
-        for i in range(1,len(inputs)):
-            g = tf.gather_nd( inputs[i], indices)
-            g = tf.reshape(g, outshapes[i-1]) #[-1]+inputs[i].shape[1:])
-            outs.append(g) 
-        return outs
-        '''
-        x, gathers = input
+    
+    @staticmethod 
+    def raw_call(x, gathers):
         for k in range(len(gathers)):
-            l = len(self.gathers) - k - 1
+            l = len(gathers) - k - 1
             #cast is needed because keras layer out dtypes are not really working
-            x = SelectFromIndices()([ tf.cast(gathers[l],tf.int32), x] )[0]
+            x = SelectFromIndices.raw_call(tf.cast(gathers[l],tf.int32), 
+                                           [x], [ [-1]+list(x.shape[1:]) ])[0]
         return x
+        
+    def call(self, inputs):
+        x, gathers = inputs
+        return MultiBackGather.raw_call(x,gathers)
+        
     
 ############# Local clustering section ends
 
@@ -301,14 +302,19 @@ class KNN(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes):
         return (None, self.K+1),(None, self.K+1)
 
+    @staticmethod 
+    def raw_call(coordinates, row_splits, K, radius):
+        idx,dist = SelectKnn(K+1, coordinates,  row_splits,
+                             max_radius= radius, tf_compatible=False)
+
+        idx = tf.reshape(idx, [-1,K+1])
+        dist = tf.reshape(dist, [-1,K+1])
+        return idx,dist
+
     def call(self, inputs):
         coordinates, row_splits = inputs
-        idx,dist = SelectKnn(self.K+1, coordinates,  row_splits,
-                             max_radius= self.radius, tf_compatible=False)
-
-        idx = tf.reshape(idx, [-1,self.K+1])
-        dist = tf.reshape(dist, [-1,self.K+1])
-        return idx,dist
+        return KNN.raw_call(coordinates, row_splits, self.K, self.radius)
+        
 
 
 class SortAndSelectNeighbours(tf.keras.layers.Layer):
@@ -354,29 +360,23 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         
         return [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i]) for i in range(len(output_shapes))]
         
-        
-    def call(self, inputs):
-        distances, nidx = inputs
-        
-        #make TF compatible
+    @staticmethod 
+    def raw_call(distances, nidx, K, radius):
         
         tfdist = tf.where(nidx<0, 1e9, distances) #make sure the -1 end up at the end
 
         sorting = tf.argsort(tfdist, axis=1)
         snidx = tf.gather(nidx,sorting,batch_dims=1) #_nd(nidx,sorting,batch_dims=1)
         sdist = tf.gather(distances,sorting,batch_dims=1)
-        if self.K > 0:
-            snidx = snidx[:,:self.K]
-            sdist = sdist[:,:self.K]
+        if K > 0:
+            snidx = snidx[:,:K]
+            sdist = sdist[:,:K]
             
-        if self.radius > 0:
-            snidx = tf.where(sdist > self.radius, -1, snidx)
-            sdist = tf.where(sdist > self.radius, 0. , sdist)
+        if radius > 0:
+            snidx = tf.where(sdist > radius, -1, snidx)
+            sdist = tf.where(sdist > radius, 0. , sdist)
             
-        input_shapes = distances.shape, nidx.shape 
-        outshape = self.compute_output_shape(input_shapes) 
-        
-        K = self.K if self.K>0 else distances.shape[1]
+        K = K if K>0 else distances.shape[1]
         #fix the shapes
         sdist = tf.reshape(sdist, [-1, K])
         snidx = tf.reshape(snidx, [-1, K])
@@ -384,6 +384,13 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         return sdist, tf.cast(snidx, tf.int32) #just to avoid keras not knowing the dtype
 
 
+        
+    def call(self, inputs):
+        distances, nidx = inputs
+        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius)
+        #make TF compatible
+        
+        
 
 
 class GraphClusterReshape(tf.keras.layers.Layer):
@@ -418,8 +425,9 @@ class GraphClusterReshape(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes): #features, nidx = inputs
         return (None, input_shapes[0][1]*input_shapes[1][1])
         
-    def call(self, inputs):
-        features, nidx = inputs
+        
+    @staticmethod 
+    def raw_call(features, nidx):
         nidx = tf.cast(nidx,tf.int32)#just because of keras build
         TFnidx = tf.expand_dims(tf.where(nidx<0,0,nidx),axis=2)
         
@@ -429,6 +437,11 @@ class GraphClusterReshape(tf.keras.layers.Layer):
         out = tf.where(tf.expand_dims(nidx,axis=2)<0, 0., gfeat)
         out = tf.reshape(out, [-1, tf.shape(features)[1]*tf.shape(nidx)[1]])
         return out
+    
+        
+    def call(self, inputs):
+        features, nidx = inputs
+        return GraphClusterReshape.raw_call(features, nidx)
         
         
 ### compound layers for convenience
@@ -561,24 +574,23 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
             features, distances, hierarchy, nidxs, row_splits, tidxs = inputs
             other=[]
         #generate loss
-        distances, lossval = LLLocalClusterCoordinates(add_self_reference=False, #included by construction
-                                              repulsion_contrib=self.loss_repulsion,
-                                              scale = self.loss_scale,
-                                              active=self.loss_enabled,
-                                              print_loss=self.print_loss,
-                                              return_lossval=True)([distances, hierarchy, nidxs, tidxs])
-        
-        self.add_loss(lossval)
+        if self.loss_enabled:
+            lossval = self.loss_scale * LLLocalClusterCoordinates.raw_loss(
+                distances, hierarchy, nidxs, tidxs,
+                add_self_reference=False, repulsion_contrib=self.loss_repulsion,
+                print_loss=self.print_loss,name=self.name)
+            self.add_loss(lossval)
         # do the reshaping
-        sdist, snidx = SortAndSelectNeighbours(K=self.K, radius=self.radius)([distances,nidxs])
+        sdist, snidx = SortAndSelectNeighbours.raw_call(distances,nidxs,K=self.K, radius=self.radius)
         
-        sel, rs, backgather = LocalClustering(print_reduction=self.print_reduction)([snidx,hierarchy,row_splits])
+        sel, rs, backgather = LocalClustering.raw_call(snidx,hierarchy,row_splits,
+                                                       print_reduction=self.print_reduction,name=self.name)
         
         rs = tf.cast(rs, tf.int32)#just so keras knows
         #be explicit because of keras
         #backgather = tf.cast(backgather, tf.int32)
-        
-        snidx, sdist, *other = SelectFromIndices()([sel,snidx, sdist]+other)
+        seloutshapes =  [[-1,] + list(s.shape[1:]) for s in [snidx, sdist]+other] 
+        snidx, sdist, *other = SelectFromIndices.raw_call(sel, [snidx, sdist]+other, seloutshapes)
         
         out = GraphClusterReshape()([features,snidx])
         

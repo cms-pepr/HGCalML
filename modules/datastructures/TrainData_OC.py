@@ -1,7 +1,6 @@
 
 
 
-
 from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore.compiled.c_simpleArray import simpleArray
 import numpy as np
@@ -258,6 +257,12 @@ class TrainData_OC(TrainData):
             out[key] = truth[:,i:i+1]
         
         return out
+    
+    def createPandasDataFrame(self, eventno):
+        if self.nElements() <= eventno:
+            raise IndexError("Event wrongly selected")
+        pass
+        
     
     def interpretAllModelInputs(self, ilist):
         '''

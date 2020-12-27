@@ -12,6 +12,8 @@ import matplotlib.gridspec as gridspec
 import os
 import tempfile
 import random
+from standalone_tools import MPlotWrapper
+
 
 '''
 standard output is:

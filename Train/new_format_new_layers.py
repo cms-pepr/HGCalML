@@ -97,11 +97,12 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                  loss_repulsion=0.5,
                  print_loss=True)([x, dist, hier, nidx, rs, t_idx, t_idx])
         
-        
+        print('>>>>x0',x.shape)
         gatherids.append(bidxs)
         if addBackGatherInfo:
             backgatheredids.append(MultiBackGather()([sel_gidx, gatherids]))
-            
+        
+        print('>>>>x1',x.shape)    
         x = BatchNormalization(momentum=0.6)(x)
         x_record = Dense(2*pixelcompress,activation='elu')(x)
         x_record = BatchNormalization(momentum=0.6)(x_record)
@@ -185,7 +186,7 @@ cb += [
     ]
 
 learningrate = 5e-5
-nbatch = 210000 #quick first training with simple examples = low # hits
+nbatch = 110000 #quick first training with simple examples = low # hits
 
 train.compileModel(learningrate=learningrate,
                           loss=None,

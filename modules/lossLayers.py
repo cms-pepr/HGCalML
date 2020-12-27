@@ -142,15 +142,16 @@ class LLLocalClusterCoordinates(LossLayerBase):
         else:
             super(LLLocalClusterCoordinates, self).__init__(dynamic=kwargs['print_loss'],**kwargs)
 
-    def loss(self, inputs):
-        distances, hierarchy, neighbour_indices, truth_indices = inputs
+    @staticmethod
+    def raw_loss(distances, hierarchy, neighbour_indices, truth_indices,
+                 add_self_reference, repulsion_contrib, print_loss, name):
         
         #make neighbour_indices TF compatible (replace -1 with own index)
         own = tf.expand_dims(tf.range(tf.shape(truth_indices)[0],dtype='int32'),axis=1)
         neighbour_indices = tf.where(neighbour_indices<0, own, neighbour_indices) #does broadcasting to the righ thing here?
         
         #reference might already be there, but just to be sure
-        if self.add_self_reference:
+        if add_self_reference:
             neighbour_indices = tf.concat([own,neighbour_indices],axis=-1)
         else: #remove self-distance
             distances = distances[:,1:]
@@ -161,8 +162,8 @@ class LLLocalClusterCoordinates(LossLayerBase):
         neightruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,1:] ),axis=2)
         
         #distances are actuallt distances**2
-        att_proto = (1.-self.repulsion_contrib)*distances
-        rep_proto = self.repulsion_contrib*tf.nn.relu(1-tf.sqrt(distances + 1e-3))
+        att_proto = (1.-repulsion_contrib)*distances
+        rep_proto = repulsion_contrib*tf.nn.relu(1-tf.sqrt(distances + 1e-3))
         
         potential = tf.where(tf.abs(firsttruth-neightruth)<0.1, att_proto, rep_proto)
         potential = hierarchy * tf.reduce_mean(potential, axis=1, keepdims=True)
@@ -172,9 +173,21 @@ class LLLocalClusterCoordinates(LossLayerBase):
         
         lossval = penalty + potential
         
-        if self.print_loss:
-            print(self.name, lossval.numpy(), 'potential', potential.numpy(), 'penalty',penalty.numpy())
+        if print_loss:
+            if hasattr(lossval, "numpy"):
+                print(name, lossval.numpy(), 'potential', potential.numpy(), 'penalty',penalty.numpy())
+            else:
+                tf.print(name, lossval, 'potential',potential, 'penalty',penalty)
         return lossval
+        
+    def loss(self, inputs):
+        distances, hierarchy, neighbour_indices, truth_indices = inputs
+        return LLLocalClusterCoordinates.raw_loss(distances, hierarchy, neighbour_indices, 
+                                                  truth_indices, 
+                                                  self.add_self_reference, 
+                                                  self.repulsion_contrib, 
+                                                  self.print_loss, 
+                                                  self.name)
 
     def get_config(self):
         config = {'add_self_reference': self.add_self_reference,

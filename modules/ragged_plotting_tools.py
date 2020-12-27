@@ -104,7 +104,8 @@ def make_cluster_coordinates_plot(plt, ax,
                                   cmap=None,
                                   noalpha=False,
                                   direct_color=False,
-                                  beta_plot_threshold=1e-2
+                                  beta_plot_threshold=1e-2,
+                                  data_dump=None #dump in pandas dataframe
                                   ):
     # data = create_index_dict(truth,pred,usetf=False)
 
