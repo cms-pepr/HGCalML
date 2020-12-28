@@ -6,8 +6,6 @@ import sys
 import time
 
 
-from Loss_tools import huber
-
 def remove_zero_length_elements_from_ragged_tensors(row_splits):
     lengths = row_splits[1:] - row_splits[:-1]
     row_splits = tf.concat(([0], tf.cumsum(tf.gather_nd(lengths, tf.where(tf.not_equal(lengths, 0))))), axis=0)
@@ -116,12 +114,12 @@ def oc_per_batch_element(
     beta_kalpha = gather_for_obj_from_vert(beta_in, kalpha) # K x 1 x 1
     object_weights_kalpha = gather_for_obj_from_vert(object_weights, kalpha)# K x 1 x 1
     
-    distance = tf.sqrt(tf.reduce_sum((x_kalpha - tf.expand_dims(x, axis=0)) ** 2, axis=-1, keepdims=True) + 1e-6)# K x V x 1
+    distancesq = tf.reduce_sum((x_kalpha - tf.expand_dims(x, axis=0)) ** 2, axis=-1, keepdims=True)# K x V x 1
     
-    V_att = M * q_kalpha * tf.expand_dims(q, axis=0) * huber(distance, 8)  # K x V x 1
+    V_att = M * q_kalpha * tf.expand_dims(q, axis=0) * distancesq  # K x V x 1
     V_att = mean_N_K(V_att, N, K) # ()
     
-    V_rep = M_not * q_kalpha * tf.expand_dims(q, axis=0) * tf.nn.relu(1. - distance)   # K x V x 1
+    V_rep = M_not * q_kalpha * tf.expand_dims(q, axis=0) * tf.nn.relu(1. - tf.sqrt(distancesq + 1e-4))   # K x V x 1
     V_rep = mean_N_K(V_rep, N, K) # ()
     
     ##beta penalty

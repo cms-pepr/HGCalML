@@ -1,7 +1,7 @@
 
 '''
 This file! is supposed to contain only plotting functionality that
-does not rely on more python packages than matplotlib, numpy and pickle.
+does not rely on more python packages than matplotlib, plotly, numpy and pickle.
 The idea is that the plotters can also be used locally in an easy way
 
 '''
@@ -17,6 +17,31 @@ from multiprocessing import Pool
 import random
 import glob
 import copy
+
+
+def calc_r(x,y):
+    return np.sqrt(x ** 2 + y ** 2)
+
+def calc_eta(x, y, z):
+    rsq = np.sqrt(x ** 2 + y ** 2)
+    return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.)
+
+def calc_phi(x, y):
+    return np.arctan2(x, y)
+
+
+
+    
+
+
+
+
+
+
+
+
+
+###old implementations to be checked
 
 def create_max_color_diff(col_list):
     ncol=len(col_list)

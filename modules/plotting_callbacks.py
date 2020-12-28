@@ -42,15 +42,11 @@ def rotation(counter):
     while angle_in <= -360: angle_in -= 360
     return angle_in          
 
-def publish(path):
-    temp_name = next(tempfile._get_candidate_names())
-    temp_name = self.outputfile + temp_name + '.png'
-    fig.savefig(temp_name)
+def publish(path, outputfile,path):
     cpstring = 'cp -f '
     if "@" in path:
         cpstring = 'scp '
-    os.system(cpstring + temp_name + ' ' + path + '.png > /dev/null')
-    os.system('rm -f ' + temp_name)  
+    os.system(cpstring + outputfile + ' ' + path + ' > /dev/null') 
 
 
 class plotClusteringDuringTraining(PredictCallback):

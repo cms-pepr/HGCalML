@@ -215,8 +215,8 @@ class TrainData_OC(TrainData):
         
         return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid],[t_rest], []
     
-    def createFeatureDict(self,feat):
-        return {
+    def createFeatureDict(self,feat,addxycomb=True):
+        d = {
         'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
         'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
         'recHitID'    : feat[:,2:3] ,          #recHitID, #indicator if it is track or not
@@ -226,9 +226,11 @@ class TrainData_OC(TrainData):
         'recHitY'     : feat[:,6:7] ,          #recHitY     ,
         'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
         'recHitTime'  : feat[:,8:9] ,            #recHitTime  
-        #combined
-        'recHitXY'  : feat[:,5:7]            #recHitTime  
         }
+        if addxycomb:
+            d['recHitXY']  = feat[:,5:7]    
+            
+        return d
     
     def createTruthDict(self, truth):
         
@@ -259,9 +261,33 @@ class TrainData_OC(TrainData):
         return out
     
     def createPandasDataFrame(self, eventno):
+        #since this is only needed occationally
+        import pandas as pd
+        
         if self.nElements() <= eventno:
             raise IndexError("Event wrongly selected")
-        pass
+        tdc = self.copy()
+        tdc.skim(eventno)
+        
+        f = tdc.transferFeatureListToNumpy()
+        featd = self.createFeatureDict(f[0])
+        t = tdc.transferTruthListToNumpy()
+        truthd = self.createTruthDict(t[0])
+        
+        featd.update(truthd)
+        
+        del featd['recHitXY'] #so that it's flat
+        
+        featd['recHitLogEnergy'] = np.log(featd['recHitEnergy']+1)
+        
+        allarr = []
+        for k in featd:
+            allarr.append(featd[k])
+        allarr = np.concatenate(allarr,axis=1)
+        
+        
+        frame = pd.DataFrame (allarr, columns = [k for k in featd])
+        return frame
         
     
     def interpretAllModelInputs(self, ilist):

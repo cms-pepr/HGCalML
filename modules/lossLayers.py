@@ -371,7 +371,7 @@ class LLFullObjectCondensation(LossLayerBase):
     making the config explode (more)
     '''
 
-    def __init__(self, *, energy_loss_weight=1., use_energy_weights=False, q_min=0.5, no_beta_norm=False,
+    def __init__(self, *, energy_loss_weight=1., use_energy_weights=True, q_min=0.5, no_beta_norm=False,
                  potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
                  classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
                  use_average_cc_pos=False, payload_rel_threshold=0.1, rel_energy_mse=False, smooth_rep_loss=False,

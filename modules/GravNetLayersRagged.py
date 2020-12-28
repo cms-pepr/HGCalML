@@ -5,9 +5,10 @@ from local_cluster_op import LocalCluster
 
 from local_distance_op import LocalDistance
 from lossLayers import LLLocalClusterCoordinates
+import numpy as np
 #just for the moment
 #### helper###
-
+from datastructures import TrainData_OC
 
 def check_type_return_shape(s):
     if not isinstance(s, tf.TensorSpec):
@@ -22,9 +23,6 @@ class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
                  **kwargs):
         """
-        THIS LAYER IS NOT READY YET, JUST AN EXAMPLE IF WE WANT TO GO DOWN THAT PATH
-        
-        
         Inputs are: 
          - Features
          
@@ -34,16 +32,36 @@ class ProcessFeatures(tf.keras.layers.Layer):
         will apply some simple fixed preprocessing to the standard TrainData_OC features
         
         """
+        self.td=TrainData_OC()
         super(ProcessFeatures, self).__init__(**kwargs)
+        
         
     def compute_output_shape(self, input_shape):
         return input_shape
     
     def call(self, inputs):
+        '''
+        'recHitEnergy'
+        'recHitEta'   
+        'recHitID'    
+        'recHitTheta' 
+        'recHitR'     
+        'recHitX'     
+        'recHitY'     
+        'recHitZ'     
+        'recHitTime'  
+        '''
+        fdict = self.td.createFeatureDict(inputs, False)
         #please make sure in TrainData_OC that this is consistent
-        all, time = inputs[:,:-1], tf.expand_dims(inputs[:,-1],axis=1)
-        time = tf.nn.relu(time)#remove -1 default and set to zero
-        return tf.concat([all, time],axis=-1)
+        fdict['recHitR'] /= 100.
+        fdict['recHitX'] /= 100.
+        fdict['recHitY'] /= 100.
+        fdict['recHitZ'] = (tf.abs(fdict['recHitZ'])-400)/100.
+        fdict['recHitTime'] = tf.nn.relu(fdict['recHitTime'])/10. #remove -1 default
+        allf = []
+        for k in fdict:
+            allf.append(fdict[k])
+        return tf.concat(allf,axis=-1)
 
 ############# Local clustering section
 
@@ -603,7 +621,7 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
 
 
 class SoftPixelCNN(tf.keras.layers.Layer):
-    def __init__(self, length_scale: float=1., **kwargs):
+    def __init__(self, length_scale: float=1., mode: str='onlyaxes', subdivisions: int=3 ,**kwargs):
         """
         Inputs: 
         - coordinates
@@ -621,11 +639,22 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         
         :param length_scale: scale of the distances that are expected. The "pixels" Gaussian tails 
                              will die off at this scale.
+        :param mode: mode to build the soft pixels
+                     - full: a full grid is spanned over all dimensions
+                     - oneless: only grid points with at least one axis coordinate being zero are used
+                       (removes one dimension from output, but leaves the 0 point)
+                     - onlyaxes: only the points along the axes are used to define the pixel centres, including the 0 point
+                     
+        :param subdivisions: number of subdivisions for each dimension (odd number preserves centre pixel)
         
         """
         super(SoftPixelCNN, self).__init__(**kwargs) 
         assert length_scale >= 0
-        self.length_scale = length_scale
+        assert subdivisions > 1
+        assert mode=='onlyaxes' or mode=='full' or mode=='oneless'
+        self.length_scale = length_scale/1.2 #so that the gradients start to disappear at length scale
+        self.mode=mode
+        self.subdivisions=subdivisions
         self.ndim = None 
         self.offsets = None
         
@@ -634,18 +663,34 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         base_config = super(SoftPixelCNN, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @staticmethod
+    def create_offsets(D, subdivision, length_scale):
+        temp = [np.linspace(-length_scale , length_scale, subdivision) for _ in range(D)]
+        res_to_unpack = np.meshgrid(*temp, indexing='xy')
+        
+        a = [np.expand_dims(b,axis=D) for b in res_to_unpack]
+        a = np.concatenate(a,axis=-1)
+        a = np.reshape(a,[-1,D])
+        a = np.array(a,dtype='float32')
+        
+        b = a[np.prod(a,axis=-1)==0]
+        #all but one 0
+        onlyaxis = b[np.count_nonzero(b,axis=-1)==0]
+        onlyaxis = np.concatenate([onlyaxis, b[np.count_nonzero(b,axis=-1)==1]],axis=0)
+        return a,b,onlyaxis
+    
     def build(self, input_shapes):
         self.ndim = input_shapes[0][1]
         self.nfeat = input_shapes[1][1]
         self.offsets=[]
         
-        self.offsets.append(tf.constant([[0. for _ in range(self.ndim)]], dtype='float32'))#midpoint
-        
-        for i in range(self.ndim):
-            self.offsets.append(tf.constant([[ 0.3*self.length_scale if i==j else 0. 
-                                              for j in range(self.ndim)]], dtype='float32'))
-            self.offsets.append(tf.constant([[-0.3*self.length_scale if i==j else 0. 
-                                              for j in range(self.ndim)]], dtype='float32'))
+        a,b,c = SoftPixelCNN.create_offsets(self.ndim,self.subdivisions,self.length_scale)
+        if self.mode == 'full':
+            self.offsets = a
+        elif self.mode == 'oneless':
+            self.offsets = b
+        elif self.mode == 'onlyaxes':
+            self.offsets = c
             
         super(SoftPixelCNN, self).build(input_shapes)
         
@@ -653,7 +698,6 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         noutvert = input_shapes[2][0]
         ncoords = input_shapes[0][1]
         nfeat = input_shapes[1][1]
-        outshape = (noutvert, (ncoords*2 +1)*nfeat)
         return (noutvert, (ncoords*2 +1)*nfeat)
 
     def call(self, inputs):
@@ -662,7 +706,7 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         out=[]
         for o in self.offsets:
             distancesq = LocalDistance(coordinates+o, neighbour_indices)
-            f,_ = AccumulateKnn(10./(self.length_scale**2)*distancesq,  features, neighbour_indices, n_moments=0) # V x F
+            f,_ = AccumulateKnn(self.subdivisions**2/(self.length_scale**2)*distancesq,  features, neighbour_indices, n_moments=0) # V x F
             f = f[:,:self.nfeat]
             f = tf.reshape(f, [-1, self.nfeat])
             out.append(f) #only mean
