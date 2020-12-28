@@ -5,7 +5,7 @@
 from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore.compiled.c_simpleArray import simpleArray
 import numpy as np
-import uproot
+import uproot3 as uproot
 from numba import jit
 import ROOT
 import os

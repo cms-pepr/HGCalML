@@ -659,7 +659,10 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         self.offsets = None
         
     def get_config(self):
-        config = {'length_scale': self.length_scale}
+        config = {'length_scale': self.length_scale,
+                  'mode': self.mode,
+                  'subdivisions': self.subdivisions
+                  }
         base_config = super(SoftPixelCNN, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -696,9 +699,9 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         
     def compute_output_shape(self, input_shapes):
         noutvert = input_shapes[2][0]
-        ncoords = input_shapes[0][1]
+        #ncoords = input_shapes[0][1]
         nfeat = input_shapes[1][1]
-        return (noutvert, (ncoords*2 +1)*nfeat)
+        return (noutvert, nfeat*self.offsets)
 
     def call(self, inputs):
         coordinates, features, neighbour_indices = inputs

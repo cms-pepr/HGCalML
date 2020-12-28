@@ -1,19 +1,15 @@
 
 print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL","move implementations still in use to callbacks")
 
-import matplotlib
-import matplotlib.pyplot as plt
-from ragged_plotting_tools import make_cluster_coordinates_plot, make_original_truth_shower_plot, createRandomizedColors, make_eta_phi_projection_truth_plot
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 from multiprocessing import Process
 import numpy as np
 from datastructures import TrainData_OC
 import matplotlib.gridspec as gridspec
 import os
-import tempfile
-import random
-from standalone_tools import MPlotWrapper
 
+import plotly.express as px
+import pandas as pd
 
 '''
 standard output is:
@@ -42,12 +38,19 @@ def rotation(counter):
     while angle_in <= -360: angle_in -= 360
     return angle_in          
 
-def publish(path, outputfile,path):
+def publish(file_to_publish, publish_to_path):
     cpstring = 'cp -f '
-    if "@" in path:
+    if "@" in publish_to_path:
         cpstring = 'scp '
-    os.system(cpstring + outputfile + ' ' + path + ' > /dev/null') 
+    os.system(cpstring + file_to_publish + ' ' + publish_to_path + ' 2>&1 > /dev/null') 
 
+def shuffle_truth_colors(df):
+    ta = df["truthHitAssignementIdx"]
+    unta = np.unique(ta)
+    np.random.shuffle(unta)
+    unta = unta[unta>-0.1]
+    for i in range(len(unta)):
+        df["truthHitAssignementIdx"][df["truthHitAssignementIdx"] ==unta[i]]=i
 
 class plotClusteringDuringTraining(PredictCallback):
     def __init__(self,
@@ -57,7 +60,6 @@ class plotClusteringDuringTraining(PredictCallback):
                  n_keep=3,
                  use_backgather_idx=7,#and more,
                  batchsize=300000,
-                 type='png',
                  **kwargs):
         
         super(plotClusteringDuringTraining, self).__init__(function_to_apply=self.make_plot, batchsize=batchsize,**kwargs)
@@ -66,7 +68,6 @@ class plotClusteringDuringTraining(PredictCallback):
         self.n_keep = n_keep
         self.use_backgather_idx=use_backgather_idx
         self.publish = publish
-        self.type=type
         ## preparation
         os.system('mkdir -p '+os.path.dirname(outputfile))
         
@@ -75,7 +76,6 @@ class plotClusteringDuringTraining(PredictCallback):
         if self.td.nElements() > 1:
             raise ValueError("plotEventDuringTraining: only one event allowed")
 
-        self.gs = gridspec.GridSpec(2, 2, height_ratios=[0.3,0.7])
         self.plot_process = None
 
     def make_plot(self, counter, feat, predicted, truth):
@@ -94,62 +94,40 @@ class plotClusteringDuringTraining(PredictCallback):
         try:
             td = TrainData_OC()#contains all dicts
             #row splits not needed
-            feats = td.createFeatureDict(feat[0])
+            feats = td.createFeatureDict(feat[0],addxycomb=False)
             backgather = predicted[self.use_backgather_idx]
             truths = td.createTruthDict(truth[0])
             
-            fig = plt.figure(figsize=(10, 12))
-            ax = [fig.add_subplot(self.gs[0, 0], projection='3d'),
-                  fig.add_subplot(self.gs[0, 1], projection='3d'),
-                  fig.add_subplot(self.gs[1, :], projection='polar')    ]
+            data = {}
+            data.update(feats)
+            data.update(truths)
             
+            if len(backgather.shape)<2:
+                backgather = np.expand_dims(backgather,axis=1)
             
-            cmap = createRandomizedColors('jet', seed=truth[0].shape[0])
+            data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
+            data['hitBackGatherIdx'] = backgather
             
-            make_original_truth_shower_plot(plt, ax[0],
-                                            backgather,
-                                            feats['recHitEnergy'],
-                                            feats['recHitX'],
-                                            feats['recHitY'],
-                                            feats['recHitZ'],
-                                            cmap=cmap,
-                                            predBeta=np.ones_like(backgather))
+            df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
             
+            shuffle_truth_colors(df)
             
-            ax[0].view_init(30, rotation(counter))
+            fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", color="truthHitAssignementIdx", size="recHitLogEnergy",
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            fig.write_html(self.outputfile + str(self.keep_counter) + "_truth.html")
             
-            make_original_truth_shower_plot(plt, ax[1],
-                                            truths['truthHitAssignementIdx'],
-                                            feats['recHitEnergy'],
-                                            feats['recHitX'],
-                                            feats['recHitY'],
-                                            feats['recHitZ'],
-                                            cmap=cmap,
-                                            predBeta=np.ones_like(backgather))
+            bgfile = self.outputfile + str(self.keep_counter) + "_backgather.html"
+            #now the cluster indices
+            fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", color="hitBackGatherIdx", size="recHitLogEnergy",
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            fig.write_html(bgfile)
             
-            ax[1].view_init(30, rotation(counter))
-            
-            eta = calc_eta(feats['recHitX'][:,0], feats['recHitY'][:,0], feats['recHitZ'][:,0])
-            phi = calc_phi(feats['recHitX'][:,0], feats['recHitY'][:,0])
-            r = calc_r(feats['recHitX'][:,0], feats['recHitY'][:,0])
-            
-            rgbcolor = cmap((backgather[:,0] + 1.) / (np.max(backgather[:,0]) + 1.))
-            
-            #polar
-            ax[2].scatter(phi, feats['recHitTheta'][:,0], c=rgbcolor, s=np.log(1.+ feats['recHitEnergy'][:,0]))
-            
-            plt.tight_layout()
-            if self.type=="png":
-                fig.savefig(self.outputfile + str(self.keep_counter) + "."+self.type, dpi=400)
-            else:
-                fig.savefig(self.outputfile + str(self.keep_counter) + "."+self.type)
-            
-            fig.clear()
-            plt.close(fig)
-            plt.clf()
-            plt.cla()
-            plt.close()
-            
+            if self.publish is not None:
+                publish(bgfile, self.publish)
 
         except Exception as e:
             print(e)
@@ -163,7 +141,6 @@ class plotEventDuringTraining(PredictCallback):
                  cycle_colors=False,
                  publish=None,
                  n_keep=3,
-                 n_ccoords=2,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot, **kwargs)
         self.outputfile = outputfile
@@ -171,7 +148,6 @@ class plotEventDuringTraining(PredictCallback):
         self.cycle_colors = cycle_colors
         self.log_energy = log_energy
         self.n_keep = n_keep
-        self.n_ccoords = n_ccoords
         self.keep_counter = 0
         if self.td.nElements() > 1:
             raise ValueError("plotEventDuringTraining: only one event allowed")
@@ -213,123 +189,59 @@ class plotEventDuringTraining(PredictCallback):
              pred_time, 
              pred_id
             '''
-            
             td = TrainData_OC()#contains all dicts
             #row splits not needed
-            feats = td.createFeatureDict(feat[0])
+            feats = td.createFeatureDict(feat[0],addxycomb=False)
             truths = td.createTruthDict(truth[0])
             
             predBeta = predicted[0]
             predCCoords = predicted[1]
+            if not predCCoords.shape[-1] == 3:
+                return #just for 3D ccoords
+            
+            #for later
             predEnergy = predicted[2]
             predX = predicted[3][:,0:1]
             predY = predicted[3][:,1:2]
-
             
-            print('predBeta',predBeta.shape)
-            print('predCCoords',predCCoords.shape)
-            print('predEnergy',predEnergy.shape)
-            print('predX',predX.shape)
+            data = {}
+            data.update(feats)
+            data.update(truths)
             
             
-
-            fig = plt.figure(figsize=(10, 8))
-            ax = None
-            if predCCoords.shape[1] == 2:
-                ax = [fig.add_subplot(self.gs[0, 0], projection='3d'),
-                      fig.add_subplot(self.gs[0, 1]),
-                      fig.add_subplot(self.gs[1, :])]
-            elif predCCoords.shape[1] == 3:
-                ax = [fig.add_subplot(self.gs[0, 0], projection='3d'),
-                      fig.add_subplot(self.gs[0, 1], projection='3d'),
-                      fig.add_subplot(self.gs[1, :])]
-
-            predBeta = np.clip(predBeta, 1e-6, 1. - 1e-6)
-
-            seed = predBeta.shape[0]
-            if self.cycle_colors:
-                seed += counter
-
-            cmap = createRandomizedColors('jet', seed=seed)
-
-            identified = make_cluster_coordinates_plot(plt, ax[1],
-                                                       truths['truthHitAssignementIdx'],  # [ V  x 1] or [ V ]
-                                                       predBeta,  # [ V  x 1] or [ V ]
-                                                       predCCoords,
-                                                       beta_threshold=0.5, distance_threshold=0.75,
-                                                       beta_plot_threshold=0.01,
-                                                       cmap=cmap)
-
-            make_original_truth_shower_plot(plt, ax[0],
-                                            truths['truthHitAssignementIdx'],
-                                            feats['recHitEnergy'],
-                                            feats['recHitX'],
-                                            feats['recHitY'],
-                                            feats['recHitZ'],
-                                            cmap=cmap,
-                                            predBeta=predBeta)
-
-            angle_in = 10. * counter + 60.
-            while angle_in >= 360: angle_in -= 360
-            while angle_in <= -360: angle_in -= 360
-            ax[0].view_init(30, angle_in)
-            if predCCoords.shape[1] == 3:
-                ax[1].view_init(30, angle_in)
-
+            data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
+            data['predBeta'] = predBeta
+            data['predCCoordsX'] = predCCoords[:,0:1]
+            data['predCCoordsY'] = predCCoords[:,1:2]
+            data['predCCoordsZ'] = predCCoords[:,2:3]
+            data['predEnergy'] = predEnergy
+            data['predX']=predX
+            data['predY']=predY
             
-            if self.log_energy:
-                predEnergy = np.exp(predEnergy) - 1
-
-            def calc_eta(x, y, z):
-                rsq = np.sqrt(x ** 2 + y ** 2)
-                return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.)
-
-            def calc_phi(x, y):
-                return np.arctan2(x, y)
-
-            predEta = calc_eta(predX , predY,
-                               np.sign(feats['recHitZ']) * 322.1)
-            predPhi = calc_phi(predX , predY)
-
-            trueEta = calc_eta(truths['truthHitAssignedX'], truths['truthHitAssignedY'] + 1e-3,
-                               truths['truthHitAssignedZ'] + 1e-3)
-            truePhi = calc_phi(truths['truthHitAssignedX'], truths['truthHitAssignedY'] + 1e-3)
-
-            make_eta_phi_projection_truth_plot(plt, ax[2],
-                                               truths['truthHitAssignementIdx'],
-                                               feats['recHitEnergy'],
-                                               calc_eta(feats['recHitX'], feats['recHitY'], feats['recHitZ']),
-                                               calc_phi(feats['recHitX'], feats['recHitY']),
-                                               predEta,  # data['predEta']+feats['recHitEta'],
-                                               predPhi,  # data['predPhi']+feats['recHitRelPhi'],
-                                               trueEta,
-                                               truePhi,
-                                               truths['truthHitAssignedEnergies'],
-                                               predBeta,
-                                               predCCoords,
-                                               cmap=cmap,
-                                               identified=identified,
-                                               predEnergy=predEnergy
-                                               )
-
-            plt.tight_layout()
-            fig.savefig(self.outputfile + str(self.keep_counter) + ".pdf")
-
+            #for k in data:
+            #    print(k, data[k].shape)
+            
+            df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
+            
+            #fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", color="truthHitAssignementIdx", size="recHitLogEnergy")
+            #fig.write_html(self.outputfile + str(self.keep_counter) + "_truth.html")
+            shuffle_truth_colors(df)
+            #now the cluster indices
+            fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
+                                color="truthHitAssignementIdx", size="recHitLogEnergy",
+                                hover_data=['predBeta','predEnergy', 'predX', 'predY', 'truthHitAssignementIdx', 
+                                            'truthHitAssignedEnergies', 'truthHitAssignedX','truthHitAssignedY'],
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            ccfile = self.outputfile + str(self.keep_counter) + "_ccoords.html"
+            fig.write_html(ccfile)
+            
+            
             if self.publish is not None:
-                temp_name = next(tempfile._get_candidate_names())
-                temp_name = self.outputfile + temp_name + '.png'
-                fig.savefig(temp_name, dpi=400)
-                cpstring = 'cp -f '
-                if "@" in self.publish:
-                    cpstring = 'scp '
-                os.system(cpstring + temp_name + ' ' + self.publish + '.png > /dev/null')
-                os.system('rm -f ' + temp_name)
-
-            fig.clear()
-            plt.close(fig)
-            plt.clf()
-            plt.cla()
-            plt.close()
+                publish(ccfile, self.publish)
+            
+            
 
 
         except Exception as e:
