@@ -66,10 +66,14 @@ def oc_per_batch_element(
         truth_idx,
         is_spectator,
         payload_loss,
+        S_B=1.,
         payload_weight_function = payload_weight_function,  #receives betas as K x V x 1 as input, and a threshold val
         payload_weight_threshold = 0.8,
         use_mean_x = False,
         cont_beta_loss=False,
+        prob_repulsion=False,
+        phase_transition=False,
+        alt_potential_norm=False
         ):
     '''
     all inputs
@@ -78,10 +82,11 @@ def oc_per_batch_element(
     
     #set all spectators invalid here, everything scales with beta, so:
     beta_in = beta
-    beta = tf.clip_by_value(beta, 1e-9,1.-1e-4)
+    beta = tf.clip_by_value(beta, 0.,1.-1e-4)
     beta *= (1. - is_spectator)
-    q = tf.math.atanh(beta)**2 + q_min * (1. - is_spectator) # V x 1
-    
+    qraw = tf.math.atanh(beta)**2 
+    q = qraw + q_min * (1. - is_spectator) # V x 1
+    #q = tf.where(beta_in<1.-1e-4, q, tf.math.atanh(1.-1e-4)**2 + q_min + beta_in) #just give the rest above clip a gradient
     
     #determine object associations
     obj_ids,_ = tf.unique(tf.squeeze(truth_idx,axis=1)) # K+1
@@ -100,7 +105,7 @@ def oc_per_batch_element(
     M = tf.expand_dims(obj_ids, axis=1) - tf.expand_dims(truth_idx, axis=0) # K x V x 1
     M_not = tf.where(tf.abs(M) > 0.1, tf.zeros_like(M) + 1., tf.zeros_like(M))
     M = tf.where(tf.abs(M) < 0.1, tf.zeros_like(M) + 1., tf.zeros_like(M))
-    
+    N_per_obj = tf.reduce_sum(M, axis=1) # K x 1
     
     kalpha = tf.argmax(M * tf.expand_dims(beta_in, axis=0), axis=1) # K x 1
     
@@ -110,17 +115,37 @@ def oc_per_batch_element(
         x_kalpha = tf.math.divide_no_nan(x_kalpha, tf.reduce_sum(M * tf.expand_dims(q, axis=0), axis=1, keepdims=True)) # K x 1 x C
     
     q_kalpha = gather_for_obj_from_vert(q, kalpha) # K x 1 x 1
-    
+    qraw_kalpha = gather_for_obj_from_vert(qraw, kalpha) # K x 1 x 1
     beta_kalpha = gather_for_obj_from_vert(beta_in, kalpha) # K x 1 x 1
+    
     object_weights_kalpha = gather_for_obj_from_vert(object_weights, kalpha)# K x 1 x 1
     
     distancesq = tf.reduce_sum((x_kalpha - tf.expand_dims(x, axis=0)) ** 2, axis=-1, keepdims=True)# K x V x 1
     
-    V_att = M * q_kalpha * tf.expand_dims(q, axis=0) * distancesq  # K x V x 1
-    V_att = mean_N_K(V_att, N, K) # ()
+    V_att = object_weights_kalpha * M * q_kalpha * tf.expand_dims(q, axis=0) * distancesq # K x V x 1
     
-    V_rep = M_not * q_kalpha * tf.expand_dims(q, axis=0) * tf.nn.relu(1. - tf.sqrt(distancesq + 1e-4))   # K x V x 1
-    V_rep = mean_N_K(V_rep, N, K) # ()
+    if alt_potential_norm:
+        V_att = tf.math.divide_no_nan(tf.reduce_sum(V_att,axis=1), N_per_obj) # K x 1
+        V_att = tf.math.divide_no_nan(tf.reduce_sum(V_att,axis=0), K) # 1
+    else:
+        V_att = mean_N_K(V_att, N, K) # ()
+    
+    V_rep=None
+    if prob_repulsion:
+        # comes from 1-Gaus in LH space
+        V_rep = -2.*tf.math.log(1.-tf.math.exp(-distancesq/2.)+1e-5)
+        #V_rep = tf.exp(- distancesq * 6./2.)
+    else:
+        V_rep = tf.nn.relu(1. - tf.sqrt(distancesq + 1e-4))
+    
+    V_rep = object_weights_kalpha * V_rep * M_not * q_kalpha * tf.expand_dims(q, axis=0)     # K x V x 1
+    
+    if alt_potential_norm:
+        V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=1), 
+                                      tf.expand_dims(tf.expand_dims(N,axis=0),axis=0)-N_per_obj) # K x 1
+        V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=0), K) # 1
+    else:
+        V_rep = mean_N_K(V_rep, N, K) # ()
     
     ##beta penalty
     
@@ -140,10 +165,20 @@ def oc_per_batch_element(
         ## 1 - X here to compensate 1 - down there
         #beta_kalpha_sm = 1. - tf.math.exp(-b_exp_sum)+0.5*b_exp_prod-tf.math.exp(tf.constant([[[-1.]]])) # K x 1 x 1
         
-
-    B_pen = tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha_sm)), 
+    B_pen = 0.
+    if phase_transition:
+        # K x V x 1
+        # does not scale with q of each vertex, but only with beta_kalpha
+        B_pen = - object_weights_kalpha * M * beta_kalpha * 1./(20*distancesq + 1.)#tf.exp(-10. * tf.sqrt(distancesq + 1e-9))
+        B_pen = tf.where(distancesq==0. , 0., B_pen) #exclude exact self-potential (not needed in the other cases)
+        #B_pen = mean_N_K(B_pen, N, K)
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=1), N_per_obj) # K x 1
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K) # 1
+    else:
+        B_pen += tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha_sm)), 
                                   tf.reduce_sum(object_weights_kalpha)) # ()
-    
+        
+
     # beta_in V x 1
     # object_weights V x 1
     
@@ -154,12 +189,12 @@ def oc_per_batch_element(
         to_much_B_pen = tf.math.divide_no_nan(to_much_B_pen,tf.reduce_sum(object_weights))
     
     ##noise penalty
-    Noise_pen = tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise))
+    Noise_pen = S_B*tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise))
     
     #### payload
     ## beta_nograd kill beta gradient? maybe..?
     
-    p_w = payload_weight_function(M * tf.expand_dims(beta,axis=0), 
+    p_w = object_weights_kalpha * payload_weight_function(M * tf.expand_dims(beta,axis=0), 
                                   tf.expand_dims(object_weights,axis=0), 
                                   payload_weight_threshold) #K x V x 1
     pll = p_w * tf.expand_dims(payload_loss, axis=0) #K x V x X
@@ -181,7 +216,10 @@ def oc_loss(
         energyweights=None,
         use_average_cc_pos=False,
         payload_rel_threshold=0.1,
-        cont_beta_loss=False
+        cont_beta_loss=False,
+        prob_repulsion=False,
+        phase_transition=False,
+        alt_potential_norm=False
         ):   
     
     if energyweights is None:
@@ -210,7 +248,11 @@ def oc_loss(
             payload_weight_threshold=payload_rel_threshold,
             
             use_mean_x=use_average_cc_pos,
-            cont_beta_loss=cont_beta_loss
+            cont_beta_loss=cont_beta_loss,
+            S_B=S_B,
+            prob_repulsion=prob_repulsion,
+            phase_transition=phase_transition,
+            alt_potential_norm=alt_potential_norm
             )
         V_att += att
         V_rep += rep

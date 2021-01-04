@@ -69,7 +69,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     x = Dense(64, activation='elu',name='pre_dense_b')(x)
     x = BatchNormalization(momentum=0.6)(x)
     
-    allfeat.append(Dense(16, activation='elu',name='feat_compress_pre')(x))
+    #allfeat.append(Dense(16, activation='elu',name='feat_compress_pre')(x))
     backgathered_coords.append(coords)
     
     sel_gidx = gidx_orig
@@ -81,7 +81,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
         #cluster first
         hier = Dense(1,activation='sigmoid')(x)
-        x_cl, rs, bidxs, sel_gidx, x, t_idx = LocalClusterReshapeFromNeighbours(
+        x_cl, rs, bidxs, sel_gidx, energy, x, t_idx = LocalClusterReshapeFromNeighbours(
                  K=8, 
                  radius=0.1, 
                  print_reduction=True, 
@@ -90,11 +90,15 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                  loss_repulsion=0.3,
                  print_loss=True,
                  name='clustering_'+str(i)
-                 )([x, dist, hier, nidx, rs, sel_gidx, x, t_idx, t_idx])
+                 )([x, dist, hier, nidx, rs, sel_gidx, energy, x, t_idx, t_idx])
+        
+        #explicit
+        energy = ReduceSumEntirely()(energy)#sums up all contained energy per cluster
                  
         gatherids.append(bidxs)
         x_cl = Dense(128, activation='elu',name='dense_clc_'+str(i))(x_cl)
-        x = Concatenate()([x,x_cl])
+        n_energy = BatchNormalization(momentum=0.6)(energy)
+        x = Concatenate()([x,x_cl,n_energy])
         
         pixelcompress=4
         nneigh = 32+4*i
@@ -130,6 +134,8 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         #record more and more the deeper we go
         if i < total_iterations-1:
             x_r = Dense(12*(i+1), activation='elu',name='dense_rec_'+str(i))(x)
+        else:
+            energy = MultiBackGather()([energy, gatherids])#assign energy sum to all cluster components
         
         allfeat.append(MultiBackGather()([x_r, gatherids]))
         
@@ -138,20 +144,28 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
         
     x = Concatenate(name='allconcat')(allfeat)
+    #x - Dropout(0.3)(x)#force to use different information sources
     x = Dense(128, activation='elu', name='alldense')(x)
     x = BatchNormalization(momentum=0.6)(x)
     x = Dense(64, activation='elu')(x)
     x = BatchNormalization(momentum=0.6)(x)
     x = Concatenate()([feat,x])
     x = BatchNormalization(momentum=0.6)(x)
+    x = Concatenate()([x,energy])
 
     pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat)
     
     #loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=1e-2,
+                                         energy_loss_weight=1e-4,
                                          position_loss_weight=1e-2,
                                          timing_loss_weight=1e-3,
+                                         beta_loss_scale=1.,
+                                         repulsion_scaling=1.,
+                                         q_min=1.5,
+                                         prob_repulsion=True,
+                                         phase_transition=1,
+                                         alt_potential_norm=True
                                          )([pred_beta, pred_ccoords, pred_energy, 
                                             pred_pos, pred_time, pred_id,
                                             orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid,
@@ -188,7 +202,7 @@ import os
 
 from plotting_callbacks import plotClusteringDuringTraining
 
-samplepath='/eos/home-j/jkiesele/DeepNtuples/HGCal/Sept2020_19_production_1x1/999_windowntup.djctd'
+samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 cb = [plotClusteringDuringTraining(
@@ -213,7 +227,7 @@ cb += [
     
     ]
 
-learningrate = 1e-4
+learningrate = 1e-3
 nbatch = 110000 #quick first training with simple examples = low # hits
 
 train.compileModel(learningrate=learningrate,
@@ -221,7 +235,7 @@ train.compileModel(learningrate=learningrate,
                           metrics=None)
 
 
-model, history = train.trainModel(nepochs=1,
+model, history = train.trainModel(nepochs=20,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   extend_truth_list_by = len(train.keras_model.outputs)-2, #just adapt truth list to avoid keras error (no effect on model)

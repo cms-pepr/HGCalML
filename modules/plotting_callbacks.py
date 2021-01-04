@@ -42,22 +42,23 @@ def publish(file_to_publish, publish_to_path):
     cpstring = 'cp -f '
     if "@" in publish_to_path:
         cpstring = 'scp '
-    os.system(cpstring + file_to_publish + ' ' + publish_to_path + ' 2>&1 > /dev/null') 
+    basefilename = os.path.basename(file_to_publish)
+    os.system(cpstring + file_to_publish + ' ' + publish_to_path +'_'+basefilename+ ' 2>&1 > /dev/null') 
 
-def shuffle_truth_colors(df):
-    ta = df["truthHitAssignementIdx"]
+def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx"):
+    ta = df[qualifier]
     unta = np.unique(ta)
     np.random.shuffle(unta)
     unta = unta[unta>-0.1]
     for i in range(len(unta)):
-        df["truthHitAssignementIdx"][df["truthHitAssignementIdx"] ==unta[i]]=i
+        df[qualifier][df[qualifier] ==unta[i]]=i
 
 class plotClusteringDuringTraining(PredictCallback):
     def __init__(self,
                  outputfile,
                  cycle_colors=False,
                  publish=None,
-                 n_keep=3,
+                 n_keep=1,
                  use_backgather_idx=7,#and more,
                  batchsize=300000,
                  **kwargs):
@@ -65,7 +66,8 @@ class plotClusteringDuringTraining(PredictCallback):
         super(plotClusteringDuringTraining, self).__init__(function_to_apply=self.make_plot, batchsize=batchsize,**kwargs)
         self.outputfile = outputfile
         self.cycle_colors = cycle_colors
-        self.n_keep = n_keep
+        assert n_keep>0
+        self.n_keep = n_keep-1
         self.use_backgather_idx=use_backgather_idx
         self.publish = publish
         ## preparation
@@ -120,6 +122,9 @@ class plotClusteringDuringTraining(PredictCallback):
             
             bgfile = self.outputfile + str(self.keep_counter) + "_backgather.html"
             #now the cluster indices
+            
+            shuffle_truth_colors(df,"hitBackGatherIdx")
+            
             fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", color="hitBackGatherIdx", size="recHitLogEnergy",
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
@@ -140,14 +145,17 @@ class plotEventDuringTraining(PredictCallback):
                  log_energy=False,
                  cycle_colors=False,
                  publish=None,
-                 n_keep=3,
+                 n_keep=1,
+                 beta_threshold=0.01,
                  **kwargs):
         super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot, **kwargs)
         self.outputfile = outputfile
         os.system('mkdir -p '+os.path.dirname(outputfile))
         self.cycle_colors = cycle_colors
         self.log_energy = log_energy
-        self.n_keep = n_keep
+        self.beta_threshold=beta_threshold
+        assert n_keep>0
+        self.n_keep = n_keep-1
         self.keep_counter = 0
         if self.td.nElements() > 1:
             raise ValueError("plotEventDuringTraining: only one event allowed")
@@ -211,12 +219,15 @@ class plotEventDuringTraining(PredictCallback):
             
             data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
             data['predBeta'] = predBeta
+            data['predBeta+0.05'] = predBeta+0.05 #so that the others don't disappear
             data['predCCoordsX'] = predCCoords[:,0:1]
             data['predCCoordsY'] = predCCoords[:,1:2]
             data['predCCoordsZ'] = predCCoords[:,2:3]
             data['predEnergy'] = predEnergy
             data['predX']=predX
             data['predY']=predY
+            data['(predBeta+0.05)**2'] = data['predBeta+0.05']**2
+            data['(thresh(predBeta)+0.05))**2'] = np.where(predBeta>self.beta_threshold ,data['(predBeta+0.05)**2'], 0.)
             
             #for k in data:
             #    print(k, data[k].shape)
@@ -235,6 +246,35 @@ class plotEventDuringTraining(PredictCallback):
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
             ccfile = self.outputfile + str(self.keep_counter) + "_ccoords.html"
+            fig.write_html(ccfile)
+            
+            
+            if self.publish is not None:
+                publish(ccfile, self.publish)
+            
+            fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
+                                color="truthHitAssignementIdx", size="(predBeta+0.05)**2",
+                                hover_data=['predBeta','predEnergy', 'predX', 'predY', 'truthHitAssignementIdx', 
+                                            'truthHitAssignedEnergies', 'truthHitAssignedX','truthHitAssignedY'],
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            ccfile = self.outputfile + str(self.keep_counter) + "_ccoords_betasize.html"
+            fig.write_html(ccfile)
+            
+            
+            if self.publish is not None:
+                publish(ccfile, self.publish)
+                
+            # thresholded
+            fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
+                                color="truthHitAssignementIdx", size="(thresh(predBeta)+0.05))**2",
+                                hover_data=['predBeta','predEnergy', 'predX', 'predY', 'truthHitAssignementIdx', 
+                                            'truthHitAssignedEnergies', 'truthHitAssignedX','truthHitAssignedY'],
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            ccfile = self.outputfile + str(self.keep_counter) + "_ccoords_betathresh.html"
             fig.write_html(ccfile)
             
             

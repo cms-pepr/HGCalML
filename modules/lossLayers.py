@@ -165,9 +165,13 @@ class LLLocalClusterCoordinates(LossLayerBase):
         att_proto = (1.-repulsion_contrib)*distances
         rep_proto = repulsion_contrib*tf.nn.relu(1-tf.sqrt(distances + 1e-3))
         
+        hierarchy = tf.clip_by_value(hierarchy,0.,1-1e-6)
+        hierarchy_scaling = tf.atanh(hierarchy)
+        
         potential = tf.where(tf.abs(firsttruth-neightruth)<0.1, att_proto, rep_proto)
-        potential = hierarchy * tf.reduce_mean(potential, axis=1, keepdims=True)
+        potential = hierarchy_scaling * tf.reduce_mean(potential, axis=1, keepdims=True)
         potential = tf.reduce_mean(potential)
+        
         penalty = 1. - hierarchy
         penalty = tf.reduce_mean(penalty)
         
@@ -377,6 +381,9 @@ class LLFullObjectCondensation(LossLayerBase):
                  use_average_cc_pos=False, payload_rel_threshold=0.1, rel_energy_mse=False, smooth_rep_loss=False,
                  pre_train=False, huber_energy_scale=2., downweight_low_energy=True, n_ccoords=2, energy_den_offset=1.,
                  noise_scaler=1., too_much_beta_scale=0., cont_beta_loss=False, log_energy=False, n_classes=0,
+                 prob_repulsion=False,
+                 phase_transition=0.,
+                 alt_potential_norm=False,
                  print_time=True,
                  standard_configuration=None,
                  **kwargs):
@@ -411,6 +418,8 @@ class LLFullObjectCondensation(LossLayerBase):
         :param n_classes: give the real number of classes, in the truth labelling, class 0 is always ignored so if you
                           have 6 classes, label them from 1 to 6 not 0 to 5. If n_classes is 0, no classification loss
                           is applied
+        :param prob_repulsion
+        :param phase_transition
         :param standard_configuration:
         :param kwargs:
         """
@@ -445,6 +454,9 @@ class LLFullObjectCondensation(LossLayerBase):
         self.cont_beta_loss = cont_beta_loss
         self.log_energy = log_energy
         self.n_classes = n_classes
+        self.prob_repulsion = prob_repulsion
+        self.phase_transition = phase_transition
+        self.alt_potential_norm = alt_potential_norm
         self.print_time = print_time
 
         self.loc_time=time.time()
@@ -518,7 +530,11 @@ class LLFullObjectCondensation(LossLayerBase):
                                            energyweights=energy_weights,
                                            use_average_cc_pos=self.use_average_cc_pos,
                                            payload_rel_threshold=self.payload_rel_threshold,
-                                           cont_beta_loss=self.cont_beta_loss)
+                                           cont_beta_loss=self.cont_beta_loss,
+                                           prob_repulsion=self.prob_repulsion,
+                                           phase_transition=self.phase_transition>0. ,
+                                           alt_potential_norm=self.alt_potential_norm
+                                           )
 
         
         att *= self.potential_scaling
@@ -534,6 +550,7 @@ class LLFullObjectCondensation(LossLayerBase):
         class_loss = tf.debugging.check_numerics(payload[3], "classification loss has NaN")
         
         lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta
+            
         lossval = tf.debugging.check_numerics(lossval, "loss has nan")
         lossval = tf.reduce_mean(lossval)
         
@@ -543,10 +560,14 @@ class LLFullObjectCondensation(LossLayerBase):
             self.loc_time = time.time()
             
         if self.print_loss:
+            minbtext = 'min_beta_loss'
+            if self.phase_transition>0:
+                minbtext = 'phase transition loss'
+                print('avg beta', tf.reduce_mean(pred_beta))
             print('loss', lossval.numpy(),
                   'attractive_loss', att.numpy(),
                   'rep_loss', rep.numpy(),
-                  'min_beta_loss', min_b.numpy(),
+                  minbtext, min_b.numpy(),
                   'noise_loss', noise.numpy(),
                   'energy_loss', energy_loss.numpy(),
                   'pos_loss', pos_loss.numpy(),
@@ -584,6 +605,9 @@ class LLFullObjectCondensation(LossLayerBase):
             'cont_beta_loss': self.cont_beta_loss,
             'log_energy': self.log_energy,
             'n_classes': self.n_classes,
+            'prob_repulsion': self.prob_repulsion,
+            'phase_transition': self.phase_transition,
+            'alt_potential_norm': self.alt_potential_norm,
             'print_time' : self.print_time
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
