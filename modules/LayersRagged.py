@@ -1,7 +1,9 @@
+
+print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL", "move layers still in usage to GravNetLayersRagged")
+
 import tensorflow as tf
 import tensorflow.keras as keras
 from caloGraphNN import gauss_of_lin
-import uuid
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from condensate_op import BuildCondensates
@@ -222,6 +224,7 @@ class RaggedConstructTensor(keras.layers.Layer):
         num_elements = tf.cast(row_splits[-1], tf.int32)
         data = tf.slice(x_data, [0, 0], [num_elements, self.num_features])
 
+        row_splits = tf.cast(row_splits, tf.int32)
         return data, row_splits
 
     def compute_output_shape(self, input_shape):
@@ -935,10 +938,13 @@ class VertexScatterer(keras.layers.Layer):
             return x_data 
         
         scatter_idcs_n = tf.cast(scatter_idcs,dtype='int64')
-        shape = tf.cast(tf.shape(protoshape),dtype='int64')[:-1]
-        shape = tf.concat([shape,tf.cast(tf.shape(x_data)[1:2],dtype='int64')],axis=-1)
+        shape=tf.cast(tf.shape(protoshape),dtype='int64')
         
-        tf.print(self.name, 'is scattering', x_data.shape, 'to', shape)
+        if len(tf.shape(x_data))>1:
+            shape = tf.cast(tf.shape(protoshape),dtype='int64')[:-1]
+            shape = tf.concat([shape,tf.cast(tf.shape(x_data)[1:2],dtype='int64')],axis=-1)
+        
+        tf.print(self.name, 'is scattering', x_data.shape, 'to', shape, 'with idxs', scatter_idcs_n.shape)
         
         return tf.scatter_nd(indices=scatter_idcs_n, updates=x_data, shape=shape)
 

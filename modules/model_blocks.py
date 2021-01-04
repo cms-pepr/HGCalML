@@ -1,5 +1,5 @@
 
-from tensorflow.keras.layers import Dense, Concatenate, BatchNormalization, Add
+from tensorflow.keras.layers import Dense, Concatenate, BatchNormalization, Add, Multiply
 from Layers import ExpMinusOne, CondensateToPseudoRS, RaggedSumAndScatter, FusedRaggedGravNetLinParse, VertexScatterer, FusedRaggedGravNetAggAtt
 from DeepJetCore.DJCLayers import  StopGradient, SelectFeatures, ScalarMultiply
 
@@ -210,15 +210,31 @@ def create_output_layers(x, x_row_splits, n_ccoords=2,
 
     if n_classes > 0:
         classes_scores = Dense(n_classes, activation=None, name="predicted_classification_scores")(x)
+       
         return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords, classes_scores])
     else:
         return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords])
 
 
-
-
-
-
+from datastructures import TrainData_OC
+#new format!
+def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_OC()):
+    '''
+    returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
+    '''
+    
+    feat = td.createFeatureDict(feat)
+    
+    pred_beta = Dense(1, activation='sigmoid')(x)
+    pred_ccoords = Dense(n_ccoords)(x)
+    pred_energy = Dense(1)(x)
+    if energy is not None:
+        pred_energy = Multiply()([pred_energy,energy])
+    pred_pos =  Add()([feat['recHitXY'],Dense(2)(x) ])
+    pred_time = Add()([feat['recHitTime'],ScalarMultiply(10.)(Dense(1)(x)) ])
+    pred_id = Dense(n_classes, activation="softmax")(x)
+    
+    return pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
 
 
 

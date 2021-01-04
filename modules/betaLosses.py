@@ -1,8 +1,7 @@
 
 from __future__ import print_function
 import tensorflow as tf
-import keras
-import keras.backend as K
+import tensorflow.keras.backend as K
 from index_dicts import create_index_dict, split_feat_pred, create_feature_dict
 import time
 from Loss_tools import huber
@@ -303,6 +302,33 @@ def pretrain_obj_cond_loss_truth(truth, pred):
 
 
 
+def oc_loss_interface(
+        pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,
+        t_idx, t_energy, t_pos, t_time, t_pid,
+        rowsplits,
+        config,
+        energy_weight_function=None #takes true energy and returns weight per hit
+        ):
+    '''
+    This is going to be the new format.
+    Do not pass features here. if any predictions are relative to features put that 
+    directly in the model.
+    
+    The classification loss is still not included here (because it isn't either in the data).
+    
+    inputs: all V x X (where X is at least 1)
+     not self-explanatory ones:
+      - energy_weight_function: takes per hit true energy and transforms it to a weight
+    
+    '''
+    energyweights = tf.zeros_like(t_energy)+1.
+    if energy_weight_function is not None:
+        energyweights = energy_weight_function(t_energy)
+        
+    
+    
+
+
 def obj_cond_loss(truth_dict, pred_dict, feat, rowsplits, config):
     start_time = time.time()
 
@@ -373,7 +399,7 @@ def obj_cond_loss(truth_dict, pred_dict, feat, rowsplits, config):
 
     tdiff = pred_dict['predT'] - truth_dict['truthHitAssignedT']
     # print("d['truthHitAssignedT']", tf.reduce_mean(d['truthHitAssignedT']), tdiff)
-    tdiff = (1e6 * tdiff) ** 2
+    tdiff = (1e6 * tdiff) ** 2 #time is in ns
     # self.timing_loss_weight
 
     payload_loss = tf.concat([config['energy_loss_weight'] * energy_loss,

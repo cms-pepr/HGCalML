@@ -200,10 +200,9 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
 
         //just loop over n_rs, in a realistic setting these shouldn't be more than a handful entries
 
-        dim3 pre_numblocks(n_vert/64+1,n_neigh/8+1);
-        dim3 pre_threadsperblock(64,8);
+        grid_and_block gb(n_vert,256,n_neigh,4);
 
-        gpu::set_defaults<<<pre_numblocks,pre_threadsperblock,0,  d.stream() >>>(
+        gpu::set_defaults<<<gb.grid(),gb.block()>>>(
                 d_indices,
                 d_dist,
                 tf_compat,
@@ -215,8 +214,8 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){ //n_rs-1 important!
 
 
-            dim3 numblocks(n_vert/512+1);
-            dim3 threadsperblock(512);
+            dim3 numblocks(n_vert/1024+1);
+            dim3 threadsperblock(1024);
 
             gpu::select_knn_kernel<<<numblocks, threadsperblock, 0, d.stream() >>>(
                     d_coord,

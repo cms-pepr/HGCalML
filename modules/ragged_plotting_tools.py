@@ -104,7 +104,8 @@ def make_cluster_coordinates_plot(plt, ax,
                                   cmap=None,
                                   noalpha=False,
                                   direct_color=False,
-                                  beta_plot_threshold=1e-2
+                                  beta_plot_threshold=1e-2,
+                                  data_dump=None #dump in pandas dataframe
                                   ):
     # data = create_index_dict(truth,pred,usetf=False)
 
@@ -148,13 +149,13 @@ def make_cluster_coordinates_plot(plt, ax,
     if predCCoords.shape[1] == 2:
         ax.scatter(predCCoords[:, 0][sorting][sorted_betasel],
                    predCCoords[:, 1][sorting][sorted_betasel],
-                   s=.25 * matplotlib.rcParams['lines.markersize'] ** 2,
+                   s=.1 * matplotlib.rcParams['lines.markersize'] ** 2,
                    c=rgba_cols[sorting][sorted_betasel])
     elif predCCoords.shape[1] == 3:
         ax.scatter(predCCoords[:, 0][sorting][sorted_betasel],
                    predCCoords[:, 1][sorting][sorted_betasel],
                    predCCoords[:, 2][sorting][sorted_betasel],
-                   s=.25 * matplotlib.rcParams['lines.markersize'] ** 2,
+                   s=.1 * matplotlib.rcParams['lines.markersize'] ** 2,
                    c=rgba_cols[sorting][sorted_betasel])
 
     if beta_threshold < 0. or beta_threshold > 1 or distance_threshold < 0:

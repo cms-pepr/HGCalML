@@ -1,17 +1,11 @@
 
-from caloGraphNN_keras import weighted_sum_layer,GlobalExchange,GravNet,GarNet
 
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
-global_layers_list['GlobalExchange']=GlobalExchange
-global_layers_list['GravNet']=GravNet
-global_layers_list['GarNet']=GarNet
-global_layers_list['weighted_sum_layer']=weighted_sum_layer
-
 from LayersRagged import *
-from GravNetLayersRagged import RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
-from lossLayers import LLObjectCondensation, LLClusterCoordinates, LossLayerBase
+from GravNetLayersRagged import ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from lossLayers import LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
 global_layers_list['Condensate']=Condensate
@@ -51,15 +45,35 @@ global_layers_list['DynamicDistanceMessagePassing']=DynamicDistanceMessagePassin
 global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePassing
 
 
+global_layers_list['ProcessFeatures']=ProcessFeatures
+global_layers_list['LocalClustering']=LocalClustering
+global_layers_list['CreateGlobalIndices']=CreateGlobalIndices
+global_layers_list['SelectFromIndices']=SelectFromIndices
+global_layers_list['MultiBackGather']=MultiBackGather
+global_layers_list['KNN']=KNN
+global_layers_list['CollectNeighbourAverageAndMax']=CollectNeighbourAverageAndMax
+global_layers_list['SoftPixelCNN']=SoftPixelCNN
+
+global_layers_list['SortAndSelectNeighbours']=SortAndSelectNeighbours
+global_layers_list['GraphClusterReshape']=GraphClusterReshape
+
+
+global_layers_list['LocalClusterReshapeFromNeighbours']=LocalClusterReshapeFromNeighbours
+
+
+
 
 global_layers_list['LLObjectCondensation']=LLObjectCondensation
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
+global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
+global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
+
 global_layers_list['LossLayerBase']=LossLayerBase
 
 
 
-from keras.layers import Layer
-import keras.backend as K
+from tensorflow.keras.layers import Layer
+import tensorflow.keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
 
