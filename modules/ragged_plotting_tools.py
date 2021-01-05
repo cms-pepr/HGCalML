@@ -467,16 +467,16 @@ fake_max_iou_values = []
 
 
 class WindowAnalyser:
-    def __init__(self, truth_sid, features, truth, prediction, beta_threshold,
+    def __init__(self, analysis_input_dict, beta_threshold,
                  distance_threshold, iou_threshold, window_id, should_return_visualization_data=False, soft=False):
 
         # features, prediction = index_dicts.split_feat_pred(prediction)
         # pred_and_truth_dict = index_dicts.create_index_dict(truth, prediction)
 
-
-        self.truth_dict = index_dicts.create_ragged_cal_truth_dict(truth)
-        self.pred_dict = index_dicts.create_ragged_cal_pred_dict(prediction, n_ccoords=3)
-        self.feat_dict = index_dicts.create_ragged_cal_feature_dict(features)
+        truth_sid = analysis_input_dict['truth_sid'][:, 0]
+        self.truth_dict = analysis_input_dict["truth_all"]
+        # self.pred_dict = index_dicts.create_ragged_cal_pred_dict(prediction, n_ccoords=3)
+        self.feat_dict = analysis_input_dict["feat_all"]
 
         # feature_dict = index_dicts.create_feature_dict(features)
 
@@ -495,19 +495,25 @@ class WindowAnalyser:
         for i in range(len(self.truth_shower_sid)):
             self.sid_to_truth_shower_sid_idx[self.truth_shower_sid[i]] = i
 
-        self.truth_dep_energy = self.truth_dict['truthRechitsSum'][:, 0]  # Flatten it
-        self.truth_shower_energy = self.truth_dict['truthHitAssignedEnergies'][:, 0][unique_truth_shower_hit_idx]
-        self.truth_shower_eta = self.truth_dict['truthHitAssignedEtas'][unique_truth_shower_hit_idx][:, 0]
-        self.truth_shower_phi = self.truth_dict['truthHitAssignedPhis'][unique_truth_shower_hit_idx][:, 0]
+        self.truth_dep_energy = self.truth_dict['truthHitAssignedDepEnergies'][:, 0]  # Flatten it
+
+        self.truth_shower_energy = analysis_input_dict['truth_energy'][:, 0][unique_truth_shower_hit_idx]
+        self.truth_shower_eta = self.truth_dict['truthHitAssignedEta'][unique_truth_shower_hit_idx][:, 0]
+        self.truth_shower_phi = self.truth_dict['truthHitAssignedPhi'][unique_truth_shower_hit_idx][:, 0]
+
         self.hit_energy = self.feat_dict['recHitEnergy'][:, 0]
-        self.pred_beta = self.pred_dict['predBeta'][:, 0]
-        self.pred_energy = self.pred_dict['predEnergy'][:, 0]
-        self.pred_x = (self.pred_dict['predX'] + self.feat_dict["recHitX"])[:, 0]
-        self.pred_y = (self.pred_dict['predY'] + self.feat_dict["recHitY"])[:, 0]
-        self.pred_ccoords = self.pred_dict['predCCoords']
-        self.truth_energy = self.truth_dict['truthHitAssignedEnergies'][:, 0]
-        self.truth_x = self.truth_dict['truthHitAssignedX'][:, 0]
-        self.truth_y = self.truth_dict['truthHitAssignedY'][:, 0]
+
+        self.pred_beta = analysis_input_dict['pred_beta'][:, 0]
+        self.pred_energy = analysis_input_dict['pred_energy'][:, 0]
+
+        # self.pred_x = (self.pred_dict['predX'] + self.feat_dict["recHitX"])[:, 0]
+        # self.pred_y = (self.pred_dict['predY'] + self.feat_dict["recHitY"])[:, 0]
+
+        self.pred_position = analysis_input_dict['pred_position']
+        self.pred_ccoords = analysis_input_dict['pred_ccoords']
+
+        self.truth_energy = analysis_input_dict['truth_energy'][:, 0]
+        self.truth_position = analysis_input_dict['truth_position']
 
         # self.pred_and_truth_dict = pred_and_truth_dict
         self.beta_threshold = beta_threshold
@@ -790,8 +796,8 @@ class WindowAnalyser:
             shower_energy_predicted = self.pred_energy[rep_idx]
             predicted_total_obc += shower_energy_predicted
 
-            shower_eta_predicted = self.pred_x[rep_idx]
-            shower_phi_predicted = self.pred_y[rep_idx]
+            shower_eta_predicted = 0 #self.pred_x[rep_idx]
+            shower_phi_predicted = 0 #self.pred_y[rep_idx]
             shower_energy_sum_predicted = np.sum(self.hit_energy[self.pred_sid == sid])
 
             self.results_dict['pred_shower_sid'].append(sid)
@@ -953,36 +959,21 @@ def analyse_one_window_cut(truth_sid, features, truth, prediction, beta_threshol
 
     results_dict = WindowAnalyser(truth_sid, features, truth, prediction, beta_threshold,
                                   distance_threshold, iou_threshold, window_id, should_return_visualization_data=should_return_visualization_data, soft=soft).analyse()
+
+    raise NotImplemented("Fix with the new format before running. This function is obselete. Move to analyse_window_cut.")
     # window_id += 1
     return results_dict
 
-    start_f = time.time()
 
-    # print('analyse_one_window_cut', window_id)
+def analyse_window_cut(analysis_input_dict, beta_threshold,
+                           distance_threshold, iou_threshold, window_id, should_return_visualization_data=False,
+                           soft=False, ):
+    results_dict = WindowAnalyser(analysis_input_dict, beta_threshold,
+                                  distance_threshold, iou_threshold, window_id,
+                                  should_return_visualization_data=should_return_visualization_data,
+                                  soft=soft).analyse()
 
-    '''
-
-    some naming conventions:
-
-    *never* use 'segment' anywhere in here. the whole function works on one segment, so no need to blow up variable names
-
-    pred_foo always refers to per-hit prediction (dimension V x ... or V)
-    pred_shower_foo  always refers to predicted shower quantities  (dimension N_predshowers x ... or N_predshowers)
-
-    truth_bar always refers to per-hit truth (dimension V x ... or V)
-    truth_shower_bar alywas refers to shower quantities  (dimension N_trueshowers x ... or N_trueshowers)
-
-    keep variable names in singular, in the end these are almost all vectors anyway
-
-    always indicate if an array is an index array by appending "_idx". Not "idxs", "indices" or nothing
-
-    if indices refer to the hit vector, call them ..._hit_idx
-
-    for better distinction between indices referring to vectors and simple "ids" given to showers, call the "id" showers .._id
-    (for example 
-
-    '''
-
+    return results_dict
 
 
 
