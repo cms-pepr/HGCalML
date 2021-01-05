@@ -20,7 +20,7 @@ from DeepJetCore.TrainData import TrainData
 from DeepJetCore.dataPipeline import TrainDataGenerator
 from LayersRagged import RaggedConstructTensor
 import tensorflow as tf
-from ragged_plotting_tools import analyse_one_window_cut, make_running_plots
+from ragged_plotting_tools import analyse_one_window_cut, make_running_plots, get_analysis_plotting_configuration
 from obc_data import append_window_dict_to_dataset_dict, build_window_visualization_dict, build_dataset_analysis_dict
 import copy
 
@@ -129,22 +129,12 @@ class plotRunningPerformanceMetrics(Callback):
         def dummy_gen():
             yield (feat, truth)
 
-        # predicted = self.model.predict([feat, truth])
-
-
-        #
         predicted = self.model.predict_generator(dummy_gen(),
                                                  steps=1,
                                                  max_queue_size=1,
                                                  use_multiprocessing=False,
                                                  verbose=2)
 
-        #
-        # if not isinstance(predicted, list):
-        #     predicted = [predicted]
-        #
-        # print(len(predicted), len(predicted[0]), len(predicted[1]), len(self.td.copyFeatureListToNumpy()[0]))
-        #
         self.accumulate(self.counter, feat,
                                predicted, truth)
         self.call_counter += 1
@@ -181,7 +171,7 @@ class plotRunningPerformanceMetrics(Callback):
                 for x in window_analysis_dicts:
                     dataset_analysis_dict = append_window_dict_to_dataset_dict(dataset_analysis_dict, x)
 
-                make_running_plots(self.outputdir, dataset_analysis_dict, scalar_metrics, self.n_average_over_samples)
+                make_running_plots(self.outputdir, dataset_analysis_dict, scalar_metrics, self.n_average_over_samples, get_analysis_plotting_configuration('standard_hgcal_with_ticl'))
 
                 if self.publish is not None:
                     for f in os.listdir(self.outputdir):
@@ -236,26 +226,20 @@ class plotRunningPerformanceMetrics(Callback):
                 self.n_windows_for_scalar_metrics.pop(0)
 
 
-    def analyse_one_file(self, features, predictions, truth_in, soft=False):
-        predictions = tf.constant(predictions[0])
+    def analyse_one_file(self, _features, predictions, truth_in, soft=False):
+        predictions = tf.constant(predictions)
 
-        row_splits = features[1][:, 0]
+        row_splits = _features[1][:, 0]
 
-        features, _ = self.ragged_constructor((features[0], row_splits))
-        truth, _ = self.ragged_constructor((truth_in[0], row_splits))
+        features, _ = self.ragged_constructor((_features[0], row_splits))
+        truth, row_splits = self.ragged_constructor((_features[2], row_splits))
 
-        hit_assigned_truth_id, row_splits = self.ragged_constructor((truth_in[0][:, 0][..., tf.newaxis], row_splits))
+        hit_assigned_truth_id = truth[:, 0:1]
 
         # make 100% sure the cast doesn't hit the fan
         hit_assigned_truth_id = tf.where(hit_assigned_truth_id < -0.1, hit_assigned_truth_id - 0.1,
                                          hit_assigned_truth_id + 0.1)
         hit_assigned_truth_id = tf.cast(hit_assigned_truth_id[:, 0], tf.int32)
-
-        num_unique = []
-        shower_sizes = []
-
-        # here ..._s refers to quantities per window/segment
-        #
 
         window_analysis_dicts = []
         for i in range(len(row_splits) - 1):

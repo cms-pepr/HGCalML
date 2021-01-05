@@ -251,7 +251,7 @@ class LLObjectCondensation(LossLayerBase):
         if 'dynamic' in kwargs:
             super(LLObjectCondensation, self).__init__(**kwargs)
         else:
-            super(LLObjectCondensation, self).__init__(dynamic=True,**kwargs)
+            super(LLObjectCondensation, self).__init__(dynamic=True, **kwargs)
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights

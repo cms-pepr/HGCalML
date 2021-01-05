@@ -179,8 +179,8 @@ def create_ragged_cal_truth_dict(truth):
     outdict['truthRealEnergy'] = truth[:, 11:12]
     outdict['truthIsSpectator'] = truth[:, 12:13]
     outdict['truthClasses'] = truth[:, 13:14]
-    outdict['ticlHitAssignementIdx'] = truth[:, 14:15]
-    outdict['ticlHitAssignedEnergies'] = truth[:, 15:16]
+    outdict['ticlHitAssignementIdx'] = truth[:, -2][..., np.newaxis] # TODO: fix it to exact later after conversion of dataset again
+    outdict['ticlHitAssignedEnergies'] = truth[:, -1][..., np.newaxis] # TODO: fix it to exact later after conversion of dataset again
 
     return outdict
 

@@ -25,8 +25,9 @@ import copy
 import index_dicts
 import time
 
-from ragged_plotting_tools import make_plots_from_object_condensation_clustering_analysis
-from ragged_plotting_tools import analyse_one_window_cut
+from ragged_plotting_tools import do_analysis_plots_to_pdf, get_analysis_plotting_configuration
+from ragged_plotting_tools import analyse_window_cut
+from datastructures import TrainData_OC
 
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
@@ -53,23 +54,35 @@ num_rechits_per_segment = []
 num_rechits_per_shower = []
 
 window_id = 0
-def analyse_one_file(features, predictions, truth_in, soft=False):
+def analyse_one_file(_features, predictions, truth_in, soft=False):
     global num_visualized_segments, num_segments_to_visualize
     global dataset_analysis_dict, window_id
 
-    predictions = tf.constant(predictions[0])
 
-    row_splits = features[1][:, 0]
+    # predictions = tf.constant(predictions[0])
 
-    features, _ = ragged_constructor((features[0], row_splits))
-    truth, _ = ragged_constructor((truth_in[0], row_splits))
+    row_splits = _features[1][:, 0]
 
-    hit_assigned_truth_id, row_splits = ragged_constructor((truth_in[0][:, 0][..., tf.newaxis], row_splits))
+    features = _features[0]
 
-    # make 100% sure the cast doesn't hit the fan
-    hit_assigned_truth_id = tf.where(hit_assigned_truth_id < -0.1, hit_assigned_truth_id - 0.1,
-                                     hit_assigned_truth_id + 0.1)
-    hit_assigned_truth_id = tf.cast(hit_assigned_truth_id[:, 0], tf.int32)
+    truth_idx = _features[2].astype(np.int32)
+    truth_energy = _features[4]
+    truth_position = _features[6]
+    truth_time = _features[8]
+    truth_pid = _features[10]
+
+
+    pred_beta = predictions[0]
+    pred_ccoords = predictions[1]
+    pred_energy = predictions[2]
+    pred_position = predictions[3]
+    pred_time = predictions[4]
+    pred_pid = predictions[5]
+
+    _ , row_splits = ragged_constructor((_features[10], row_splits))
+
+    truth_all = truth_in[0]
+
 
     num_unique = []
     shower_sizes = []
@@ -77,17 +90,45 @@ def analyse_one_file(features, predictions, truth_in, soft=False):
     # here ..._s refers to quantities per window/segment
     #
     for i in range(len(row_splits) - 1):
-        hit_assigned_truth_id_s = hit_assigned_truth_id[row_splits[i]:row_splits[i + 1]].numpy()
-        features_s = features[row_splits[i]:row_splits[i + 1]].numpy()
-        truth_s = truth[row_splits[i]:row_splits[i + 1]].numpy()
-        prediction_s = predictions[row_splits[i]:row_splits[i + 1]].numpy()
+        features_s = features[row_splits[i]:row_splits[i + 1]]
+        truth_idx_s = truth_idx[row_splits[i]:row_splits[i + 1]]
+        truth_energy_s = truth_energy[row_splits[i]:row_splits[i + 1]]
+        truth_position_s = truth_position[row_splits[i]:row_splits[i + 1]]
+        truth_time_s = truth_time[row_splits[i]:row_splits[i + 1]]
+        truth_pid_s = truth_pid[row_splits[i]:row_splits[i + 1]]
+
+        pred_beta_s = pred_beta[row_splits[i]:row_splits[i + 1]]
+        pred_ccoords_s = pred_ccoords[row_splits[i]:row_splits[i + 1]]
+        pred_energy_s = pred_energy[row_splits[i]:row_splits[i + 1]]
+        pred_position_s = pred_position[row_splits[i]:row_splits[i + 1]]
+        pred_time_s = pred_time[row_splits[i]:row_splits[i + 1]]
+        pred_pid_s = pred_pid[row_splits[i]:row_splits[i + 1]]
+        truth_s = truth_all[row_splits[i]:row_splits[i + 1]]
+
+        td = TrainData_OC()  # contains all dicts
+        analysis_input = dict()
+        analysis_input["feat_all"] = td.createFeatureDict(features_s, addxycomb=False)
+        analysis_input["truth_sid"] = truth_idx_s
+        analysis_input["truth_energy"] = truth_energy_s
+        analysis_input["truth_position"] = truth_position_s
+        analysis_input["truth_time"] = truth_time_s
+        analysis_input["truth_pid"] = truth_pid_s
+
+        analysis_input["truth_all"] = td.createTruthDict(truth_s)
+
+        analysis_input["pred_beta"] = pred_beta_s
+        analysis_input["pred_ccoords"] = pred_ccoords_s
+        analysis_input["pred_energy"] = pred_energy_s
+        analysis_input["pred_position"] = pred_position_s
+        analysis_input["pred_time"] = pred_time_s
+        analysis_input["pred_pid"] = pred_pid_s
 
         if num_visualized_segments < num_segments_to_visualize:
-            window_analysis_dict = analyse_one_window_cut(hit_assigned_truth_id_s, features_s, truth_s, prediction_s,
-                                                          beta_threshold, distance_threshold, iou_threshold, window_id, True, soft=soft)
+            window_analysis_dict = analyse_window_cut(analysis_input, beta_threshold, distance_threshold, iou_threshold,
+                                                      window_id, True, soft=soft)
         else:
-            window_analysis_dict = analyse_one_window_cut(hit_assigned_truth_id_s, features_s, truth_s, prediction_s,
-                                                          beta_threshold, distance_threshold, iou_threshold, window_id, False, soft=soft)
+            window_analysis_dict = analyse_window_cut(analysis_input, beta_threshold, distance_threshold, iou_threshold,
+                                                      window_id, False, soft=soft)
 
         append_window_dict_to_dataset_dict(dataset_analysis_dict, window_analysis_dict)
         num_visualized_segments += 1
@@ -96,16 +137,17 @@ def analyse_one_file(features, predictions, truth_in, soft=False):
     i += 1
 
 
-def main(files, pdfpath, dumppath, soft):
+def main(files, pdfpath, dumppath, soft, run_for=-1):
     global dataset_analysis_dict, fake_max_iou_values
     file_index = 0
     for file in files:
         print("\nFILE\n", file_index)
         with gzip.open(file, 'rb') as f:
             data_dict = pickle.load(f)
+            # print("XYZ", len(data_dict['features']), len(data_dict['predicted']), len(data_dict['truth']))
             analyse_one_file(data_dict['features'], data_dict['predicted'], data_dict['truth'], soft=soft)
             file_index += 1
-            if file_index == 3:
+            if file_index == run_for-1:
                 break
 
     if len(dumppath) > 0:
@@ -116,11 +158,12 @@ def main(files, pdfpath, dumppath, soft):
     else:
         print("WARNING: No analysis output path specified. Skipped dumping of analysis.")
 
-    print("Number of total fakes is ", num_total_fakes)
+    # print("Number of total fakes is ", num_total_fakes)
 
-    np.savetxt('max_fake_iou.txt', fake_max_iou_values, delimiter=',')
+    # np.savetxt('max_fake_iou.txt', fake_max_iou_values, delimiter=',')
     # 0/0
-    make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_analysis_dict)
+    istoyset = dataset_analysis_dict['istoyset']
+    do_analysis_plots_to_pdf(pdfpath, dataset_analysis_dict, plotting_config=get_analysis_plotting_configuration('toy_set_without_ticl' if istoyset else 'standard_hgcal_without_ticl'))
 
 
 if __name__ == '__main__':
@@ -135,7 +178,9 @@ if __name__ == '__main__':
     parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
     parser.add_argument('-v', help='Visualize number of showers', default='10')
+    parser.add_argument('-n', help='Use number of files', default='-1')
     parser.add_argument('--soft', help='uses soft object condensation', action='store_true')
+    parser.add_argument('--istoyset', help='if its the toyset', action='store_true')
     parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.',
                         default='')
     parser.add_argument('--gpu', help='GPU', default='')
@@ -146,14 +191,16 @@ if __name__ == '__main__':
     num_visualized_segments = 0
     dataset_analysis_dict = build_dataset_analysis_dict()
 
-    beta_threshold = beta_threshold * 0 + float(args.b)
-    distance_threshold = distance_threshold * 0 + float(args.d)
-    iou_threshold = iou_threshold * 0 + float(args.i)
+    beta_threshold = float(args.b)
+    distance_threshold = float(args.d)
+    iou_threshold = float(args.i)
+    n_files = int(args.n)
 
     dataset_analysis_dict['distance_threshold'] = distance_threshold
     dataset_analysis_dict['beta_threshold'] = beta_threshold
     dataset_analysis_dict['iou_threshold'] = iou_threshold
     dataset_analysis_dict['soft'] = bool(args.soft)
+    dataset_analysis_dict['istoyset'] = bool(args.istoyset)
 
 
     files_to_be_tested = []
@@ -177,6 +224,6 @@ if __name__ == '__main__':
     if len(args.p) != 0:
         pdfpath = args.p
 
-    main(files_to_be_tested, pdfpath, args.analysisoutpath, soft=args.soft)
+    main(files_to_be_tested, pdfpath, args.analysisoutpath, soft=args.soft, run_for=n_files)
 
 

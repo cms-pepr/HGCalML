@@ -243,7 +243,7 @@ class TrainData_OC(TrainData):
                 'truthHitAssignedDirX',
                 'truthHitAssignedDirY', 
                 'truthHitAssignedDirZ',
-                'truthHitAssignedEta'     
+                'truthHitAssignedEta',
                 'truthHitAssignedPhi',
                 'truthHitAssignedT',  
                 'truthHitAssignedDirEta',

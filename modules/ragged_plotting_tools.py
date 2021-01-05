@@ -467,17 +467,26 @@ fake_max_iou_values = []
 
 
 class WindowAnalyser:
-    def __init__(self, truth_sid, features, truth, prediction, beta_threshold,
+    def __init__(self, analysis_input_dict, beta_threshold,
                  distance_threshold, iou_threshold, window_id, should_return_visualization_data=False, soft=False):
-        features, prediction = index_dicts.split_feat_pred(prediction)
-        pred_and_truth_dict = index_dicts.create_index_dict(truth, prediction)
-        feature_dict = index_dicts.create_feature_dict(features)
 
-        self.pred_and_truth_dict = pred_and_truth_dict
-        self.feature_dict = feature_dict
+        # features, prediction = index_dicts.split_feat_pred(prediction)
+        # pred_and_truth_dict = index_dicts.create_index_dict(truth, prediction)
+
+        truth_sid = analysis_input_dict['truth_sid'][:, 0]
+        self.truth_dict = analysis_input_dict["truth_all"]
+        # self.pred_dict = index_dicts.create_ragged_cal_pred_dict(prediction, n_ccoords=3)
+        self.feat_dict = analysis_input_dict["feat_all"]
+
+        # feature_dict = index_dicts.create_feature_dict(features)
+
+        # self.pred_and_truth_dict = pred_and_truth_dict
+        # self.feature_dict = feature_dict
+
         self.window_id = window_id
 
         self.truth_shower_sid, unique_truth_shower_hit_idx = np.unique(truth_sid, return_index=True)
+
         unique_truth_shower_hit_idx = unique_truth_shower_hit_idx[self.truth_shower_sid!=-1]
         self.should_return_visualization_data = should_return_visualization_data
         self.truth_shower_sid = self.truth_shower_sid[self.truth_shower_sid!=-1]
@@ -486,21 +495,27 @@ class WindowAnalyser:
         for i in range(len(self.truth_shower_sid)):
             self.sid_to_truth_shower_sid_idx[self.truth_shower_sid[i]] = i
 
-        self.truth_dep_energy = pred_and_truth_dict['truthRechitsSum'][:, 0]  # Flatten it
-        self.truth_shower_energy = pred_and_truth_dict['truthHitAssignedEnergies'][:, 0][unique_truth_shower_hit_idx]
-        self.truth_shower_eta = pred_and_truth_dict['truthHitAssignedEtas'][unique_truth_shower_hit_idx][:, 0]
-        self.truth_shower_phi = pred_and_truth_dict['truthHitAssignedPhis'][unique_truth_shower_hit_idx][:, 0]
-        self.hit_energy = feature_dict['recHitEnergy'][:, 0]
-        self.pred_beta = pred_and_truth_dict['predBeta'][:, 0]
-        self.pred_energy = pred_and_truth_dict['predEnergy'][:, 0]
-        self.pred_x = (pred_and_truth_dict['predX'] + feature_dict["recHitX"])[:, 0]
-        self.pred_y = (pred_and_truth_dict['predY'] + feature_dict["recHitY"])[:, 0]
-        self.pred_ccoords = pred_and_truth_dict['predCCoords']
-        self.truth_energy = pred_and_truth_dict['truthHitAssignedEnergies'][:, 0]
-        self.truth_x = pred_and_truth_dict['truthHitAssignedX'][:, 0]
-        self.truth_y = pred_and_truth_dict['truthHitAssignedY'][:, 0]
+        self.truth_dep_energy = self.truth_dict['truthHitAssignedDepEnergies'][:, 0]  # Flatten it
 
-        self.pred_and_truth_dict = pred_and_truth_dict
+        self.truth_shower_energy = analysis_input_dict['truth_energy'][:, 0][unique_truth_shower_hit_idx]
+        self.truth_shower_eta = self.truth_dict['truthHitAssignedEta'][unique_truth_shower_hit_idx][:, 0]
+        self.truth_shower_phi = self.truth_dict['truthHitAssignedPhi'][unique_truth_shower_hit_idx][:, 0]
+
+        self.hit_energy = self.feat_dict['recHitEnergy'][:, 0]
+
+        self.pred_beta = analysis_input_dict['pred_beta'][:, 0]
+        self.pred_energy = analysis_input_dict['pred_energy'][:, 0]
+
+        # self.pred_x = (self.pred_dict['predX'] + self.feat_dict["recHitX"])[:, 0]
+        # self.pred_y = (self.pred_dict['predY'] + self.feat_dict["recHitY"])[:, 0]
+
+        self.pred_position = analysis_input_dict['pred_position']
+        self.pred_ccoords = analysis_input_dict['pred_ccoords']
+
+        self.truth_energy = analysis_input_dict['truth_energy'][:, 0]
+        self.truth_position = analysis_input_dict['truth_position']
+
+        # self.pred_and_truth_dict = pred_and_truth_dict
         self.beta_threshold = beta_threshold
         self.distance_threshold = distance_threshold
         self.iou_threshold = iou_threshold
@@ -645,6 +660,7 @@ class WindowAnalyser:
 
         self.pred_shower_representative_hit_idx = pred_shower_representative_hit_idx
         self.pred_shower_energy = [self.pred_energy[x] for x in pred_shower_representative_hit_idx]
+
         pred_shower_sid = [pred_sid[x] for x in pred_shower_representative_hit_idx]
         pred_representative_coords = np.array([self.pred_ccoords[x] for x in pred_shower_representative_hit_idx])
 
@@ -662,8 +678,9 @@ class WindowAnalyser:
             self.sid_to_pred_shower_sid_idx[self.pred_shower_sid[i]] = i
 
     def match_ticl_showers(self):
-        ticl_sid = self.pred_and_truth_dict['ticlHitAssignementIdx'][:, 0]
-        ticl_energy = self.pred_and_truth_dict['ticlHitAssignedEnergies'][:, 0]
+        ticl_sid = self.truth_dict['ticlHitAssignementIdx'][:, 0]
+        ticl_energy = self.truth_dict['ticlHitAssignedEnergies'][:, 0]
+
 
         ticl_sid[ticl_energy > 10 * self.truth_dep_energy] = 0
         ticl_energy[ticl_energy > 10 * self.truth_dep_energy] = 0
@@ -672,6 +689,7 @@ class WindowAnalyser:
         ticl_energy_2 = ticl_energy[ticl_sid >= 0]
 
         self.ticl_shower_energy = [ticl_energy_2[x] for x in ticl_shower_idx]
+
         self.ticl_sid, self.ticl_shower_sid, self._ticl_sid_merged, self.ticl_shower_sid_merged = self.match_to_truth_2(self.truth_sid, ticl_sid, ticl_shower_sid,
                                                                self.hit_energy, self.truth_shower_energy, self.ticl_shower_energy)
         self.sid_to_ticl_shower_sid_idx = dict()
@@ -686,6 +704,7 @@ class WindowAnalyser:
         num_gt_showers = 0.
 
         predicted_truth_total = 0
+
         for i in range(len(self.truth_shower_sid)):
             sid = self.truth_shower_sid[i]
 
@@ -700,8 +719,8 @@ class WindowAnalyser:
             distances_with_other_truths = np.sqrt((self.truth_shower_eta[i] - self.truth_shower_eta) ** 2 + (
                 np.arctan2(np.sin(self.truth_shower_phi[i] - self.truth_shower_phi),
                            np.cos(self.truth_shower_phi[i] - self.truth_shower_phi))) ** 2)
-            distances_with_other_truths_excluduing_me = distances_with_other_truths[distances_with_other_truths != 0]
-            distance_to_closest_truth = np.min(distances_with_other_truths_excluduing_me)
+            distances_with_other_truths_excluding_me = distances_with_other_truths[distances_with_other_truths != 0]
+            distance_to_closest_truth = np.min(distances_with_other_truths_excluding_me)
             density = self.truth_shower_energy[i] / (
                         np.sum(self.truth_shower_energy[distances_with_other_truths < 0.5]) + 1e-6)
             self.results_dict['truth_shower_local_density'].append(density)
@@ -777,8 +796,8 @@ class WindowAnalyser:
             shower_energy_predicted = self.pred_energy[rep_idx]
             predicted_total_obc += shower_energy_predicted
 
-            shower_eta_predicted = self.pred_x[rep_idx]
-            shower_phi_predicted = self.pred_y[rep_idx]
+            shower_eta_predicted = 0 #self.pred_x[rep_idx]
+            shower_phi_predicted = 0 #self.pred_y[rep_idx]
             shower_energy_sum_predicted = np.sum(self.hit_energy[self.pred_sid == sid])
 
             self.results_dict['pred_shower_sid'].append(sid)
@@ -940,36 +959,21 @@ def analyse_one_window_cut(truth_sid, features, truth, prediction, beta_threshol
 
     results_dict = WindowAnalyser(truth_sid, features, truth, prediction, beta_threshold,
                                   distance_threshold, iou_threshold, window_id, should_return_visualization_data=should_return_visualization_data, soft=soft).analyse()
+
+    raise NotImplemented("Fix with the new format before running. This function is obselete. Move to analyse_window_cut.")
     # window_id += 1
     return results_dict
 
-    start_f = time.time()
 
-    # print('analyse_one_window_cut', window_id)
+def analyse_window_cut(analysis_input_dict, beta_threshold,
+                           distance_threshold, iou_threshold, window_id, should_return_visualization_data=False,
+                           soft=False, ):
+    results_dict = WindowAnalyser(analysis_input_dict, beta_threshold,
+                                  distance_threshold, iou_threshold, window_id,
+                                  should_return_visualization_data=should_return_visualization_data,
+                                  soft=soft).analyse()
 
-    '''
-
-    some naming conventions:
-
-    *never* use 'segment' anywhere in here. the whole function works on one segment, so no need to blow up variable names
-
-    pred_foo always refers to per-hit prediction (dimension V x ... or V)
-    pred_shower_foo  always refers to predicted shower quantities  (dimension N_predshowers x ... or N_predshowers)
-
-    truth_bar always refers to per-hit truth (dimension V x ... or V)
-    truth_shower_bar alywas refers to shower quantities  (dimension N_trueshowers x ... or N_trueshowers)
-
-    keep variable names in singular, in the end these are almost all vectors anyway
-
-    always indicate if an array is an index array by appending "_idx". Not "idxs", "indices" or nothing
-
-    if indices refer to the hit vector, call them ..._hit_idx
-
-    for better distinction between indices referring to vectors and simple "ids" given to showers, call the "id" showers .._id
-    (for example 
-
-    '''
-
+    return results_dict
 
 
 
@@ -988,20 +992,25 @@ def histogram_total_window_resolution(plt, ax, total_truth_energies, total_obc_e
 
         total_truth_energies = total_truth_energies[filter]
         total_obc_energies = total_obc_energies[filter]
-        total_ticl_energies = total_ticl_energies[filter]
 
-    response_ticl = total_ticl_energies / total_truth_energies
+        if total_ticl_energies is not None:
+            total_ticl_energies = total_ticl_energies[filter]
+
+    if total_ticl_energies is not None:
+        response_ticl = total_ticl_energies / total_truth_energies
+
     response_obc = total_obc_energies / total_truth_energies
 
     # bins = np.linspace(0,3.001,40)
-
-    response_ticl[response_ticl > 3] = 3
+    if total_ticl_energies is not None:
+        response_ticl[response_ticl > 3] = 3
     response_obc[response_obc > 3] = 3
 
     plt.subplots(figsize=(7, 5.4))
     plt.axvline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
     plt.hist(response_obc, bins=20, histtype='step', label='Object condensation', density=True)
-    plt.hist(response_ticl, bins=20, histtype='step', label='ticl', density=True)
+    if total_ticl_energies is not None:
+        plt.hist(response_ticl, bins=20, histtype='step', label='ticl', density=True)
     plt.xlabel("Response (predicted showers' energy sum / truth showers' energy sum)")
     plt.ylabel("Frequency")
 
@@ -1400,6 +1409,8 @@ def efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _loc
 
     count_segments = 4 if make_segments else 1
 
+    use_ticl = _found_or_not_ticl is not None
+
     if make_segments:
         ax_array = [0, 0, 0, 0]
         fig, ((ax_array[0], ax_array[1]), (ax_array[2], ax_array[3])) = plt.subplots(2, 2, figsize=(16, 10))
@@ -1413,13 +1424,15 @@ def efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _loc
     if energy_filter > 0:
         _local_densities = _local_densities[_truth_energies > energy_filter]
         _found_or_not = _found_or_not[_truth_energies > energy_filter]
-        _found_or_not_ticl = _found_or_not_ticl[_truth_energies > energy_filter]
+        if use_ticl:
+            _found_or_not_ticl = _found_or_not_ticl[_truth_energies > energy_filter]
         _truth_energies = _truth_energies[_truth_energies > energy_filter]
 
     if not make_segments:
         local_densities = _local_densities
         found_or_not = _found_or_not
-        found_or_not_ticl = _found_or_not_ticl
+        if use_ticl:
+            found_or_not_ticl = _found_or_not_ticl
         truth_energies = _truth_energies
 
     if energy_filter != 0:
@@ -1433,7 +1446,8 @@ def efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _loc
                                     _truth_energies < segments_high[segment_number])
             local_densities = _local_densities[filter]
             found_or_not = _found_or_not[filter]
-            found_or_not_ticl = _found_or_not_ticl[filter]
+            if use_ticl:
+                found_or_not_ticl = _found_or_not_ticl[filter]
             truth_energies = _truth_energies[filter]
 
         e_bins_ticks = [0, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1]
@@ -1456,12 +1470,16 @@ def efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _loc
 
             filter = np.argwhere(np.logical_and(local_densities > l, local_densities < h))
             filtered_found = found_or_not[filter].astype(np.float)
-            filtered_found_ticl = found_or_not_ticl[filter].astype(np.float)
+            if use_ticl:
+                filtered_found_ticl = found_or_not_ticl[filter].astype(np.float)
 
             m = np.mean(filtered_found)
-            mt = np.mean(filtered_found_ticl)
             mean.append(m)
-            mean_ticl.append(mt)
+
+            if use_ticl:
+                mt = np.mean(filtered_found_ticl)
+                mean_ticl.append(mt)
+
             std.append(np.std(filtered_found))
             centers.append((l + h) / 2)
 
@@ -1487,7 +1505,8 @@ def efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _loc
         ax1.set_title('Efficiency comparison ' + sx)
 
         ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
-        ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
+        if use_ticl:
+            ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
         ax1.set_xticks(e_bins_ticks)
         ax1.set_xlabel('Local shower energy fraction ($\\frac{e_s}{\\sum_{i}^{} e_i \mid \Delta R(s, i) < 0.5 }$)')
         ax1.set_ylabel('Reconstruction efficiency')
@@ -1499,13 +1518,16 @@ def efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, ax, _found
                                                                  _truth_energies, energy_filter=0):
     fig, ax1 = plt.subplots(1, 1, figsize=(9, 6))
 
+    use_ticl = _found_or_not_ticl is not None
+
     if energy_filter > 0:
         _found_or_not = _found_or_not[_truth_energies > energy_filter]
         _found_or_not_ticl = _found_or_not_ticl[_truth_energies > energy_filter]
         _truth_energies = _truth_energies[_truth_energies > energy_filter]
 
     found_or_not = _found_or_not
-    found_or_not_ticl = _found_or_not_ticl
+    if use_ticl:
+        found_or_not_ticl = _found_or_not_ticl
     truth_energies = _truth_energies
 
     # e_bins_ticks = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
@@ -1528,14 +1550,16 @@ def efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, ax, _found
 
         filter = np.argwhere(np.logical_and(truth_energies > l, truth_energies < h))
         filtered_found = found_or_not[filter].astype(np.float)
-        filtered_found_ticl = found_or_not_ticl[filter].astype(np.float)
+        if use_ticl:
+            filtered_found_ticl = found_or_not_ticl[filter].astype(np.float)
 
         m = np.mean(filtered_found)
+        mean.append(m)
         # print(np.sum(filtered_found), len(filtered_found), m, l, h)
 
-        mt = np.mean(filtered_found_ticl)
-        mean.append(m)
-        mean_ticl.append(mt)
+        if use_ticl:
+            mt = np.mean(filtered_found_ticl)
+            mean_ticl.append(mt)
         std.append(np.std(filtered_found))
         centers.append((l + h) / 2)
 
@@ -1557,7 +1581,8 @@ def efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, ax, _found
     ax1.set_title('Efficiency comparison ' + sx)
 
     ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
-    ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
+    if use_ticl:
+        ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
     ax1.set_xticks(e_bins_ticks)
     ax1.set_xlabel('Truth energy [GeV]')
     ax1.set_ylabel('Reconstruction efficiency')
@@ -1574,6 +1599,8 @@ def efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(pl
 
     count_segments = 4 if make_segments else 1
 
+    use_ticl = _found_or_not_ticl is not None
+
     if make_segments:
         ax_array = [0, 0, 0, 0]
         fig, ((ax_array[0], ax_array[1]), (ax_array[2], ax_array[3])) = plt.subplots(2, 2, figsize=(16, 10))
@@ -1585,13 +1612,15 @@ def efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(pl
     if energy_filter > 0:
         _closest_particle_distance = _closest_particle_distance[_truth_energies > energy_filter]
         _found_or_not = _found_or_not[_truth_energies > energy_filter]
-        _found_or_not_ticl = _found_or_not_ticl[_truth_energies > energy_filter]
+        if use_ticl:
+            _found_or_not_ticl = _found_or_not_ticl[_truth_energies > energy_filter]
         _truth_energies = _truth_energies[_truth_energies > energy_filter]
 
     if not make_segments:
         closest_particle_distance = _closest_particle_distance
         found_or_not = _found_or_not
-        found_or_not_ticl = _found_or_not_ticl
+        if use_ticl:
+            found_or_not_ticl = _found_or_not_ticl
         truth_energies = _truth_energies
 
     if energy_filter != 0:
@@ -1605,7 +1634,8 @@ def efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(pl
                                     _truth_energies < segments_high[segment_number])
             closest_particle_distance = _closest_particle_distance[filter]
             found_or_not = _found_or_not[filter]
-            found_or_not_ticl = _found_or_not_ticl[filter]
+            if use_ticl:
+                found_or_not_ticl = _found_or_not_ticl[filter]
             truth_energies = _truth_energies[filter]
 
         e_bins_ticks = [0, 0.07, 0.14, 0.21, 0.28, 0.35, .42, .49, .56, .63, .7]
@@ -1633,12 +1663,14 @@ def efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(pl
 
             filter = np.argwhere(np.logical_and(closest_particle_distance > l, closest_particle_distance < h))
             filtered_found = found_or_not[filter].astype(np.float)
-            filtered_found_ticl = found_or_not_ticl[filter].astype(np.float)
+            if use_ticl:
+                filtered_found_ticl = found_or_not_ticl[filter].astype(np.float)
 
             m = np.mean(filtered_found)
-            mt = np.mean(filtered_found_ticl)
             mean.append(m)
-            mean_ticl.append(mt)
+            if use_ticl:
+                mt = np.mean(filtered_found_ticl)
+                mean_ticl.append(mt)
             std.append(np.std(filtered_found))
             centers.append((l + h) / 2)
 
@@ -1663,7 +1695,8 @@ def efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(pl
         ax1.set_title('Efficiency comparison ' + sx)
 
         ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
-        ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
+        if use_ticl:
+            ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
         ax1.set_xticks(e_bins_ticks)
         ax1.set_xlabel('Closest particle distance ($\Delta R$)')
         ax1.set_ylabel('Reconstruction efficiency')
@@ -1678,6 +1711,8 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
     segments_high = [5, 10, 30, 300]
 
     count_segments = 4 if make_segments else 1
+
+    use_ticl = _energy_predicted_ticl is not None
 
     if make_segments:
         ax_array = [0, 0, 0, 0]
@@ -1699,13 +1734,15 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
     if energy_filter > 0:
         _local_densities = _local_densities[_truth_energies > energy_filter]
         _energy_predicted = _energy_predicted[_truth_energies > energy_filter]
-        _energy_predicted_ticl = _energy_predicted_ticl[_truth_energies > energy_filter]
+        if use_ticl:
+            _energy_predicted_ticl = _energy_predicted_ticl[_truth_energies > energy_filter]
         _truth_energies = _truth_energies[_truth_energies > energy_filter]
 
     if not make_segments:
         local_densities = _local_densities
         energy_predicted = _energy_predicted
-        energy_predicted_ticl = _energy_predicted_ticl
+        if use_ticl:
+            energy_predicted_ticl = _energy_predicted_ticl
         truth_energies = _truth_energies
 
     if energy_filter != 0:
@@ -1720,7 +1757,8 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
                                     _truth_energies < segments_high[segment_number])
             local_densities = _local_densities[filter]
             energy_predicted = _energy_predicted[filter]
-            energy_predicted_ticl = _energy_predicted_ticl[filter]
+            if use_ticl:
+                energy_predicted_ticl = _energy_predicted_ticl[filter]
             truth_energies = _truth_energies[filter]
 
         e_bins_ticks = [0, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1]
@@ -1758,24 +1796,24 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
             var.append(np.std(filtered_predicted_energy / filtered_truth_energy - m) / m)
 
             centers.append((l + h) / 2)
+        if use_ticl:
+            for i in range(len(e_bins) - 1):
+                l = e_bins[i]
+                h = e_bins[i + 1]
 
-        for i in range(len(e_bins) - 1):
-            l = e_bins[i]
-            h = e_bins[i + 1]
+                filter = np.argwhere(np.logical_and(local_densities > l, local_densities < h))
 
-            filter = np.argwhere(np.logical_and(local_densities > l, local_densities < h))
+                filtered_truth_energy = truth_energies[filter].astype(np.float)
+                filtered_predicted_energy_ticl = energy_predicted_ticl[filter].astype(np.float)
 
-            filtered_truth_energy = truth_energies[filter].astype(np.float)
-            filtered_predicted_energy_ticl = energy_predicted_ticl[filter].astype(np.float)
+                second_filter = filtered_predicted_energy_ticl >= 0
+                filtered_truth_energy = filtered_truth_energy[second_filter]
+                filtered_predicted_energy_ticl = filtered_predicted_energy_ticl[second_filter]
 
-            second_filter = filtered_predicted_energy_ticl >= 0
-            filtered_truth_energy = filtered_truth_energy[second_filter]
-            filtered_predicted_energy_ticl = filtered_predicted_energy_ticl[second_filter]
+                mt = np.mean(filtered_predicted_energy_ticl / filtered_truth_energy)
+                mean_ticl.append(mt)
 
-            mt = np.mean(filtered_predicted_energy_ticl / filtered_truth_energy)
-            mean_ticl.append(mt)
-
-            var_ticl.append(np.std(filtered_predicted_energy_ticl / filtered_truth_energy - m) / m)
+                var_ticl.append(np.std(filtered_predicted_energy_ticl / filtered_truth_energy - m) / m)
 
         if make_segments:
             sx = '(%.2f GeV - %.2f GeV)' % (segments_low[segment_number], segments_high[segment_number])
@@ -1807,7 +1845,8 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
         ax1.axhline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
 
         ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
-        ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
+        if use_ticl:
+            ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
         ax1.set_xticks(e_bins_ticks)
         ax1.set_xlabel('Local shower energy fraction ($\\frac{e_s}{\\sum_{i}^{} e_i \mid \Delta R(s, i) < 0.5 }$)')
         ax1.set_ylabel('$<e_{pred} / e_{true}>$')
@@ -1828,7 +1867,8 @@ def response_comparison_plot_with_distribution_fo_local_fraction(plt, ax, _local
         ax22_twin.set_ylim(0, np.max(hist_values) * 1.3)
 
         ax22.step(e_bins, [var[0]] + var, label='Object condensation')
-        ax22.step(e_bins, [var_ticl[0]] + var_ticl, label='ticl')
+        if use_ticl:
+            ax22.step(e_bins, [var_ticl[0]] + var_ticl, label='ticl')
         ax22.set_xticks(e_bins_ticks)
         ax22.set_xlabel('Local shower energy fraction ($\\frac{e_s}{\\sum_{i}^{} e_i \mid \Delta R(s, i) < 0.5 }$)')
         ax22.set_ylabel('$\\frac{\sigma (e_{pred} / e_{true})}{<e_{pred} / e_{true}>}$')
@@ -1846,6 +1886,8 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
     segments_high = [5, 10, 30, 300]
 
     count_segments = 4 if make_segments else 1
+
+    use_ticl = _energy_predicted_ticl is not None
 
     if make_segments:
         ax_array = [0, 0, 0, 0]
@@ -1865,13 +1907,15 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
     if energy_filter > 0:
         _closest_particle_distance = _closest_particle_distance[_truth_energies > energy_filter]
         _energy_predicted = _energy_predicted[_truth_energies > energy_filter]
-        _energy_predicted_ticl = _energy_predicted_ticl[_truth_energies > energy_filter]
+        if use_ticl:
+            _energy_predicted_ticl = _energy_predicted_ticl[_truth_energies > energy_filter]
         _truth_energies = _truth_energies[_truth_energies > energy_filter]
 
     if not make_segments:
         closest_particle_distance = _closest_particle_distance
         energy_predicted = _energy_predicted
-        energy_predicted_ticl = _energy_predicted_ticl
+        if use_ticl:
+            energy_predicted_ticl = _energy_predicted_ticl
         truth_energies = _truth_energies
 
     if energy_filter != 0:
@@ -1886,7 +1930,8 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
                                     _truth_energies < segments_high[segment_number])
             closest_particle_distance = _closest_particle_distance[filter]
             energy_predicted = _energy_predicted[filter]
-            energy_predicted_ticl = _energy_predicted_ticl[filter]
+            if use_ticl:
+                energy_predicted_ticl = _energy_predicted_ticl[filter]
             truth_energies = _truth_energies[filter]
 
         e_bins_ticks = [0, 0.07, 0.14, 0.21, 0.28, 0.35, .42, .49, .56, .63, .7]
@@ -1925,22 +1970,23 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
             mean.append(m)
             var.append(np.std(filtered_predicted_energy / filtered_truth_energy - m) / m)
 
-        for i in range(len(e_bins) - 1):
-            l = e_bins[i]
-            h = e_bins[i + 1]
+        if use_ticl:
+            for i in range(len(e_bins) - 1):
+                l = e_bins[i]
+                h = e_bins[i + 1]
 
-            filter = np.argwhere(np.logical_and(closest_particle_distance > l, closest_particle_distance < h))
+                filter = np.argwhere(np.logical_and(closest_particle_distance > l, closest_particle_distance < h))
 
-            filtered_truth_energy = truth_energies[filter].astype(np.float)
-            filtered_predicted_energy_ticl = energy_predicted_ticl[filter].astype(np.float)
+                filtered_truth_energy = truth_energies[filter].astype(np.float)
+                filtered_predicted_energy_ticl = energy_predicted_ticl[filter].astype(np.float)
 
-            second_filter = filtered_predicted_energy_ticl >= 0
-            filtered_truth_energy = filtered_truth_energy[second_filter]
-            filtered_predicted_energy_ticl = filtered_predicted_energy_ticl[second_filter]
+                second_filter = filtered_predicted_energy_ticl >= 0
+                filtered_truth_energy = filtered_truth_energy[second_filter]
+                filtered_predicted_energy_ticl = filtered_predicted_energy_ticl[second_filter]
 
-            mt = np.mean(filtered_predicted_energy_ticl / filtered_truth_energy)
-            mean_ticl.append(mt)
-            var_ticl.append(np.std(filtered_predicted_energy_ticl / filtered_truth_energy - mt) / mt)
+                mt = np.mean(filtered_predicted_energy_ticl / filtered_truth_energy)
+                mean_ticl.append(mt)
+                var_ticl.append(np.std(filtered_predicted_energy_ticl / filtered_truth_energy - mt) / mt)
 
         if make_segments:
             sx = '(%.2f GeV - %.2f GeV)' % (segments_low[segment_number], segments_high[segment_number])
@@ -1972,7 +2018,8 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
 
         ax1.axhline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
         ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
-        ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
+        if use_ticl:
+            ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
         ax1.set_xticks(e_bins_ticks)
         ax1.set_xlabel('Closest particle distance ($\Delta R$)')
         ax1.set_ylabel('$<e_{pred} / e_{true}>$')
@@ -1992,7 +2039,8 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
         ax22_twin.set_ylim(0, np.max(hist_values) * 1.3)
 
         ax22.step(e_bins, [var[0]] + var, label='Object condensation')
-        ax22.step(e_bins, [var_ticl[0]] + var_ticl, label='ticl')
+        if use_ticl:
+            ax22.step(e_bins, [var_ticl[0]] + var_ticl, label='ticl')
         ax22.set_xticks(e_bins_ticks)
         ax22.set_xlabel('Closest particle distance ($\Delta R$)')
         ax22.set_ylabel('$\\frac{\sigma (e_{pred} / e_{true})}{<e_{pred} / e_{true}>}$')
@@ -2004,6 +2052,8 @@ def response_comparison_plot_with_distribution_fo_closest_particle_distance(plt,
 
 def response_curve_comparison_with_distribution_fo_energy(plt, ax, energy_truth, energy_predicted,
                                                           energy_predicted_ticl, energy_filter=0):
+
+    use_ticl = energy_predicted_ticl is not None
     # e_bins_ticks = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     # e_bins = [0, 1., 2, 3, 4, 6, 8, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     e_bins_ticks = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110,120,130,140,150,160,170,180,190,200]
@@ -2014,7 +2064,8 @@ def response_curve_comparison_with_distribution_fo_energy(plt, ax, energy_truth,
 
     if energy_filter > 0:
         energy_predicted = energy_predicted[energy_truth > energy_filter]
-        energy_predicted_ticl = energy_predicted_ticl[energy_truth > energy_filter]
+        if use_ticl:
+            energy_predicted_ticl = energy_predicted_ticl[energy_truth > energy_filter]
         energy_truth = energy_truth[energy_truth > energy_filter]
 
     centers = []
@@ -2046,23 +2097,24 @@ def response_curve_comparison_with_distribution_fo_energy(plt, ax, energy_truth,
         mean.append(m)
         var.append(np.std(filtered_predicted_energy / filtered_truth_energy - m) / m)
 
-    for i in range(len(e_bins) - 1):
-        l = e_bins[i]
-        h = e_bins[i + 1]
+    if use_ticl:
+        for i in range(len(e_bins) - 1):
+            l = e_bins[i]
+            h = e_bins[i + 1]
 
-        filter = np.argwhere(np.logical_and(energy_truth > l, energy_truth < h))
+            filter = np.argwhere(np.logical_and(energy_truth > l, energy_truth < h))
 
-        filtered_truth_energy = energy_truth[filter].astype(np.float)
-        filtered_predicted_energy_ticl = energy_predicted_ticl[filter].astype(np.float)
+            filtered_truth_energy = energy_truth[filter].astype(np.float)
+            filtered_predicted_energy_ticl = energy_predicted_ticl[filter].astype(np.float)
 
-        second_filter = filtered_predicted_energy_ticl >= 0
-        filtered_truth_energy = filtered_truth_energy[second_filter]
-        filtered_predicted_energy_ticl = filtered_predicted_energy_ticl[second_filter]
+            second_filter = filtered_predicted_energy_ticl >= 0
+            filtered_truth_energy = filtered_truth_energy[second_filter]
+            filtered_predicted_energy_ticl = filtered_predicted_energy_ticl[second_filter]
 
-        mt = np.mean(filtered_predicted_energy_ticl / filtered_truth_energy)
-        mean_ticl.append(mt)
+            mt = np.mean(filtered_predicted_energy_ticl / filtered_truth_energy)
+            mean_ticl.append(mt)
 
-        var_ticl.append(np.std(filtered_predicted_energy_ticl / filtered_truth_energy - mt) / mt)
+            var_ticl.append(np.std(filtered_predicted_energy_ticl / filtered_truth_energy - mt) / mt)
 
     sx = '' if energy_filter == 0 else ' - truth energy > %.2f GeV' % energy_filter
     ax1.set_title('Response comparison ' + sx)
@@ -2087,7 +2139,8 @@ def response_curve_comparison_with_distribution_fo_energy(plt, ax, energy_truth,
 
     ax1.axhline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
     ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
-    ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
+    if use_ticl:
+        ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
     ax1.set_xticks(e_bins_ticks)
     ax1.set_xlabel('Truth energy [GeV]')
     ax1.set_ylabel('$<e_{pred} / e_{true}>$')
@@ -2106,7 +2159,8 @@ def response_curve_comparison_with_distribution_fo_energy(plt, ax, energy_truth,
     ax22_twin.set_ylabel('Fraction of number of showers')
 
     ax22.step(e_bins, [var[0]] + var, label='Object condensation')
-    ax22.step(e_bins, [var_ticl[0]] + var_ticl, label='ticl')
+    if use_ticl:
+        ax22.step(e_bins, [var_ticl[0]] + var_ticl, label='ticl')
     ax22.set_xticks(e_bins_ticks)
     ax22.set_xlabel('Truth energy [GeV]')
     ax22.set_ylabel('$\\frac{\sigma (e_{pred} / e_{true})}{<e_{pred} / e_{true}>}$')
@@ -2273,12 +2327,15 @@ def fake_rate_comparison_with_distribution_fo_energy(plt, ax, predicted_energies
     e_bins_n = np.array(e_bins)
     e_bins_n = (e_bins_n - e_bins_n.min()) / (e_bins_n.max() - e_bins_n.min())
 
+    use_ticl = predicted_energies_ticl is not None
+
     if energy_filter > 0:
         matched_energies = matched_energies[predicted_energies > energy_filter]
         predicted_energies = predicted_energies[predicted_energies > energy_filter]
 
-        matched_energies_ticl = matched_energies_ticl[predicted_energies_ticl > energy_filter]
-        predicted_energies_ticl = predicted_energies_ticl[predicted_energies_ticl > energy_filter]
+        if use_ticl:
+            matched_energies_ticl = matched_energies_ticl[predicted_energies_ticl > energy_filter]
+            predicted_energies_ticl = predicted_energies_ticl[predicted_energies_ticl > energy_filter]
 
     centers = []
     mean = []
@@ -2311,20 +2368,21 @@ def fake_rate_comparison_with_distribution_fo_energy(plt, ax, predicted_energies
 
         mean.append(m)
 
-    fake_energies_ticl = predicted_energies_ticl[matched_energies_ticl == -1]
-    for i in range(len(e_bins) - 1):
-        l = e_bins[i]
-        h = e_bins[i + 1]
+    if use_ticl:
+        fake_energies_ticl = predicted_energies_ticl[matched_energies_ticl == -1]
+        for i in range(len(e_bins) - 1):
+            l = e_bins[i]
+            h = e_bins[i + 1]
 
-        fake_energies_interval = np.argwhere(np.logical_and(fake_energies_ticl > l, fake_energies_ticl < h))
-        total_energies_interval = np.argwhere(np.logical_and(predicted_energies_ticl > l, predicted_energies_ticl < h))
+            fake_energies_interval = np.argwhere(np.logical_and(fake_energies_ticl > l, fake_energies_ticl < h))
+            total_energies_interval = np.argwhere(np.logical_and(predicted_energies_ticl > l, predicted_energies_ticl < h))
 
-        try:
-            mt = len(fake_energies_interval) / float(len(total_energies_interval))
-        except ZeroDivisionError:
-            mt = 0
+            try:
+                mt = len(fake_energies_interval) / float(len(total_energies_interval))
+            except ZeroDivisionError:
+                mt = 0
 
-        mean_ticl.append(mt)
+            mean_ticl.append(mt)
 
     # mean_ticl = mean_ticl / (e_bins[1:] - e_bins[:-1])
 
@@ -2340,11 +2398,15 @@ def fake_rate_comparison_with_distribution_fo_energy(plt, ax, predicted_energies
     hist_values = (hist_values / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
     hist_values = (hist_values / np.sum(hist_values)).tolist()
 
-    hist_values_ticl, _ = np.histogram(predicted_energies_ticl, bins=e_bins)
-    hist_values_ticl = (hist_values_ticl / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
-    hist_values_ticl = (hist_values_ticl / np.sum(hist_values_ticl)).tolist()
+    if use_ticl:
+        hist_values_ticl, _ = np.histogram(predicted_energies_ticl, bins=e_bins)
+        hist_values_ticl = (hist_values_ticl / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
+        hist_values_ticl = (hist_values_ticl / np.sum(hist_values_ticl)).tolist()
 
-    ax2.set_ylim(0, max(np.max(hist_values_ticl), np.max(hist_values)) * 1.3)
+    if use_ticl:
+        ax2.set_ylim(0, max(np.max(hist_values_ticl), np.max(hist_values)) * 1.3)
+    else:
+        ax2.set_ylim(0, np.max(hist_values) * 1.3)
     #
     # hist_values[hist_values == 0] = 10
     # hist_values[hist_values_ticl == 0] = 10
@@ -2352,18 +2414,23 @@ def fake_rate_comparison_with_distribution_fo_energy(plt, ax, predicted_energies
     ax2.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
     ax2.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-    ax2.step(e_bins, [hist_values_ticl[0]] + hist_values_ticl, color='tab:gray', alpha=0)
-    ax2.fill_between(e_bins, [hist_values_ticl[0]] + hist_values_ticl, step="pre", alpha=0.2)
+    if use_ticl:
+        ax2.step(e_bins, [hist_values_ticl[0]] + hist_values_ticl, color='tab:gray', alpha=0)
+        ax2.fill_between(e_bins, [hist_values_ticl[0]] + hist_values_ticl, step="pre", alpha=0.2)
 
-    legend_elements = [Patch(facecolor='#1f77b4', label='Object condensation', alpha=0.2),
-                       Patch(facecolor='#ff7f0e', label='ticl', alpha=0.2)]
+    if not use_ticl:
+        legend_elements = [Patch(facecolor='#1f77b4', label='Object condensation', alpha=0.2),
+                           Patch(facecolor='#ff7f0e', label='ticl', alpha=0.2)]
+    else:
+        legend_elements = [Patch(facecolor='#1f77b4', label='Object condensation', alpha=0.2)]
 
     ax2.set_ylabel('Fraction of number of predicted showers')
 
     ax2.legend(handles=legend_elements, loc=(0.675, 0.34))
 
     ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
-    ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
+    if use_ticl:
+        ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
     ax1.set_xticks(e_bins_ticks)
     ax1.set_xlabel('Predicted energy [GeV]')
     ax1.set_ylabel('Fake rate')
@@ -2380,6 +2447,7 @@ def fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, 
     e_bins_n = np.array(e_bins)
     e_bins_n = (e_bins_n - e_bins_n.min()) / (e_bins_n.max() - e_bins_n.min())
 
+    use_ticl = ticl_shower_energy is not None
 
     predicted_energies_merged = []
     predicted_energies_ticl_merged=[]
@@ -2391,8 +2459,9 @@ def fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, 
         _pred_shower_sid = pred_shower_sid_merged[pred_sample_id == i]
         _pred_shower_energy = pred_shower_energy[pred_sample_id==i]
 
-        _ticl_shower_sid = ticl_shower_sid_merged[ticl_sample_id == i]
-        _ticl_shower_energy = ticl_shower_energy[ticl_sample_id==i]
+        if use_ticl:
+            _ticl_shower_sid = ticl_shower_sid_merged[ticl_sample_id == i]
+            _ticl_shower_energy = ticl_shower_energy[ticl_sample_id==i]
 
         _truth_shower_sid = truth_shower_sid[truth_sample_id==i]
         _truth_shower_energy = truth_shower_energy[truth_sample_id==i]
@@ -2407,19 +2476,22 @@ def fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, 
             else:
                 matched_energies_merged.append(-1)
 
-        ticl_shower_sid_unique = np.unique(_ticl_shower_sid)
-        for sid in ticl_shower_sid_unique:
-            this_ticl_energy = np.sum(_ticl_shower_energy[_ticl_shower_sid==sid])
-            predicted_energies_ticl_merged.append(this_ticl_energy)
-            truth_shower_energy_matched = _truth_shower_energy[_truth_shower_sid==sid]
-            if len(truth_shower_energy_matched) > 0:
-                matched_energies_ticl_merged.append(np.sum(truth_shower_energy_matched))
-            else:
-                matched_energies_ticl_merged.append(-1)
+        if use_ticl:
+            ticl_shower_sid_unique = np.unique(_ticl_shower_sid)
+            for sid in ticl_shower_sid_unique:
+                this_ticl_energy = np.sum(_ticl_shower_energy[_ticl_shower_sid==sid])
+                predicted_energies_ticl_merged.append(this_ticl_energy)
+                truth_shower_energy_matched = _truth_shower_energy[_truth_shower_sid==sid]
+                if len(truth_shower_energy_matched) > 0:
+                    matched_energies_ticl_merged.append(np.sum(truth_shower_energy_matched))
+                else:
+                    matched_energies_ticl_merged.append(-1)
     predicted_energies_merged = np.array(predicted_energies_merged)
-    predicted_energies_ticl_merged=np.array(predicted_energies_ticl_merged)
     matched_energies_merged = np.array(matched_energies_merged)
-    matched_energies_ticl_merged = np.array(matched_energies_ticl_merged)
+
+    if use_ticl:
+        predicted_energies_ticl_merged=np.array(predicted_energies_ticl_merged)
+        matched_energies_ticl_merged = np.array(matched_energies_ticl_merged)
 
     predicted_energies = []
     predicted_energies_ticl = []
@@ -2431,8 +2503,9 @@ def fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, 
         _pred_shower_sid = pred_shower_sid[pred_sample_id == i]
         _pred_shower_energy = pred_shower_energy[pred_sample_id == i]
 
-        _ticl_shower_sid = ticl_shower_sid[ticl_sample_id == i]
-        _ticl_shower_energy = ticl_shower_energy[ticl_sample_id == i]
+        if use_ticl:
+            _ticl_shower_sid = ticl_shower_sid[ticl_sample_id == i]
+            _ticl_shower_energy = ticl_shower_energy[ticl_sample_id == i]
 
         _truth_shower_sid = truth_shower_sid[truth_sample_id == i]
         _truth_shower_energy = truth_shower_energy[truth_sample_id == i]
@@ -2447,18 +2520,19 @@ def fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, 
             else:
                 matched_energies.append(-1)
 
-        ticl_shower_sid_unique = np.unique(_ticl_shower_sid)
-        for sid in ticl_shower_sid_unique:
-            this_ticl_energy = np.sum(_ticl_shower_energy[_ticl_shower_sid == sid])
-            predicted_energies_ticl.append(this_ticl_energy)
-            truth_shower_energy_matched = _truth_shower_energy[_truth_shower_sid == sid]
-            if len(truth_shower_energy_matched) > 0:
-                matched_energies_ticl.append(np.sum(truth_shower_energy_matched))
-            else:
-                matched_energies_ticl.append(-1)
+        if use_ticl:
+            ticl_shower_sid_unique = np.unique(_ticl_shower_sid)
+            for sid in ticl_shower_sid_unique:
+                this_ticl_energy = np.sum(_ticl_shower_energy[_ticl_shower_sid == sid])
+                predicted_energies_ticl.append(this_ticl_energy)
+                truth_shower_energy_matched = _truth_shower_energy[_truth_shower_sid == sid]
+                if len(truth_shower_energy_matched) > 0:
+                    matched_energies_ticl.append(np.sum(truth_shower_energy_matched))
+                else:
+                    matched_energies_ticl.append(-1)
     predicted_energies = np.array(predicted_energies)
-    predicted_energies_ticl = np.array(predicted_energies_ticl)
     matched_energies = np.array(matched_energies)
+    predicted_energies_ticl = np.array(predicted_energies_ticl)
     matched_energies_ticl = np.array(matched_energies_ticl)
 
     mean = []
@@ -2489,20 +2563,21 @@ def fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, 
 
         mean_merged.append(m)
 
-    fake_energies_ticl = predicted_energies_ticl_merged[matched_energies_ticl_merged == -1]
-    for i in range(len(e_bins) - 1):
-        l = e_bins[i]
-        h = e_bins[i + 1]
+    if use_ticl:
+        fake_energies_ticl = predicted_energies_ticl_merged[matched_energies_ticl_merged == -1]
+        for i in range(len(e_bins) - 1):
+            l = e_bins[i]
+            h = e_bins[i + 1]
 
-        fake_energies_interval = np.argwhere(np.logical_and(fake_energies_ticl > l, fake_energies_ticl < h))
-        total_energies_interval = np.argwhere(np.logical_and(predicted_energies_ticl_merged > l, predicted_energies_ticl_merged < h))
+            fake_energies_interval = np.argwhere(np.logical_and(fake_energies_ticl > l, fake_energies_ticl < h))
+            total_energies_interval = np.argwhere(np.logical_and(predicted_energies_ticl_merged > l, predicted_energies_ticl_merged < h))
 
-        try:
-            mt = len(fake_energies_interval) / float(len(total_energies_interval))
-        except ZeroDivisionError:
-            mt = 0
+            try:
+                mt = len(fake_energies_interval) / float(len(total_energies_interval))
+            except ZeroDivisionError:
+                mt = 0
 
-        mean_ticl_merged.append(mt)
+            mean_ticl_merged.append(mt)
 
 
     fake_energies = predicted_energies[matched_energies == -1]
@@ -2520,20 +2595,22 @@ def fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, 
 
         mean.append(m)
 
-    fake_energies_ticl = predicted_energies_ticl[matched_energies_ticl == -1]
-    for i in range(len(e_bins) - 1):
-        l = e_bins[i]
-        h = e_bins[i + 1]
 
-        fake_energies_interval = np.argwhere(np.logical_and(fake_energies_ticl > l, fake_energies_ticl < h))
-        total_energies_interval = np.argwhere(np.logical_and(predicted_energies_ticl > l, predicted_energies_ticl < h))
+    if use_ticl:
+        fake_energies_ticl = predicted_energies_ticl[matched_energies_ticl == -1]
+        for i in range(len(e_bins) - 1):
+            l = e_bins[i]
+            h = e_bins[i + 1]
 
-        try:
-            mt = len(fake_energies_interval) / float(len(total_energies_interval))
-        except ZeroDivisionError:
-            mt = 0
+            fake_energies_interval = np.argwhere(np.logical_and(fake_energies_ticl > l, fake_energies_ticl < h))
+            total_energies_interval = np.argwhere(np.logical_and(predicted_energies_ticl > l, predicted_energies_ticl < h))
 
-        mean_ticl.append(mt)
+            try:
+                mt = len(fake_energies_interval) / float(len(total_energies_interval))
+            except ZeroDivisionError:
+                mt = 0
+
+            mean_ticl.append(mt)
 
     # mean_ticl = mean_ticl / (e_bins[1:] - e_bins[:-1])
 
@@ -2549,33 +2626,37 @@ def fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, 
     hist_values = (hist_values / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
     hist_values = (hist_values / np.sum(hist_values)).tolist()
 
-    hist_values_ticl, _ = np.histogram(predicted_energies_ticl_merged, bins=e_bins)
-    hist_values_ticl = (hist_values_ticl / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
-    hist_values_ticl = (hist_values_ticl / np.sum(hist_values_ticl)).tolist()
+    if use_ticl:
+        hist_values_ticl, _ = np.histogram(predicted_energies_ticl_merged, bins=e_bins)
+        hist_values_ticl = (hist_values_ticl / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
+        hist_values_ticl = (hist_values_ticl / np.sum(hist_values_ticl)).tolist()
 
-    ax2.set_ylim(0, max(np.max(hist_values_ticl), np.max(hist_values)) * 1.3)
-    #
-    # hist_values[hist_values == 0] = 10
-    # hist_values[hist_values_ticl == 0] = 10
+    ax2.set_ylim(0, np.max(hist_values) * 1.3)
 
     ax2.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
     ax2.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
-    ax2.step(e_bins, [hist_values_ticl[0]] + hist_values_ticl, color='tab:gray', alpha=0)
-    ax2.fill_between(e_bins, [hist_values_ticl[0]] + hist_values_ticl, step="pre", alpha=0.2)
+    if use_ticl:
+        ax2.step(e_bins, [hist_values_ticl[0]] + hist_values_ticl, color='tab:gray', alpha=0)
+        ax2.fill_between(e_bins, [hist_values_ticl[0]] + hist_values_ticl, step="pre", alpha=0.2)
 
-    legend_elements = [Patch(facecolor='#1f77b4', label='Object condensation', alpha=0.2),
-                       Patch(facecolor='#ff7f0e', label='ticl', alpha=0.2)]
+    if not use_ticl:
+        legend_elements = [Patch(facecolor='#1f77b4', label='Object condensation', alpha=0.2)]
+    else:
+        legend_elements = [Patch(facecolor='#1f77b4', label='Object condensation', alpha=0.2),
+                           Patch(facecolor='#ff7f0e', label='ticl', alpha=0.2)]
 
     ax2.set_ylabel('Fraction of number of predicted showers')
 
     ax2.legend(handles=legend_elements, loc=(0.675, 0.34))
 
     ax1.step(e_bins, [mean[0]] + mean, label='Object condensation')
-    ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
+    if use_ticl:
+        ax1.step(e_bins, [mean_ticl[0]] + mean_ticl, label='ticl')
 
     ax1.step(e_bins, [mean_merged[0]] + mean_merged, label='Object condensation - non-remergable fakes', c='#1f77b4', ls='--')
-    ax1.step(e_bins, [mean_ticl_merged[0]] + mean_ticl_merged, label='ticl -  non-remergable fakes', c='#ff7f0e', ls='--')
+    if use_ticl:
+        ax1.step(e_bins, [mean_ticl_merged[0]] + mean_ticl_merged, label='ticl -  non-remergable fakes', c='#ff7f0e', ls='--')
     ax1.set_xticks(e_bins_ticks)
     ax1.set_xlabel('Predicted energy [GeV]')
     ax1.set_ylabel('Fake rate')
@@ -3061,6 +3142,7 @@ def plot_total_response_diff_fractions(plt, truth_sample_id, truth_sid, truth_en
     fig, ((ax_array[0], ax_array[1]), (ax_array[2], ax_array[3])) = plt.subplots(2, 2, figsize=(16, 10))
 
     fractions = [0.2, 0.4, 0.6, 0.8]
+    show_ticl = ticl_sid is not None
 
     for f in range(len(fractions)):
         _f = fractions[f]
@@ -3071,22 +3153,26 @@ def plot_total_response_diff_fractions(plt, truth_sample_id, truth_sid, truth_en
             _truth_energies = truth_energies[truth_sample_id == i]
             _pred_sid = pred_sid[pred_sample_id == i]
             _pred_energies = pred_energies[pred_sample_id == i]
-            _ticl_sid = ticl_sid[ticl_sample_id == i]
-            _ticl_energies = ticl_energies[ticl_sample_id == i]
+            if show_ticl:
+                _ticl_sid = ticl_sid[ticl_sample_id == i]
+                _ticl_energies = ticl_energies[ticl_sample_id == i]
 
             remove_sids = [_truth_sid[x] for x in
                            np.random.choice(_truth_sid.shape[0], int(len(_truth_sid) * _f), replace=False)]
             for j in remove_sids:
                 _truth_energies[_truth_sid == j] = 0
                 _pred_energies[_pred_sid == j] = 0
-                _ticl_energies[_ticl_sid == j] = 0
+                if show_ticl:
+                    _ticl_energies[_ticl_sid == j] = 0
 
             response_values_pred.append(np.sum(_pred_energies) / np.sum(_truth_energies))
-            response_values_ticl.append(np.sum(_ticl_energies) / np.sum(_truth_energies))
+            if show_ticl:
+                response_values_ticl.append(np.sum(_ticl_energies) / np.sum(_truth_energies))
 
         ax = ax_array[f]
         ax.hist(response_values_pred, bins=20, histtype='step', log=True, label='Object condensation', density=True)
-        ax.hist(response_values_ticl, bins=20, histtype='step', log=True, label='ticl', density=True)
+        if show_ticl:
+            ax.hist(response_values_ticl, bins=20, histtype='step', log=True, label='ticl', density=True)
         ax.legend()
         ax.set_title('Total energy response - PU fraction %.2f' % _f)
 
@@ -3425,6 +3511,322 @@ def make_plots_from_object_condensation_clustering_analysis(pdfpath, dataset_ana
 import os
 
 
+def get_analysis_plotting_configuration(config):
+    config_return = dict()
+
+    if config == 'standard_hgcal_with_ticl':
+        config_return['use_ticl'] = True
+        config_return['use_classification'] = False
+    elif config == 'toy_set_without_ticl':
+        config_return['use_ticl'] = False
+        config_return['use_classification'] = True
+    elif config == 'standard_hgcal_without_ticl':
+        config_return['use_ticl'] = False
+        config_return['use_classification'] = False
+    else:
+        raise NotImplemented('Can\'t find')
+
+    return config_return
+
+def do_analysis_plots_to_pdf(pdfpath, dataset_analysis_dict, plotting_config):
+    dataset_analysis_dict = convert_dataset_dict_elements_to_numpy(dataset_analysis_dict)
+
+    pdf = PdfPages(pdfpath)
+
+    draw_settings(plt, dataset_analysis_dict['beta_threshold'], dataset_analysis_dict['distance_threshold'], dataset_analysis_dict['iou_threshold'], dataset_analysis_dict['soft'])
+    pdf.savefig()
+
+
+    use_ticl = plotting_config['use_ticl']
+    use_classification = plotting_config['use_classification']
+
+
+    #################################################################################
+    draw_text_page(plt, 'Total energy response')
+    pdf.savefig()
+
+    fig = plt.figure()
+    histogram_total_window_resolution(plt, fig.axes, dataset_analysis_dict['window_total_energy_truth'],
+                                      dataset_analysis_dict['window_total_energy_pred'],
+                                      dataset_analysis_dict['window_total_energy_ticl'] if use_ticl else None)
+    pdf.savefig()
+
+    fig = plt.figure()
+    histogram_total_window_resolution(plt, fig.axes, dataset_analysis_dict['window_total_energy_truth'],
+                                      dataset_analysis_dict['window_total_energy_pred'],
+                                      dataset_analysis_dict['window_total_energy_ticl'] if use_ticl else None, energy_filter=2)
+    pdf.savefig()
+    #################################################################################
+
+    #################################################################################
+    draw_text_page(plt, 'Total energy response fractional')
+    pdf.savefig()
+
+    plot_total_response_diff_fractions(plt, dataset_analysis_dict['truth_shower_sample_id'],
+                                       dataset_analysis_dict['truth_shower_sid'],
+                                       dataset_analysis_dict['truth_shower_energy'],
+                                       dataset_analysis_dict['pred_shower_sample_id'],
+                                       dataset_analysis_dict['pred_shower_sid'],
+                                       dataset_analysis_dict['pred_shower_regressed_energy'],
+                                       dataset_analysis_dict['ticl_shower_sample_id'] if use_ticl else None,
+                                       dataset_analysis_dict['ticl_shower_sid'] if use_ticl else None,
+                                       dataset_analysis_dict['ticl_shower_regressed_energy'] if use_ticl else None)
+    pdf.savefig()
+
+    #################################################################################
+
+    #################################################################################
+    draw_text_page(plt, 'Fake rate comparison')
+    pdf.savefig()
+
+    fix, ax = plt.subplots()
+    fake_rate_comparison_with_distribution_fo_energy(plt, ax, dataset_analysis_dict['pred_shower_regressed_energy'],
+                                                     dataset_analysis_dict['pred_shower_matched_energy'],
+                                                     dataset_analysis_dict['ticl_shower_regressed_energy'] if use_ticl else None,
+                                                     dataset_analysis_dict['ticl_shower_matched_energy'] if use_ticl else None)
+    pdf.savefig()
+
+    fix, ax = plt.subplots()
+    fake_rate_comparison_with_distribution_fo_energy_with_multiple_matches(plt, ax, dataset_analysis_dict['pred_shower_sample_id'],
+                                                     dataset_analysis_dict['pred_shower_sid_merged'],
+                                                     dataset_analysis_dict['pred_shower_sid'],
+                                                     dataset_analysis_dict['pred_shower_regressed_energy'],
+                                                     dataset_analysis_dict['truth_shower_sample_id'],
+                                                     dataset_analysis_dict['truth_shower_sid'],
+                                                     dataset_analysis_dict['truth_shower_energy'],
+                                                     dataset_analysis_dict['ticl_shower_sample_id'] if use_ticl else None,
+                                                     dataset_analysis_dict['ticl_shower_sid_merged'] if use_ticl else None,
+                                                     dataset_analysis_dict['ticl_shower_sid'] if use_ticl else None,
+                                                     dataset_analysis_dict['ticl_shower_regressed_energy'] if use_ticl else None)
+    pdf.savefig()
+
+
+    #################################################################################
+
+    #################################################################################
+    draw_text_page(plt, 'Efficiency comparison - local fraction')
+    pdf.savefig()
+
+    fig = plt.figure()
+    efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, fig.axes,
+                                                                   dataset_analysis_dict['truth_shower_local_density'],
+                                                                   dataset_analysis_dict['truth_shower_found_or_not'],
+                                                                   dataset_analysis_dict[
+                                                                       'truth_shower_found_or_not_ticl'] if use_ticl else None,
+                                                                   dataset_analysis_dict['truth_shower_energy'])
+    pdf.savefig()
+
+    fig = plt.figure()
+    efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, fig.axes,
+                                                                   dataset_analysis_dict['truth_shower_local_density'],
+                                                                   dataset_analysis_dict['truth_shower_found_or_not'],
+                                                                   dataset_analysis_dict[
+                                                                       'truth_shower_found_or_not_ticl'] if use_ticl else None,
+                                                                   dataset_analysis_dict['truth_shower_energy'],
+                                                                   energy_filter=2)
+    pdf.savefig()
+
+    fig = plt.figure()
+    efficiency_comparison_plot_with_distribution_fo_local_fraction(plt, fig.axes,
+                                                                   dataset_analysis_dict['truth_shower_local_density'],
+                                                                   dataset_analysis_dict['truth_shower_found_or_not'],
+                                                                   dataset_analysis_dict[
+                                                                       'truth_shower_found_or_not_ticl'] if use_ticl else None,
+                                                                   dataset_analysis_dict['truth_shower_energy'],
+                                                                   make_segments=True)
+    pdf.savefig()
+    #################################################################################
+
+    #################################################################################
+    draw_text_page(plt, 'Efficiency comparison - closest particle distance')
+    pdf.savefig()
+
+    fig = plt.figure()
+    efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(plt, fig.axes, dataset_analysis_dict[
+        'truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_shower_found_or_not'],
+                                                                              dataset_analysis_dict[
+                                                                                  'truth_shower_found_or_not_ticl'] if use_ticl else None,
+                                                                              dataset_analysis_dict[
+                                                                                  'truth_shower_energy'])
+    pdf.savefig()
+
+    fig = plt.figure()
+    efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(plt, fig.axes, dataset_analysis_dict[
+        'truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_shower_found_or_not'],
+                                                                              dataset_analysis_dict[
+                                                                                  'truth_shower_found_or_not_ticl'] if use_ticl else None,
+                                                                              dataset_analysis_dict[
+                                                                                  'truth_shower_energy'],
+                                                                              energy_filter=2)
+    pdf.savefig()
+
+    fig = plt.figure()
+    efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(plt, fig.axes, dataset_analysis_dict[
+        'truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_shower_found_or_not'],
+                                                                              dataset_analysis_dict[
+                                                                                  'truth_shower_found_or_not_ticl'] if use_ticl else None,
+                                                                              dataset_analysis_dict[
+                                                                                  'truth_shower_energy'],
+                                                                              make_segments=True)
+    pdf.savefig()
+    #################################################################################
+
+    #################################################################################
+    draw_text_page(plt, 'Efficiency comparison - truth energy')
+    pdf.savefig()
+
+    fig = plt.figure()
+    efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, fig.axes,
+                                                                 dataset_analysis_dict['truth_shower_found_or_not'],
+                                                                 dataset_analysis_dict[
+                                                                     'truth_shower_found_or_not_ticl'] if use_ticl else None,
+                                                                 dataset_analysis_dict['truth_shower_energy'])
+    pdf.savefig()
+
+    #################################################################################
+
+    #################################################################################
+    draw_text_page(plt, 'Response comparison - local fraction')
+    pdf.savefig()
+
+    fig = plt.figure()
+    response_comparison_plot_with_distribution_fo_local_fraction(plt, fig.axes,
+                                                                 dataset_analysis_dict['truth_shower_local_density'],
+                                                                 dataset_analysis_dict[
+                                                                     'truth_shower_matched_energy_regressed'],
+                                                                 dataset_analysis_dict[
+                                                                     'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None,
+                                                                 dataset_analysis_dict['truth_shower_energy'])
+    pdf.savefig()
+
+    fig = plt.figure()
+    response_comparison_plot_with_distribution_fo_local_fraction(plt, fig.axes,
+                                                                 dataset_analysis_dict['truth_shower_local_density'],
+                                                                 dataset_analysis_dict[
+                                                                     'truth_shower_matched_energy_regressed'],
+                                                                 dataset_analysis_dict[
+                                                                     'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None,
+                                                                 dataset_analysis_dict['truth_shower_energy'],
+                                                                 energy_filter=2)
+    pdf.savefig()
+
+    fig1, fig2 = response_comparison_plot_with_distribution_fo_local_fraction(plt, fig.axes, dataset_analysis_dict[
+        'truth_shower_local_density'], dataset_analysis_dict['truth_shower_matched_energy_regressed'],
+                                                                              dataset_analysis_dict[
+                                                                                  'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None,
+                                                                              dataset_analysis_dict[
+                                                                                  'truth_shower_energy'],
+                                                                              make_segments=True)
+    pdf.savefig(fig1)
+    pdf.savefig(fig2)
+
+    #################################################################################
+    draw_text_page(plt, 'Response comparison - closest particle distance')
+    pdf.savefig()
+
+    fig = plt.figure()
+    response_comparison_plot_with_distribution_fo_closest_particle_distance(plt, fig.axes, dataset_analysis_dict[
+        'truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_shower_matched_energy_regressed'],
+                                                                            dataset_analysis_dict[
+                                                                                'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None,
+                                                                            dataset_analysis_dict[
+                                                                                'truth_shower_energy'])
+    pdf.savefig()
+
+    fig = plt.figure()
+    response_comparison_plot_with_distribution_fo_closest_particle_distance(plt, fig.axes, dataset_analysis_dict[
+        'truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_shower_matched_energy_regressed'],
+                                                                            dataset_analysis_dict[
+                                                                                'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None,
+                                                                            dataset_analysis_dict[
+                                                                                'truth_shower_energy'], energy_filter=2)
+    pdf.savefig()
+
+    fig1, fig2 = response_comparison_plot_with_distribution_fo_closest_particle_distance(plt, fig.axes,
+                                                                                         dataset_analysis_dict[
+                                                                                             'truth_shower_closest_particle_distance'],
+                                                                                         dataset_analysis_dict[
+                                                                                             'truth_shower_matched_energy_regressed'],
+                                                                                         dataset_analysis_dict[
+                                                                                             'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None,
+                                                                                         dataset_analysis_dict[
+                                                                                             'truth_shower_energy'],
+                                                                                         make_segments=True)
+    pdf.savefig(fig1)
+    pdf.savefig(fig2)
+    #################################################################################
+
+    #################################################################################
+    draw_text_page(plt, 'Response comparison - function of truth energy')
+    pdf.savefig()
+
+    fig = plt.figure()
+    response_curve_comparison_with_distribution_fo_energy(plt, fig.axes, dataset_analysis_dict['truth_shower_energy'],
+                                                          dataset_analysis_dict[
+                                                              'truth_shower_matched_energy_regressed'],
+                                                          dataset_analysis_dict[
+                                                              'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None)
+    pdf.savefig()
+
+
+
+    # fig = plt.figure()
+    # response_curve_comparison_with_distribution_fo_energy_with_multiple_matches(plt, ax, dataset_analysis_dict['pred_shower_sample_id'],
+    #                                                  dataset_analysis_dict['pred_shower_sid_merged'],
+    #                                                  dataset_analysis_dict['pred_shower_regressed_energy'],
+    #                                                  dataset_analysis_dict['truth_shower_sample_id'],
+    #                                                  dataset_analysis_dict['truth_shower_sid'],
+    #                                                  dataset_analysis_dict['truth_shower_energy'],
+    #                                                  dataset_analysis_dict['ticl_shower_sample_id'],
+    #                                                  dataset_analysis_dict['ticl_shower_sid_merged'],
+    #                                                  dataset_analysis_dict['ticl_shower_regressed_energy'])
+    #
+    # pdf.savefig()
+
+    #################################################################################
+
+
+    #################################################################################
+    draw_text_page(plt, 'Dataset stats')
+    fig = plt.figure()
+    make_histogram_of_number_of_rechits_per_segment(plt, fig.axes, dataset_analysis_dict['window_num_rechits'])
+    pdf.savefig()
+    fig = plt.figure()
+    make_histogram_of_number_of_rechits_per_shower(plt, fig.axes, dataset_analysis_dict['truth_shower_num_rechits'])
+    pdf.savefig()
+    fig = plt.figure()
+    make_histogram_of_number_of_showers_per_segment(plt, fig.axes, dataset_analysis_dict['truth_shower_sample_id'])
+    pdf.savefig()
+
+
+
+    #################################################################################
+
+
+    #################################################################################
+    # draw_text_page(plt, 'Visualization qualtitative')
+    # # pdf.savefig()
+    #
+    #
+    # x = 0
+    # for vis_dict in dataset_analysis_dict['visualized_segments']:
+    #     print("Plotting full",x)
+    #     x+=1
+    #     visualize_the_segment(plt, vis_dict['truth_sid'], vis_dict['pred_and_truth_dict'], vis_dict['feature_dict'],
+    #         vis_dict['ticl_sid'], vis_dict['pred_sid'], vis_dict['coords_representatives'], dataset_analysis_dict['distance_threshold'])
+    #     print("Saving fig")
+    #     plt.savefig('x%d.png'%x)
+
+    # def visualize_the_segment(plt, truth_showers_this_segment, truth_and_pred_dict, feature_dict, ticl_showers, labels,
+    #                           coords_representative_predicted_showers, distance_threshold):
+
+
+    #################################################################################
+
+    pdf.close()
+
+
+
 def running_mean(x, y, N):
     cumsum = np.cumsum(np.insert(y, 0, 0))
     return x[N-1:], (cumsum[N:] - cumsum[:-N]) / float(N)
@@ -3472,22 +3874,28 @@ def plot_scalar_metrics(plt, scalar_metrics, average_scalars_over):
     # plt.title('Training metrics (on validation set)')
 
 
-def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, average_scalars_over):
+def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, average_scalars_over, plotting_config):
     plt.cla()
     plt.clf()
 
     dataset_analysis_dict = convert_dataset_dict_elements_to_numpy(dataset_analysis_dict)
+
+    use_ticl = plotting_config['use_ticl']
+    use_classification = plotting_config['use_classification']
+
 
     fig = plt.figure()
     plot_scalar_metrics(plt, scalar_metrics, average_scalars_over)
     plt.savefig(os.path.join(output_dir, 'scalar_metrics.png'))
 
 
+
+
     fig = plt.figure()
     efficiency_comparison_plot_with_distribution_fo_truth_energy(plt, fig.axes,
                                                                  dataset_analysis_dict['truth_shower_found_or_not'],
                                                                  dataset_analysis_dict[
-                                                                     'truth_shower_found_or_not_ticl'],
+                                                                     'truth_shower_found_or_not_ticl'] if use_ticl else None,
                                                                  dataset_analysis_dict['truth_shower_energy'])
 
     plt.savefig(os.path.join(output_dir, 'efficiency_fo_truth_energy.png'))
@@ -3497,14 +3905,14 @@ def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, averag
     fig = plt.figure()
     histogram_total_window_resolution(plt, fig.axes, dataset_analysis_dict['window_total_energy_truth'],
                                       dataset_analysis_dict['window_total_energy_pred'],
-                                      dataset_analysis_dict['window_total_energy_ticl'])
+                                      dataset_analysis_dict['window_total_energy_ticl'] if use_ticl else None)
     plt.savefig(os.path.join(output_dir, 'total_energy_response_hist.png'))
 
     fix, ax = plt.subplots()
     fake_rate_comparison_with_distribution_fo_energy(plt, ax, dataset_analysis_dict['pred_shower_regressed_energy'],
                                                      dataset_analysis_dict['pred_shower_matched_energy'],
-                                                     dataset_analysis_dict['ticl_shower_regressed_energy'],
-                                                     dataset_analysis_dict['ticl_shower_matched_energy'])
+                                                     dataset_analysis_dict['ticl_shower_regressed_energy'] if use_ticl else None,
+                                                     dataset_analysis_dict['ticl_shower_matched_energy'] if use_ticl else None)
     plt.savefig(os.path.join(output_dir, 'fake_rate_fo_truth_energy.png'))
 
     fig = plt.figure()
@@ -3512,7 +3920,7 @@ def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, averag
                                                                    dataset_analysis_dict['truth_shower_local_density'],
                                                                    dataset_analysis_dict['truth_shower_found_or_not'],
                                                                    dataset_analysis_dict[
-                                                                       'truth_shower_found_or_not_ticl'],
+                                                                       'truth_shower_found_or_not_ticl'] if use_ticl else None,
                                                                    dataset_analysis_dict['truth_shower_energy'])
     plt.savefig(os.path.join(output_dir, 'efficiency_fo_local_fraction.png'))
 
@@ -3521,7 +3929,7 @@ def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, averag
     efficiency_comparison_plot_with_distribution_fo_closest_partical_distance(plt, fig.axes, dataset_analysis_dict[
         'truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_shower_found_or_not'],
                                                                               dataset_analysis_dict[
-                                                                                  'truth_shower_found_or_not_ticl'],
+                                                                                  'truth_shower_found_or_not_ticl'] if use_ticl else None,
                                                                               dataset_analysis_dict[
                                                                                   'truth_shower_energy'])
     plt.savefig(os.path.join(output_dir, 'efficiency_fo_closest_particle_distance.png'))
@@ -3532,7 +3940,7 @@ def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, averag
                                                                  dataset_analysis_dict[
                                                                      'truth_shower_matched_energy_regressed'],
                                                                  dataset_analysis_dict[
-                                                                     'truth_shower_matched_energy_regressed_ticl'],
+                                                                     'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None,
                                                                  dataset_analysis_dict['truth_shower_energy'])
     plt.savefig(os.path.join(output_dir, 'response_fo_local_fraction.png'))
 
@@ -3540,7 +3948,7 @@ def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, averag
     response_comparison_plot_with_distribution_fo_closest_particle_distance(plt, fig.axes, dataset_analysis_dict[
         'truth_shower_closest_particle_distance'], dataset_analysis_dict['truth_shower_matched_energy_regressed'],
                                                                             dataset_analysis_dict[
-                                                                                'truth_shower_matched_energy_regressed_ticl'],
+                                                                                'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None,
                                                                             dataset_analysis_dict[
                                                                                 'truth_shower_energy'])
     plt.savefig(os.path.join(output_dir, 'response_fo_closest_particle_distance.png'))
@@ -3550,6 +3958,6 @@ def make_running_plots(output_dir, dataset_analysis_dict, scalar_metrics, averag
                                                           dataset_analysis_dict[
                                                               'truth_shower_matched_energy_regressed'],
                                                           dataset_analysis_dict[
-                                                              'truth_shower_matched_energy_regressed_ticl'])
+                                                              'truth_shower_matched_energy_regressed_ticl'] if use_ticl else None)
     plt.savefig(os.path.join(output_dir, 'response_fo_truth_energy.png'))
 

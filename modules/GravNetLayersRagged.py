@@ -1085,3 +1085,37 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         base_config = super(DistanceWeightedMessagePassing, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+
+
+class WeightedCovariances(tf.keras.layers.Layer):
+    '''
+    allows distances after each passing operation to be dynamically adjusted.
+    this similar to FusedRaggedGravNetAggAtt, but incorporates the scaling in the message passing loop
+    '''
+
+    def __init__(self, **kwargs):
+        super(WeightedCovariances, self).__init__(**kwargs)
+
+
+    def build(self, input_shapes):
+        super(WeightedCovariances, self).build(input_shapes)
+
+
+    def collect_neighbours(self, features, neighbour_indices):
+        neighbour_features = tf.gather_nd(features, neighbour_indices[..., tf.newaxis])
+        return neighbour_features
+
+    def call(self, inputs):
+        x, coords, neighbor_indices = inputs
+        coords_collected = self.collect_neighbours(coords, neighbor_indices) # [V, N, F]
+
+        mean_est = tf.reduce_mean(coords_collected, axis=1)[:, tf.newaxis, :]
+        centered = coords_collected - mean_est #[V,N,F]
+        centered_transposed = tf.transpose(centered, perm=[0, 2, 1]) # [V,F,N]
+        # [V,F,N]x[V,N,F]
+        cov_est = tf.linalg.matmul(centered_transposed, centered) / (tf.cast(tf.shape(coords_collected)[1], tf.float32) - 1.) # [V,F, F]
+
+        weighted = cov_est[:, tf.newaxis,:,:] * x[:,:,tf.newaxis, tf.newaxis]
+        weighted_flattened = tf.reshape(weighted, [tf.shape(coords_collected)[0], (coords.shape[1]*coords.shape[1]*x.shape[1])])
+
+        return weighted_flattened
