@@ -64,7 +64,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     nidx, dist = KNN(K=96,radius=1.0)([coords,rs])
     x = Dense(4, activation='elu',name='pre_pre_dense')(x) #just a few features are enough here
     #this can be full blown because of the small number of input features
-    x_c = SoftPixelCNN(length_scale=1.0, mode='full', subdivisions=6, name='prePCNN')([coords,x,nidx])
+    x_c = SoftPixelCNN(length_scale=1.0, mode='full', subdivisions=4, name='prePCNN')([coords,x,nidx])
     x = Concatenate()([x,x_c])
     #this is going to be among the most expensive operations:
     x = Dense(128, activation='elu',name='pre_dense_a')(x)
@@ -90,7 +90,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                  print_reduction=True, 
                  loss_enabled=True, 
                  loss_scale = 2., 
-                 loss_repulsion=0.5,
+                 loss_repulsion=0.3,
                  print_loss=True,
                  name='clustering_'+str(i)
                  )([x, dist, hier, nidx, rs, sel_gidx, energy, x, t_idx, t_idx])
