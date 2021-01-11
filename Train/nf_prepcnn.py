@@ -54,14 +54,17 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     
     
     energy = SelectFeatures(0,1)(feat)
-    coords = SelectFeatures(5,8)(feat_norm)
+    orig_coords = SelectFeatures(5,8)(feat_norm)
+    coords=orig_coords
     coords = Dense(3)(coords)#just rotation and scaling
+    #add gradient
+    
     
     #see whats there
     nidx, dist = KNN(K=96,radius=1.0)([coords,rs])
     x = Dense(4, activation='elu',name='pre_pre_dense')(x) #just a few features are enough here
     #this can be full blown because of the small number of input features
-    x_c = SoftPixelCNN(length_scale=1.0, mode='full', subdivisions=4, name='prePCNN')([coords,x,nidx])
+    x_c = SoftPixelCNN(length_scale=1.0, mode='full', subdivisions=6, name='prePCNN')([coords,x,nidx])
     x = Concatenate()([x,x_c])
     #this is going to be among the most expensive operations:
     x = Dense(128, activation='elu',name='pre_dense_a')(x)
@@ -87,7 +90,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                  print_reduction=True, 
                  loss_enabled=True, 
                  loss_scale = 2., 
-                 loss_repulsion=0.3,
+                 loss_repulsion=0.5,
                  print_loss=True,
                  name='clustering_'+str(i)
                  )([x, dist, hier, nidx, rs, sel_gidx, energy, x, t_idx, t_idx])
@@ -200,7 +203,7 @@ if not train.modelSet():
 verbosity = 2
 import os
 
-from plotting_callbacks import plotClusteringDuringTraining
+from plotting_callbacks import plotClusteringDuringTraining, plotGravNetCoordsDuringTraining
 
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
@@ -209,7 +212,7 @@ cb = [plotClusteringDuringTraining(
            use_backgather_idx=7+i,
            outputfile=train.outputDir + "/plts/sn"+str(i)+'_',
            samplefile=  samplepath,
-           after_n_batches=100,
+           after_n_batches=300,
            on_epoch_end=False,
            publish=publishpath+"_cl_"+str(i),
            use_event=0) 
@@ -219,12 +222,26 @@ cb += [
     plotEventDuringTraining(
             outputfile=train.outputDir + "/plts2/sn0",
             samplefile=samplepath,
-            after_n_batches=100,
+            after_n_batches=300,
             batchsize=200000,
             on_epoch_end=False,
             publish = publishpath+"_event_"+ str(0),
             use_event=0)
     
+    ]
+
+cb += [   
+    plotGravNetCoordsDuringTraining(
+            outputfile=train.outputDir + "/coords_"+str(i)+"/coord_"+str(i),
+            samplefile=samplepath,
+            after_n_batches=300,
+            batchsize=200000,  
+            on_epoch_end=False,
+            publish = publishpath+"_event_"+ str(0),
+            use_event=0,
+            use_prediction_idx=i,
+            )
+    for i in  range(13,18) #between 16 and 21
     ]
 
 learningrate = 1e-3

@@ -593,8 +593,9 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
             other=[]
         #generate loss
         if self.loss_enabled:
+            #some headroom for radius
             lossval = self.loss_scale * LLLocalClusterCoordinates.raw_loss(
-                distances, hierarchy, nidxs, tidxs,
+                distances, hierarchy, nidxs, tidxs,  #or distances/(1.5*self.radius)**2
                 add_self_reference=False, repulsion_contrib=self.loss_repulsion,
                 print_loss=self.print_loss,name=self.name)
             self.add_loss(lossval)
@@ -621,7 +622,7 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
 
 
 class SoftPixelCNN(tf.keras.layers.Layer):
-    def __init__(self, length_scale: float=1., mode: str='onlyaxes', subdivisions: int=3 ,**kwargs):
+    def __init__(self, length_scale=None, mode: str='onlyaxes', subdivisions: int=3 ,**kwargs):
         """
         Inputs: 
         - coordinates
@@ -638,7 +639,9 @@ class SoftPixelCNN(tf.keras.layers.Layer):
          - soft pixel CNN outputs:  (V x (dim(coords)[1]*2 +1) * features)
         
         :param length_scale: scale of the distances that are expected. The "pixels" Gaussian tails 
-                             will die off at this scale.
+                             will die off at this scale. 
+                             If 'None' will use individual scale given by maximum neighbour distance for each vertex
+                             
         :param mode: mode to build the soft pixels
                      - full: a full grid is spanned over all dimensions
                      - oneless: only grid points with at least one axis coordinate being zero are used
@@ -649,10 +652,12 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         
         """
         super(SoftPixelCNN, self).__init__(**kwargs) 
-        assert length_scale >= 0
+        assert length_scale is None or length_scale >= 0
         assert subdivisions > 1
         assert mode=='onlyaxes' or mode=='full' or mode=='oneless'
-        self.length_scale = length_scale/1.2 #so that the gradients start to disappear at length scale
+        self.length_scale = None
+        if length_scale is not None:
+            self.length_scale = length_scale/1.2 #so that the gradients start to disappear at length scale
         self.mode=mode
         self.subdivisions=subdivisions
         self.ndim = None 
@@ -686,8 +691,10 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         self.ndim = input_shapes[0][1]
         self.nfeat = input_shapes[1][1]
         self.offsets=[]
-        
-        a,b,c = SoftPixelCNN.create_offsets(self.ndim,self.subdivisions,self.length_scale)
+        length_scale = 1.
+        if self.length_scale is not None:
+            length_scale=self.length_scale
+        a,b,c = SoftPixelCNN.create_offsets(self.ndim,self.subdivisions,length_scale)
         if self.mode == 'full':
             self.offsets = a
         elif self.mode == 'oneless':
@@ -704,12 +711,23 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         return (noutvert, nfeat*self.offsets)
 
     def call(self, inputs):
-        coordinates, features, neighbour_indices = inputs
+        
+        coordinates, features, distsq, neighbour_indices = None, None, None, None
+        if self.length_scale is None:
+            coordinates, features, distsq, neighbour_indices = inputs
+            #distsq = tf.stop_gradient(distsq)
+        else:
+            coordinates, features, neighbour_indices = inputs
         #create coordinate offsets
         out=[]
+        scaler = self.subdivisions**2
+        if self.length_scale is not None:
+            scaler /= self.length_scale**2  + 1e-5
+        else:
+            scaler /= tf.reduce_max(distsq,axis=1, keepdims=True) + 1e-5
         for o in self.offsets:
             distancesq = LocalDistance(coordinates+o, neighbour_indices)
-            f,_ = AccumulateKnn(self.subdivisions**2/(self.length_scale**2)*distancesq,  features, neighbour_indices, n_moments=0) # V x F
+            f,_ = AccumulateKnn(scaler*distancesq,  features, neighbour_indices, n_moments=0) # V x F
             f = f[:,:self.nfeat]
             f = tf.reshape(f, [-1, self.nfeat])
             out.append(f) #only mean
@@ -756,7 +774,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                 self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation='relu')
 
         with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,use_bias=False)
+            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,use_bias=False,kernel_initializer=tf.keras.initializers.Orthogonal())
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='tanh')

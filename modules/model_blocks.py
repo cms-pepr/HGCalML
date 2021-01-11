@@ -218,7 +218,7 @@ def create_output_layers(x, x_row_splits, n_ccoords=2,
 
 from datastructures import TrainData_OC
 #new format!
-def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_OC()):
+def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_OC(), add_features=True):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
@@ -230,8 +230,12 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
     pred_energy = Dense(1)(x)
     if energy is not None:
         pred_energy = Multiply()([pred_energy,energy])
-    pred_pos =  Add()([feat['recHitXY'],Dense(2)(x) ])
-    pred_time = Add()([feat['recHitTime'],ScalarMultiply(10.)(Dense(1)(x)) ])
+        
+    pred_pos =  Dense(2)(x)
+    pred_time = ScalarMultiply(10.)(Dense(1)(x))
+    if add_features:
+        pred_pos =  Add()([feat['recHitXY'],pred_pos])
+        pred_time = Add()([feat['recHitTime'],pred_time])
     pred_id = Dense(n_classes, activation="softmax")(x)
     
     return pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id

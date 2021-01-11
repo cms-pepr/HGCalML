@@ -52,33 +52,27 @@ def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx"):
     unta = unta[unta>-0.1]
     for i in range(len(unta)):
         df[qualifier][df[qualifier] ==unta[i]]=i
-
-class plotClusteringDuringTraining(PredictCallback):
+        
+class plotDuringTrainingBase(PredictCallback):
     def __init__(self,
-                 outputfile,
+                 outputfile="",
                  cycle_colors=False,
                  publish=None,
                  n_keep=1,
-                 use_backgather_idx=7,#and more,
-                 batchsize=300000,
                  **kwargs):
-        
-        super(plotClusteringDuringTraining, self).__init__(function_to_apply=self.make_plot, batchsize=batchsize,**kwargs)
         self.outputfile = outputfile
+        os.system('mkdir -p '+os.path.dirname(outputfile))
         self.cycle_colors = cycle_colors
         assert n_keep>0
         self.n_keep = n_keep-1
-        self.use_backgather_idx=use_backgather_idx
-        self.publish = publish
-        ## preparation
-        os.system('mkdir -p '+os.path.dirname(outputfile))
-        
-        #internals
         self.keep_counter = 0
-        if self.td.nElements() > 1:
-            raise ValueError("plotEventDuringTraining: only one event allowed")
 
         self.plot_process = None
+        self.publish = publish
+        
+        super(plotDuringTrainingBase, self).__init__(function_to_apply=self.make_plot, **kwargs)
+        if self.td.nElements() > 1:
+            raise ValueError("plotDuringTrainingBase: only one event allowed")
 
     def make_plot(self, counter, feat, predicted, truth):
         if self.plot_process is not None:
@@ -91,7 +85,19 @@ class plotClusteringDuringTraining(PredictCallback):
         self.plot_process = Process(target=self._make_plot, args=(counter, feat, predicted, truth))
         self.plot_process.start()
         # self._make_plot(counter,feat,predicted,truth)
+     
+    def _make_plot(self,counter, feat, predicted, truth):
+        pass #implement in inheriting classes
 
+class plotClusteringDuringTraining(plotDuringTrainingBase):
+    def __init__(self,
+                 use_backgather_idx=7,
+                 **kwargs):
+        
+        self.use_backgather_idx=use_backgather_idx
+        super(plotClusteringDuringTraining, self).__init__(**kwargs)
+     
+     
     def _make_plot(self, counter, feat, predicted, truth):
         try:
             td = TrainData_OC()#contains all dicts
@@ -139,55 +145,18 @@ class plotClusteringDuringTraining(PredictCallback):
             raise e
 
 
-class plotEventDuringTraining(PredictCallback):
+class plotEventDuringTraining(plotDuringTrainingBase):
     def __init__(self,
-                 outputfile,
-                 log_energy=False,
-                 cycle_colors=False,
-                 publish=None,
-                 n_keep=1,
                  beta_threshold=0.01,
                  **kwargs):
-        super(plotEventDuringTraining, self).__init__(function_to_apply=self.make_plot, **kwargs)
-        self.outputfile = outputfile
-        os.system('mkdir -p '+os.path.dirname(outputfile))
-        self.cycle_colors = cycle_colors
-        self.log_energy = log_energy
         self.beta_threshold=beta_threshold
-        assert n_keep>0
-        self.n_keep = n_keep-1
-        self.keep_counter = 0
-        if self.td.nElements() > 1:
-            raise ValueError("plotEventDuringTraining: only one event allowed")
+        super(plotEventDuringTraining, self).__init__(**kwargs)
+        
+        
 
-        self.gs = gridspec.GridSpec(2, 2)
-        self.plot_process = None
-        self.publish = publish
-
-    def make_plot(self, counter, feat, predicted, truth):
-        if self.plot_process is not None:
-            self.plot_process.join()
-
-        self.keep_counter += 1
-        if self.keep_counter > self.n_keep:
-            self.keep_counter = 0
-
-        self.plot_process = Process(target=self._make_plot, args=(counter, feat, predicted, truth))
-        self.plot_process.start()
-        # self._make_plot(counter,feat,predicted,truth)
 
     def _make_plot(self, counter, feat, predicted, truth):
 
-        # make sure it gets reloaded in the fork
-        # doesn't really seem to help though
-        # from importlib import reload
-        # global matplotlib
-        # matplotlib=reload(matplotlib)
-        # matplotlib.use('Agg')
-        # import matplotlib.pyplot as plt
-        # import matplotlib.gridspec as gridspec
-
-        # exception handling is weird for keras fit right now... explicitely print exceptions at the end
         try:
             '''
             [pred_beta, 
@@ -288,3 +257,53 @@ class plotEventDuringTraining(PredictCallback):
             print(e)
             raise e
 
+
+class plotGravNetCoordsDuringTraining(plotDuringTrainingBase):
+    def __init__(self,
+                 use_prediction_idx=16,
+                 **kwargs):
+        
+        super(plotGravNetCoordsDuringTraining, self).__init__(**kwargs)
+        self.use_prediction_idx=use_prediction_idx
+     
+     
+    def _make_plot(self, counter, feat, predicted, truth):
+        try:
+            td = TrainData_OC()#contains all dicts
+            truths = td.createTruthDict(truth[0])
+            feats = td.createFeatureDict(feat[0],addxycomb=False)
+                                        
+            data = {}
+            data.update(truths)
+            data.update(feats)
+            data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
+            
+            coords = predicted[self.use_prediction_idx]
+            if not coords.shape[-1] == 3:
+                print("plotGravNetCoordsDuringTraining only supports 3D coordinates") #2D and >3D TBI
+                return #not supported
+                
+            data['coord A'] = coords[:,0:1]
+            data['coord B'] = coords[:,1:2]
+            data['coord C'] = coords[:,2:3]
+            
+            df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
+            shuffle_truth_colors(df)
+            
+            fig = px.scatter_3d(df, x="coord A", y="coord B", z="coord C", 
+                                color="truthHitAssignementIdx", size="recHitLogEnergy",
+                                #hover_data=[],
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            ccfile = self.outputfile + str(self.keep_counter) + "_coords_"+ str(self.use_prediction_idx) +".html"
+            fig.write_html(ccfile)
+            
+            
+            if self.publish is not None:
+                publish(ccfile, self.publish)
+                
+            
+        except Exception as e:
+            print(e)
+            raise e
