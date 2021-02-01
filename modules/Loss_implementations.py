@@ -1,3 +1,6 @@
+
+print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL")
+
 '''
 This file should contain the actual loss implementations.
 Losses.py should only contain the dictionary of losses, or very simple one-line calls to

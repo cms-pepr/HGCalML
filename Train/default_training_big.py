@@ -12,6 +12,7 @@ from tensorflow.keras import Model
 
 # from tensorflow.keras.models import load_model
 from DeepJetCore.training.training_base import custom_objects_list
+from model_blocks import create_default_outputs
 
 # from tensorflow.keras.optimizer_v2 import Adam
 
@@ -84,18 +85,8 @@ def gravnet_model(Inputs, feature_dropout=-1.):
     x = Dense(64, activation='elu',name="dense_last_b")(x)
     x = Dense(64, activation='elu',name="dense_last_c")(x)
 
-    beta = Dense(1, activation='sigmoid', name="dense_beta")(x)
-    eta = Dense(1, activation=None, name="dense_eta")(x)
-    phi = Dense(1, activation=None, name="dense_phi")(x)
-    ccoords = Dense(2, activation=None, name="dense_ccoords")(x)
-    energy = Dense(1, activation=None,name="dense_en_final")(x)
-
-
-
-    x = Concatenate(name="concat_last")([input_features, beta, energy, eta, phi, ccoords])
-
-    # x = Concatenate(name="concatlast", axis=-1)([x,coords])#+[n_showers]+[etas_phis])
-    predictions = x
+    predictions = create_default_outputs(input_features, x, x_row_splits, energy_block=False)
+    
 
     # outputs = tf.tuple([predictions, x_row_splits])
 

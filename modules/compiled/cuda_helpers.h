@@ -197,6 +197,8 @@ private:
         block=b;
         if(n%b)
             grid+=1;
+        if(!grid)
+            grid=1;
     }
     _grid_and_block():gx_(0),gy_(0),gz_(0),bx_(0),by_(0),bz_(0){}
     T gx_,gy_,gz_; //replace by T

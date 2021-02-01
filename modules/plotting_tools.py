@@ -1,7 +1,7 @@
 
 '''
 This file! is supposed to contain only plotting functionality that
-does not rely on more python packages than matplotlib, numpy and pickle.
+does not rely on more python packages than matplotlib, plotly, numpy and pickle.
 The idea is that the plotters can also be used locally in an easy way
 
 '''
@@ -17,6 +17,31 @@ from multiprocessing import Pool
 import random
 import glob
 import copy
+
+
+def calc_r(x,y):
+    return np.sqrt(x ** 2 + y ** 2)
+
+def calc_eta(x, y, z):
+    rsq = np.sqrt(x ** 2 + y ** 2)
+    return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.)
+
+def calc_phi(x, y):
+    return np.arctan2(x, y)
+
+
+
+    
+
+
+
+
+
+
+
+
+
+###old implementations to be checked
 
 def create_max_color_diff(col_list):
     ncol=len(col_list)
@@ -124,7 +149,7 @@ class plotter_3d(base_plotter):
         self.colorscheme=colorscheme
     
     
-    def plot3d(self, e_scaling='sqrt', cut=None, ax=None):
+    def plot3d(self, e_scaling='sqrt', cut=None, ax=None, alpha=0.5):
         
         if not self._check_dimension(3):
             print(self.data)
@@ -167,7 +192,7 @@ class plotter_3d(base_plotter):
             c = cmap(c)
         #c = size_scaling #/=np.min(c)
         #ax.view_init(30, 130)
-        ax.scatter(xs, ys, zs, c=c, s=self.marker_scale*size_scaling, alpha=0.5, cmap=cmap)
+        ax.scatter(xs, ys, zs, c=c, s=self.marker_scale*size_scaling, alpha=alpha)
         
         if self.interactive:
             plt.show()
@@ -186,8 +211,6 @@ class plotter_fraction_colors(plotter_3d):
         self.noise_color=(0.,0.,0.,.1)
         self.not_gray_interval=0.1
         
-    def set_randomise_colors(self, randomise):
-        self.randomise_colors = True
         
     def set_data(self, x, y, z, e, fractions):
         marker_colors = self.make_simcluster_marker_colours(fractions)

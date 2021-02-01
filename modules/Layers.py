@@ -1,17 +1,18 @@
 
-from caloGraphNN_keras import weighted_sum_layer,GlobalExchange,GravNet,GarNet
 
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
-global_layers_list['GlobalExchange']=GlobalExchange
-global_layers_list['GravNet']=GravNet
-global_layers_list['GarNet']=GarNet
-global_layers_list['weighted_sum_layer']=weighted_sum_layer
-
 from LayersRagged import *
+from GravNetLayersRagged import ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 
-global_layers_list['CondensateAndSum']=CondensateAndSum
+global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
+global_layers_list['Condensate']=Condensate
+global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
+
+
+global_layers_list['GridMaxPoolReduction']=GridMaxPoolReduction
 global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 global_layers_list['RaggedConstructTensor']=RaggedConstructTensor
 global_layers_list['GraphShapeFilters']=GraphShapeFilters
@@ -19,7 +20,6 @@ global_layers_list['GraphFunctionFilters']=GraphFunctionFilters
 global_layers_list['VertexScatterer']=VertexScatterer
 global_layers_list['RaggedNeighborBuilder']=RaggedNeighborBuilder
 global_layers_list['RaggedVertexEater']=RaggedVertexEater
-global_layers_list['RaggedNeighborIndices']=RaggedNeighborIndices
 
 
 global_layers_list['RaggedSelectThreshold']=RaggedSelectThreshold
@@ -27,16 +27,76 @@ global_layers_list['RaggedSelectThreshold']=RaggedSelectThreshold
 
 global_layers_list['FusedRaggedGravNet']=FusedRaggedGravNet
 global_layers_list['FusedRaggedGravNet_simple']=FusedRaggedGravNet_simple
+global_layers_list['FusedMaskedRaggedGravNet']=FusedMaskedRaggedGravNet
+global_layers_list['FusedRaggedGravNetLinParse']=FusedRaggedGravNetLinParse
+global_layers_list['FusedRaggedGravNetLinParsePool']=FusedRaggedGravNetLinParsePool
+global_layers_list['FusedRaggedGravNetGarNetLike']=FusedRaggedGravNetGarNetLike
+global_layers_list['FusedRaggedGravNetAggAtt']=FusedRaggedGravNetAggAtt
+global_layers_list['FusedRaggedGravNetDistMod']=FusedRaggedGravNetDistMod
+
+global_layers_list['FusedRaggedGravNetRetDistLinParse']=FusedRaggedGravNetRetDistLinParse
+global_layers_list['FusedRaggedGravNetRetDistDistMod']=FusedRaggedGravNetRetDistDistMod
+
+
+
+global_layers_list['RaggedGravNet']=RaggedGravNet
+global_layers_list['MessagePassing']=MessagePassing
+global_layers_list['DynamicDistanceMessagePassing']=DynamicDistanceMessagePassing
+global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePassing
+
+
+global_layers_list['ProcessFeatures']=ProcessFeatures
+global_layers_list['LocalClustering']=LocalClustering
+global_layers_list['CreateGlobalIndices']=CreateGlobalIndices
+global_layers_list['SelectFromIndices']=SelectFromIndices
+global_layers_list['MultiBackGather']=MultiBackGather
+global_layers_list['KNN']=KNN
+global_layers_list['CollectNeighbourAverageAndMax']=CollectNeighbourAverageAndMax
+global_layers_list['SoftPixelCNN']=SoftPixelCNN
+
+global_layers_list['SortAndSelectNeighbours']=SortAndSelectNeighbours
+global_layers_list['GraphClusterReshape']=GraphClusterReshape
+
+
+global_layers_list['LocalClusterReshapeFromNeighbours']=LocalClusterReshapeFromNeighbours
 
 
 
 
+global_layers_list['LLObjectCondensation']=LLObjectCondensation
+global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
+global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
+global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 
-from keras.layers import Layer
-import keras.backend as K
+global_layers_list['LossLayerBase']=LossLayerBase
+global_layers_list['LLFullTrackMLObjectCondensation']=LLFullTrackMLObjectCondensation
+
+
+
+from tensorflow.keras.layers import Layer
+import tensorflow.keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
 
+
+
+class InputNormalization(Layer):
+    def __init__(self, 
+                 multipliers, 
+                 biases,
+                 **kwargs):
+        super(ExpMinusOne, self).__init__(**kwargs)
+        
+        self.multiplier = tf.constant(multipliers, dtype='float32')
+        self.multiplier = tf.expand_dims(self.multiplier, axis=0)
+        self.bias = tf.constant(biases, dtype='float32')
+        self.bias = tf.expand_dims(self.bias, axis=0)
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    
+    def call(self, inputs):
+        return (inputs - self.bias) * self.multiplier
 
 
 class ExpMinusOne(Layer):

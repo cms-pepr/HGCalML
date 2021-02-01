@@ -1,0 +1,11 @@
+
+For the demonstrator run in this directory:
+
+./cmssw_oc_server.sh > serverlog.txt &
+#wait until the server has started
+sleep 30
+./cmssw_oc_forward_client.sh <pipe name>
+
+The forward client exposes 2 named pipes (as fifos): <pipe name> and <pipe name>_pred.
+The input for the model should be written to <pipe name> and the output can be read from <pipe name>_pred.
+

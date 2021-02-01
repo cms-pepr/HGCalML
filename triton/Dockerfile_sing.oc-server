@@ -1,0 +1,22 @@
+FROM nvcr.io/nvidia/tensorflow:20.08-tf2-py3 AS builder
+
+COPY softlinks.sh /workspace/
+COPY Makefile_modules /workspace/
+
+RUN cd /workspace
+RUN sh softlinks.sh
+RUN git clone https://github.com/cms-pepr/HGCalML.git
+RUN pushd /workspace/HGCalML/modules/compiled && make -f /workspace/Makefile_modules && cp libpeprops.so /workspace/ && popd
+
+FROM nvcr.io/nvidia/tritonserver:20.08-py3
+
+RUN mkdir -p /oc_libs
+COPY --from=builder /workspace/libpeprops.so /oc_libs/libpeprops.so
+
+ENV LD_LIBRARY_PATH="/opt/tritonserver/backends/tensorflow2:/opt/tritonserver/lib/pytorch/:/usr/local/cuda/compat/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+ENV LD_PRELOAD="/oc_libs/libpeprops.so" 
+
+EXPOSE 8000
+EXPOSE 8001
+EXPOSE 8002
+

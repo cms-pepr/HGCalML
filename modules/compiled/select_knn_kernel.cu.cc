@@ -80,6 +80,7 @@ __global__
 void select_knn_kernel(
         const float *d_coord,
         const int* d_row_splits,
+        const int* d_mask,
         int *d_indices,
         float *d_dist,
 
@@ -89,7 +90,9 @@ void select_knn_kernel(
 
         const int j_rs,
         const bool tf_compat,
-        const float max_radius) {
+        const float max_radius,
+        selknn::mask_mode_en mask_mode,
+        selknn::mask_logic_en mask_logic) {
 
     //really no buffering at all here
 
@@ -100,6 +103,18 @@ void select_knn_kernel(
     if(i_v >= end_vert || i_v>=n_vert)
         return;//this will be a problem with actual RS
 
+    if(mask_mode != selknn::mm_none){
+        if(mask_logic == selknn::ml_and){
+            if(!d_mask[i_v])
+                return;
+        }
+        else{
+            if(mask_mode == selknn::mm_scat && d_mask[i_v])
+                return;
+            else if(mask_mode == selknn::mm_acc && !d_mask[i_v])
+                return;
+        }
+    }
 
     //protection against n_vert<n_neigh
     size_t nvert_in_row = end_vert - start_vert;
@@ -117,6 +132,19 @@ void select_knn_kernel(
     for(size_t j_v=start_vert;j_v<end_vert;j_v++){
         if(i_v == j_v)
             continue;
+
+        if(mask_mode != selknn::mm_none){
+            if(mask_logic == selknn::ml_and){
+                if(!d_mask[j_v])
+                    continue;
+            }
+            else{
+                if(mask_mode == selknn::mm_scat && !d_mask[j_v])
+                    continue;
+                else if(mask_mode == selknn::mm_acc && d_mask[j_v])
+                    continue;
+            }
+        }
         //fill up
         float distsq = calculateDistance(i_v,j_v,d_coord,n_coords);
         if(nfilled<max_neighbours && (max_radius<=0 || max_radius>=distsq)){
@@ -151,6 +179,7 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
 
             const float *d_coord,
             const int* d_row_splits,
+            const int* d_mask,
             int *d_indices,
             float *d_dist,
 
@@ -160,7 +189,10 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
 
             const int n_rs,
             const bool tf_compat,
-            const float max_radius) {
+            const float max_radius,
+            selknn::mask_mode_en mask_mode,
+            selknn::mask_logic_en mask_logic
+            ) {
 
 
         //for too low n, d_indices might need to be initialised with some number the
@@ -168,10 +200,9 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
 
         //just loop over n_rs, in a realistic setting these shouldn't be more than a handful entries
 
-        dim3 pre_numblocks(n_vert/64+1,n_neigh/8+1);
-        dim3 pre_threadsperblock(64,8);
+        grid_and_block gb(n_vert,256,n_neigh,4);
 
-        gpu::set_defaults<<<pre_numblocks,pre_threadsperblock,0,  d.stream() >>>(
+        gpu::set_defaults<<<gb.grid(),gb.block()>>>(
                 d_indices,
                 d_dist,
                 tf_compat,
@@ -183,12 +214,14 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){ //n_rs-1 important!
 
 
-            dim3 numblocks(n_vert/512+1);
-            dim3 threadsperblock(512);
+            dim3 numblocks(n_vert/1024+1);
+            dim3 threadsperblock(1024);
 
             gpu::select_knn_kernel<<<numblocks, threadsperblock, 0, d.stream() >>>(
                     d_coord,
                     d_row_splits,
+                    d_mask,
+
                     d_indices,
                     d_dist,
 
@@ -198,7 +231,9 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
 
                     j_rs,
                     tf_compat,
-                    max_radius);
+                    max_radius,
+                    mask_mode,
+                    mask_logic);
 
             cudaDeviceSynchronize();
 

@@ -139,7 +139,7 @@ struct SelectThresholdOpFunctor<GPUDevice, dummy> {
 
             int * mutex = dlock.mutex();
             //gpu code
-            select_kernel<<<256,1>>>(
+            select_kernel<<<768,1>>>(
                     mutex,
                     d_th_values,
                     d_row_splits,

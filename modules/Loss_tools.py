@@ -1,7 +1,17 @@
 
+print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL")
+
 import tensorflow as tf
-import keras
-import keras.backend as K
+import tensorflow.keras.backend as K
+
+
+
+def huber(x, d):
+    losssq  = x**2   
+    absx = tf.abs(x)                
+    losslin = d**2 + 2. * d * (absx - d)
+    return tf.where(absx < d, losssq, losslin)
+
 
 
 def create_loss_dict(truth, pred):
