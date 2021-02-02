@@ -5,14 +5,20 @@ import awkward0 as ak
 import pickle
 import gzip
 import numpy as np
-
+from IPython import embed
     
 class TrainData_NanoML(TrainData):
     def __init__(self):
         TrainData.__init__(self)
 
-    def hitObservable(self, tree, hitTypes, label, flatten=True, offsets=False):
-        obs = map(lambda x: tree[x+"_"+label].array(), hitTypes)
+    def buildObs(self, tree, hitType, label, ext=None):
+        obs = tree["_".join([hitType, label])].array()
+        if ext:
+            obs = tree[ext].array()[obs]
+        return obs
+
+    def hitObservable(self, tree, hitTypes, label, ext=None, flatten=True, offsets=False):
+        obs = map(lambda x: self.buildObs(tree, x, label, ext), hitTypes)
         # For awkward1
         # jagged = np.concatenate([x for x in obs], axis=1)
         # off = np.cumsum(ak.to_numpy(ak.num(jagged)))
@@ -28,6 +34,29 @@ class TrainData_NanoML(TrainData):
         
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
         return self.base_convertFromSourceFile(filename, weighterobjects, istraining, treename=treename)
+
+    # Sum up deposited energy from all the associated unmerged simclusters
+    # Unfortunately I'm not skilled enough to do this without loops
+    def depositedEnergyMergedSC(self, unmergedDepEnergy, mergedSimClusterIdx):
+        # Keeping track of the indices in case they're needed somewhere else later
+        groups = []
+        energies = []
+        nev = len(unmergedDepEnergy)
+        for i in range(nev):
+            nsc = len(unmergedDepEnergy[i])
+            entries = []
+            evt_energies = []
+            for j in range(nsc):
+                matches = (mergedSimClusterIdx[i] == j).flatten().nonzero()[0]
+                entries.append(matches)
+                ienergy = unmergedDepEnergy[i][np.array(matches, dtype='int32')]
+                evt_energies.append(ienergy)
+            groups.append(entries)
+            energies.append(evt_energies)
+
+        # Not used currently, but could be useful, so leaving here
+        # scIndices = ak.JaggedArray.fromiter(groups)
+        return ak.JaggedArray.fromiter(energies).sum()
       
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events",
                                    removeTracks=True):
@@ -37,7 +66,7 @@ class TrainData_NanoML(TrainData):
 
         hits = ["RecHitHGC"+x for x in ["EE", "HEF", "HEB"]]
         recHitEnergy, offsets = self.hitObservable(tree, hits, "energy", offsets=True)
-        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", flatten=False)
+        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", ext="SimCluster_MergedSimClusterIdx", flatten=False)
         recHitX = self.hitObservable(tree, hits, "x")
         recHitY = self.hitObservable(tree, hits, "y")
         recHitZ = self.hitObservable(tree, hits, "z")
@@ -47,16 +76,23 @@ class TrainData_NanoML(TrainData):
         recHitTheta = np.arccos(recHitZ/recHitR)
         recHitEta = -np.log(np.tan(recHitTheta/2))
 
-        simClusterEnergy = tree["SimCluster_boundaryEnergy"].array()
-        simClusterX = tree["SimCluster_impactPoint_x"].array()
-        simClusterY = tree["SimCluster_impactPoint_y"].array()
-        simClusterZ = tree["SimCluster_impactPoint_z"].array()
-        simClusterTime = tree["SimCluster_impactPoint_t"].array()
-        simClusterPdgId = tree["SimCluster_pdgId"].array()
+        # TODO: Filter out simclusters that are off the boundary or don't have many hits
+
+        simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
+        unmergedSimClusterRecEnergy = tree["SimCluster_recEnergy"].array()
+        mergedSimClusterIdx = tree["SimCluster_MergedSimClusterIdx"].array()
+        simClusterDepEnergy = self.depositedEnergyMergedSC(unmergedSimClusterRecEnergy, mergedSimClusterIdx)
+
+        simClusterX = tree["MergedSimCluster_impactPoint_x"].array()
+        simClusterY = tree["MergedSimCluster_impactPoint_y"].array()
+        simClusterZ = tree["MergedSimCluster_impactPoint_z"].array()
+        simClusterTime = tree["MergedSimCluster_impactPoint_t"].array()
+        simClusterPdgId = tree["MergedSimCluster_pdgId"].array()
 
         recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0.)
         recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, -1)
-        recHetTruthEnergyMu = np.where(np.abs(recHitTruthPID) == 13, recHitEnergy, recHitTruthEnergy)
+        recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, -1)
+        recHitTruthEnergyNoMu = np.where(np.abs(recHitTruthPID) == 13, recHitTruthDepEnergy, recHitTruthEnergy)
         recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 1.)
         recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0.)
         recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0.)
@@ -85,7 +121,7 @@ class TrainData_NanoML(TrainData):
         recHitSimClusIdx = np.array(recHitSimClusIdx.flatten(), dtype='float32')
         truth = np.concatenate([
             recHitSimClusIdx, # 0
-            recHitTruthEnergy,
+            recHitTruthEnergyNoMu,
             recHitTruthX,
             recHitTruthY,
             recHitTruthZ,  #4
@@ -97,7 +133,7 @@ class TrainData_NanoML(TrainData):
             recHitTruthTime,  #10
             np.zeros(len(recHitEnergy), dtype='float32'), #truthHitAssignedDirEta,
             np.zeros(len(recHitEnergy), dtype='float32'), #truthHitAssignedDirR,
-            np.zeros(len(recHitEnergy), dtype='float32'), #truthHitAssignedDepEnergies, #16
+            np.zeros(len(recHitEnergy), dtype='float32'), # recHitTruthDepEnergy, #16
             
             np.zeros(len(recHitEnergy), dtype='float32'), #ticlHitAssignementIdx  , #17
             np.zeros(len(recHitEnergy), dtype='float32'), #ticlHitAssignedEnergies, #18
@@ -148,7 +184,7 @@ class TrainData_NanoML(TrainData):
 
 def main():
     data = TrainData_NanoML()
-    info = data.convertFromSourceFile("/eos/cms/store/cmst3/group/hgcal/CMG_studies/kelong/GeantTruthStudy/SimClusterNtuples/partGun_PDGid22_x96_Pt1.0To100.0_nano.root",
+    info = data.convertFromSourceFile("/eos/cms/store/cmst3/group/hgcal/CMG_studies/kelong/GeantTruthStudy/SimClusterNtuples/testNanoML.root",
                     [], False)
     print(info)    
 
