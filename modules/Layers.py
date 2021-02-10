@@ -4,7 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import NeighbourPCA,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -46,6 +46,7 @@ global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePass
 
 
 global_layers_list['ProcessFeatures']=ProcessFeatures
+global_layers_list['NeighbourPCA']=NeighbourPCA
 global_layers_list['LocalClustering']=LocalClustering
 global_layers_list['CreateGlobalIndices']=CreateGlobalIndices
 global_layers_list['SelectFromIndices']=SelectFromIndices

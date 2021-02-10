@@ -77,6 +77,8 @@ class NeighbourPCA   (tf.keras.layers.Layer):
         
         The output shape is the F^2
         
+        Too resource intense for full application
+        
         """
         super(NeighbourPCA, self).__init__(**kwargs)
     
@@ -90,10 +92,10 @@ class NeighbourPCA   (tf.keras.layers.Layer):
         s = tf.expand_dims(s, axis=2)  # V x F x 1 
         s = tf.sqrt(s + 1e-6)
         scaled = s*v  # V x F x F
-        return tf.reshape(scaled, [s.shape[0],-1])
+        return tf.reshape(scaled, [-1,feat.shape[1]**2])
         
     def call(self, inputs):
-        neighs, feat = inputs
+        feat, neighs = inputs
         return NeighbourPCA.raw_call(neighs,feat)
 
 ############# Local clustering section
