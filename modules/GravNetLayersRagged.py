@@ -62,6 +62,39 @@ class ProcessFeatures(tf.keras.layers.Layer):
         for k in fdict:
             allf.append(fdict[k])
         return tf.concat(allf,axis=-1)
+    
+    
+    
+############# PCA like section
+
+class NeighbourPCA   (tf.keras.layers.Layer):
+    def __init__(self,**kwargs):
+        """
+        This layer performas a simple PCA* of the inputs fiven by:
+        
+        - the features (V x F)
+        - the neighbour indices to consider
+        
+        The output shape is the F^2
+        
+        """
+        super(NeighbourPCA, self).__init__(**kwargs)
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0][:-1]+input_shapes[0][-1]**2
+    
+    @staticmethod
+    def raw_call(nidx, feat):
+        nfeat = tf.gather_nd(feat, tf.expand_dims(nidx,axis=2))
+        s,_,v = tf.linalg.svd(nfeat)  # V x F, V x F x F
+        s = tf.expand_dims(s, axis=2)  # V x F x 1 
+        s = tf.sqrt(s + 1e-6)
+        scaled = s*v  # V x F x F
+        return tf.reshape(scaled, [s.shape[0],-1])
+        
+    def call(self, inputs):
+        neighs, feat = inputs
+        return NeighbourPCA.raw_call(neighs,feat)
 
 ############# Local clustering section
 
@@ -98,7 +131,7 @@ class LocalClustering(tf.keras.layers.Layer):
         
         """
         if 'dynamic' in kwargs:
-            super(LocalClustering, self).__init__(d**kwargs)
+            super(LocalClustering, self).__init__(**kwargs)
         else:
             super(LocalClustering, self).__init__(dynamic=False,**kwargs)
         self.print_reduction=print_reduction
@@ -622,25 +655,25 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
 
 
 class SoftPixelCNN(tf.keras.layers.Layer):
-    def __init__(self, length_scale=None, mode: str='onlyaxes', subdivisions: int=3 ,**kwargs):
+    def __init__(self, length_scale_momentum=0.01, mode: str='onlyaxes', subdivisions: int=3 ,**kwargs):
         """
         Inputs: 
         - coordinates
         - features
+        - distances squared
         - neighour_indices
         
         This layer is strongly inspired by 1611.08097 (even though this is only presented for 2D manifolds).
         It implements "soft pixels" for each direction given by the input coordinates plus one central "pixel".
         Each "pixel" is represented by a Gaussian weighting of the inputs.
         For D coordinate dimensions, 2*D + 1 "pixels" are formed (e.g. one for position x direction one for neg x etc).
-        
+        The pixels beyond the length scale are removed.
         
         Call will return 
-         - soft pixel CNN outputs:  (V x (dim(coords)[1]*2 +1) * features)
+         - soft pixel CNN outputs:  (V x npixels * features)
         
-        :param length_scale: scale of the distances that are expected. The "pixels" Gaussian tails 
-                             will die off at this scale. 
-                             If 'None' will use individual scale given by maximum neighbour distance for each vertex
+        :param length_scale: scale of the distances that are expected. This scale is dynamically adjusted during training,
+                             so this is just a first guess (1 is usually good)
                              
         :param mode: mode to build the soft pixels
                      - full: a full grid is spanned over all dimensions
@@ -652,19 +685,22 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         
         """
         super(SoftPixelCNN, self).__init__(**kwargs) 
-        assert length_scale is None or length_scale >= 0
+        assert length_scale_momentum > 0
         assert subdivisions > 1
         assert mode=='onlyaxes' or mode=='full' or mode=='oneless'
-        self.length_scale = None
-        if length_scale is not None:
-            self.length_scale = length_scale/1.2 #so that the gradients start to disappear at length scale
+        
+        self.length_scale_momentum=length_scale_momentum
+        with tf.name_scope(self.name + "/1/"):
+            self.length_scale = tf.Variable(initial_value=1., trainable=False,dtype='float32')
+            
         self.mode=mode
         self.subdivisions=subdivisions
         self.ndim = None 
         self.offsets = None
         
+        
     def get_config(self):
-        config = {'length_scale': self.length_scale,
+        config = {'length_scale_momentum' : self.length_scale_momentum,
                   'mode': self.mode,
                   'subdivisions': self.subdivisions
                   }
@@ -672,7 +708,8 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
     @staticmethod
-    def create_offsets(D, subdivision, length_scale):
+    def create_offsets(D, subdivision):
+        length_scale=1
         temp = [np.linspace(-length_scale , length_scale, subdivision) for _ in range(D)]
         res_to_unpack = np.meshgrid(*temp, indexing='xy')
         
@@ -680,6 +717,7 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         a = np.concatenate(a,axis=-1)
         a = np.reshape(a,[-1,D])
         a = np.array(a,dtype='float32')
+        a = a[ np.sqrt(np.sum(a**2, axis=-1)) <= length_scale  ]
         
         b = a[np.prod(a,axis=-1)==0]
         #all but one 0
@@ -691,10 +729,7 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         self.ndim = input_shapes[0][1]
         self.nfeat = input_shapes[1][1]
         self.offsets=[]
-        length_scale = 1.
-        if self.length_scale is not None:
-            length_scale=self.length_scale
-        a,b,c = SoftPixelCNN.create_offsets(self.ndim,self.subdivisions,length_scale)
+        a,b,c = SoftPixelCNN.create_offsets(self.ndim,self.subdivisions)
         if self.mode == 'full':
             self.offsets = a
         elif self.mode == 'oneless':
@@ -710,24 +745,25 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         nfeat = input_shapes[1][1]
         return (noutvert, nfeat*self.offsets)
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
         
-        coordinates, features, distsq, neighbour_indices = None, None, None, None
-        if self.length_scale is None:
-            coordinates, features, distsq, neighbour_indices = inputs
-            #distsq = tf.stop_gradient(distsq)
-        else:
-            coordinates, features, neighbour_indices = inputs
+        coordinates, features, distsq, neighbour_indices = inputs
         #create coordinate offsets
         out=[]
-        scaler = self.subdivisions**2
-        if self.length_scale is not None:
-            scaler /= self.length_scale**2  + 1e-5
-        else:
-            scaler /= tf.reduce_max(distsq,axis=1, keepdims=True) + 1e-5
+        
+        #adjust to 2 sigma continuously
+        distsq = tf.stop_gradient(distsq)
+        if self.trainable:
+            tf.keras.backend.update(self.length_scale, 
+                                    tf.keras.backend.in_train_phase(
+                self.length_scale*(1.-self.length_scale_momentum) + self.length_scale_momentum*2.*tf.reduce_mean(tf.sqrt(distsq+1e-6)),
+                                self.length_scale,
+                                training=training)
+                                    )
+        
         for o in self.offsets:
             distancesq = LocalDistance(coordinates+o, neighbour_indices)
-            f,_ = AccumulateKnn(scaler*distancesq,  features, neighbour_indices, n_moments=0) # V x F
+            f,_ = AccumulateKnn(self.length_scale*distancesq,  features, neighbour_indices, n_moments=0) # V x F
             f = f[:,:self.nfeat]
             f = tf.reshape(f, [-1, self.nfeat])
             out.append(f) #only mean
