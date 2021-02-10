@@ -2,7 +2,7 @@
 
 
 from DeepJetCore.TrainData import TrainData, fileTimeOut
-from DeepJetCore.compiled.c_simpleArray import simpleArray
+from DeepJetCore import SimpleArray
 import numpy as np
 import uproot3 as uproot
 from numba import jit
@@ -10,7 +10,6 @@ import ROOT
 import os
 import pickle
 import gzip
-import tensorflow as tf
 
     
 class TrainData_OC(TrainData):
@@ -165,7 +164,7 @@ class TrainData_OC(TrainData):
         
         
 
-        farr = simpleArray()
+        farr = SimpleArray()
         farr.createFromNumpy(features, rs)
         del features
         
@@ -195,23 +194,23 @@ class TrainData_OC(TrainData):
         
         
         
-        t_idxarr = simpleArray()
+        t_idxarr = SimpleArray()
         t_idxarr.createFromNumpy(truthHitAssignementIdx, rs)
         
-        t_energyarr = simpleArray()
+        t_energyarr = SimpleArray()
         t_energyarr.createFromNumpy(truthHitAssignedEnergies,rs)
         
-        t_posarr = simpleArray()
+        t_posarr = SimpleArray()
         t_posarr.createFromNumpy(np.concatenate([truthHitAssignedX, truthHitAssignedY],axis=-1),rs)
         
-        t_time = simpleArray()
+        t_time = SimpleArray()
         t_time.createFromNumpy(truthHitAssignedT,rs)
         
-        t_pid = simpleArray()
+        t_pid = SimpleArray()
         t_pid.createFromNumpy(truthHitAssignedPIDs,rs)
         
         #remaining truth is mostly for consistency in the plotting tools
-        t_rest = simpleArray()
+        t_rest = SimpleArray()
         t_rest.createFromNumpy(truth,rs)
         
         return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid],[t_rest], []
@@ -340,204 +339,4 @@ class TrainData_OC_tracks(TrainData_OC):
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="WindowNTupler/tree"):
         return self.base_convertFromSourceFile(filename, weighterobjects, istraining, treename=treename,
                                                removeTracks=False)
-
-
-
-class TrainData_OC_toyset(TrainData_OC):
-    def event_selector(self, size, mean, std, min, max):
-        n = int(np.random.normal(mean, std))
-        n = n if n > min else min
-        n = n if n < max else max
-        m = size - n
-        a = (np.array([1] * n + [0] * m)).astype(np.float)
-        np.random.shuffle(a)
-        return a
-
-
-    def combineToySet(self, filename, outputfilename, treename="B4"):
-        fileTimeOut(filename, 10)  # 10 seconds for eos to recover
-
-        tree = uproot.open(filename)[treename]
-        # print(tree.allkeys())
-
-        nevents = tree.numentries
-        # print("n entries: ", nevents)
-
-
-        feature_arrays = []
-        truth_arrays = []
-
-        recHitEta = (tree["rechit_eta"].array()[0])[..., np.newaxis]
-        recHitPhi = (tree["rechit_phi"].array()[0])[..., np.newaxis]
-        recHitX = (tree["rechit_x"].array()[0])[..., np.newaxis] / 10
-        recHitY = (tree["rechit_y"].array()[0])[..., np.newaxis] / 10
-        recHitZ = (tree["rechit_z"].array()[0])[..., np.newaxis] / 10
-        recHitR = np.sqrt(recHitX ** 2 + recHitY ** 2)
-        recHitTheta = np.arctan2(recHitR, recHitZ)
-        equal_zeros = recHitX * 0
-        recHitTime = equal_zeros
-
-        recHitEnergy = tree["rechit_energy"].array()
-        c_rechitEnergy = np.array(np.concatenate([np.array(recHitEnergy[i].tolist())[np.newaxis, ...] for i in range(nevents)], axis=0))
-
-        truthHitAssignedEnergies = tree["true_energy"].array()
-        c_truthHitAssignedEnergies = np.array([truthHitAssignedEnergies[i] for i in range(nevents)])
-        truthHitAssignedX = tree["true_x"].array() / 10
-        c_truthHitAssignedX = np.array([truthHitAssignedX[i] for i in range(nevents)])
-        truthHitAssignedY = tree["true_y"].array() / 10
-        c_truthHitAssignedY = np.array([truthHitAssignedY[i] for i in range(nevents)])
-
-        isElectron = tree['isElectron'].array()
-        c_isElectron = np.array([isElectron[i] for i in range(nevents)])
-        isMuon = tree['isMuon'].array()
-        c_isMuon = np.array([isMuon[i] for i in range(nevents)])
-        isPionCharged = tree['isPionCharged'].array()
-        c_isPionCharged = np.array([isPionCharged[i] for i in range(nevents)])
-        isK0Long = tree['isK0Long'].array()
-        c_isK0Long = np.array([isK0Long[i] for i in range(nevents)])
-        isK0Short = tree['isK0Short'].array()
-        c_isK0Short = np.array([isK0Short[i] for i in range(nevents)])
-        isGamma = tree['isGamma'].array()
-        c_isGamma = np.array([isGamma[i] for i in range(nevents)])
-
-        c_truthHitAssignedClass = c_isElectron * 1 + c_isMuon * 2 + \
-                                c_isPionCharged * 3 + c_isK0Long * 4 + \
-                                  c_isK0Short * 5 + c_isGamma * 6
-
-
-        c_truthHitAssignedDepEnergies = np.sum(c_rechitEnergy, axis=1)
-        c_truthHitAssignementIdx = np.arange(0, nevents)
-
-        print(c_rechitEnergy.shape, c_truthHitAssignedEnergies.shape, c_truthHitAssignedX.shape, c_truthHitAssignedY.shape, c_truthHitAssignedDepEnergies.shape, c_truthHitAssignementIdx.shape)
-
-
-        rs = [0]
-
-        for i in range(100):
-            print("\tGenerating combination ", i)
-            selection_mask = self.event_selector(nevents, 50, 20, 20, min(110, nevents))
-
-            r_recHitEnergy = np.sum(c_rechitEnergy * selection_mask[..., np.newaxis], axis=0)[..., np.newaxis]
-            r_rechitAssignment = np.argmax(c_rechitEnergy * selection_mask[..., np.newaxis], axis=0)
-
-            with tf.device('/cpu:0'):
-               r_truthHitAssignedEnergies = tf.gather_nd(c_truthHitAssignedEnergies, r_rechitAssignment[..., np.newaxis]).numpy()[..., np.newaxis]
-               r_truthHitAssignedX = tf.gather_nd(c_truthHitAssignedX, r_rechitAssignment[..., np.newaxis]).numpy()[..., np.newaxis]
-               r_truthHitAssignedY = tf.gather_nd(c_truthHitAssignedY, r_rechitAssignment[..., np.newaxis]).numpy()[..., np.newaxis]
-               r_truthHitAssignedDepEnergies = tf.gather_nd(c_truthHitAssignedDepEnergies, r_rechitAssignment[..., np.newaxis]).numpy()[..., np.newaxis]
-               r_truthHitAssignementIdx = tf.gather_nd(c_truthHitAssignementIdx, r_rechitAssignment[..., np.newaxis]).numpy()[..., np.newaxis]
-               r_truthHitAssignedClass = tf.gather_nd(c_truthHitAssignedClass, r_rechitAssignment[..., np.newaxis]).numpy()[..., np.newaxis]
-
-            r_truthHitAssignedZ = r_truthHitAssignedX * 0 + 320
-            r_truthHitAssignedR = np.sqrt(r_truthHitAssignedX**2 + r_truthHitAssignedY**2)
-            r_truthHitAssignedEta = np.arctan2(r_truthHitAssignedR, r_truthHitAssignedZ)
-            r_truthHitAssignedPhi = np.arctan2(r_truthHitAssignedY, r_truthHitAssignedX)
-
-            ragged_indices = np.argwhere(r_recHitEnergy[:, 0] != 0)[:, 0]
-
-            # feature_array = np.concatenate((
-            #     r_recHitEnergy,
-            #     recHitEta,
-            #     recHitPhi,
-            #     recHitTheta,
-            #     recHitR,
-            #     recHitX,
-            #     recHitY,
-            #     recHitZ,
-            #     recHitTime,), axis=1
-            # )
-
-            feature_array = np.concatenate([
-                r_recHitEnergy,
-                recHitEta,
-                equal_zeros,  # indicator if it is track or not
-                recHitTheta,
-                recHitR,
-                recHitX,
-                recHitY,
-                recHitZ,
-                recHitTime
-            ], axis=-1)
-
-            # truth_array = np.concatenate((
-            #     r_truthHitAssignementIdx,
-            #     equal_zeros,
-            #     equal_zeros + 1,
-            #     r_truthHitAssignedEnergies,
-            #     r_truthHitAssignedX,
-            #     r_truthHitAssignedY,
-            #     r_truthHitAssignedZ,
-            #     equal_zeros,
-            #     r_truthHitAssignedEta,
-            #     r_truthHitAssignedPhi,
-            #     r_truthHitAssignedDepEnergies,
-            #     r_truthHitAssignedEnergies,
-            #     equal_zeros,
-            #     r_truthHitAssignedClass,
-            #     equal_zeros,
-            #     equal_zeros,), axis=1)
-
-            truth_array = np.concatenate([
-                r_truthHitAssignementIdx,  # 0
-                r_truthHitAssignedEnergies,
-                r_truthHitAssignedX,
-                r_truthHitAssignedY,
-                r_truthHitAssignedZ,  # 4
-                r_truthHitAssignedX,
-                r_truthHitAssignedY,  # 6
-                r_truthHitAssignedZ,
-                r_truthHitAssignedEta,
-                r_truthHitAssignedPhi,
-                equal_zeros,  # 10 time
-                r_truthHitAssignedEta,
-                r_truthHitAssignedR,
-                r_truthHitAssignedDepEnergies,  # 16
-
-                equal_zeros,  # 17
-                equal_zeros,  # 18
-                r_truthHitAssignedClass  # 19 - 19+n_classes #won't be used anymore
-
-            ], axis=-1)
-
-            feature_array = feature_array[ragged_indices]
-            truth_array = truth_array[ragged_indices]
-
-            feature_arrays.append(feature_array)
-            truth_arrays.append(truth_array)
-
-            rs.append(rs[-1] + len(feature_array))
-
-        rs = np.array(rs, np.int64)
-
-
-        feature_arrays = np.ascontiguousarray(np.concatenate(feature_arrays, axis=0).astype(np.float32))
-        truth_arrays = np.ascontiguousarray(np.concatenate(truth_arrays, axis=0).astype(np.float32))
-
-        t_idxarr = simpleArray()
-        t_idxarr.createFromNumpy(np.ascontiguousarray(truth_arrays[:, 0:1]), rs)
-
-        t_energyarr = simpleArray()
-        t_energyarr.createFromNumpy(np.ascontiguousarray(truth_arrays[:, 3:4]), rs)
-
-        t_posarr = simpleArray()
-        t_posarr.createFromNumpy(np.ascontiguousarray(np.concatenate([truth_arrays[:, 4:5], truth_arrays[:, 5:6]], axis=-1)), rs)
-
-        t_time = simpleArray()
-        t_time.createFromNumpy(np.ascontiguousarray(truth_arrays[:, 0:1]), rs)
-
-        t_pid = simpleArray()
-        t_pid.createFromNumpy(np.ascontiguousarray(truth_arrays[:, 10:11]), rs)
-
-        # remaining truth is mostly for consistency in the plotting tools
-        t_rest = simpleArray()
-        t_rest.createFromNumpy(truth_arrays, rs)
-
-        farr = simpleArray()
-        farr.createFromNumpy(feature_arrays, rs)
-        # del feature_arrays
-
-        # return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid], [t_rest], []
-
-        self._store([farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid], [t_rest], [])
-        self.writeToFile(outputfilename)
-
+ 

@@ -3,7 +3,7 @@
 
 
 from DeepJetCore.TrainData import TrainData, fileTimeOut
-from DeepJetCore.compiled.c_simpleArray import simpleArray
+from DeepJetCore import SimpleArray
 import numpy as np
 import uproot3 as uproot
 from numba import jit
@@ -274,7 +274,7 @@ class TrainData_window(TrainData):
         
         
         np.savetxt("textarr.txt",features[0:rs[1]])
-        farr = simpleArray()
+        farr = SimpleArray()
         farr.createFromNumpy(features, rs)
         #farr.cout()
         print("features",features.shape)
@@ -308,7 +308,7 @@ class TrainData_window(TrainData):
         
         
         
-        tarr = simpleArray()
+        tarr = SimpleArray()
         tarr.createFromNumpy(truth, rs)
         
         print("truth",truth.shape)
@@ -479,7 +479,7 @@ class TrainData_window_truthinjected  (TrainData_window):
             recHitTime  
             ], axis=-1)
         
-        farr = simpleArray()
+        farr = SimpleArray()
         farr.createFromNumpy(features, rs)
         #farr.cout()
         print("features",features.shape)
@@ -511,7 +511,7 @@ class TrainData_window_truthinjected  (TrainData_window):
             truthHitAssignedPIDs    #19 - 19+n_classes
             ], axis=-1)
         
-        tarr = simpleArray()
+        tarr = SimpleArray()
         tarr.createFromNumpy(truth, rs)
         
         print("truth",truth.shape)

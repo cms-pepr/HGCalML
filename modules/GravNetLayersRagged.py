@@ -1165,7 +1165,7 @@ class WeightedCovariances(tf.keras.layers.Layer):
         x, coords, neighbor_indices = inputs
         coords_collected = self.collect_neighbours(coords, neighbor_indices) # [V, N, F]
 
-        mean_est = tf.reduce_mean(coords_collected, axis=1)[:, tf.newaxis, :]
+        mean_est = coords[:, tf.newaxis, :]#just the central point #tf.reduce_mean(coords_collected, axis=1)[:, tf.newaxis, :]
         centered = coords_collected - mean_est #[V,N,F]
         centered_transposed = tf.transpose(centered, perm=[0, 2, 1]) # [V,F,N]
         # [V,F,N]x[V,N,F]
