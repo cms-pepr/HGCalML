@@ -22,7 +22,7 @@ namespace gpu{
 
 
 __device__
-float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_coords){
+static float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_coords){
     float distsq=0;
     if(i_v == j_v)
         return 0;
@@ -34,7 +34,7 @@ float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_
 }
 
 __global__
-void set_defaults(
+static void set_defaults(
         float *d_dist,
         const int n_vert,
         const int n_neigh
@@ -51,7 +51,7 @@ void set_defaults(
 }
 
 __global__
-void calc_distances(const int *d_neigh_idxs,
+static void calc_distances(const int *d_neigh_idxs,
         const float *d_coords,
 
         float * d_distances,

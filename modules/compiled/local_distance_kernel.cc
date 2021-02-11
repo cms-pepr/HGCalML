@@ -19,7 +19,7 @@ typedef Eigen::GpuDevice GPUDevice;
 namespace functor {
 
 
-float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_coords){
+static float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_coords){
     float distsq=0;
     if(i_v == j_v)
         return 0;
@@ -30,7 +30,7 @@ float calculateDistance(size_t i_v, size_t j_v, const float * d_coord, size_t n_
     return distsq;
 }
 
-void set_defaults(
+static void set_defaults(
         float *d_dist,
         const int n_vert,
         const int n_neigh
@@ -74,9 +74,9 @@ struct LocalDistanceOpFunctor<CPUDevice,dummy> {
 };
 
 template<typename Device>
-class LocalClusterOp : public OpKernel {
+class LocalDistanceOp : public OpKernel {
 public:
-    explicit LocalClusterOp(OpKernelConstruction *context) : OpKernel(context) {
+    explicit LocalDistanceOp(OpKernelConstruction *context) : OpKernel(context) {
     }
 
     void Compute(OpKernelContext *context) override {
@@ -129,11 +129,11 @@ public:
 
 };
 
-REGISTER_KERNEL_BUILDER(Name("LocalDistance").Device(DEVICE_CPU), LocalClusterOp<CPUDevice>);
+REGISTER_KERNEL_BUILDER(Name("LocalDistance").Device(DEVICE_CPU), LocalDistanceOp<CPUDevice>);
 
 #ifdef GOOGLE_CUDA
 extern template struct LocalDistanceOpFunctor<GPUDevice, int>;
-REGISTER_KERNEL_BUILDER(Name("LocalDistance").Device(DEVICE_GPU), LocalClusterOp<GPUDevice>);
+REGISTER_KERNEL_BUILDER(Name("LocalDistance").Device(DEVICE_GPU), LocalDistanceOp<GPUDevice>);
 #endif  // GOOGLE_CUDA
 
 }//functor

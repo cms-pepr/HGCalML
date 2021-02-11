@@ -5,7 +5,6 @@ import awkward0 as ak
 import pickle
 import gzip
 import numpy as np
-from IPython import embed
     
 class TrainData_NanoML(TrainData):
     def __init__(self):

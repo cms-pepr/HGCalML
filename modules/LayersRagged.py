@@ -209,7 +209,13 @@ class RaggedConstructTensor(keras.layers.Layer):
     def call(self, x):
         x_data = x[0]
         x_row_splits = x[1]
+        #new DJC format
+        rs = tf.cast(x_row_splits, dtype='int32')
+        rs = tf.reshape(rs,[-1])
+        return x_data, rs
     
+        #below is for the OLD format
+        
         data_shape = x_data.shape
         # assert (data_shape[0]== row_splits_shape[0])
         self.num_features = data_shape[1]
