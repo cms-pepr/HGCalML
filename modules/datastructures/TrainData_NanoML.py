@@ -5,7 +5,6 @@ import awkward0 as ak
 import pickle
 import gzip
 import numpy as np
-
     
 class TrainData_NanoML(TrainData):
     def __init__(self):
@@ -37,7 +36,7 @@ class TrainData_NanoML(TrainData):
 
         hits = ["RecHitHGC"+x for x in ["EE", "HEF", "HEB"]]
         recHitEnergy, offsets = self.hitObservable(tree, hits, "energy", offsets=True)
-        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", flatten=False)
+        recHitSimClusIdx = self.hitObservable(tree, hits, "MergedSimClusterIdx", flatten=False)
         recHitX = self.hitObservable(tree, hits, "x")
         recHitY = self.hitObservable(tree, hits, "y")
         recHitZ = self.hitObservable(tree, hits, "z")
@@ -47,12 +46,12 @@ class TrainData_NanoML(TrainData):
         recHitTheta = np.arccos(recHitZ/recHitR)
         recHitEta = -np.log(np.tan(recHitTheta/2))
 
-        simClusterEnergy = tree["SimCluster_boundaryEnergy"].array()
-        simClusterX = tree["SimCluster_impactPoint_x"].array()
-        simClusterY = tree["SimCluster_impactPoint_y"].array()
-        simClusterZ = tree["SimCluster_impactPoint_z"].array()
-        simClusterTime = tree["SimCluster_impactPoint_t"].array()
-        simClusterPdgId = tree["SimCluster_pdgId"].array()
+        simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
+        simClusterX = tree["MergedSimCluster_impactPoint_x"].array()
+        simClusterY = tree["MergedSimCluster_impactPoint_y"].array()
+        simClusterZ = tree["MergedSimCluster_impactPoint_z"].array()
+        simClusterTime = tree["MergedSimCluster_impactPoint_t"].array()
+        simClusterPdgId = tree["MergedSimCluster_pdgId"].array()
 
         recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0.)
         recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, -1)
