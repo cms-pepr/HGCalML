@@ -1,5 +1,5 @@
 from DeepJetCore.TrainData import TrainData, fileTimeOut
-from DeepJetCore.compiled.c_simpleArray import simpleArray
+from DeepJetCore import SimpleArray 
 import uproot3 as uproot
 import awkward0 as ak
 import pickle
@@ -113,7 +113,7 @@ class TrainData_NanoML(TrainData):
             recHitTime,
             ], axis=-1), dtype='float32')
 
-        farr = simpleArray()
+        farr = SimpleArray()
         farr.createFromNumpy(features, offsets)
         del features  
 
@@ -142,23 +142,23 @@ class TrainData_NanoML(TrainData):
         
         
         
-        t_idxarr = simpleArray()
+        t_idxarr = SimpleArray()
         t_idxarr.createFromNumpy(recHitSimClusIdx, offsets)
         
-        t_energyarr = simpleArray()
+        t_energyarr = SimpleArray()
         t_energyarr.createFromNumpy(recHitTruthEnergy, offsets)
         
-        t_posarr = simpleArray()
+        t_posarr = SimpleArray()
         t_posarr.createFromNumpy(np.concatenate([recHitTruthX, recHitTruthY],axis=-1), offsets)
         
-        t_time = simpleArray()
+        t_time = SimpleArray()
         t_time.createFromNumpy(recHitTruthTime, offsets)
         
-        t_pid = simpleArray()
+        t_pid = SimpleArray()
         t_pid.createFromNumpy(recHitTruthPID, offsets)
         
         #remaining truth is mostly for consistency in the plotting tools
-        t_rest = simpleArray()
+        t_rest = SimpleArray()
         t_rest.createFromNumpy(truth, offsets)
         
         return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid],[t_rest], []
