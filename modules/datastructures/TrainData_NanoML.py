@@ -122,24 +122,24 @@ class TrainData_NanoML(TrainData):
         recHitTruthPhi = np.arctan(np.divide(recHitTruthY, recHitTruthX, out=np.zeros_like(recHitTruthY), where=recHitTruthX!=0))
         recHitTruthEta = -np.log(np.tan(recHitTruthTheta/2))
 
-        features = np.array(np.concatenate([
+        features = np.stack([
             recHitEnergy,
             recHitEta,
-            np.zeros(len(recHitEnergy)), #indicator if it is track or not
+            np.zeros(len(recHitEnergy), dtype='float32'), #indicator if it is track or not
             recHitTheta,
             recHitR,
             recHitX,
             recHitY,
             recHitZ,
             recHitTime,
-            ], axis=-1), dtype='float32')
+            ], axis=-1)
 
         farr = SimpleArray()
         farr.createFromNumpy(features, offsets)
         del features  
 
-        recHitSimClusIdx = np.array(recHitSimClusIdx.flatten(), dtype='float32')
-        truth = np.concatenate([
+        recHitSimClusIdx = np.array(self.splitJaggedArray(recHitSimClusIdx, splitIdx=splitBy).flatten(), dtype='float32')
+        truth = np.stack([
             recHitSimClusIdx, # 0
             recHitTruthEnergyNoMu,
             recHitTruthX,
@@ -153,11 +153,11 @@ class TrainData_NanoML(TrainData):
             recHitTruthTime,  #10
             np.zeros(len(recHitEnergy), dtype='float32'), #truthHitAssignedDirEta,
             np.zeros(len(recHitEnergy), dtype='float32'), #truthHitAssignedDirR,
-            np.zeros(len(recHitEnergy), dtype='float32'), # recHitTruthDepEnergy, #16
+            recHitTruthDepEnergy, #13
             
-            np.zeros(len(recHitEnergy), dtype='float32'), #ticlHitAssignementIdx  , #17
-            np.zeros(len(recHitEnergy), dtype='float32'), #ticlHitAssignedEnergies, #18
-            recHitTruthPID #19 - 19+n_classes #won't be used anymore
+            np.zeros(len(recHitEnergy), dtype='float32'), #ticlHitAssignementIdx  , #14
+            np.zeros(len(recHitEnergy), dtype='float32'), #ticlHitAssignedEnergies, #15
+            recHitTruthPID #16 - 16+n_classes #won't be used anymore
             
             ], axis=-1)
         

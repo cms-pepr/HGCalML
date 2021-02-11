@@ -184,11 +184,11 @@ class TrainData_OC(TrainData):
             truthHitAssignedT,  #10
             truthHitAssignedDirEta,
             truthHitAssignedDirR,
-            truthHitAssignedDepEnergies, #16
+            truthHitAssignedDepEnergies, #13
             
-            ticlHitAssignementIdx  , #17
-            ticlHitAssignedEnergies, #18
-            truthHitAssignedPIDs    #19 - 19+n_classes #won't be used anymore
+            ticlHitAssignementIdx  , #14
+            ticlHitAssignedEnergies, #15
+            truthHitAssignedPIDs    #16 - 16+n_classes #won't be used anymore
             
             ], axis=-1)
         
