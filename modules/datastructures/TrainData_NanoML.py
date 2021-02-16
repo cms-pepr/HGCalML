@@ -5,6 +5,7 @@ import awkward0 as ak
 import pickle
 import gzip
 import numpy as np
+from IPython import embed
     
 class TrainData_NanoML(TrainData):
     def __init__(self):
@@ -16,17 +17,17 @@ class TrainData_NanoML(TrainData):
             obs = tree[ext].array()[obs]
         return obs
 
-    def hitObservable(self, tree, hitTypes, label, ext=None, flatten=True, offsets=False):
+    def hitObservable(self, tree, hitTypes, label, ext=None, flatten=True, sortby=None):
         obs = map(lambda x: self.buildObs(tree, x, label, ext), hitTypes)
         # For awkward1
         # jagged = np.concatenate([x for x in obs], axis=1)
         # off = np.cumsum(ak.to_numpy(ak.num(jagged)))
         # off = np.insert(off, 0, 0)
         jagged = ak.JaggedArray.concatenate([x for x in obs], axis=1)
-        off = np.array(jagged.offsets, dtype='int64')
-        if flatten:
-            jagged = np.array(jagged.flatten(), dtype='float32')
-        return (jagged, off) if offsets else jagged
+        if sortby is not None:
+            jagged = jagged[sortby]
+
+        return jagged.flatten() if flatten else jagged
 
     def truthObjects(self, sc, indices, null):
         return np.array(np.where(indices.flatten() < 0, null, sc[indices].flatten()), dtype='float32')
@@ -56,6 +57,19 @@ class TrainData_NanoML(TrainData):
         # Not used currently, but could be useful, so leaving here
         # scIndices = ak.JaggedArray.fromiter(groups)
         return ak.JaggedArray.fromiter(energies).sum()
+
+    def sortIndicesFromZHits(self, hitsZ, splitEndcap=True, offsets=True):
+        idx = [np.argsort(x) for x in hitsZ]
+        sortIdx = ak.JaggedArray.fromiter(idx)
+        sortZ = hitsZ[sortIdx]
+        minIdx = [np.argmin(np.abs(x)) for x in sortZ]
+        nduplicates = [np.count_nonzero(x == x[minIdx[i]]) for i,x in enumerate(sortZ)]
+        endcap_divides = np.sum([minIdx, nduplicates], axis=0)
+        old_offsets = sortZ.offsets
+        new_offsets = np.zeros(len(old_offsets)+len(endcap_divides), dtype='int64')
+        new_offsets[::2] = old_offsets
+        new_offsets[1::2] = np.sum([old_offsets[:-1], endcap_divides], axis=0)
+        return (sortIdx, new_offsets) if offsets else sortIdx
       
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events",
                                    removeTracks=True):
@@ -64,17 +78,20 @@ class TrainData_NanoML(TrainData):
         tree = uproot.open(filename)[treename]
 
         hits = ["RecHitHGC"+x for x in ["EE", "HEF", "HEB"]]
-        recHitEnergy, offsets = self.hitObservable(tree, hits, "energy", offsets=True)
-        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", ext="SimCluster_MergedSimClusterIdx", flatten=False)
-        recHitX = self.hitObservable(tree, hits, "x")
-        recHitY = self.hitObservable(tree, hits, "y")
-        recHitZ = self.hitObservable(tree, hits, "z")
-        recHitDetaId = self.hitObservable(tree, hits, "detId")
-        recHitTime = self.hitObservable(tree, hits, "time")
+        recHitZUnsort = self.hitObservable(tree, hits, "z", flatten=False)
+        sortIdx, offsets = self.sortIndicesFromZHits(recHitZUnsort)
+
+        recHitZ = recHitZUnsort[sortIdx].flatten()
+        recHitX = self.hitObservable(tree, hits, "x", sortby=sortIdx)
+        recHitY = self.hitObservable(tree, hits, "y", sortby=sortIdx)
+        recHitEnergy = self.hitObservable(tree, hits, "energy", sortby=sortIdx)
+        recHitDetaId = self.hitObservable(tree, hits, "detId", sortby=sortIdx)
+        recHitTime = self.hitObservable(tree, hits, "time", sortby=sortIdx)
         recHitR = np.sqrt(recHitX*recHitX+recHitY*recHitY+recHitZ*recHitZ)
         recHitTheta = np.arccos(recHitZ/recHitR)
         recHitEta = -np.log(np.tan(recHitTheta/2))
 
+        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", ext="SimCluster_MergedSimClusterIdx", flatten=False, sortby=sortIdx)
         # TODO: Filter out simclusters that are off the boundary or don't have many hits
 
         simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
