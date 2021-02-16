@@ -14,7 +14,10 @@ class TrainData_NanoML(TrainData):
     def buildObs(self, tree, hitType, label, ext=None):
         obs = tree["_".join([hitType, label])].array()
         if ext:
-            obs = tree[ext].array()[obs]
+            # If index is -1, take -1, not the last entry
+            newobs = tree[ext].array()[obs]
+            newobs[obs < 0] = -1
+            obs = newobs
         return obs
 
     def hitObservable(self, tree, hitTypes, label, ext=None, flatten=True, sortby=None):
