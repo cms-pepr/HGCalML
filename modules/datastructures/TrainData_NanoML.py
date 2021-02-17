@@ -20,15 +20,20 @@ class TrainData_NanoML(TrainData):
             obs = newobs
         return obs
 
-    def hitObservable(self, tree, hitTypes, label, ext=None, flatten=True, sortby=None):
+    def splitJaggedArray(self, jagged, splitIdx):
+        split1 = jagged[splitIdx]
+        split2 = jagged[~splitIdx]
+        return ak.concatenate([split1, split2], axis=1)
+
+    def hitObservable(self, tree, hitTypes, label, ext=None, flatten=True, splitIdx=None):
         obs = map(lambda x: self.buildObs(tree, x, label, ext), hitTypes)
         # For awkward1
         # jagged = np.concatenate([x for x in obs], axis=1)
         # off = np.cumsum(ak.to_numpy(ak.num(jagged)))
         # off = np.insert(off, 0, 0)
         jagged = ak.JaggedArray.concatenate([x for x in obs], axis=1)
-        if sortby is not None:
-            jagged = jagged[sortby]
+        if splitIdx is not None:
+            jagged = self.splitJaggedArray(jagged, splitIdx)
 
         return jagged.flatten() if flatten else jagged
 
@@ -60,19 +65,6 @@ class TrainData_NanoML(TrainData):
         # Not used currently, but could be useful, so leaving here
         # scIndices = ak.JaggedArray.fromiter(groups)
         return ak.JaggedArray.fromiter(energies).sum()
-
-    def sortIndicesFromZHits(self, hitsZ, splitEndcap=True, offsets=True):
-        idx = [np.argsort(x) for x in hitsZ]
-        sortIdx = ak.JaggedArray.fromiter(idx)
-        sortZ = hitsZ[sortIdx]
-        minIdx = [np.argmin(np.abs(x)) for x in sortZ]
-        nduplicates = [np.count_nonzero(x == x[minIdx[i]]) for i,x in enumerate(sortZ)]
-        endcap_divides = np.sum([minIdx, nduplicates], axis=0)
-        old_offsets = sortZ.offsets
-        new_offsets = np.zeros(len(old_offsets)+len(endcap_divides), dtype='int64')
-        new_offsets[::2] = old_offsets
-        new_offsets[1::2] = np.sum([old_offsets[:-1], endcap_divides], axis=0)
-        return (sortIdx, new_offsets) if offsets else sortIdx
       
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events",
                                    removeTracks=True):
@@ -81,20 +73,22 @@ class TrainData_NanoML(TrainData):
         tree = uproot.open(filename)[treename]
 
         hits = ["RecHitHGC"+x for x in ["EE", "HEF", "HEB"]]
-        recHitZUnsort = self.hitObservable(tree, hits, "z", flatten=False)
-        sortIdx, offsets = self.sortIndicesFromZHits(recHitZUnsort)
+        recHitZUnsplit = self.hitObservable(tree, hits, "z", flatten=False)
+        splitBy = recHitZUnsplit < 0
+        recHitZ = self.splitJaggedArray(recHitZUnsplit, splitBy)
+        offsets = recHitZ.offsets
+        recHitZ = recHitZ.flatten()
 
-        recHitZ = recHitZUnsort[sortIdx].flatten()
-        recHitX = self.hitObservable(tree, hits, "x", sortby=sortIdx)
-        recHitY = self.hitObservable(tree, hits, "y", sortby=sortIdx)
-        recHitEnergy = self.hitObservable(tree, hits, "energy", sortby=sortIdx)
-        recHitDetaId = self.hitObservable(tree, hits, "detId", sortby=sortIdx)
-        recHitTime = self.hitObservable(tree, hits, "time", sortby=sortIdx)
+        recHitX = self.hitObservable(tree, hits, "x", splitIdx=splitBy)
+        recHitY = self.hitObservable(tree, hits, "y", splitIdx=splitBy)
+        recHitEnergy = self.hitObservable(tree, hits, "energy", splitIdx=splitBy)
+        recHitDetaId = self.hitObservable(tree, hits, "detId", splitIdx=splitBy)
+        recHitTime = self.hitObservable(tree, hits, "time", splitIdx=splitBy)
         recHitR = np.sqrt(recHitX*recHitX+recHitY*recHitY+recHitZ*recHitZ)
         recHitTheta = np.arccos(recHitZ/recHitR)
         recHitEta = -np.log(np.tan(recHitTheta/2))
 
-        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", ext="SimCluster_MergedSimClusterIdx", flatten=False, sortby=sortIdx)
+        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", ext="SimCluster_MergedSimClusterIdx", flatten=False, splitIdx=splitBy)
         # TODO: Filter out simclusters that are off the boundary or don't have many hits
 
         simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
