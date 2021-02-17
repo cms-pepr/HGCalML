@@ -23,7 +23,10 @@ class TrainData_NanoML(TrainData):
     def splitJaggedArray(self, jagged, splitIdx):
         split1 = jagged[splitIdx]
         split2 = jagged[~splitIdx]
-        return ak.concatenate([split1, split2], axis=1)
+        pairEvents = []
+        for x in zip(split1, split2):
+            pairEvents.extend(x)
+        return ak.JaggedArray.fromiter(pairEvents)
 
     def hitObservable(self, tree, hitTypes, label, ext=None, flatten=True, splitIdx=None):
         obs = map(lambda x: self.buildObs(tree, x, label, ext), hitTypes)
@@ -37,8 +40,12 @@ class TrainData_NanoML(TrainData):
 
         return jagged.flatten() if flatten else jagged
 
-    def truthObjects(self, sc, indices, null):
-        return np.array(np.where(indices.flatten() < 0, null, sc[indices].flatten()), dtype='float32')
+    def truthObjects(self, sc, indices, null, splitIdx=None):
+        vals = sc[indices]
+        vals[indices < 0] = -1
+        if splitIdx is not None:
+            vals = self.splitJaggedArray(vals, splitIdx)
+        return np.array(vals.flatten(), dtype='float32')
         
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
         return self.base_convertFromSourceFile(filename, weighterobjects, istraining, treename=treename)
@@ -88,7 +95,7 @@ class TrainData_NanoML(TrainData):
         recHitTheta = np.arccos(recHitZ/recHitR)
         recHitEta = -np.log(np.tan(recHitTheta/2))
 
-        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", ext="SimCluster_MergedSimClusterIdx", flatten=False, splitIdx=splitBy)
+        recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", ext="SimCluster_MergedSimClusterIdx", flatten=False)
         # TODO: Filter out simclusters that are off the boundary or don't have many hits
 
         simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
@@ -102,14 +109,14 @@ class TrainData_NanoML(TrainData):
         simClusterTime = tree["MergedSimCluster_impactPoint_t"].array()
         simClusterPdgId = tree["MergedSimCluster_pdgId"].array()
 
-        recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0.)
-        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, -1)
-        recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, -1)
+        recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0., splitIdx=splitBy)
+        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, -1, splitIdx=splitBy)
+        recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, -1, splitIdx=splitBy)
         recHitTruthEnergyNoMu = np.where(np.abs(recHitTruthPID) == 13, recHitTruthDepEnergy, recHitTruthEnergy)
-        recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 1.)
-        recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0.)
-        recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0.)
-        recHitTruthTime = self.truthObjects(simClusterZ, recHitSimClusIdx, -1)
+        recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 1., splitIdx=splitBy)
+        recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0., splitIdx=splitBy)
+        recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0., splitIdx=splitBy)
+        recHitTruthTime = self.truthObjects(simClusterZ, recHitSimClusIdx, -1, splitIdx=splitBy)
         recHitTruthR = np.sqrt(recHitTruthX*recHitTruthX+recHitTruthY*recHitTruthY+recHitTruthZ*recHitTruthZ)
         recHitTruthTheta = np.arccos(np.divide(recHitTruthZ, recHitTruthR, out=np.zeros_like(recHitTruthZ), where=recHitTruthR!=0))
         recHitTruthPhi = np.arctan(np.divide(recHitTruthY, recHitTruthX, out=np.zeros_like(recHitTruthY), where=recHitTruthX!=0))
