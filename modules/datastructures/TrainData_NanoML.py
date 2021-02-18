@@ -5,6 +5,7 @@ import awkward0 as ak
 import pickle
 import gzip
 import numpy as np
+from numba import jit
 from IPython import embed
     
 class TrainData_NanoML(TrainData):
@@ -42,7 +43,7 @@ class TrainData_NanoML(TrainData):
 
     def truthObjects(self, sc, indices, null, splitIdx=None):
         vals = sc[indices]
-        vals[indices < 0] = -1
+        #vals[indices < 0] = -1
         if splitIdx is not None:
             vals = self.splitJaggedArray(vals, splitIdx)
         return np.array(vals.flatten(), dtype='float32')
@@ -72,6 +73,17 @@ class TrainData_NanoML(TrainData):
         # Not used currently, but could be useful, so leaving here
         # scIndices = ak.JaggedArray.fromiter(groups)
         return ak.JaggedArray.fromiter(energies).sum()
+
+    def removeMuonEnergy(self, mergedSC, unmergedSCIdx, unmergedSC, unmergedSCId, unmergedDepE):
+        energies = []
+        for i, msc in enumerate(mergedSC):
+            energy = np.zeros(len(msc), dtype='float32')
+            for sci in unmergedSCIdx:
+                if abs(unmergedSCId[sci]) == 13:
+                    nomu = msc - unmergedSC[sci]
+                    energy.append(nomu.energy())
+            energies.append(energy)
+
       
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events",
                                    removeTracks=True):
