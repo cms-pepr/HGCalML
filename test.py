@@ -4,24 +4,6 @@ from numba import jit
 import awkward0 as ak
 import numpy as np
 
-def unmergedIndices(mergedSimClusterIdx):
-    # Keeping track of the indices in case they're needed somewhere else later
-    groups = []
-    entries = []
-    nev = len(mergedSimClusterIdx)
-    for i in range(nev):
-        nsc = len(mergedSimClusterIdx)
-        for j in range(nsc):
-            vals  = mergedSimClusterIdx[i] == j
-            matches = np.nonzero(vals)[0]
-            entries.append(matches)
-        print(entries)
-        print(np.array(entries, dtype='int32'))
-        groups.append(entries)
-
-    # Not used currently, but could be useful, so leaving here
-    return ak.JaggedArray.fromiter(groups)
-
 f = uproot.open("/eos/cms/store/cmst3/group/hgcal/CMG_studies/kelong/GeantTruthStudy/SimClusterNtuples/testNanoML.root")
 tree = f["Events"]
 
@@ -44,6 +26,7 @@ merged = TLorentzVectorArray.from_ptetaphim(pt,eta,phi,m)
 mergedSimClusterIdx = tree["SimCluster_MergedSimClusterIdx"].array()
 
 unmergedIds = tree["SimCluster_pdgId"].array()
+unmergedDepE = tree["SimCluster_recEnergy"].array()
 muon_filt = np.abs(unmergedIds == 13)
 
 flat_filt = muon_filt.flatten()
@@ -64,9 +47,7 @@ muonsc_mass = unzeros.flatten()
 muonsc_mass[flat_filt] = unmerged.mass.flatten()[flat_filt]
 muonsc_mass = ak.JaggedArray.fromoffsets(unzeros.offsets, muonsc_mass)
 
-muons = TLorentzVectorArray.from_ptetaphim(muonsc_pts, muonsc_etas, muonsc_phis, muonsc_mass)
 
-@jit(nopython=True)
 def correctE(merged, muons, mergedSimClusterIdx):
     newE = list()
     for e in range(len(merged)):
@@ -79,5 +60,15 @@ def correctE(merged, muons, mergedSimClusterIdx):
     correctedE = ak.JaggedArray.fromiter(newE)
     return correctedE
 
+unmerged["mergedIdx"] = mergedSimClusterIdx
+unmerged["id"] = unmergedIds
+unmerged["depE"] = unmergedDepE
+muons = unmerged[abs(unmerged.id) == 13]
+mm = merged.cross(muons, nested=True)
+mm = mm[mm.i1.mergedIdx == mm.localindex]
+muE = mm.i1.sum().energy 
+muDepE = mm.i1.depE.sum()
+corrE = merged.energy - muE + muDepE
 
-corrE = correctE(merged, muons, mergedSimClusterIdx)
+dummyMu = TLorentzVectorArray.from_ptetaphim(muonsc_pts, muonsc_etas, muonsc_phis, muonsc_mass)
+corrE = correctE(merged, dummyMu, mergedSimClusterIdx)

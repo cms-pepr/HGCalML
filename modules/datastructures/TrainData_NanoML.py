@@ -1,6 +1,7 @@
 from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore import SimpleArray 
 import uproot3 as uproot
+from uproot3_methods import TLorentzVectorArray
 import awkward0 as ak
 import pickle
 import gzip
@@ -43,47 +44,35 @@ class TrainData_NanoML(TrainData):
 
     def truthObjects(self, sc, indices, null, splitIdx=None):
         vals = sc[indices]
-        #vals[indices < 0] = -1
+        offsets = vals.offsets
+        flatvals = np.where(indices.flatten() < 0, null, vals.flatten())
+        #print(type(flatvals))
+        # I don't understand why this doesn't work
+        #vals[indices < 0] = null
         if splitIdx is not None:
-            vals = self.splitJaggedArray(vals, splitIdx)
-        return np.array(vals.flatten(), dtype='float32')
+            corrvals = ak.JaggedArray.fromoffsets(offsets, flatvals)
+            vals = self.splitJaggedArray(corrvals, splitIdx)
+            flatvals = vals.flatten()
+        return flatvals.astype(np.float32)
         
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
         return self.base_convertFromSourceFile(filename, weighterobjects, istraining, treename=treename)
 
-    # Sum up deposited energy from all the associated unmerged simclusters
-    # Unfortunately I'm not skilled enough to do this without loops
-    def depositedEnergyMergedSC(self, unmergedDepEnergy, mergedSimClusterIdx):
-        # Keeping track of the indices in case they're needed somewhere else later
-        groups = []
-        energies = []
-        nev = len(unmergedDepEnergy)
-        for i in range(nev):
-            nsc = len(unmergedDepEnergy[i])
-            entries = []
-            evt_energies = []
-            for j in range(nsc):
-                matches = (mergedSimClusterIdx[i] == j).flatten().nonzero()[0]
-                entries.append(matches)
-                ienergy = unmergedDepEnergy[i][np.array(matches, dtype='int32')]
-                evt_energies.append(ienergy)
-            groups.append(entries)
-            energies.append(evt_energies)
+    def matchMergedUnmerged(self, merged, unmerged):
+        mm = merged.cross(unmerged, nested=True)
+        mm = mm[mm.i1.mergedIdx == mm.localindex]
+        return mm
 
-        # Not used currently, but could be useful, so leaving here
-        # scIndices = ak.JaggedArray.fromiter(groups)
-        return ak.JaggedArray.fromiter(energies).sum()
-
-    def removeMuonEnergy(self, mergedSC, unmergedSCIdx, unmergedSC, unmergedSCId, unmergedDepE):
-        energies = []
-        for i, msc in enumerate(mergedSC):
-            energy = np.zeros(len(msc), dtype='float32')
-            for sci in unmergedSCIdx:
-                if abs(unmergedSCId[sci]) == 13:
-                    nomu = msc - unmergedSC[sci]
-                    energy.append(nomu.energy())
-            energies.append(energy)
-
+    def removeMuonEnergy(self, matched):
+        muons = matched.i1[abs(matched.i1.id) == 13]
+        #muons = matched.i1
+        musum = muons.sum()
+        muDepE = matched.i1.depE.sum()
+        # The sum basically just serves to collapse some arrays
+        return (matched.i0 - musum).sum().energy + muDepE
+      
+    def mergeDepositedEnergy(self, matched):
+        return matched.i1.sum().energy 
       
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events",
                                    removeTracks=True):
@@ -110,11 +99,26 @@ class TrainData_NanoML(TrainData):
         recHitSimClusIdx = self.hitObservable(tree, hits, "SimClusterIdx", ext="SimCluster_MergedSimClusterIdx", flatten=False)
         # TODO: Filter out simclusters that are off the boundary or don't have many hits
 
-        simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
-        unmergedSimClusterRecEnergy = tree["SimCluster_recEnergy"].array()
-        mergedSimClusterIdx = tree["SimCluster_MergedSimClusterIdx"].array()
-        simClusterDepEnergy = self.depositedEnergyMergedSC(unmergedSimClusterRecEnergy, mergedSimClusterIdx)
+        mergedSC = TLorentzVectorArray.from_ptetaphim(tree["MergedSimCluster_pt"].array(),
+                            tree["MergedSimCluster_eta"].array(),
+                            tree["MergedSimCluster_phi"].array(),
+                            tree["MergedSimCluster_mass"].array(),
+        )
+        unmergedSC = TLorentzVectorArray.from_ptetaphim(tree["SimCluster_pt"].array(),
+                            tree["SimCluster_eta"].array(),
+                            tree["SimCluster_phi"].array(),
+                            tree["SimCluster_mass"].array(),
+        )
 
+        unmergedSC["mergedIdx"] = tree["SimCluster_MergedSimClusterIdx"].array()
+        unmergedSC["depE"] = tree["SimCluster_recEnergy"].array()
+        unmergedSC["id"] = tree["SimCluster_pdgId"].array()
+
+        matched = self.matchMergedUnmerged(mergedSC, unmergedSC)
+        simClusterDepEnergy = self.mergeDepositedEnergy(matched)
+        simClusterEnergyMuCorr = self.removeMuonEnergy(matched)
+
+        simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
         simClusterX = tree["MergedSimCluster_impactPoint_x"].array()
         simClusterY = tree["MergedSimCluster_impactPoint_y"].array()
         simClusterZ = tree["MergedSimCluster_impactPoint_z"].array()
@@ -124,7 +128,7 @@ class TrainData_NanoML(TrainData):
         recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0., splitIdx=splitBy)
         recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, -1, splitIdx=splitBy)
         recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, -1, splitIdx=splitBy)
-        recHitTruthEnergyNoMu = np.where(np.abs(recHitTruthPID) == 13, recHitTruthDepEnergy, recHitTruthEnergy)
+        recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, -1, splitIdx=splitBy)
         recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 1., splitIdx=splitBy)
         recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0., splitIdx=splitBy)
         recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0., splitIdx=splitBy)
@@ -153,7 +157,7 @@ class TrainData_NanoML(TrainData):
         recHitSimClusIdx = np.array(recHitSimClusIdx.flatten(), dtype='float32')
         truth = np.concatenate([
             recHitSimClusIdx, # 0
-            recHitTruthEnergyNoMu,
+            recHitTruthEnergyCorrMu,
             recHitTruthX,
             recHitTruthY,
             recHitTruthZ,  #4
