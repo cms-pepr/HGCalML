@@ -60,10 +60,9 @@ class TrainData_NanoML(TrainData):
 
     def removeMuonEnergy(self, matched):
         muons = matched.i1[abs(matched.i1.id) == 13]
-        #muons = matched.i1
         musum = muons.sum()
         muDepE = matched.i1.depE.sum()
-        # The sum basically just serves to collapse some arrays
+        # The sum basically just serves to collapse the inner array (should always have size 1)
         return (matched.i0 - musum).sum().energy + muDepE
       
     def mergeDepositedEnergy(self, matched):
