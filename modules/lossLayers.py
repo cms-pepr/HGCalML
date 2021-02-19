@@ -163,8 +163,8 @@ class LLLocalClusterCoordinates(LossLayerBase):
         
         #distances are actuallt distances**2
         expdist = tf.exp(- 3. * distances)
-        att_proto = (1.-repulsion_contrib)* ( (1.-expdist) + 0.01*distances ) #mild attractive to help learn
-        rep_proto = repulsion_contrib * (expdist - 0.001*distances)
+        att_proto = (1.-repulsion_contrib)* (1.-expdist) + 0.001*distances  #mild attractive to help learn
+        rep_proto = repulsion_contrib * expdist - 0.001 * distances
         
         #hierarchy = tf.clip_by_value(hierarchy,0.,1-1e-6)
         hierarchy_scaling = hierarchy #tf.atanh(hierarchy)

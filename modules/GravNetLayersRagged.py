@@ -64,6 +64,30 @@ class ProcessFeatures(tf.keras.layers.Layer):
         return tf.concat(allf,axis=-1)
     
     
+class LocalDistanceScaling (tf.keras.layers.Layer):
+    def __init__(self,**kwargs):
+        """
+        Inputs: 
+        - distances (V x N 
+        - scaling (V x 1)
+        
+        Returns:
+        distances * scaling : V x N x 1
+        scaling is bound to be within 0 and 2.
+        """
+        super(LocalDistanceScaling, self).__init__(**kwargs)
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[1]
+    
+    @staticmethod
+    def raw_call(dist,scale):
+        scale = tf.nn.softsign(scale)+1
+        return dist*scale
+    
+    def call(self, inputs):
+        dist,scale = inputs
+        return LocalDistanceScaling.raw_call(dist,scale)
     
 ############# PCA like section
 
@@ -327,7 +351,7 @@ class MultiBackGather(tf.keras.layers.Layer):
 
 
 class KNN(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float, **kwargs):
+    def __init__(self,K: int, radius: float=-1., **kwargs):
         """
         
         Select K nearest neighbours, with possible radius constraint.
@@ -626,16 +650,17 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
         else:
             features, distances, hierarchy, nidxs, row_splits, tidxs = inputs
             other=[]
+            
+        sdist, snidx = SortAndSelectNeighbours.raw_call(distances,nidxs,K=self.K, radius=self.radius)
         #generate loss
         if self.loss_enabled:
             #some headroom for radius
             lossval = self.loss_scale * LLLocalClusterCoordinates.raw_loss(
-                distances, hierarchy, nidxs, tidxs,  #or distances/(1.5*self.radius)**2
+                sdist/(self.radius**2), hierarchy, snidx, tidxs,  #or distances/(1.5*self.radius)**2
                 add_self_reference=False, repulsion_contrib=self.loss_repulsion,
                 print_loss=self.print_loss,name=self.name)
             self.add_loss(lossval)
         # do the reshaping
-        sdist, snidx = SortAndSelectNeighbours.raw_call(distances,nidxs,K=self.K, radius=self.radius)
         
         sel, rs, backgather = LocalClustering.raw_call(snidx,hierarchy,row_splits,
                                                        print_reduction=self.print_reduction,name=self.name)
