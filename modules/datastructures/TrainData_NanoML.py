@@ -45,15 +45,10 @@ class TrainData_NanoML(TrainData):
     def truthObjects(self, sc, indices, null, splitIdx=None):
         vals = sc[indices]
         offsets = vals.offsets
-        flatvals = np.where(indices.flatten() < 0, null, vals.flatten())
-        #print(type(flatvals))
-        # I don't understand why this doesn't work
-        #vals[indices < 0] = null
+        vals[indices < 0] = null
         if splitIdx is not None:
-            corrvals = ak.JaggedArray.fromoffsets(offsets, flatvals)
-            vals = self.splitJaggedArray(corrvals, splitIdx)
-            flatvals = vals.flatten()
-        return flatvals.astype(np.float32)
+            vals = self.splitJaggedArray(vals, splitIdx)
+        return vals.flatten().astype(np.float32)
         
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
         return self.base_convertFromSourceFile(filename, weighterobjects, istraining, treename=treename)
