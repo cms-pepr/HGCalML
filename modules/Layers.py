@@ -83,6 +83,17 @@ from Loss_tools import deltaPhi
 
 
 
+class Relu(Layer):
+    def __init__(self,**kwargs):
+        super(Relu, self).__init__(**kwargs)
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    def call(self, inputs):
+        return tf.nn.relu(inputs)
+    
+    
+global_layers_list['Relu']=Relu
+
 class InputNormalization(Layer):
     def __init__(self, 
                  multipliers, 
