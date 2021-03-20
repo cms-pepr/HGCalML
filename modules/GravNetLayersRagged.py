@@ -5,6 +5,7 @@ from local_cluster_op import LocalCluster
 
 from local_distance_op import LocalDistance
 from lossLayers import LLLocalClusterCoordinates
+from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
 #### helper###
@@ -18,6 +19,34 @@ def check_type_return_shape(s):
 
 
 ############# Some layers for convenience ############
+
+
+class NormalizeInputShapes(tf.keras.layers.Layer):
+    def __init__(self,
+                 **kwargs):
+        super(NormalizeInputShapes, self).__init__(**kwargs)
+        
+    def compute_output_shape(self, input_shapes):
+        outshapes=[]
+        for s in input_shapes:
+            if len(s)<2:
+                outshapes.append((None, 1))
+            else:
+                outshapes.append(s)
+            
+        return outshapes
+    
+    def call(self, inputs):
+        outs=[]
+        for i in inputs:
+            if len(i.shape)<2:
+                outs.append(tf.reshape(i,[-1,1]))
+            else:
+                outs.append(i)
+        return outs
+            
+    
+    
 
 class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
@@ -64,11 +93,53 @@ class ProcessFeatures(tf.keras.layers.Layer):
         return tf.concat(allf,axis=-1)
     
     
+class NeighbourCovariance(tf.keras.layers.Layer):
+    def __init__(self,**kwargs):
+        """
+        Inputs: 
+          - coordinates (Vin x C)
+          - features (Vin x F)
+          - neighbour indices (Vout x K)
+          
+        Returns concatenated  (Vout x { F*(C*(C+1)/2 + F*C})
+          - feature weighted covariance matrices (lower triangle) (Vout x F*(C*(C+1)/2)
+          - feature weighted means (Vout x F*C)
+          
+        THIS OPERATION HAS NO GRADIENT SO FAR!!
+        """
+        super(NeighbourCovariance, self).__init__(**kwargs)
+        self.outshapes=None
+    
+    
+    def build(self, input_shapes): #pure python
+        super(NeighbourCovariance, self).build(input_shapes)
+        
+    @staticmethod
+    def raw_call(coordinates, features, n_idxs):
+        nF = features.shape[1]
+        nC = coordinates.shape[1]
+        nVout = -1 #n_idxs.shape[0]
+        cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
+                                         features=features, 
+                                         n_idxs=n_idxs)
+        # Vout x F x C(C+1)/2 , Vout x F x C
+        covshape = int(nF*(nC*(nC+1)//2))
+        cov = tf.reshape(cov, [nVout, covshape])
+        means = tf.reshape(means, [nVout, nF*nC])
+        
+        return cov, means
+    
+    def call(self, inputs):
+        coordinates, features, n_idxs = inputs
+        cov,means = NeighbourCovariance.raw_call(coordinates, features, n_idxs)
+        return tf.concat([cov,means],axis=-1)
+        
+    
 class LocalDistanceScaling (tf.keras.layers.Layer):
     def __init__(self,**kwargs):
         """
         Inputs: 
-        - distances (V x N 
+        - distances (V x N)
         - scaling (V x 1)
         
         Returns:
@@ -94,7 +165,7 @@ class LocalDistanceScaling (tf.keras.layers.Layer):
 class NeighbourPCA   (tf.keras.layers.Layer):
     def __init__(self,**kwargs):
         """
-        This layer performas a simple PCA* of the inputs fiven by:
+        This layer performas a simple exact PCA* of the inputs fiven by:
         
         - the features (V x F)
         - the neighbour indices to consider

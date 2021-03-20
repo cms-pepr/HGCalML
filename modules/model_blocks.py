@@ -227,7 +227,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
     
     pred_beta = Dense(1, activation='sigmoid')(x)
     pred_ccoords = Dense(n_ccoords)(x)
-    pred_energy = Dense(1)(x)
+    pred_energy = Dense(1,kernel_initializer='zeros')(x)
     if energy is not None:
         pred_energy = Multiply()([pred_energy,energy])
         

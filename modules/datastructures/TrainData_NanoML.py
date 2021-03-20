@@ -162,7 +162,23 @@ class TrainData_NanoML(TrainData):
         t_rest.createFromNumpy(truth, offsets)
         
         return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid],[t_rest], []
-
+    
+    def interpretAllModelInputs(self, ilist):
+        '''
+        input: the full list of keras inputs
+        returns: 
+         - rechit feature array
+         - t_idxarr
+         - t_energyarr
+         - t_posarr
+         - t_time
+         - t_pid
+         - row_splits
+         
+        (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, row_splits)
+        '''
+        return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[1]
+     
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
         outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
         # print("hello", outfilename, inputfile)

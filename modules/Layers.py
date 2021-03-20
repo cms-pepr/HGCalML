@@ -4,7 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import LocalDistanceScaling,WeightedCovariances,NeighbourPCA,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,WeightedCovariances,NeighbourPCA,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -64,6 +64,7 @@ global_layers_list['WeightedCovariances']=WeightedCovariances
 global_layers_list['LocalClusterReshapeFromNeighbours']=LocalClusterReshapeFromNeighbours
 
 
+global_layers_list['NeighbourCovariance']=NeighbourCovariance
 
 
 global_layers_list['LLObjectCondensation']=LLObjectCondensation
@@ -74,6 +75,7 @@ global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 global_layers_list['LossLayerBase']=LossLayerBase
 global_layers_list['LLFullTrackMLObjectCondensation']=LLFullTrackMLObjectCondensation
 
+global_layers_list['NormalizeInputShapes']=NormalizeInputShapes
 
 
 from tensorflow.keras.layers import Layer
@@ -83,16 +85,16 @@ from Loss_tools import deltaPhi
 
 
 
-class Relu(Layer):
+class ReluPlusEps(Layer):
     def __init__(self,**kwargs):
-        super(Relu, self).__init__(**kwargs)
+        super(ReluPlusEps, self).__init__(**kwargs)
     def compute_output_shape(self, input_shape):
         return input_shape
     def call(self, inputs):
-        return tf.nn.relu(inputs)
+        return tf.nn.relu(inputs)+1e-9
     
     
-global_layers_list['Relu']=Relu
+global_layers_list['ReluPlusEps']=ReluPlusEps
 
 class InputNormalization(Layer):
     def __init__(self, 

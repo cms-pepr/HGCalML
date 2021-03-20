@@ -11,8 +11,8 @@ def NeighbourCovariance(coordinates, features, n_idxs):
     .Input("coordinates: float32")
     .Input("features: float32")
     .Input("n_idxs: int32")
-    .Output("covariance: float32")
-    .Output("means float32");
+    .Output("covariance: float32") Vout x F x C(C+1)/2
+    .Output("means float32"); Vout x F x C
 
     '''
     

@@ -98,7 +98,7 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
         super(plotClusteringDuringTraining, self).__init__(**kwargs)
      
      
-    def _make_plot(self, counter, feat, predicted, truth):
+    def _make_plot(self, counter, feat, predicted, truth):#all these are lists and also include row splits
         try:
             td = TrainData_OC()#contains all dicts
             #row splits not needed

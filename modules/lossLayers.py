@@ -510,6 +510,12 @@ class LLFullObjectCondensation(LossLayerBase):
         if not self.use_energy_weights:
             energy_weights = tf.zeros_like(energy_weights)+1.
             
+        
+        t_energy    = tf.debugging.check_numerics(t_energy, "t_energy has NaNs")
+        t_energy = tf.where(t_energy<=0,0.,t_energy)
+        pred_energy    = tf.debugging.check_numerics(pred_energy, "pred_energy has NaNs")
+        energy_weights    = tf.debugging.check_numerics(energy_weights, "energy_weights has NaNs")
+            
         energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
@@ -545,10 +551,10 @@ class LLFullObjectCondensation(LossLayerBase):
         exceed_beta *= self.too_much_beta_scale
 
         
-        energy_loss = tf.debugging.check_numerics(payload[0], "energy loss has NaN")
-        pos_loss = tf.debugging.check_numerics(payload[1], "position loss has NaN")
-        time_loss = tf.debugging.check_numerics(payload[2], "time loss has NaN")
-        class_loss = tf.debugging.check_numerics(payload[3], "classification loss has NaN")
+        pos_loss    = tf.debugging.check_numerics(payload[1], "position loss has NaNs")
+        energy_loss = tf.debugging.check_numerics(payload[0], "energy loss has NaNs")
+        time_loss   = tf.debugging.check_numerics(payload[2], "time loss has NaNs")
+        class_loss  = tf.debugging.check_numerics(payload[3], "classification loss has NaNs")
         
         lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta
             
