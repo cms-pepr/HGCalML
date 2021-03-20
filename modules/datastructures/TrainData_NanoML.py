@@ -179,6 +179,36 @@ class TrainData_NanoML(TrainData):
         '''
         return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[1]
      
+     
+    def createPandasDataFrame(self, eventno):
+        #since this is only needed occationally
+        import pandas as pd
+        
+        if self.nElements() <= eventno:
+            raise IndexError("Event wrongly selected")
+        tdc = self.copy()
+        tdc.skim(eventno)
+        
+        f = tdc.transferFeatureListToNumpy()
+        featd = self.createFeatureDict(f[0])
+        t = tdc.transferTruthListToNumpy()
+        truthd = self.createTruthDict(t[0])
+        
+        featd.update(truthd)
+        
+        del featd['recHitXY'] #so that it's flat
+        
+        featd['recHitLogEnergy'] = np.log(featd['recHitEnergy']+1)
+        
+        allarr = []
+        for k in featd:
+            allarr.append(featd[k])
+        allarr = np.concatenate(allarr,axis=1)
+        
+        
+        frame = pd.DataFrame (allarr, columns = [k for k in featd])
+        return frame
+    
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
         outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
         # print("hello", outfilename, inputfile)
