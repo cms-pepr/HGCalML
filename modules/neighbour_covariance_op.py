@@ -16,9 +16,15 @@ def NeighbourCovariance(coordinates, features, n_idxs):
 
     '''
     
+    #coordinates = tf.debugging.check_numerics(coordinates,'coordinates has nans')
+    #features = tf.debugging.check_numerics(features,'features have nans')
+    
     covariance, means = _ncov.NeighbourCovariance(coordinates=coordinates, 
                                                   features=features, 
                                                   n_idxs=n_idxs)
+    
+    #covariance = tf.debugging.check_numerics(covariance,'covariance has nans')
+    #means = tf.debugging.check_numerics(means,'means have nans')
     return covariance, means
 
 

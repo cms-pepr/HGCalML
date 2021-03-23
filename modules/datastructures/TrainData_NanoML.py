@@ -9,6 +9,9 @@ import numpy as np
 class TrainData_NanoML(TrainData):
     def __init__(self):
         TrainData.__init__(self)
+    
+    def isValid(self):
+        return True #needs to be filled
 
     def buildObs(self, tree, hitType, label, ext=None):
         obs = tree["_".join([hitType, label])].array()

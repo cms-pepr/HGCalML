@@ -91,7 +91,7 @@ class ReluPlusEps(Layer):
     def compute_output_shape(self, input_shape):
         return input_shape
     def call(self, inputs):
-        return tf.nn.relu(inputs)+1e-9
+        return tf.nn.relu(inputs)+1e-6
     
     
 global_layers_list['ReluPlusEps']=ReluPlusEps

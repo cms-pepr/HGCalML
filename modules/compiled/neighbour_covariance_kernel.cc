@@ -37,6 +37,8 @@ static void calcmeans( // <<< vout,nfeat,(ncoords)
             float sumw=0;
             for(int i_n = 0; i_n < n_neigh; i_n++){
                 int nidx = d_n_dixs[I2D(i_v,i_n,n_neigh)];
+                if(nidx<0)
+                    continue;
                 float feat = d_feats[I2D(nidx,i_f,n_feat)];
                 sumw += feat;
             }
@@ -45,11 +47,13 @@ static void calcmeans( // <<< vout,nfeat,(ncoords)
                 float sum=0;
                 for(int i_n = 0; i_n < n_neigh; i_n++){
                     int nidx = d_n_dixs[I2D(i_v,i_n,n_neigh)];
+                    if(nidx<0)
+                        continue;
                     float feat = d_feats[I2D(nidx,i_f,n_feat)];
                     float coord = d_coords[I2D(nidx,i_c,n_coords)];
                     sum += feat * coord;
                 }
-                float entry = sum/sumw;
+                float entry = sum/(sumw+1e-4);
                 if(!sumw)
                     entry=0;
                 d_means[I3D(i_v,i_f,i_c,n_feat,n_coords)]=entry;
@@ -79,18 +83,20 @@ static void calccov( // <<< vout,nfeat,(ncoords)
             float sumw=0;
             for(int i_n = 0; i_n < n_neigh; i_n++){
                 int nidx = d_n_dixs[I2D(i_v,i_n,n_neigh)];
+                if(nidx<0)
+                    continue;
                 float feat = d_feats[I2D(nidx,i_f,n_feat)];
                 sumw += feat;
             }
             for (int i_c = 0; i_c < n_coords; i_c++) {
                 for (int j_c = 0; j_c <= i_c; j_c++) {
-
-
                     float sum=0;
                     float meancoordi = d_means[I3D(i_v,i_f,i_c,n_feat,n_coords)];
                     float meancoordj = d_means[I3D(i_v,i_f,j_c,n_feat,n_coords)];
                     for(int i_n = 0; i_n < n_neigh; i_n++){
                         int nidx = d_n_dixs[I2D(i_v,i_n,n_neigh)];
+                        if(nidx<0)
+                            continue;
                         float feat = d_feats[I2D(nidx,i_f,n_feat)];
                         float coordi = d_coords[I2D(nidx,i_c,n_coords)];
                         float coordj = d_coords[I2D(nidx,j_c,n_coords)];
@@ -98,7 +104,7 @@ static void calccov( // <<< vout,nfeat,(ncoords)
                     }
                     //j<=i
                     int covidx = j_c + (i_c+1)*i_c/2 ;
-                    float entry = sum/sumw;
+                    float entry = sum/(sumw+1e-4);
                     if(!sumw)
                         entry=0;
                     d_covariance[I3D(i_v,i_f,covidx,n_feat,n_covs)]=entry;

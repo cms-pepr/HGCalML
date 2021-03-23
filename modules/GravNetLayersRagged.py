@@ -9,7 +9,7 @@ from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
 #### helper###
-from datastructures import TrainData_OC
+from datastructures import TrainData_OC,TrainData_NanoML
 
 def check_type_return_shape(s):
     if not isinstance(s, tf.TensorSpec):
@@ -722,7 +722,7 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
             features, distances, hierarchy, nidxs, row_splits, tidxs = inputs
             other=[]
             
-        sdist, snidx = SortAndSelectNeighbours.raw_call(distances,nidxs,K=self.K, radius=self.radius)
+        sdist, snidx = distances,nidxs #  
         #generate loss
         if self.loss_enabled:
             #some headroom for radius
@@ -732,6 +732,7 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
                 print_loss=self.print_loss,name=self.name)
             self.add_loss(lossval)
         # do the reshaping
+        sdist, snidx = SortAndSelectNeighbours.raw_call(sdist, snidx,K=self.K, radius=self.radius)
         
         sel, rs, backgather = LocalClustering.raw_call(snidx,hierarchy,row_splits,
                                                        print_reduction=self.print_reduction,name=self.name)
