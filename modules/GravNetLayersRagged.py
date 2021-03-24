@@ -153,7 +153,7 @@ class LocalDistanceScaling (tf.keras.layers.Layer):
     
     @staticmethod
     def raw_call(dist,scale):
-        scale = tf.nn.softsign(scale)+1
+        scale = 10.*(tf.nn.tanh(scale/10.-1.5)+1)
         return dist*scale
     
     def call(self, inputs):

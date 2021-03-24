@@ -104,11 +104,11 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         dist = LocalDistanceScaling()([dist, Dense(1)(x)])
         
         x_cl, rs, bidxs, sel_gidx, energy, x, t_idx,coords = LocalClusterReshapeFromNeighbours(
-                 K=8+3*i, 
-                 radius=0.5 - float(i)/10, 
+                 K=8, 
+                 radius=0.5, #doesn't really have an effect because of local distance scaling
                  print_reduction=True, 
                  loss_enabled=True, 
-                 loss_scale = 5., 
+                 loss_scale = 2., 
                  loss_repulsion=0.5,
                  print_loss=True,
                  name='clustering_'+str(i)
@@ -134,12 +134,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                                               n_filters=nfilt,
                                               n_propagate=nprop,
                                               return_self=True)([x, rs])
-        
-                                              
-        dist = LocalDistanceScaling()([dist,Dense(1)(Concatenate()([x_gn,coords]))])                                      
-        subdivisions = 4
-        
-                                              
+                        
         #add more shape information
         x_sp = x_gn
         #x_sp = SoftPixelCNN(length_scale=1.,mode='full', subdivisions=4)([coords,x_sp,nidx])
