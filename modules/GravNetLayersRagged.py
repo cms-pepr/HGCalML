@@ -881,6 +881,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  n_dimensions: int,
                  n_filters : int,
                  n_propagate : int,
+                 return_self=False,
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -891,6 +892,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         features transformations (minimum 1)
 
         :param n_propagate: how much to propagate in feature tranformation, could be a list in case of multiple
+        :param return_self: for the neighbour indices and distances, switch whether to return the 'self' index and distance (0)
         :param kwargs:
         """
         super(RaggedGravNet, self).__init__(**kwargs)
@@ -901,6 +903,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
         self.n_filters = n_filters
+        self.return_self = return_self
 
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
@@ -947,12 +950,14 @@ class RaggedGravNet(tf.keras.layers.Layer):
         row_splits = inputs[1]
         
         coordinates = self.input_spatial_transform(x)
-
-        neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits)
         neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours-1]) #for proper output shape for keras
         distancesq = tf.reshape(distancesq, [-1, self.n_neighbours-1])
 
-        return self.create_output_features(x, neighbour_indices, distancesq), coordinates, neighbour_indices, distancesq
+        outfeats = self.create_output_features(x, neighbour_indices, distancesq)
+        if self.return_self:
+            neighbour_indices, distancesq = sidx, sdist
+        return outfeats, coordinates, neighbour_indices, distancesq
 
     def call(self, inputs):
         return self.priv_call(inputs)
@@ -966,24 +971,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
     
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        #
-        # ragged_split_added_indices, _ = SelectKnn(self.n_neighbours, coordinates, row_splits,
-        #                                           max_radius=1.0, tf_compatible=True)
-        #
-        # # ragged_split_added_indices = ragged_split_added_indices[:,1:]
-        #
-        # ragged_split_added_indices = ragged_split_added_indices[..., tf.newaxis]
-        #
-        # distancesq = tf.reduce_sum(
-        #     (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices)) ** 2,
-        #     axis=-1)  # [SV, N]
         idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius= -1.0, tf_compatible=False)
-
-        idx = idx[:, 1:]
-        dist = dist[:, 1:]
-
-        return idx,dist
+        if self.return_self:
+            return idx[:, 1:], dist[:, 1:], idx, dist
+        return idx[:, 1:], dist[:, 1:], None, None
 
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
@@ -995,7 +987,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
         config = {'n_neighbours': self.n_neighbours,
                   'n_dimensions': self.n_dimensions,
                   'n_filters': self.n_filters,
-                  'n_propagate': self.n_propagate}
+                  'n_propagate': self.n_propagate,
+                  'return_self': self.return_self}
         base_config = super(RaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 

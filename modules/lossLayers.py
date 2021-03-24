@@ -146,6 +146,8 @@ class LLLocalClusterCoordinates(LossLayerBase):
     def raw_loss(distances, hierarchy, neighbour_indices, truth_indices,
                  add_self_reference, repulsion_contrib, print_loss, name):
         
+        
+        hierarchy = (tf.nn.sigmoid(hierarchy)+1.)/2.
         #make neighbour_indices TF compatible (replace -1 with own index)
         own = tf.expand_dims(tf.range(tf.shape(truth_indices)[0],dtype='int32'),axis=1)
         neighbour_indices = tf.where(neighbour_indices<0, own, neighbour_indices) #does broadcasting to the righ thing here?
@@ -158,19 +160,17 @@ class LLLocalClusterCoordinates(LossLayerBase):
             
         neighbour_indices = tf.expand_dims(neighbour_indices,axis=2)#tf like
         
-        firsttruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,0:1]),axis=2)
+        firsttruth = truth_indices #[,tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,0:1]),axis=2)
         neightruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,1:] ),axis=2)
         
         #distances are actuallt distances**2
         expdist = tf.exp(- 3. * distances)
-        att_proto = (1.-repulsion_contrib)* (1.-expdist)  + 0.001*distances  #mild attractive to help learn
-        rep_proto = repulsion_contrib * expdist # - 0.001 * distances
+        att_proto = (1.-repulsion_contrib)* (1.-expdist)  #+ 0.1*distances  #mild attractive to help learn
+        rep_proto = repulsion_contrib * expdist #- 0.1 * distances
         
-        #hierarchy = tf.clip_by_value(hierarchy,0.,1-1e-6)
-        hierarchy_scaling = hierarchy #tf.atanh(hierarchy)
         
         potential = tf.where(tf.abs(firsttruth-neightruth)<0.1, att_proto, rep_proto)
-        potential = hierarchy_scaling * tf.reduce_mean(potential, axis=1, keepdims=True)
+        potential = hierarchy * tf.reduce_mean(potential, axis=1, keepdims=True)
         potential = tf.reduce_mean(potential)
         
         penalty = 1. - hierarchy
