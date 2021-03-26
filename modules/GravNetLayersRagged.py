@@ -115,25 +115,96 @@ class NeighbourCovariance(tf.keras.layers.Layer):
         super(NeighbourCovariance, self).build(input_shapes)
         
     @staticmethod
+    def raw_get_cov_shapes(input_shapes):
+        coordinates_s, features_s, _ = input_shapes
+        nF = features_s[1]
+        nC = coordinates_s[1]
+        covshape = int(nF*(nC*(nC+1)//2))
+        return nF, nC, covshape
+    
+    @staticmethod
     def raw_call(coordinates, features, n_idxs):
-        nF = features.shape[1]
-        nC = coordinates.shape[1]
-        nVout = -1 #n_idxs.shape[0]
         cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
                                          features=features, 
                                          n_idxs=n_idxs)
-        # Vout x F x C(C+1)/2 , Vout x F x C
-        covshape = int(nF*(nC*(nC+1)//2))
-        cov = tf.reshape(cov, [nVout, covshape])
-        means = tf.reshape(means, [nVout, nF*nC])
-        
         return cov, means
     
     def call(self, inputs):
         coordinates, features, n_idxs = inputs
+        
         cov,means = NeighbourCovariance.raw_call(coordinates, features, n_idxs)
+        
+        nF, nC, covshape = NeighbourCovariance.raw_get_cov_shapes([s.shape for s in inputs])
+        
+        cov = tf.reshape(cov, [-1, covshape])
+        means = tf.reshape(means, [-1, nF*nC])
+        
         return tf.concat([cov,means],axis=-1)
         
+class NeighbourApproxPCA(tf.keras.layers.Layer):
+    def __init__(self,hidden_nodes=16, **kwargs):
+        """
+        Inputs: 
+          - coordinates (Vin x C)
+          - features (Vin x F)
+          - neighbour indices (Vout x K)
+          
+        Returns concatenated:
+          - feature weighted covariance matrices (lower triangle) (Vout x F*(C^2+C))
+          - feature weighted means (Vout x F*C)
+          
+        THIS OPERATION HAS NO GRADIENT SO FAR!!
+        """
+        super(NeighbourApproxPCA, self).__init__(**kwargs)
+        with tf.name_scope(self.name + "/1/"):
+            self.hidden_dense = tf.keras.layers.Dense(hidden_nodes,activation='elu')
+        self.output_dense = None #tf.keras.layers.Dense(hidden_nodes,activation='elu')
+        self.nF = None
+        self.nC = None
+        self.covshape = None
+        self.hidden_nodes = hidden_nodes
+        
+        
+    def get_config(self):
+        config = {'hidden_nodes': self.hidden_nodes,
+                  'nF': self.nF,
+                  'nC': self.nC,
+                  'covshape': self.covshape}
+        base_config = super(NeighbourApproxPCA, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def build(self, input_shapes): #pure python
+        nF, nC, covshape = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        self.nF = nF
+        self.nC = nC
+        self.covshape = covshape
+        
+        with tf.name_scope(self.name + "/1/"):
+            self.hidden_dense.build((None,None,covshape//nF))
+            
+        with tf.name_scope(self.name + "/2/"):
+            self.output_dense = tf.keras.layers.Dense(nC**2+nC)
+            self.output_dense.build((None,None,self.hidden_dense.units))
+            
+        super(NeighbourApproxPCA, self).build(input_shapes)  
+        
+    def compute_output_shape(self, input_shapes):
+        nF, nC = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        return (None, nF*(nC**2 + nC) + nF*nC)
+
+    def call(self, inputs):
+        coordinates, features, n_idxs = inputs
+        cov,means = NeighbourCovariance.raw_call(coordinates, features, n_idxs)
+        cov = tf.reshape(cov, [-1, self.nF, self.covshape//self.nF])
+        cov = self.hidden_dense(cov)
+        cov = self.output_dense(cov)
+        
+        cov = tf.reshape(cov, [-1, self.nF*(self.nC**2 + self.nC)])
+        means = tf.reshape(means, [-1, self.nF*self.nC])
+        
+        return tf.concat([cov,means],axis=-1)
+    
+    
     
 class LocalDistanceScaling (tf.keras.layers.Layer):
     def __init__(self,**kwargs):
@@ -160,41 +231,6 @@ class LocalDistanceScaling (tf.keras.layers.Layer):
         dist,scale = inputs
         return LocalDistanceScaling.raw_call(dist,scale)
     
-############# PCA like section
-
-class NeighbourPCA   (tf.keras.layers.Layer):
-    def __init__(self,**kwargs):
-        """
-        This layer performas a simple exact PCA* of the inputs fiven by:
-        
-        - the features (V x F)
-        - the neighbour indices to consider
-        
-        The output shape is the F^2
-        
-        Too resource intense for full application
-        
-        """
-        super(NeighbourPCA, self).__init__(**kwargs)
-    
-    def compute_output_shape(self, input_shapes):
-        return input_shapes[0][:-1]+input_shapes[0][-1]**2
-    
-    @staticmethod
-    def raw_call(nidx, feat):
-        nfeat = tf.gather_nd(feat, tf.expand_dims(nidx,axis=2))
-        s,_,v = tf.linalg.svd(nfeat)  # V x F, V x F x F
-        s = tf.expand_dims(s, axis=2)  # V x F x 1 
-        s = tf.sqrt(s + 1e-6)
-        scaled = s*v  # V x F x F
-        return tf.reshape(scaled, [-1,feat.shape[1]**2])
-        
-    def call(self, inputs):
-        feat, neighs = inputs
-        return NeighbourPCA.raw_call(neighs,feat)
-
-############# Local clustering section
-
 
 class LocalClustering(tf.keras.layers.Layer):
     def __init__(self,

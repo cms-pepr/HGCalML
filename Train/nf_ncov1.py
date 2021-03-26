@@ -30,7 +30,7 @@ from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs
 
-from Layers import ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
+from Layers import NeighbourApproxPCA,ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
 from datastructures import TrainData_NanoML 
 td=TrainData_NanoML()
 
@@ -79,7 +79,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     #                                      n_filters=32,
     #                                      n_propagate=32)([x, rs])
     nidx, dist = KNN(K=64)([coords,rs])
-    ncov = NeighbourCovariance()([coords,ReluPlusEps()(energy_and_time),nidx])
+    ncov = NeighbourApproxPCA()([coords,ReluPlusEps()(energy_and_time),nidx])
     x = Concatenate()([x,ncov])
     x_mp = MessagePassing([16,16])([x,nidx])
     x = Concatenate()([x,x_mp])
@@ -108,7 +108,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                  radius=0.5, #doesn't really have an effect because of local distance scaling
                  print_reduction=True, 
                  loss_enabled=True, 
-                 loss_scale = 2., 
+                 loss_scale = 4., 
                  loss_repulsion=0.5,
                  print_loss=True,
                  name='clustering_'+str(i)
@@ -118,9 +118,10 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         energy = ReduceSumEntirely()(energy)#sums up all contained energy per cluster
                  
         gatherids.append(bidxs)
-        x_cl = Dense(128, activation='elu',name='dense_clc_'+str(i))(x_cl)
+        x_cl = Dense(128, activation='elu',name='dense_clc0_'+str(i))(x_cl)
+        x_cl = Dense(64, activation='relu',name='dense_clc1_'+str(i))(x_cl)
         n_energy = BatchNormalization(momentum=0.6)(energy)
-        x = Concatenate()([x,x_cl,n_energy])
+        x = Concatenate()([coords,x_cl,n_energy])
         
         pixelcompress=4
         nneigh = 32+4*i
@@ -128,7 +129,6 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         nprop = 32
         n_dimensions = 3 #make it plottable
         
-        x = Concatenate()([coords,x])
         x_gn, coords, nidx, dist = RaggedGravNet(n_neighbours=nneigh,
                                               n_dimensions=n_dimensions,
                                               n_filters=nfilt,
@@ -136,7 +136,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                                               return_self=True)([x, rs])
                         
         #add more shape information
-        x_sp = x_gn
+        x_sp = x
         #x_sp = SoftPixelCNN(length_scale=1.,mode='full', subdivisions=4)([coords,x_sp,nidx])
         x_sp = NeighbourCovariance()([coords,ReluPlusEps()(x_sp),nidx])
         x_sp = Dense(128, activation='elu',name='dense_spc_'+str(i))(x_sp)
@@ -149,8 +149,8 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         x = Concatenate()([x,x_gn,x_mp,x_sp])
         #check and compress it all                                      
         x = Dense(64, activation='elu',name='dense_a_'+str(i))(x)
-        x = Dense(64, activation='elu',name='dense_b_'+str(i))(x)
         x = BatchNormalization(momentum=0.6)(x)
+        x = Dense(64, activation='relu',name='dense_b_'+str(i))(x)
         
         x_r=x
         #record more and more the deeper we go
@@ -178,19 +178,20 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat)
     
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=1e-4,
-                                         position_loss_weight=1e-2,
+                                         energy_loss_weight=1e-1,
+                                         position_loss_weight=0., #seems broken
                                          timing_loss_weight=0.,#1e-3,
-                                         beta_loss_scale=1.,
+                                         beta_loss_scale=3.,
                                          repulsion_scaling=1.,
                                          q_min=1.5,
-                                         prob_repulsion=True,
+                                         prob_repulsion=False,
                                          phase_transition=1,
                                          alt_potential_norm=True
                                          )([pred_beta, pred_ccoords, pred_energy, 
                                             pred_pos, pred_time, pred_id,
                                             orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid,
                                             row_splits])
+
 
     return Model(inputs=Inputs, outputs=[pred_beta, 
                                          pred_ccoords,
@@ -269,7 +270,7 @@ train.compileModel(learningrate=learningrate,
                           metrics=None)
 
 
-model, history = train.trainModel(nepochs=20,
+model, history = train.trainModel(nepochs=4,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   extend_truth_list_by = len(train.keras_model.outputs)-2, #just adapt truth list to avoid keras error (no effect on model)
@@ -282,15 +283,16 @@ model, history = train.trainModel(nepochs=20,
                                   max_lr = learningrate,
                                   step_size = 100)]+cb)
 
-print("freeze BN")
-for l in train.keras_model.layers:
-    if isinstance(l, BatchNormalization):
-        l.trainable=False
-    if 'GravNetLLLocalClusterLoss' in l.name:
-        l.active=False
+#print("freeze BN")
+#for l in train.keras_model.layers:
+#    if isinstance(l, BatchNormalization):
+#        l.trainable=False
+#    if 'GravNetLLLocalClusterLoss' in l.name:
+#        l.active=False
         
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 
+learningrate = 1e-4
 train.compileModel(learningrate=learningrate,
                           loss=None,
                           metrics=None)
