@@ -1190,6 +1190,7 @@ class MessagePassing(tf.keras.layers.Layer):
 
 class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
     '''
+    Inputs: x, neighbor_indices, distancesq
 
     '''
 
@@ -1240,32 +1241,12 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
-
-        # weights = gauss_of_lin(10. * distancesq)
-        # weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
-        # neighbour_features = tf.gather_nd(features, neighbour_indices)
-        # neighbour_features *= weights
-        # neighbours_max = tf.reduce_max(neighbour_features, axis=1)
-        # neighbours_mean = tf.reduce_mean(neighbour_features, axis=1)
-        #
         f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices, n_moments=0)
         return f
-
-
-        return tf.concat([neighbours_max, neighbours_mean], axis=-1)
-
-
 
     def call(self, inputs):
         x, neighbor_indices, distancesq = inputs
         return self.create_output_features(x, neighbor_indices, distancesq)
-
-
-    def get_config(self):
-        config = {'n_feature_transformation': self.n_feature_transformation,
-                  }
-        base_config = super(DistanceWeightedMessagePassing, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 
