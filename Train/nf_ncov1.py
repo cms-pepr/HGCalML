@@ -9,7 +9,7 @@ import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
 from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
-from tensorflow.keras.layers import Dense, Concatenate, GaussianDropout
+from tensorflow.keras.layers import Reshape, Dense, Concatenate, GaussianDropout, Dropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
@@ -23,14 +23,14 @@ from DeepJetCore.training.training_base import custom_objects_list
 
 from plotting_callbacks import plotEventDuringTraining
 from ragged_callbacks import plotRunningPerformanceMetrics
-from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures, ReduceSumEntirely
+from DeepJetCore.DJCLayers import ScalarMultiply, SelectFeatures, ReduceSumEntirely, StopGradient
 
 from clr_callback import CyclicLR
 from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs
 
-from Layers import DistanceWeightedMessagePassing,SortAndSelectNeighbours,NeighbourCovariance,NeighbourApproxPCA,ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
+from Layers import EdgeConvStatic,DistanceWeightedMessagePassing,SortAndSelectNeighbours,NeighbourCovariance,NeighbourApproxPCA,ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
 from datastructures import TrainData_NanoML 
 td=TrainData_NanoML()
 
@@ -51,8 +51,8 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     rs = row_splits
     
     feat_norm = ProcessFeatures()(feat)#get rid of unit scalings, almost normalise
-    x = BatchNormalization(momentum=0.6)(feat_norm)
-    
+    feat_norm = BatchNormalization(momentum=0.6)(feat_norm)
+    x=feat_norm
     
     energy = SelectFeatures(0,1)(feat)
     time = SelectFeatures(8,9)(feat)
@@ -73,17 +73,24 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     coords = Dense(16,activation='elu')(coords)
     coords = Dense(32,activation='elu')(coords)
     coords = Dense(3,use_bias=False)(coords)
+    coords = ScalarMultiply(0.1)(coords)
     coords = Add()([coords, orig_coords])
     coords = Dense(3,use_bias=False,kernel_initializer=tf.keras.initializers.identity())(coords)
+    
+    first_coords = coords
     
     ###### apply one gravnet-like transformation (explicit here because we have created coords by hand) ###
 
     nidx, dist = KNN(K=48)([coords,rs])
     x_mp = DistanceWeightedMessagePassing([32])([x,nidx,dist])
     
+    first_nidx = nidx
+    first_dist = dist
+    
     ###### collect information about the surrounding energy and time distributions per vertex ###
 
     ncov = NeighbourCovariance()([coords,ReluPlusEps()(Concatenate()([energy,time])),nidx])
+    ncov = BatchNormalization(momentum=0.6)(ncov)
     ncov = Dense(64, activation='elu',name='pre_dense_ncov_a')(ncov)
     ncov = Dense(32, activation='elu',name='pre_dense_ncov_b')(ncov)
     
@@ -123,11 +130,18 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
         gatherids.append(bidxs)
         
+        if i or True:
+            x_cl_rs = Reshape([-1, x.shape[-1]])(x_cl) #get to shape V x K x F
+            xec = EdgeConvStatic([32,32,32],name="ec_static_"+str(i))(x_cl_rs)
+            x_cl = Concatenate()([x,xec])
+        
         ### explicitly sum energy and re-add to features
         
         energy = ReduceSumEntirely()(energy)
         n_energy = BatchNormalization(momentum=0.6)(energy)
         x = Concatenate()([x_cl,n_energy])
+        
+        
         x = Dense(128, activation='elu',name='dense_clc0_'+str(i))(x)
         x = Dense(64, activation='relu',name='dense_clc1_'+str(i))(x)
         #notice last relu for feature weighting later
@@ -140,6 +154,8 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                                                  return_self=True)([Concatenate()([coords,x]), 
                                                                     rs])
         
+        
+         
         ### add neighbour summary statistics
                         
         x_ncov = NeighbourCovariance()([coords,ReluPlusEps()(x),nidx])
@@ -163,8 +179,9 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
         #### compress further for output, but forward fill 64 feature x to next iteration
         
-        x_r = Dense(32, activation='elu',name='dense_out_c_'+str(i))(x)
-        x_r = Concatenate()([coords,x_r]) ## add coordinates, might come handy for cluster space
+        x_r = Dense(8+16*i, activation='elu',name='dense_out_c_'+str(i))(x)
+        #coords_nograd = StopGradient()(coords)
+        #x_r = Concatenate()([coords_nograd,x_r]) ## add coordinates, might come handy for cluster space
         
         if i >= total_iterations-1:
             energy = MultiBackGather()([energy, gatherids])#assign energy sum to all cluster components
@@ -175,8 +192,13 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
         
     x = Concatenate(name='allconcat')(allfeat)
+    #x = Dropout(0.2)(x)
+    x_mp = DistanceWeightedMessagePassing([32,32,32])([x,first_nidx,first_dist])
+    x = Concatenate()([x,x_mp])
+    
     x = Dense(128, activation='elu', name='alldense')(x)
     x = Concatenate()([x,energy])
+    #x = Dropout(0.2)(x)
     x = BatchNormalization(momentum=0.6)(x)
     x = Dense(64, activation='elu')(x)
     x = BatchNormalization(momentum=0.6)(x)
@@ -184,16 +206,25 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
 
     pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat)
     
+    #
+    #
+    # double scale phase transition with linear beta + qmin
+    #  -> more high beta points, but: payload loss will still scale one 
+    #     (or two, but then doesn't matter)
+    #
+    
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=1.,
+                                         energy_loss_weight=0.,
                                          position_loss_weight=0., #seems broken
                                          timing_loss_weight=0.,#1e-3,
-                                         beta_loss_scale=4.,
+                                         beta_loss_scale=1.,
                                          repulsion_scaling=1.,
-                                         q_min=2.5,
+                                         q_min=1.5,
                                          prob_repulsion=True,
-                                         phase_transition=1,
-                                         alt_potential_norm=True
+                                         phase_transition=0,
+                                         phase_transition_double_weight=False,
+                                         alt_potential_norm=True,
+                                         cut_payload_beta_gradient=False
                                          )([pred_beta, pred_ccoords, pred_energy, 
                                             pred_pos, pred_time, pred_id,
                                             orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid,
@@ -270,7 +301,7 @@ cb += [
     for i in  range(12,18) #between 16 and 21
     ]
 learningrate = 5e-3
-nbatch = 200000 #quick first training with simple examples = low # hits
+nbatch = 120000 #quick first training with simple examples = low # hits
 
 train.compileModel(learningrate=learningrate,
                           loss=None,
@@ -286,9 +317,9 @@ model, history = train.trainModel(nepochs=4,
                                   verbose=verbosity,
                                   backup_after_batches=100,
                                   additional_callbacks=
-                                  [CyclicLR (base_lr = learningrate/5.,
+                                  [CyclicLR (base_lr = learningrate/3.,
                                   max_lr = learningrate,
-                                  step_size = 100)]+cb)
+                                  step_size = 20)]+cb)
 
 #print("freeze BN")
 #for l in train.keras_model.layers:

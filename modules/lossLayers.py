@@ -384,8 +384,10 @@ class LLFullObjectCondensation(LossLayerBase):
                  noise_scaler=1., too_much_beta_scale=0., cont_beta_loss=False, log_energy=False, n_classes=0,
                  prob_repulsion=False,
                  phase_transition=0.,
+                 phase_transition_double_weight=False,
                  alt_potential_norm=False,
                  print_time=True,
+                 cut_payload_beta_gradient=False,
                  standard_configuration=None,
                  **kwargs):
         """
@@ -457,9 +459,10 @@ class LLFullObjectCondensation(LossLayerBase):
         self.n_classes = n_classes
         self.prob_repulsion = prob_repulsion
         self.phase_transition = phase_transition
+        self.phase_transition_double_weight = phase_transition_double_weight
         self.alt_potential_norm = alt_potential_norm
         self.print_time = print_time
-
+        self.cut_payload_beta_gradient = cut_payload_beta_gradient
         self.loc_time=time.time()
 
         if standard_configuration is not None:
@@ -540,7 +543,9 @@ class LLFullObjectCondensation(LossLayerBase):
                                            cont_beta_loss=self.cont_beta_loss,
                                            prob_repulsion=self.prob_repulsion,
                                            phase_transition=self.phase_transition>0. ,
-                                           alt_potential_norm=self.alt_potential_norm
+                                           phase_transition_double_weight = self.phase_transition_double_weight,
+                                           alt_potential_norm=self.alt_potential_norm,
+                                           cut_payload_beta_gradient=self.cut_payload_beta_gradient
                                            )
 
         
@@ -614,8 +619,10 @@ class LLFullObjectCondensation(LossLayerBase):
             'n_classes': self.n_classes,
             'prob_repulsion': self.prob_repulsion,
             'phase_transition': self.phase_transition,
+            'phase_transition_double_weight': self.phase_transition_double_weight,
             'alt_potential_norm': self.alt_potential_norm,
-            'print_time' : self.print_time
+            'print_time' : self.print_time,
+            'cut_payload_beta_gradient': self.cut_payload_beta_gradient
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

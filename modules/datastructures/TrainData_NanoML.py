@@ -182,19 +182,67 @@ class TrainData_NanoML(TrainData):
         '''
         return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[1]
      
-     
-    def createPandasDataFrame(self, eventno):
+    def createFeatureDict(self,feat,addxycomb=True):
+        d = {
+        'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
+        'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
+        'recHitID'    : feat[:,2:3] ,          #recHitID, #indicator if it is track or not
+        'recHitTheta' : feat[:,3:4] ,          #recHitTheta ,
+        'recHitR'     : feat[:,4:5] ,          #recHitR   ,
+        'recHitX'     : feat[:,5:6] ,          #recHitX     ,
+        'recHitY'     : feat[:,6:7] ,          #recHitY     ,
+        'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
+        'recHitTime'  : feat[:,8:9] ,            #recHitTime  
+        }
+        if addxycomb:
+            d['recHitXY']  = feat[:,5:7]    
+            
+        return d
+    
+    def createTruthDict(self, truth):
+        
+        out = {}
+        keys = ['truthHitAssignementIdx',
+                'truthHitAssignedEnergies', 
+                'truthHitAssignedX',    
+                'truthHitAssignedY',
+                'truthHitAssignedZ',  
+                'truthHitAssignedDirX',
+                'truthHitAssignedDirY', 
+                'truthHitAssignedDirZ',
+                'truthHitAssignedEta',
+                'truthHitAssignedPhi',
+                'truthHitAssignedT',  
+                'truthHitAssignedDirEta',
+                'truthHitAssignedDirR',
+                'truthHitAssignedDepEnergies', 
+                
+                'ticlHitAssignementIdx'  , #17
+                'ticlHitAssignedEnergies', #18
+                
+                'truthHitAssignedPIDs']
+        
+        for key, i in zip(keys, range(len(keys))):
+            out[key] = truth[:,i:i+1]
+        
+        return out
+    
+    
+    def createPandasDataFrame(self, eventno=-1):
         #since this is only needed occationally
         import pandas as pd
         
         if self.nElements() <= eventno:
             raise IndexError("Event wrongly selected")
-        tdc = self.copy()
-        tdc.skim(eventno)
         
-        f = tdc.transferFeatureListToNumpy()
+        tdc = self.copy()
+        if eventno>=0:
+            tdc.skim(eventno)
+        
+        f = tdc.transferFeatureListToNumpy(False)
         featd = self.createFeatureDict(f[0])
-        t = tdc.transferTruthListToNumpy()
+        rs = f[1]
+        t = tdc.transferTruthListToNumpy(False)
         truthd = self.createTruthDict(t[0])
         
         featd.update(truthd)
@@ -210,7 +258,10 @@ class TrainData_NanoML(TrainData):
         
         
         frame = pd.DataFrame (allarr, columns = [k for k in featd])
-        return frame
+        if eventno>=0:
+            return frame
+        else:
+            return frame, rs
     
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
         outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'

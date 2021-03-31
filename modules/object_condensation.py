@@ -73,7 +73,9 @@ def oc_per_batch_element(
         cont_beta_loss=False,
         prob_repulsion=False,
         phase_transition=False,
-        alt_potential_norm=False
+        phase_transition_double_weight=False,
+        alt_potential_norm=False,
+        cut_payload_beta_gradient=False
         ):
     '''
     all inputs
@@ -151,7 +153,7 @@ def oc_per_batch_element(
     
     beta_kalpha_sm = beta_kalpha
     if cont_beta_loss:
-        
+        raise ValueError("cont_beta_loss: didn't work out")
         b_exp = M * tf.expand_dims(beta, axis=0)
         maxb = beta_kalpha
         meanb = tf.math.divide_no_nan(tf.reduce_sum(b_exp, axis = 1, keepdims=True),
@@ -169,8 +171,18 @@ def oc_per_batch_element(
     if phase_transition:
         # K x V x 1
         # does not scale with q of each vertex, but only with beta_kalpha
-        B_pen = - object_weights_kalpha * M * beta_kalpha * 1./(20*distancesq + 1.)#tf.exp(-10. * tf.sqrt(distancesq + 1e-9))
-        B_pen = tf.where(distancesq==0. , 0., B_pen) #exclude exact self-potential (not needed in the other cases)
+        #
+        # for double scale phase transition also scale with linear beta, 
+        # add qmin and allow for self-potential (more smooth)
+        #
+        
+        B_pen = 0.#tf.exp(-10. * tf.sqrt(distancesq + 1e-9))
+        if phase_transition_double_weight:
+            B_pen = - object_weights_kalpha * M * beta_kalpha * tf.math.exp(-20*distancesq)
+            B_pen *= 1. + tf.expand_dims(beta,axis=0)
+        else:
+            B_pen = - object_weights_kalpha * M * beta_kalpha * 1./(20*distancesq + 1.)
+            B_pen = tf.where(distancesq==0. , 0., B_pen) #exclude exact self-potential (not needed in the other cases)
         #B_pen = mean_N_K(B_pen, N, K)
         B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=1), N_per_obj) # K x 1
         B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K) # 1
@@ -197,6 +209,8 @@ def oc_per_batch_element(
     p_w = object_weights_kalpha * payload_weight_function(M * tf.expand_dims(beta,axis=0), 
                                   tf.expand_dims(object_weights,axis=0), 
                                   payload_weight_threshold) #K x V x 1
+    if cut_payload_beta_gradient:
+        p_w = tf.stop_gradient(p_w)
     pll = p_w * tf.expand_dims(payload_loss, axis=0) #K x V x X
     pll = tf.math.divide_no_nan(
         tf.reduce_sum(pll,axis=[0,1]), K  )# (), weights are already normalised in V
@@ -219,7 +233,9 @@ def oc_loss(
         cont_beta_loss=False,
         prob_repulsion=False,
         phase_transition=False,
-        alt_potential_norm=False
+        phase_transition_double_weight=False,
+        alt_potential_norm=False,
+        cut_payload_beta_gradient=False,
         ):   
     
     if energyweights is None:
@@ -252,7 +268,8 @@ def oc_loss(
             S_B=S_B,
             prob_repulsion=prob_repulsion,
             phase_transition=phase_transition,
-            alt_potential_norm=alt_potential_norm
+            alt_potential_norm=alt_potential_norm,
+            cut_payload_beta_gradient=cut_payload_beta_gradient
             )
         V_att += att
         V_rep += rep

@@ -226,7 +226,9 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
     feat = td.createFeatureDict(feat)
     
     pred_beta = Dense(1, activation='sigmoid')(x)
-    pred_ccoords = Dense(n_ccoords,use_bias=False)(x) #bias has no effect
+    pred_ccoords = Dense(n_ccoords,use_bias=False,
+                         kernel_initializer=tf.keras.initializers.orthogonal()
+                         )(x) #bias has no effect
     pred_energy = Dense(1,kernel_initializer='zeros')(x)
     if energy is not None:
         pred_energy = Multiply()([pred_energy,energy])
