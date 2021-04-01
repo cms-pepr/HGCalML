@@ -175,10 +175,9 @@ def oc_per_batch_element(
         # for double scale phase transition also scale with linear beta, 
         # add qmin and allow for self-potential (more smooth)
         #
-        
         B_pen = 0.#tf.exp(-10. * tf.sqrt(distancesq + 1e-9))
         if phase_transition_double_weight:
-            B_pen = - object_weights_kalpha * M * beta_kalpha * tf.math.exp(-20*distancesq)
+            B_pen = - object_weights_kalpha * M * (1. + beta_kalpha) * tf.math.exp(-20*distancesq)
             B_pen *= 1. + tf.expand_dims(beta,axis=0)
         else:
             B_pen = - object_weights_kalpha * M * beta_kalpha * 1./(20*distancesq + 1.)

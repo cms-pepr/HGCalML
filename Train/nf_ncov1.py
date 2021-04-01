@@ -118,7 +118,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         dist = LocalDistanceScaling()([dist, Dense(1)(x)])
         
         x_cl, rs, bidxs, sel_gidx, energy, x, t_idx,coords = LocalClusterReshapeFromNeighbours(
-                 K=8, 
+                 K=6, 
                  radius=0.5, #doesn't really have an effect because of local distance scaling
                  print_reduction=True, 
                  loss_enabled=True, 
@@ -197,7 +197,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     x = Concatenate()([x,x_mp])
     
     x = Dense(128, activation='elu', name='alldense')(x)
-    x = Concatenate()([x,energy])
+    # TO BE ADDED WITH E LOSS x = Concatenate()([x,energy])
     #x = Dropout(0.2)(x)
     x = BatchNormalization(momentum=0.6)(x)
     x = Dense(64, activation='elu')(x)

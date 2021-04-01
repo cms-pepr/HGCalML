@@ -207,7 +207,9 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
     
     
 class LocalDistanceScaling (tf.keras.layers.Layer):
-    def __init__(self,**kwargs):
+    def __init__(self,
+                 max_scale = 10,
+                 **kwargs):
         """
         Inputs: 
         - distances (V x N)
@@ -215,21 +217,39 @@ class LocalDistanceScaling (tf.keras.layers.Layer):
         
         Returns:
         distances * scaling : V x N x 1
-        scaling is bound to be within 0 and 2.
+        scaling is bound to be within 1/max_scale and max_scale.
         """
         super(LocalDistanceScaling, self).__init__(**kwargs)
+        self.max_scale = float(max_scale)
+        #some helpers
+        self.c = 1. - 1./max_scale
+        self.b = max_scale/(2.*self.c)
+        
+        
+        #derivative sigmoid = sigmoid(x) (1- sigmoid(x))
+        #der sig|x=0 = 1/4
+        #derivate of sigmoid (ax) = a (der sig)(ax)
+        #
+        
+        
+    def get_config(self):
+        config = {'max_scale': self.max_scale}
+        base_config = super(LocalDistanceScaling, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
     
     def compute_output_shape(self, input_shapes):
         return input_shapes[1]
     
     @staticmethod
-    def raw_call(dist,scale):
-        scale = 10.*(tf.nn.tanh(scale/10.-1.5)+1)
-        return dist*scale
+    def raw_call(dist,scale,a,b,c):
+        #the derivative is continuous at 0
+        scale_pos = a*tf.math.sigmoid(scale) +  1. - a/2.
+        scale_neg = 2. * c * tf.math.sigmoid(b*scale) + 1. - c
+        return dist*tf.where(scale>=0,scale_pos, scale_neg)
     
     def call(self, inputs):
         dist,scale = inputs
-        return LocalDistanceScaling.raw_call(dist,scale)
+        return LocalDistanceScaling.raw_call(dist,scale,self.max_scale,self.b,self.c)
     
 
 class LocalClustering(tf.keras.layers.Layer):
@@ -277,15 +297,6 @@ class LocalClustering(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes):
         return (None,1), (None,), (None,1)
     
-    
-    def compute_output_signature(self, input_signature):
-        
-        input_shapes = [x.shape for x in input_spec]
-        output_shapes = self.compute_output_shape(input_shapes)
-
-        return [tf.TensorSpec(dtype=tf.int32, shape=output_shapes[i]) for i in range(len(output_shape))]
-    
-   
     def build(self, input_shapes):
         super(LocalClustering, self).build(input_shapes)
         
