@@ -155,11 +155,14 @@ class TrainData_NanoML(TrainData):
         recHitTruthTheta = np.arccos(np.divide(recHitTruthZ, recHitTruthR, out=np.zeros_like(recHitTruthZ), where=recHitTruthR!=0))
         recHitTruthPhi = np.arctan(np.divide(recHitTruthY, recHitTruthX, out=np.zeros_like(recHitTruthY), where=recHitTruthX!=0))
         recHitTruthEta = -np.log(np.tan(recHitTruthTheta/2))
+        print(recHitTruthPhi)
+        print(np.max(recHitTruthPhi))
+        print(np.min(recHitTruthPhi))
 
         # Placeholder 
         zeroFeature = np.zeros(shape=(len(recHitEnergy), 1), dtype='float32')
 
-        features = np.stack([
+        features = np.concatenate([
             recHitEnergy,
             recHitEta,
             zeroFeature, #indicator if it is track or not
@@ -169,14 +172,14 @@ class TrainData_NanoML(TrainData):
             recHitY,
             recHitZ,
             recHitTime,
-            ], axis=-1)
+            ], axis=1)
 
         farr = SimpleArray(name="recHitFeatures")
         farr.createFromNumpy(features, offsets)
         del features  
 
         recHitSimClusIdx = np.expand_dims(self.splitJaggedArray(recHitSimClusIdx, splitIdx=splitBy).content.astype(np.float32), axis=1)
-        truth = np.stack([
+        truth = np.concatenate([
             recHitSimClusIdx, # 0
             recHitTruthEnergyCorrMu,
             recHitTruthX,
@@ -196,7 +199,7 @@ class TrainData_NanoML(TrainData):
             zeroFeature, #15
             recHitTruthPID #16 - 16+n_classes #won't be used anymore
             
-            ], axis=-1)
+            ], axis=1)
         
         t_idxarr = SimpleArray(recHitSimClusIdx, offsets, name="recHitTruthClusterIdx")
         
