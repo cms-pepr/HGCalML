@@ -257,13 +257,11 @@ def makePlot(outfile,
     addarrows(ax[1])
     
 
-    
-    
+    fig.savefig(outfile+".pdf")
+    fig.savefig(outfile+".png")
+
     if show:
         plt.show()
-    
-    
-    fig.savefig(outfile+".pdf")
     plt.close()
     
     plt.figure(figsize=(12,4))
@@ -334,8 +332,8 @@ else:
     print("nelements",td.nElements())
     
 #td.skim(event)
-feat_rs = td.transferFeatureListToNumpy()
-truth_rs = td.transferTruthListToNumpy()
+feat_rs = td.transferFeatureListToNumpy(False)
+truth_rs = td.transferTruthListToNumpy(False)
 
 
 feat = feat_rs[0]
@@ -388,11 +386,11 @@ def worker(eventno, show=False):
     
     truthR =  truthZ / np.cos(2* np.arctan(np.exp(-truthEta)))
     truthdirEta = ptruth[:,11]
-    truthdirPhi = ptruth[:,12]
-    truthdirR = ptruth[:,13]
+    truthdirPhi = ptruth[:,11]
+    truthdirR = ptruth[:,12]
     
-    ticlAsso = ptruth[:,17]
-    ticlE    = ptruth[:,18]
+    ticlAsso = ptruth[:,14]
+    ticlE    = ptruth[:,15]
     
     #with plt.xkcd():
     print('>>>>>>>>>>>>>> plotting x/y')
