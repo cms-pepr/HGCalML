@@ -7,7 +7,7 @@ import pickle
 import gzip
 import numpy as np
 from numba import jit
-from IPython import embed
+#from IPython import embed
     
 class TrainData_NanoML(TrainData):
     def __init__(self):
@@ -147,16 +147,16 @@ class TrainData_NanoML(TrainData):
         recHitSimClusIdx[outside | fewHits] = -1
 
         recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0., splitIdx=splitBy)
-        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, -1, splitIdx=splitBy)
-        recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, -1, splitIdx=splitBy)
-        recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, -1, splitIdx=splitBy)
-        recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 0., splitIdx=splitBy)
-        recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0., splitIdx=splitBy)
-        recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0., splitIdx=splitBy)
-        recHitTruthTime = self.truthObjects(simClusterZ, recHitSimClusIdx, -1, splitIdx=splitBy)
+        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, 0, splitIdx=splitBy)
+        recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, 0, splitIdx=splitBy)
+        recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, 0, splitIdx=splitBy)
+        recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 0, splitIdx=splitBy)
+        recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0, splitIdx=splitBy)
+        recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0, splitIdx=splitBy)
+        recHitTruthTime = self.truthObjects(simClusterTime, recHitSimClusIdx, 0, splitIdx=splitBy)
         recHitTruthR = np.sqrt(recHitTruthX*recHitTruthX+recHitTruthY*recHitTruthY+recHitTruthZ*recHitTruthZ)
         recHitTruthTheta = np.arccos(np.divide(recHitTruthZ, recHitTruthR, out=np.zeros_like(recHitTruthZ), where=recHitTruthR!=0))
-        recHitTruthPhi = np.arctan(np.divide(recHitTruthY, recHitTruthX, out=np.zeros_like(recHitTruthY), where=recHitTruthX!=0))
+        recHitTruthPhi = np.arctan2(recHitTruthY, recHitTruthX)
         recHitTruthEta = -np.log(np.tan(recHitTruthTheta/2))
         print(recHitTruthPhi)
         print(np.max(recHitTruthPhi))
@@ -181,9 +181,17 @@ class TrainData_NanoML(TrainData):
         farr.createFromNumpy(features, offsets)
         del features  
 
-        recHitSimClusIdx = np.expand_dims(self.splitJaggedArray(recHitSimClusIdx, splitIdx=splitBy).content.astype(np.float32), axis=1)
+        recHitSimClusIdx = np.expand_dims(self.splitJaggedArray(recHitSimClusIdx, splitIdx=splitBy).content.astype(np.int32), axis=1)
+        #now all numpy
+        recHitTruthX[recHitSimClusIdx<0] = recHitX[recHitSimClusIdx<0]
+        recHitTruthY[recHitSimClusIdx<0] = recHitY[recHitSimClusIdx<0]
+        recHitTruthZ[recHitSimClusIdx<0] = recHitZ[recHitSimClusIdx<0]
+        recHitTruthEnergyCorrMu[recHitSimClusIdx<0] = recHitEnergy[recHitSimClusIdx<0]
+        recHitTruthTime[recHitSimClusIdx<0] = recHitTime[recHitSimClusIdx<0]
+        
+        
         truth = np.concatenate([
-            recHitSimClusIdx, # 0
+            np.array(recHitSimClusIdx,dtype='float32'), # 0
             recHitTruthEnergyCorrMu,
             recHitTruthX,
             recHitTruthY,
@@ -203,6 +211,8 @@ class TrainData_NanoML(TrainData):
             recHitTruthPID #16 - 16+n_classes #won't be used anymore
             
             ], axis=1)
+        
+        
         
         t_idxarr = SimpleArray(recHitSimClusIdx, offsets, name="recHitTruthClusterIdx")
         
@@ -321,6 +331,7 @@ class TrainData_NanoML(TrainData):
             return frame, rs
     
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
+        import os
         outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
         # print("hello", outfilename, inputfile)
 
