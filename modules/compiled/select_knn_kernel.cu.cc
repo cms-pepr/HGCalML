@@ -211,13 +211,16 @@ struct SelectKnnOpFunctor<GPUDevice, dummy> {
 
         cudaDeviceSynchronize();
 
+
+        std::vector<int> cpu_rowsplits(n_rs);
+        cudaMemcpy(&cpu_rowsplits.at(0),d_row_splits,n_rs*sizeof(int),cudaMemcpyDeviceToHost);
+
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){ //n_rs-1 important!
 
+            int nvert_rs = cpu_rowsplits.at(j_rs+1) - cpu_rowsplits.at(j_rs);
+            grid_and_block gb(nvert_rs,1024);
 
-            dim3 numblocks(n_vert/1024+1);
-            dim3 threadsperblock(1024);
-
-            gpu::select_knn_kernel<<<numblocks, threadsperblock, 0, d.stream() >>>(
+            gpu::select_knn_kernel<<<gb.grid(),gb.block() >>>(
                     d_coord,
                     d_row_splits,
                     d_mask,

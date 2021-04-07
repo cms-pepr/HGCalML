@@ -36,7 +36,8 @@ void acc_knn_kernel(
 
         int n_out_feat,
 
-        int n_moments) {
+        int n_moments,
+        bool mean_and_max) {
 
 
 
@@ -63,17 +64,18 @@ void acc_knn_kernel(
         float distsq = d_distances[I2D(i_v,i_n,n_neigh)];
         float wfeat = vnf * distanceWeight(distsq);
         t_mean += wfeat;
-        if(wfeat >= t_max || !i_n){
+        if(mean_and_max && (wfeat >= t_max || !i_n)){
             max_i_n_gidx = nidx;
             t_max = wfeat;
         }
     }
     t_mean /= (float)n_neigh;
 
-    d_out_maxidxs[I2D(i_v,i_f,n_feat)] = max_i_n_gidx; //just used for gradient
     d_out_feat[I2D(i_v,i_f,n_out_feat)] = t_mean;
-    d_out_feat[I2D(i_v,i_f+n_feat,n_out_feat)] = t_max;
-
+    if(mean_and_max){
+        d_out_maxidxs[I2D(i_v,i_f,n_feat)] = max_i_n_gidx; //just used for gradient
+        d_out_feat[I2D(i_v,i_f+n_feat,n_out_feat)] = t_max;
+    }
 
 
 }
@@ -103,7 +105,8 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
 
             int n_out_feat,
 
-            int n_moments) {
+            int n_moments,
+            bool mean_and_max) {
 
        // int gridsize=56;
       //  int blocksize=768;
@@ -113,7 +116,7 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
 
         //for GTX1080, also make some opt for V100
 
-        grid_and_block par(n_vert, 64, n_feat, 8);
+        grid_and_block par(n_vert, 512, n_feat, 2);
 
         //just some default optimisation for now
       //  cudaOccupancyMaxPotentialBlockSize(&gridsize,&blocksize,acc_knn_kernel);
@@ -131,7 +134,8 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
                 n_coords,
                 n_feat,
                 n_out_feat,
-                n_moments);
+                n_moments,
+                mean_and_max);
 
         cudaDeviceSynchronize();
     }

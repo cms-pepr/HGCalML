@@ -45,13 +45,16 @@ static void calc_feature_gradients(
 
         const int n_grad_from_out_feat,
 
-        float * d_out_grad_features
+        float * d_out_grad_features,
+        bool mean_and_max
 ){
     for (size_t i_v = 0; i_v < n_vert; i_v++){
         for(size_t nu_f=0;nu_f<n_feat;nu_f++){
 
             const float ginu = d_grad_from_out_features[I2D(i_v, nu_f, n_grad_from_out_feat)];
-            const float ginu_max = d_grad_from_out_features[I2D(i_v, nu_f+n_feat, n_grad_from_out_feat)];
+            float ginu_max = 0;
+            if(mean_and_max)
+                ginu_max = d_grad_from_out_features[I2D(i_v, nu_f+n_feat, n_grad_from_out_feat)];
             const int max_for_iv = d_max_feat_indices[I2D(i_v,nu_f,n_feat)];
 
             bool firstself=true;
@@ -103,7 +106,8 @@ static void calc_distance_gradients(
 
         const int n_grad_from_out_feat,
 
-        float * d_out_grad_distances
+        float * d_out_grad_distances,
+        bool mean_and_max
 ){
     for (size_t m = 0; m < n_vert; m++){
 
@@ -125,7 +129,9 @@ static void calc_distance_gradients(
                 bool firstself=true; ///To be checked!!! this needs to be per feature and stored!
 
                 float gmb = d_grad_from_out_features[I2D(m, b_f, n_grad_from_out_feat)];
-                float gmbmax = d_grad_from_out_features[I2D(m, b_f+n_feat, n_grad_from_out_feat)];
+                float gmbmax = 0;
+                if(mean_and_max)
+                    gmbmax  = d_grad_from_out_features[I2D(m, b_f+n_feat, n_grad_from_out_feat)];
                 float flb = d_feat[I2D(l_g, b_f, n_feat)];
 
                 mean_contrib += gmb * flb *expml;
@@ -171,7 +177,8 @@ struct AccumulateKnnGradOpFunctor<CPUDevice, dummy> {
 
             int n_grad_from_out_feat,
 
-            int n_moments) {
+            int n_moments,
+            bool mean_and_max) {
 
         //CPU implementation
 
@@ -190,7 +197,8 @@ struct AccumulateKnnGradOpFunctor<CPUDevice, dummy> {
 
                 n_grad_from_out_feat,
 
-                d_out_grad_features);
+                d_out_grad_features,
+                mean_and_max);
 
         calc_distance_gradients(
                 d_grad_from_out_features,
@@ -205,7 +213,8 @@ struct AccumulateKnnGradOpFunctor<CPUDevice, dummy> {
 
                 n_grad_from_out_feat,
 
-                d_out_grad_distances);
+                d_out_grad_distances,
+                mean_and_max);
 
     }
 };
@@ -226,11 +235,15 @@ public:
 
         int n_in_grad_feat = t_grad_from_out_features.dim_size(1);
 
+
         int n_vert = t_grad_from_out_features.dim_size(0);
 
         int n_neigh = t_neigh_indices.dim_size(1);
         int n_feat = t_feat.dim_size(1);
         int n_moments = 0;
+
+        //auto detect
+        const bool mean_and_max = n_in_grad_feat > n_feat;
 
         TensorShape outputShapeDist;
         outputShapeDist.AddDim(n_vert);
@@ -267,7 +280,8 @@ public:
                 n_feat,
 
                 n_in_grad_feat,
-                n_moments
+                n_moments,
+                mean_and_max
         );
 
 
