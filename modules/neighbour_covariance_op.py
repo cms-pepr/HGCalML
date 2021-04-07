@@ -1,40 +1,39 @@
 
 import tensorflow as tf
 from tensorflow.python.framework import ops
+from accknn_op import AccumulateKnn
 
+    
 
-
-_ncov = tf.load_op_library('neighbour_covariance.so')
-
-def NeighbourCovariance(coordinates, features, n_idxs):
+def NeighbourCovariance(coordinates, distsq, features, n_idxs):
     '''
-    .Input("coordinates: float32")
-    .Input("features: float32")
-    .Input("n_idxs: int32")
-    .Output("covariance: float32") Vout x F x C(C+1)/2
-    .Output("means float32"); Vout x F x C
-
+    expands to V x F x C**2, but not in the neighbour dimension
     '''
     
-    #coordinates = tf.debugging.check_numerics(coordinates,'coordinates has nans')
-    #features = tf.debugging.check_numerics(features,'features have nans')
+    features = tf.nn.relu(features)#sure they're>=0
+    #create feature and distance weighted coordinate means
+    featcoordinates = tf.expand_dims(coordinates,axis=1) * tf.expand_dims(features,axis=2) # V x F x C
+    featcoordinates = tf.reshape(featcoordinates, [-1, features.shape[1] * coordinates.shape[1]]) # V x F*C
     
-    covariance, means = _ncov.NeighbourCovariance(coordinates=coordinates, 
-                                                  features=features, 
-                                                  n_idxs=n_idxs)
+    fcdsum = AccumulateKnn(distsq,  featcoordinates, n_idxs, mean_and_max=False)[0] * distsq.shape[1] # only sum, V x F*C
+    fcdsum = tf.reshape(fcdsum, [-1, features.shape[1], coordinates.shape[1]])
     
-    #covariance = tf.debugging.check_numerics(covariance,'covariance has nans')
-    #means = tf.debugging.check_numerics(means,'means have nans')
-    return covariance, means
-
-
-@ops.RegisterGradient("NeighbourCovariance")
-def _NeighbourCovarianceGrad(op, covariancegrad, meansgrad):
+    fdsum = AccumulateKnn(distsq,  features, n_idxs, mean_and_max=False)[0] * distsq.shape[1] # V x F
+    fdsum += 1e-9
+    fdsum = tf.expand_dims(fdsum, axis=2)
     
-    return None, None, None #no grad for row splits and masking values
+    fcdmean = tf.math.divide_no_nan(fcdsum, fdsum) # V x F x C
     
+    centeredcoords = tf.expand_dims(coordinates,axis=1) - fcdmean # V x F x C
     
+    xi = tf.expand_dims(centeredcoords, axis=3) * tf.expand_dims(centeredcoords, axis=2) # V x F x C^T x C
+    xi = tf.reshape(xi, [-1, features.shape[1] * coordinates.shape[1]**2])
     
+    distweightcov = AccumulateKnn(distsq,  xi, n_idxs, mean_and_max=False)[0] * distsq.shape[1]
+    distweightcov = tf.reshape(distweightcov, [-1, features.shape[1], coordinates.shape[1]**2])
+    distweightcov /= fdsum
     
+    return distweightcov, fcdmean  # V x F x C**2, V x F x C
+        
     
     

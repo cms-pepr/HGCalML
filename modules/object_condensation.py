@@ -30,7 +30,7 @@ def payload_weight_function(w, w2, threshold):
     Input/output  K x V x 1
     normalised in V
     '''
-    w = tf.clip_by_value(w, 0., 1.-1e-6)
+    w = tf.clip_by_value(w, 0., 1.-1e-4)
     w = w2*tf.math.atanh(w)**2
     w_max = tf.reduce_max(w, axis = 1, keepdims=True) # K x 1 x 1
     w = tf.math.divide_no_nan(w, w_max)
@@ -150,16 +150,22 @@ def oc_per_batch_element(
         V_rep = mean_N_K(V_rep, N, K) # ()
     
     ##beta penalty
-    
-    beta_kalpha_sm = beta_kalpha
+    B_pen = 0.
+
     if cont_beta_loss:
-        raise ValueError("cont_beta_loss: didn't work out")
-        b_exp = M * tf.expand_dims(beta, axis=0)
-        maxb = beta_kalpha
-        meanb = tf.math.divide_no_nan(tf.reduce_sum(b_exp, axis = 1, keepdims=True),
-                                      tf.reduce_sum(M,  axis = 1, keepdims=True))
-        sqsum = tf.reduce_sum(b_exp**2, axis = 1, keepdims=True)
-        beta_kalpha_sm = 1. - (tf.math.divide_no_nan(meanb+0.2, maxb+0.1) + tf.math.exp(-sqsum))
+        assert not phase_transition
+
+        c = M * tf.expand_dims(beta_in, axis=0) #K x V x 1
+        c = tf.reduce_max(c,axis=1)*tf.reduce_max(tf.nn.softmax(c,axis=1),axis=1)
+        c = tf.expand_dims(0.5/(c+0.25)-1. ,axis=2) #K x 1 x 1
+        c *= object_weights_kalpha #K x 1 x 1
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(c), K) 
+        #b_exp = M * tf.expand_dims(beta, axis=0)
+        #maxb = beta_kalpha
+        #meanb = tf.math.divide_no_nan(tf.reduce_sum(b_exp, axis = 1, keepdims=True),
+        #                              tf.reduce_sum(M,  axis = 1, keepdims=True))
+        #sqsum = tf.reduce_sum(b_exp**2, axis = 1, keepdims=True)
+        #beta_kalpha_sm = 1. - (tf.math.divide_no_nan(meanb+0.2, maxb+0.1) + tf.math.exp(-sqsum))
         #b_exp = M * tf.expand_dims(beta, axis=0)
         #b_exp_sum = tf.reduce_sum(b_exp, axis=1, keepdims=True) # K x 1 x 1
         #b_exp_prod = tf.reduce_prod(b_exp, axis=1, keepdims=True)  # K x 1 x 1
@@ -167,7 +173,7 @@ def oc_per_batch_element(
         ## 1 - X here to compensate 1 - down there
         #beta_kalpha_sm = 1. - tf.math.exp(-b_exp_sum)+0.5*b_exp_prod-tf.math.exp(tf.constant([[[-1.]]])) # K x 1 x 1
         
-    B_pen = 0.
+    
     if phase_transition:
         # K x V x 1
         # does not scale with q of each vertex, but only with beta_kalpha
@@ -186,7 +192,7 @@ def oc_per_batch_element(
         B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=1), N_per_obj) # K x 1
         B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K) # 1
     else:
-        B_pen += tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha_sm)), 
+        B_pen += tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha*(1. - beta_kalpha)), 
                                   tf.reduce_sum(object_weights_kalpha)) # ()
         
 
@@ -267,6 +273,7 @@ def oc_loss(
             S_B=S_B,
             prob_repulsion=prob_repulsion,
             phase_transition=phase_transition,
+            phase_transition_double_weight=phase_transition_double_weight,
             alt_potential_norm=alt_potential_norm,
             cut_payload_beta_gradient=cut_payload_beta_gradient
             )
@@ -277,7 +284,7 @@ def oc_loss(
         pll += pl
         to_much_B_pen += tmb
     
-    bsize = tf.cast(batch_size, dtype='float32') + 1e-6
+    bsize = tf.cast(batch_size, dtype='float32') + 1e-3
     V_att /= bsize
     V_rep /= bsize
     Noise_pen /= bsize

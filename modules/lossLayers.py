@@ -166,6 +166,8 @@ class LLLocalClusterCoordinates(LossLayerBase):
         #distances are actuallt distances**2
         expdist = tf.exp(- 3. * distances)
         att_proto = (1.-repulsion_contrib)* (1.-expdist)  #+ 0.1*distances  #mild attractive to help learn
+        att_proto = tf.where(truth_indices<0,att_proto*0.1,att_proto) #milder term for noise
+        
         rep_proto = repulsion_contrib * expdist #- 0.1 * distances
         
         
@@ -473,6 +475,8 @@ class LLFullObjectCondensation(LossLayerBase):
         return tf.where(t_energy > 10., 1., (t_energy / flatat + 0.1)/1.1)
             
     def calc_energy_loss(self, t_energy, pred_energy): 
+        if not self.energy_loss_weight:
+            return pred_energy**2 #just learn 0
         
         if self.huber_energy_scale > 0:
             l = tf.abs(t_energy-pred_energy)
@@ -484,9 +488,15 @@ class LLFullObjectCondensation(LossLayerBase):
 
     
     def calc_position_loss(self, t_pos, pred_pos):
+        if not self.position_loss_weight:
+            t_pos = 0.
+        
         return tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) #is in cm
     
     def calc_timing_loss(self, t_time, pred_time):
+        if not self.timing_loss_weight:
+            return pred_time**2
+        
         return (t_time*1e9 - pred_time)**2 #rechit time is in ns, true time in s
     
     def calc_classification_loss(self, t_pid, pred_id):
@@ -519,6 +529,7 @@ class LLFullObjectCondensation(LossLayerBase):
         pred_energy    = tf.debugging.check_numerics(pred_energy, "pred_energy has NaNs")
         energy_weights    = tf.debugging.check_numerics(energy_weights, "energy_weights has NaNs")
             
+        #also kill any gradients for zero weight
         energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
@@ -556,8 +567,8 @@ class LLFullObjectCondensation(LossLayerBase):
         exceed_beta *= self.too_much_beta_scale
 
         
-        pos_loss    = tf.debugging.check_numerics(payload[1], "position loss has NaNs")
         energy_loss = tf.debugging.check_numerics(payload[0], "energy loss has NaNs")
+        pos_loss    = tf.debugging.check_numerics(payload[1], "position loss has NaNs")
         time_loss   = tf.debugging.check_numerics(payload[2], "time loss has NaNs")
         class_loss  = tf.debugging.check_numerics(payload[3], "classification loss has NaNs")
         

@@ -98,6 +98,7 @@ class NeighbourCovariance(tf.keras.layers.Layer):
         """
         Inputs: 
           - coordinates (Vin x C)
+          - distance squared (Vout x K)
           - features (Vin x F)
           - neighbour indices (Vout x K)
           
@@ -116,23 +117,33 @@ class NeighbourCovariance(tf.keras.layers.Layer):
         
     @staticmethod
     def raw_get_cov_shapes(input_shapes):
-        coordinates_s, features_s, _ = input_shapes
+        coordinates_s, features_s = None, None
+        if len(input_shapes) == 4:
+            coordinates_s, _, features_s, _ = input_shapes
+        else:
+            coordinates_s, features_s, _ = input_shapes
         nF = features_s[1]
         nC = coordinates_s[1]
-        covshape = int(nF*(nC*(nC+1)//2))
+        covshape = nF*nC**2 #int(nF*(nC*(nC+1)//2))
         return nF, nC, covshape
     
     @staticmethod
-    def raw_call(coordinates, features, n_idxs):
+    def raw_call(coordinates, distsq, features, n_idxs):
         cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
+                                           distsq=10. * distsq,#same as gravnet scaling
                                          features=features, 
                                          n_idxs=n_idxs)
         return cov, means
     
     def call(self, inputs):
-        coordinates, features, n_idxs = inputs
+        coordinates, distsq, features, n_idxs = None, None, None, None 
+        if len(inputs) == 4:
+            coordinates, distsq, features, n_idxs = inputs
+        else:
+            coordinates, features, n_idxs = inputs
+            distsq = tf.zeros_like(n_idxs,dtype='float32')
         
-        cov,means = NeighbourCovariance.raw_call(coordinates, features, n_idxs)
+        cov,means = NeighbourCovariance.raw_call(coordinates, distsq, features, n_idxs)
         
         nF, nC, covshape = NeighbourCovariance.raw_get_cov_shapes([s.shape for s in inputs])
         
@@ -770,6 +781,7 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
             other=[]
             
         sdist, snidx = distances,nidxs #  
+        sdist, snidx = SortAndSelectNeighbours.raw_call(sdist, snidx,K=self.K, radius=self.radius)
         #generate loss
         if self.loss_enabled:
             #some headroom for radius
@@ -779,7 +791,6 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
                 print_loss=self.print_loss,name=self.name)
             self.add_loss(lossval)
         # do the reshaping
-        sdist, snidx = SortAndSelectNeighbours.raw_call(sdist, snidx,K=self.K, radius=self.radius)
         
         sel, rs, backgather = LocalClustering.raw_call(snidx,hierarchy,row_splits,
                                                        print_reduction=self.print_reduction,name=self.name)
@@ -909,7 +920,7 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         
         for o in self.offsets:
             distancesq = LocalDistance(coordinates+o, neighbour_indices)
-            f,_ = AccumulateKnn(self.length_scale*distancesq,  features, neighbour_indices, n_moments=0) # V x F
+            f,_ = AccumulateKnn(self.length_scale*distancesq,  features, neighbour_indices) # V x F
             f = f[:,:self.nfeat]
             f = tf.reshape(f, [-1, self.nfeat])
             out.append(f) #only mean
@@ -919,6 +930,82 @@ class SoftPixelCNN(tf.keras.layers.Layer):
 
 
 
+class SoftPixelRadiusCNN(tf.keras.layers.Layer):
+    def __init__(self, length_scale_momentum=0.01, subdivisions: int=3 ,**kwargs):
+        """
+        Inputs: 
+        - features
+        - distances squared
+        - neighbour_indices
+        
+        This layer is strongly inspired by 1611.08097 (even though this is only presented for 2D manifolds).
+        It implements "soft pixels" for each direction given by the input coordinates plus one central "pixel".
+        Each "pixel" is represented by a Gaussian weighting of the inputs.
+        For D coordinate dimensions, 2*D + 1 "pixels" are formed (e.g. one for position x direction one for neg x etc).
+        The pixels beyond the length scale are removed.
+        
+        Call will return 
+         - soft pixel CNN outputs:  (V x npixels * features)
+        
+        :param length_scale_momentum: Momentum of the automatically adjusted length scale
+                             
+        :param subdivisions: number of subdivisions along radius
+        
+        """
+        super(SoftPixelRadiusCNN, self).__init__(**kwargs) 
+        assert length_scale_momentum > 0
+        assert subdivisions > 1
+        
+        with tf.name_scope(self.name + "/1/"):
+            self.length_scale = tf.Variable(initial_value=1., trainable=False,dtype='float32')
+
+        
+    def get_config(self):
+        config = {'length_scale_momentum' : self.length_scale_momentum,
+                  'subdivisions': self.subdivisions
+                  }
+        base_config = super(SoftPixelRadiusCNN, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):
+        noutvert = input_shapes[2][0]
+        #ncoords = input_shapes[0][1]
+        nfeat = input_shapes[1][1]
+        return (noutvert, nfeat*self.subdivisions)
+    
+    
+    def build(self, input_shapes):
+        super(SoftPixelRadiusCNN, self).build(input_shapes)
+        
+    def call(self, inputs, training=None):
+        
+        features, distsq, neighbour_indices = inputs
+        #create coordinate offsets
+        out=[]
+        
+        #adjust to 2 sigma continuously
+        distsq = tf.stop_gradient(distsq)
+        if self.trainable:
+            tf.keras.backend.update(self.length_scale, 
+                                    tf.keras.backend.in_train_phase(
+                self.length_scale*(1.-self.length_scale_momentum) + self.length_scale_momentum*2.*tf.reduce_mean(tf.sqrt(distsq+1e-6)),
+                                self.length_scale,
+                                training=training)
+                                    )
+            
+        scaler = 10.*self.length_scale*float(self.subdivisions)
+        
+        for i in range(self.subdivisions):
+            offset=float(i)/self.length_scale
+            #up to here
+            
+        #    distancesq = LocalDistance(coordinates+o, neighbour_indices)
+        #    f,_ = AccumulateKnn(self.length_scale*distancesq,  features, neighbour_indices) # V x F
+        #    f = f[:,:self.nfeat]
+        #    f = tf.reshape(f, [-1, self.nfeat])
+        #    out.append(f) #only mean
+        #out = tf.concat(out,axis=-1)
+        #return out
 
 ######## generic neighbours
 
@@ -959,7 +1046,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                 self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation='relu')
 
         with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,use_bias=False,kernel_initializer=tf.keras.initializers.Orthogonal())
+            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,use_bias=False,kernel_initializer=tf.keras.initializers.identity())
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='tanh')
@@ -1035,7 +1122,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
 
-        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
         return f
 
     def get_config(self):
@@ -1111,7 +1198,7 @@ class DynamicDistanceMessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
-        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
         return f
 
     def call(self, inputs):
@@ -1142,7 +1229,7 @@ class CollectNeighbourAverageAndMax(tf.keras.layers.Layer):
     
     def call(self, inputs):
         x, idxs = inputs
-        f,_ = AccumulateKnn(tf.cast(idxs*0, tf.float32),  x, idxs, n_moments=0)
+        f,_ = AccumulateKnn(tf.cast(idxs*0, tf.float32),  x, idxs)
         return tf.reshape(f, [-1,2*x.shape[-1]])
     
 
@@ -1193,7 +1280,7 @@ class MessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices):
-        f,_ = AccumulateKnn(tf.cast(neighbour_indices*0, tf.float32),  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(tf.cast(neighbour_indices*0, tf.float32),  features, neighbour_indices)
         return f
 
     def call(self, inputs):
@@ -1260,7 +1347,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
-        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
         return f
 
     def call(self, inputs):
