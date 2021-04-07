@@ -52,7 +52,8 @@ static void calc_feature_gradients(
 
         const int n_grad_from_out_feat,
 
-        float * d_out_grad_features
+        float * d_out_grad_features,
+        bool mean_and_max
 ){
     const size_t i_v  = blockIdx.x * blockDim.x + threadIdx.x;
     const size_t nu_f = blockIdx.y * blockDim.y + threadIdx.y;
@@ -61,7 +62,9 @@ static void calc_feature_gradients(
 
 
     const float ginu = d_grad_from_out_features[I2D(i_v, nu_f, n_grad_from_out_feat)];
-    const float ginu_max = d_grad_from_out_features[I2D(i_v, nu_f+n_feat, n_grad_from_out_feat)];
+    float ginu_max = 0;
+    if(mean_and_max)
+        ginu_max = d_grad_from_out_features[I2D(i_v, nu_f+n_feat, n_grad_from_out_feat)];
     const int max_for_iv = d_max_feat_indices[I2D(i_v,nu_f,n_feat)];
 
     bool firstself=true;
@@ -113,7 +116,8 @@ static void calc_distance_gradients(
 
         const int n_grad_from_out_feat,
 
-        float * d_out_grad_distances
+        float * d_out_grad_distances,
+        bool mean_and_max
 ){
     const size_t m = blockIdx.x * blockDim.x + threadIdx.x;
     const size_t l = blockIdx.y * blockDim.y + threadIdx.y;
@@ -139,7 +143,9 @@ static void calc_distance_gradients(
         bool firstself=true; ///To be checked!!! this needs to be per feature and stored!
 
         float gmb = d_grad_from_out_features[I2D(m, b_f, n_grad_from_out_feat)];
-        float gmbmax = d_grad_from_out_features[I2D(m, b_f+n_feat, n_grad_from_out_feat)];
+        float gmbmax = 0;
+        if(mean_and_max)
+            gmbmax  = d_grad_from_out_features[I2D(m, b_f+n_feat, n_grad_from_out_feat)];
         float flb = d_feat[I2D(l_g, b_f, n_feat)];
 
         mean_contrib += gmb * flb *expml;
@@ -184,7 +190,8 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
 
             int n_grad_from_out_feat,
 
-            int n_moments) {
+            int n_moments,
+            bool mean_and_max) {
 
 
         grid_and_block feat_par(n_vert, 16, n_feat, 32);
@@ -205,7 +212,8 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
 
                 n_grad_from_out_feat,
 
-                d_out_grad_features);
+                d_out_grad_features,
+                mean_and_max);
 
         cudaDeviceSynchronize();
 
@@ -226,7 +234,8 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
 
                 n_grad_from_out_feat,
 
-                d_out_grad_distances);
+                d_out_grad_distances,
+                mean_and_max);
 
         cudaDeviceSynchronize();
 

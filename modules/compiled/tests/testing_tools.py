@@ -1,6 +1,6 @@
 
 import tensorflow as tf
-from rknn_op import *
+from accknn_op import *
 import time
 import numpy as np
 import matplotlib
@@ -25,7 +25,7 @@ def makeIndices(nvert,nneigh):
 
 
 class Benchmarker(object):
-    def __init__(self, tf_implementation, custom_implementation, name, use_distances_direct,tfoncpu,customoncpu):
+    def __init__(self, tf_implementation, custom_implementation, name, use_distances_direct,tfoncpu,customoncpu,mean_and_max):
         self.tfimp=tf_implementation
         self.customimpl=custom_implementation
         self.name = name
@@ -33,6 +33,7 @@ class Benchmarker(object):
         self.use_distances_direct=use_distances_direct
         self.tfoncpu=tfoncpu
         self.customoncpu=customoncpu
+        self.mean_and_max=mean_and_max
 
     def benchmark(self, nvert = 30000, nfeat = 64, nneigh = 128, ncoords = 4, dogradient=False,do_tf=True):
         
@@ -46,10 +47,10 @@ class Benchmarker(object):
         tf_failed = False
         if not dogradient:
             #each gets one dry run to compile
-            meanmax = self.customimpl(coords,  features=feats, indices=indices)
+            meanmax = self.customimpl(coords,  features=feats, indices=indices, mean_and_max=self.mean_and_max)
             t0 = time.time()
             for i in range(0,50):
-                meanmax = self.customimpl(coords,  features=feats, indices=indices)
+                meanmax = self.customimpl(coords,  features=feats, indices=indices, mean_and_max=self.mean_and_max)
             
             op_time= (time.time() - t0)/50.
             print('op_time',op_time)
@@ -58,10 +59,10 @@ class Benchmarker(object):
             if do_tf:
                 
                 try:
-                    meanmax = self.tfimp(coords,  features=feats, indices=indices)
+                    meanmax = self.tfimp(coords,  features=feats, indices=indices, mean_and_max=self.mean_and_max)
                     t0 = time.time()
                     for i in range(0,50):
-                        meanmax = self.tfimp(coords,  features=feats, indices=indices)
+                        meanmax = self.tfimp(coords,  features=feats, indices=indices, mean_and_max=self.mean_and_max)
                     tf_time= (time.time() - t0)/50.
                 except:
                     tf_failed=True
@@ -74,7 +75,7 @@ class Benchmarker(object):
             with tf.GradientTape(persistent=True,watch_accessed_variables=True) as t_newop:
                 t_newop.watch(coords)
                 t_newop.watch(feats)
-                meanmax  = self.customimpl(coords,  features=feats, indices=indices)
+                meanmax  = self.customimpl(coords,  features=feats, indices=indices, mean_and_max=self.mean_and_max)
                 
             #once to get it compiled in case needed
             feat_grad = t_newop.gradient(meanmax, feats)
@@ -93,7 +94,7 @@ class Benchmarker(object):
                     with tf.GradientTape(persistent=True) as t_tfop:
                         t_tfop.watch(coords)
                         t_tfop.watch(feats)
-                        meanmax = self.tfimp(coords,  features=feats, indices=indices)
+                        meanmax = self.tfimp(coords,  features=feats, indices=indices, mean_and_max=self.mean_and_max)
                 
                     feat_grad = t_tfop.gradient(meanmax, feats)
                     coord_grad = t_tfop.gradient(meanmax, coords)
@@ -138,7 +139,7 @@ class Benchmarker(object):
             with tf.GradientTape(persistent=True,watch_accessed_variables=True) as t_newop:
                 t_newop.watch(coords)
                 t_newop.watch(feats)
-                meanmax = self.customimpl( coords,  features=feats, indices=indices)
+                meanmax = self.customimpl( coords,  features=feats, indices=indices, mean_and_max=self.mean_and_max)
                 t1 = time.time()
                 op_time= t1 - t0
             
@@ -168,7 +169,7 @@ class Benchmarker(object):
             with tf.GradientTape(persistent=True) as t_tfop:
                 t_tfop.watch(coords)
                 t_tfop.watch(feats)
-                tf_meanmax = self.tfimp(coords,  features=feats, indices=indices)
+                tf_meanmax = self.tfimp(coords,  features=feats, indices=indices, mean_and_max=self.mean_and_max)
         
         tf_time= time.time() - t0
         
