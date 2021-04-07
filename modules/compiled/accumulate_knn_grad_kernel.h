@@ -27,7 +27,8 @@ struct AccumulateKnnGradOpFunctor {
 
             int n_grad_from_out_feat,
 
-            int n_moments);
+            int n_moments,
+            bool mean_and_max);
 };
 
 }  // namespace functor

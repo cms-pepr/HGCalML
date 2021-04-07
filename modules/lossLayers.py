@@ -146,6 +146,8 @@ class LLLocalClusterCoordinates(LossLayerBase):
     def raw_loss(distances, hierarchy, neighbour_indices, truth_indices,
                  add_self_reference, repulsion_contrib, print_loss, name):
         
+        
+        hierarchy = (tf.nn.sigmoid(hierarchy)+1.)/2.
         #make neighbour_indices TF compatible (replace -1 with own index)
         own = tf.expand_dims(tf.range(tf.shape(truth_indices)[0],dtype='int32'),axis=1)
         neighbour_indices = tf.where(neighbour_indices<0, own, neighbour_indices) #does broadcasting to the righ thing here?
@@ -158,19 +160,19 @@ class LLLocalClusterCoordinates(LossLayerBase):
             
         neighbour_indices = tf.expand_dims(neighbour_indices,axis=2)#tf like
         
-        firsttruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,0:1]),axis=2)
+        firsttruth = truth_indices #[,tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,0:1]),axis=2)
         neightruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,1:] ),axis=2)
         
         #distances are actuallt distances**2
         expdist = tf.exp(- 3. * distances)
-        att_proto = (1.-repulsion_contrib)* ( (1.-expdist) + 0.01*distances ) #mild attractive to help learn
-        rep_proto = repulsion_contrib * (expdist - 0.001*distances)
+        att_proto = (1.-repulsion_contrib)* (1.-expdist)  #+ 0.1*distances  #mild attractive to help learn
+        att_proto = tf.where(truth_indices<0,att_proto*0.1,att_proto) #milder term for noise
         
-        #hierarchy = tf.clip_by_value(hierarchy,0.,1-1e-6)
-        hierarchy_scaling = hierarchy #tf.atanh(hierarchy)
+        rep_proto = repulsion_contrib * expdist #- 0.1 * distances
+        
         
         potential = tf.where(tf.abs(firsttruth-neightruth)<0.1, att_proto, rep_proto)
-        potential = hierarchy_scaling * tf.reduce_mean(potential, axis=1, keepdims=True)
+        potential = hierarchy * tf.reduce_mean(potential, axis=1, keepdims=True)
         potential = tf.reduce_mean(potential)
         
         penalty = 1. - hierarchy
@@ -384,8 +386,10 @@ class LLFullObjectCondensation(LossLayerBase):
                  noise_scaler=1., too_much_beta_scale=0., cont_beta_loss=False, log_energy=False, n_classes=0,
                  prob_repulsion=False,
                  phase_transition=0.,
+                 phase_transition_double_weight=False,
                  alt_potential_norm=False,
                  print_time=True,
+                 cut_payload_beta_gradient=False,
                  standard_configuration=None,
                  **kwargs):
         """
@@ -457,9 +461,10 @@ class LLFullObjectCondensation(LossLayerBase):
         self.n_classes = n_classes
         self.prob_repulsion = prob_repulsion
         self.phase_transition = phase_transition
+        self.phase_transition_double_weight = phase_transition_double_weight
         self.alt_potential_norm = alt_potential_norm
         self.print_time = print_time
-
+        self.cut_payload_beta_gradient = cut_payload_beta_gradient
         self.loc_time=time.time()
 
         if standard_configuration is not None:
@@ -470,6 +475,8 @@ class LLFullObjectCondensation(LossLayerBase):
         return tf.where(t_energy > 10., 1., (t_energy / flatat + 0.1)/1.1)
             
     def calc_energy_loss(self, t_energy, pred_energy): 
+        if not self.energy_loss_weight:
+            return pred_energy**2 #just learn 0
         
         if self.huber_energy_scale > 0:
             l = tf.abs(t_energy-pred_energy)
@@ -481,9 +488,15 @@ class LLFullObjectCondensation(LossLayerBase):
 
     
     def calc_position_loss(self, t_pos, pred_pos):
+        if not self.position_loss_weight:
+            t_pos = 0.
+        
         return tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) #is in cm
     
     def calc_timing_loss(self, t_time, pred_time):
+        if not self.timing_loss_weight:
+            return pred_time**2
+        
         return (t_time*1e9 - pred_time)**2 #rechit time is in ns, true time in s
     
     def calc_classification_loss(self, t_pid, pred_id):
@@ -510,6 +523,13 @@ class LLFullObjectCondensation(LossLayerBase):
         if not self.use_energy_weights:
             energy_weights = tf.zeros_like(energy_weights)+1.
             
+        
+        t_energy    = tf.debugging.check_numerics(t_energy, "t_energy has NaNs")
+        t_energy = tf.where(t_energy<=0,0.,t_energy)
+        pred_energy    = tf.debugging.check_numerics(pred_energy, "pred_energy has NaNs")
+        energy_weights    = tf.debugging.check_numerics(energy_weights, "energy_weights has NaNs")
+            
+        #also kill any gradients for zero weight
         energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
@@ -534,7 +554,9 @@ class LLFullObjectCondensation(LossLayerBase):
                                            cont_beta_loss=self.cont_beta_loss,
                                            prob_repulsion=self.prob_repulsion,
                                            phase_transition=self.phase_transition>0. ,
-                                           alt_potential_norm=self.alt_potential_norm
+                                           phase_transition_double_weight = self.phase_transition_double_weight,
+                                           alt_potential_norm=self.alt_potential_norm,
+                                           cut_payload_beta_gradient=self.cut_payload_beta_gradient
                                            )
 
         
@@ -545,10 +567,10 @@ class LLFullObjectCondensation(LossLayerBase):
         exceed_beta *= self.too_much_beta_scale
 
         
-        energy_loss = tf.debugging.check_numerics(payload[0], "energy loss has NaN")
-        pos_loss = tf.debugging.check_numerics(payload[1], "position loss has NaN")
-        time_loss = tf.debugging.check_numerics(payload[2], "time loss has NaN")
-        class_loss = tf.debugging.check_numerics(payload[3], "classification loss has NaN")
+        energy_loss = tf.debugging.check_numerics(payload[0], "energy loss has NaNs")
+        pos_loss    = tf.debugging.check_numerics(payload[1], "position loss has NaNs")
+        time_loss   = tf.debugging.check_numerics(payload[2], "time loss has NaNs")
+        class_loss  = tf.debugging.check_numerics(payload[3], "classification loss has NaNs")
         
         lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta
             
@@ -608,8 +630,10 @@ class LLFullObjectCondensation(LossLayerBase):
             'n_classes': self.n_classes,
             'prob_repulsion': self.prob_repulsion,
             'phase_transition': self.phase_transition,
+            'phase_transition_double_weight': self.phase_transition_double_weight,
             'alt_potential_norm': self.alt_potential_norm,
-            'print_time' : self.print_time
+            'print_time' : self.print_time,
+            'cut_payload_beta_gradient': self.cut_payload_beta_gradient
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

@@ -5,10 +5,11 @@ from local_cluster_op import LocalCluster
 
 from local_distance_op import LocalDistance
 from lossLayers import LLLocalClusterCoordinates
+from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
 #### helper###
-from datastructures import TrainData_OC
+from datastructures import TrainData_OC,TrainData_NanoML
 
 def check_type_return_shape(s):
     if not isinstance(s, tf.TensorSpec):
@@ -18,6 +19,34 @@ def check_type_return_shape(s):
 
 
 ############# Some layers for convenience ############
+
+
+class NormalizeInputShapes(tf.keras.layers.Layer):
+    def __init__(self,
+                 **kwargs):
+        super(NormalizeInputShapes, self).__init__(**kwargs)
+        
+    def compute_output_shape(self, input_shapes):
+        outshapes=[]
+        for s in input_shapes:
+            if len(s)<2:
+                outshapes.append((None, 1))
+            else:
+                outshapes.append(s)
+            
+        return outshapes
+    
+    def call(self, inputs):
+        outs=[]
+        for i in inputs:
+            if len(i.shape)<2:
+                outs.append(tf.reshape(i,[-1,1]))
+            else:
+                outs.append(i)
+        return outs
+            
+    
+    
 
 class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
@@ -64,42 +93,175 @@ class ProcessFeatures(tf.keras.layers.Layer):
         return tf.concat(allf,axis=-1)
     
     
-    
-############# PCA like section
-
-class NeighbourPCA   (tf.keras.layers.Layer):
+class NeighbourCovariance(tf.keras.layers.Layer):
     def __init__(self,**kwargs):
         """
-        This layer performas a simple PCA* of the inputs fiven by:
-        
-        - the features (V x F)
-        - the neighbour indices to consider
-        
-        The output shape is the F^2
-        
-        Too resource intense for full application
-        
+        Inputs: 
+          - coordinates (Vin x C)
+          - distance squared (Vout x K)
+          - features (Vin x F)
+          - neighbour indices (Vout x K)
+          
+        Returns concatenated  (Vout x { F*(C*(C+1)/2 + F*C})
+          - feature weighted covariance matrices (lower triangle) (Vout x F*(C*(C+1)/2)
+          - feature weighted means (Vout x F*C)
+          
+        THIS OPERATION HAS NO GRADIENT SO FAR!!
         """
-        super(NeighbourPCA, self).__init__(**kwargs)
+        super(NeighbourCovariance, self).__init__(**kwargs)
+        self.outshapes=None
     
-    def compute_output_shape(self, input_shapes):
-        return input_shapes[0][:-1]+input_shapes[0][-1]**2
+    
+    def build(self, input_shapes): #pure python
+        super(NeighbourCovariance, self).build(input_shapes)
+        
+    @staticmethod
+    def raw_get_cov_shapes(input_shapes):
+        coordinates_s, features_s = None, None
+        if len(input_shapes) == 4:
+            coordinates_s, _, features_s, _ = input_shapes
+        else:
+            coordinates_s, features_s, _ = input_shapes
+        nF = features_s[1]
+        nC = coordinates_s[1]
+        covshape = nF*nC**2 #int(nF*(nC*(nC+1)//2))
+        return nF, nC, covshape
     
     @staticmethod
-    def raw_call(nidx, feat):
-        nfeat = tf.gather_nd(feat, tf.expand_dims(nidx,axis=2))
-        s,_,v = tf.linalg.svd(nfeat)  # V x F, V x F x F
-        s = tf.expand_dims(s, axis=2)  # V x F x 1 
-        s = tf.sqrt(s + 1e-6)
-        scaled = s*v  # V x F x F
-        return tf.reshape(scaled, [-1,feat.shape[1]**2])
-        
+    def raw_call(coordinates, distsq, features, n_idxs):
+        cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
+                                           distsq=10. * distsq,#same as gravnet scaling
+                                         features=features, 
+                                         n_idxs=n_idxs)
+        return cov, means
+    
     def call(self, inputs):
-        feat, neighs = inputs
-        return NeighbourPCA.raw_call(neighs,feat)
+        coordinates, distsq, features, n_idxs = None, None, None, None 
+        if len(inputs) == 4:
+            coordinates, distsq, features, n_idxs = inputs
+        else:
+            coordinates, features, n_idxs = inputs
+            distsq = tf.zeros_like(n_idxs,dtype='float32')
+        
+        cov,means = NeighbourCovariance.raw_call(coordinates, distsq, features, n_idxs)
+        
+        nF, nC, covshape = NeighbourCovariance.raw_get_cov_shapes([s.shape for s in inputs])
+        
+        cov = tf.reshape(cov, [-1, covshape])
+        means = tf.reshape(means, [-1, nF*nC])
+        
+        return tf.concat([cov,means],axis=-1)
+        
+class NeighbourApproxPCA(tf.keras.layers.Layer):
+    def __init__(self,hidden_nodes=16, **kwargs):
+        """
+        Inputs: 
+          - coordinates (Vin x C)
+          - features (Vin x F)
+          - neighbour indices (Vout x K)
+          
+        Returns concatenated:
+          - feature weighted covariance matrices (lower triangle) (Vout x F*(C^2+C))
+          - feature weighted means (Vout x F*C)
+          
+        THIS OPERATION HAS NO GRADIENT SO FAR!!
+        """
+        super(NeighbourApproxPCA, self).__init__(**kwargs)
+        with tf.name_scope(self.name + "/1/"):
+            self.hidden_dense = tf.keras.layers.Dense(hidden_nodes,activation='elu')
+        self.output_dense = None #tf.keras.layers.Dense(hidden_nodes,activation='elu')
+        self.nF = None
+        self.nC = None
+        self.covshape = None
+        self.hidden_nodes = hidden_nodes
+        
+        
+    def get_config(self):
+        config = {'hidden_nodes': self.hidden_nodes,
+                  'nF': self.nF,
+                  'nC': self.nC,
+                  'covshape': self.covshape}
+        base_config = super(NeighbourApproxPCA, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def build(self, input_shapes): #pure python
+        nF, nC, covshape = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        self.nF = nF
+        self.nC = nC
+        self.covshape = covshape
+        
+        with tf.name_scope(self.name + "/1/"):
+            self.hidden_dense.build((None,None,covshape//nF))
+            
+        with tf.name_scope(self.name + "/2/"):
+            self.output_dense = tf.keras.layers.Dense(nC**2+nC)
+            self.output_dense.build((None,None,self.hidden_dense.units))
+            
+        super(NeighbourApproxPCA, self).build(input_shapes)  
+        
+    def compute_output_shape(self, input_shapes):
+        nF, nC = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        return (None, nF*(nC**2 + nC) + nF*nC)
 
-############# Local clustering section
-
+    def call(self, inputs):
+        coordinates, features, n_idxs = inputs
+        cov,means = NeighbourCovariance.raw_call(coordinates, features, n_idxs)
+        cov = tf.reshape(cov, [-1, self.nF, self.covshape//self.nF])
+        cov = self.hidden_dense(cov)
+        cov = self.output_dense(cov)
+        
+        cov = tf.reshape(cov, [-1, self.nF*(self.nC**2 + self.nC)])
+        means = tf.reshape(means, [-1, self.nF*self.nC])
+        
+        return tf.concat([cov,means],axis=-1)
+    
+    
+    
+class LocalDistanceScaling (tf.keras.layers.Layer):
+    def __init__(self,
+                 max_scale = 10,
+                 **kwargs):
+        """
+        Inputs: 
+        - distances (V x N)
+        - scaling (V x 1)
+        
+        Returns:
+        distances * scaling : V x N x 1
+        scaling is bound to be within 1/max_scale and max_scale.
+        """
+        super(LocalDistanceScaling, self).__init__(**kwargs)
+        self.max_scale = float(max_scale)
+        #some helpers
+        self.c = 1. - 1./max_scale
+        self.b = max_scale/(2.*self.c)
+        
+        
+        #derivative sigmoid = sigmoid(x) (1- sigmoid(x))
+        #der sig|x=0 = 1/4
+        #derivate of sigmoid (ax) = a (der sig)(ax)
+        #
+        
+        
+    def get_config(self):
+        config = {'max_scale': self.max_scale}
+        base_config = super(LocalDistanceScaling, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[1]
+    
+    @staticmethod
+    def raw_call(dist,scale,a,b,c):
+        #the derivative is continuous at 0
+        scale_pos = a*tf.math.sigmoid(scale) +  1. - a/2.
+        scale_neg = 2. * c * tf.math.sigmoid(b*scale) + 1. - c
+        return dist*tf.where(scale>=0,scale_pos, scale_neg)
+    
+    def call(self, inputs):
+        dist,scale = inputs
+        return LocalDistanceScaling.raw_call(dist,scale,self.max_scale,self.b,self.c)
+    
 
 class LocalClustering(tf.keras.layers.Layer):
     def __init__(self,
@@ -146,15 +308,6 @@ class LocalClustering(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes):
         return (None,1), (None,), (None,1)
     
-    
-    def compute_output_signature(self, input_signature):
-        
-        input_shapes = [x.shape for x in input_spec]
-        output_shapes = self.compute_output_shape(input_shapes)
-
-        return [tf.TensorSpec(dtype=tf.int32, shape=output_shapes[i]) for i in range(len(output_shape))]
-    
-   
     def build(self, input_shapes):
         super(LocalClustering, self).build(input_shapes)
         
@@ -327,7 +480,7 @@ class MultiBackGather(tf.keras.layers.Layer):
 
 
 class KNN(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float, **kwargs):
+    def __init__(self,K: int, radius: float=-1., **kwargs):
         """
         
         Select K nearest neighbours, with possible radius constraint.
@@ -626,16 +779,18 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
         else:
             features, distances, hierarchy, nidxs, row_splits, tidxs = inputs
             other=[]
+            
+        sdist, snidx = distances,nidxs #  
+        sdist, snidx = SortAndSelectNeighbours.raw_call(sdist, snidx,K=self.K, radius=self.radius)
         #generate loss
         if self.loss_enabled:
             #some headroom for radius
             lossval = self.loss_scale * LLLocalClusterCoordinates.raw_loss(
-                distances, hierarchy, nidxs, tidxs,  #or distances/(1.5*self.radius)**2
+                sdist/(self.radius**2), hierarchy, snidx, tidxs,  #or distances/(1.5*self.radius)**2
                 add_self_reference=False, repulsion_contrib=self.loss_repulsion,
                 print_loss=self.print_loss,name=self.name)
             self.add_loss(lossval)
         # do the reshaping
-        sdist, snidx = SortAndSelectNeighbours.raw_call(distances,nidxs,K=self.K, radius=self.radius)
         
         sel, rs, backgather = LocalClustering.raw_call(snidx,hierarchy,row_splits,
                                                        print_reduction=self.print_reduction,name=self.name)
@@ -765,7 +920,7 @@ class SoftPixelCNN(tf.keras.layers.Layer):
         
         for o in self.offsets:
             distancesq = LocalDistance(coordinates+o, neighbour_indices)
-            f,_ = AccumulateKnn(self.length_scale*distancesq,  features, neighbour_indices, n_moments=0) # V x F
+            f,_ = AccumulateKnn(self.length_scale*distancesq,  features, neighbour_indices) # V x F
             f = f[:,:self.nfeat]
             f = tf.reshape(f, [-1, self.nfeat])
             out.append(f) #only mean
@@ -775,6 +930,82 @@ class SoftPixelCNN(tf.keras.layers.Layer):
 
 
 
+class SoftPixelRadiusCNN(tf.keras.layers.Layer):
+    def __init__(self, length_scale_momentum=0.01, subdivisions: int=3 ,**kwargs):
+        """
+        Inputs: 
+        - features
+        - distances squared
+        - neighbour_indices
+        
+        This layer is strongly inspired by 1611.08097 (even though this is only presented for 2D manifolds).
+        It implements "soft pixels" for each direction given by the input coordinates plus one central "pixel".
+        Each "pixel" is represented by a Gaussian weighting of the inputs.
+        For D coordinate dimensions, 2*D + 1 "pixels" are formed (e.g. one for position x direction one for neg x etc).
+        The pixels beyond the length scale are removed.
+        
+        Call will return 
+         - soft pixel CNN outputs:  (V x npixels * features)
+        
+        :param length_scale_momentum: Momentum of the automatically adjusted length scale
+                             
+        :param subdivisions: number of subdivisions along radius
+        
+        """
+        super(SoftPixelRadiusCNN, self).__init__(**kwargs) 
+        assert length_scale_momentum > 0
+        assert subdivisions > 1
+        
+        with tf.name_scope(self.name + "/1/"):
+            self.length_scale = tf.Variable(initial_value=1., trainable=False,dtype='float32')
+
+        
+    def get_config(self):
+        config = {'length_scale_momentum' : self.length_scale_momentum,
+                  'subdivisions': self.subdivisions
+                  }
+        base_config = super(SoftPixelRadiusCNN, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):
+        noutvert = input_shapes[2][0]
+        #ncoords = input_shapes[0][1]
+        nfeat = input_shapes[1][1]
+        return (noutvert, nfeat*self.subdivisions)
+    
+    
+    def build(self, input_shapes):
+        super(SoftPixelRadiusCNN, self).build(input_shapes)
+        
+    def call(self, inputs, training=None):
+        
+        features, distsq, neighbour_indices = inputs
+        #create coordinate offsets
+        out=[]
+        
+        #adjust to 2 sigma continuously
+        distsq = tf.stop_gradient(distsq)
+        if self.trainable:
+            tf.keras.backend.update(self.length_scale, 
+                                    tf.keras.backend.in_train_phase(
+                self.length_scale*(1.-self.length_scale_momentum) + self.length_scale_momentum*2.*tf.reduce_mean(tf.sqrt(distsq+1e-6)),
+                                self.length_scale,
+                                training=training)
+                                    )
+            
+        scaler = 10.*self.length_scale*float(self.subdivisions)
+        
+        for i in range(self.subdivisions):
+            offset=float(i)/self.length_scale
+            #up to here
+            
+        #    distancesq = LocalDistance(coordinates+o, neighbour_indices)
+        #    f,_ = AccumulateKnn(self.length_scale*distancesq,  features, neighbour_indices) # V x F
+        #    f = f[:,:self.nfeat]
+        #    f = tf.reshape(f, [-1, self.nfeat])
+        #    out.append(f) #only mean
+        #out = tf.concat(out,axis=-1)
+        #return out
 
 ######## generic neighbours
 
@@ -784,6 +1015,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  n_dimensions: int,
                  n_filters : int,
                  n_propagate : int,
+                 return_self=False,
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -794,6 +1026,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         features transformations (minimum 1)
 
         :param n_propagate: how much to propagate in feature tranformation, could be a list in case of multiple
+        :param return_self: for the neighbour indices and distances, switch whether to return the 'self' index and distance (0)
         :param kwargs:
         """
         super(RaggedGravNet, self).__init__(**kwargs)
@@ -804,6 +1037,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
         self.n_filters = n_filters
+        self.return_self = return_self
 
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
@@ -812,7 +1046,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                 self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation='relu')
 
         with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,use_bias=False,kernel_initializer=tf.keras.initializers.Orthogonal())
+            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,use_bias=False,kernel_initializer=tf.keras.initializers.identity())
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='tanh')
@@ -850,18 +1084,26 @@ class RaggedGravNet(tf.keras.layers.Layer):
         row_splits = inputs[1]
         
         coordinates = self.input_spatial_transform(x)
-
-        neighbour_indices, distancesq = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits)
         neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours-1]) #for proper output shape for keras
         distancesq = tf.reshape(distancesq, [-1, self.n_neighbours-1])
 
-        return self.create_output_features(x, neighbour_indices, distancesq), coordinates, neighbour_indices, distancesq
+        outfeats = self.create_output_features(x, neighbour_indices, distancesq)
+        if self.return_self:
+            neighbour_indices, distancesq = sidx, sdist
+        return outfeats, coordinates, neighbour_indices, distancesq
 
     def call(self, inputs):
         return self.priv_call(inputs)
 
     def compute_output_shape(self, input_shapes):
-        return (input_shapes[0][0], 2*self.n_filters),\
+        if self.return_self:
+            return (input_shapes[0][0], 2*self.n_filters),\
+               (input_shapes[0][0], self.n_dimensions),\
+               (input_shapes[0][0], self.n_neighbours),\
+               (input_shapes[0][0], self.n_neighbours)
+        else:
+            return (input_shapes[0][0], 2*self.n_filters),\
                (input_shapes[0][0], self.n_dimensions),\
                (input_shapes[0][0], self.n_neighbours-1),\
                (input_shapes[0][0], self.n_neighbours-1)
@@ -869,36 +1111,26 @@ class RaggedGravNet(tf.keras.layers.Layer):
     
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        #
-        # ragged_split_added_indices, _ = SelectKnn(self.n_neighbours, coordinates, row_splits,
-        #                                           max_radius=1.0, tf_compatible=True)
-        #
-        # # ragged_split_added_indices = ragged_split_added_indices[:,1:]
-        #
-        # ragged_split_added_indices = ragged_split_added_indices[..., tf.newaxis]
-        #
-        # distancesq = tf.reduce_sum(
-        #     (coordinates[:, tf.newaxis, :] - tf.gather_nd(coordinates, ragged_split_added_indices)) ** 2,
-        #     axis=-1)  # [SV, N]
         idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                              max_radius= -1.0, tf_compatible=False)
-
-        idx = idx[:, 1:]
-        dist = dist[:, 1:]
-
-        return idx,dist
+        idx = tf.reshape(idx, [-1, self.n_neighbours])
+        dist = tf.reshape(dist, [-1, self.n_neighbours])
+        if self.return_self:
+            return idx[:, 1:], dist[:, 1:], idx, dist
+        return idx[:, 1:], dist[:, 1:], None, None
 
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
 
-        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
         return f
 
     def get_config(self):
         config = {'n_neighbours': self.n_neighbours,
                   'n_dimensions': self.n_dimensions,
                   'n_filters': self.n_filters,
-                  'n_propagate': self.n_propagate}
+                  'n_propagate': self.n_propagate,
+                  'return_self': self.return_self}
         base_config = super(RaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -966,7 +1198,7 @@ class DynamicDistanceMessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
-        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
         return f
 
     def call(self, inputs):
@@ -997,7 +1229,7 @@ class CollectNeighbourAverageAndMax(tf.keras.layers.Layer):
     
     def call(self, inputs):
         x, idxs = inputs
-        f,_ = AccumulateKnn(tf.cast(idxs*0, tf.float32),  x, idxs, n_moments=0)
+        f,_ = AccumulateKnn(tf.cast(idxs*0, tf.float32),  x, idxs)
         return tf.reshape(f, [-1,2*x.shape[-1]])
     
 
@@ -1048,7 +1280,7 @@ class MessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices):
-        f,_ = AccumulateKnn(tf.cast(neighbour_indices*0, tf.float32),  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(tf.cast(neighbour_indices*0, tf.float32),  features, neighbour_indices)
         return f
 
     def call(self, inputs):
@@ -1064,6 +1296,7 @@ class MessagePassing(tf.keras.layers.Layer):
 
 class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
     '''
+    Inputs: x, neighbor_indices, distancesq
 
     '''
 
@@ -1114,64 +1347,107 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
-
-        # weights = gauss_of_lin(10. * distancesq)
-        # weights = tf.expand_dims(weights, axis=-1)  # [SV, N, 1]
-        # neighbour_features = tf.gather_nd(features, neighbour_indices)
-        # neighbour_features *= weights
-        # neighbours_max = tf.reduce_max(neighbour_features, axis=1)
-        # neighbours_mean = tf.reduce_mean(neighbour_features, axis=1)
-        #
-        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices, n_moments=0)
+        f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
         return f
-
-
-        return tf.concat([neighbours_max, neighbours_mean], axis=-1)
-
-
 
     def call(self, inputs):
         x, neighbor_indices, distancesq = inputs
         return self.create_output_features(x, neighbor_indices, distancesq)
 
 
+
+class EdgeConvStatic(tf.keras.layers.Layer):
+    '''
+    just like edgeconv but with static edges
+    
+    Input:
+    - features
+    - neighbour indices
+    
+    output:
+    - new features
+    
+    :param n_feature_transformation: transformations on the edges (list)
+    :param select_neighbours: if False, input is expected to be features (V x K x F) only
+    '''
+
+    def __init__(self, 
+                 n_feature_transformation,
+                 select_neighbours=False,
+                 add_mean=False,
+                 **kwargs):
+        super(EdgeConvStatic, self).__init__(**kwargs)
+
+        self.n_feature_transformation = n_feature_transformation
+        self.select_neighbours = select_neighbours
+        self.feature_tranformation_dense = []
+        self.add_mean = add_mean
+        for i in range(len(self.n_feature_transformation)):
+            with tf.name_scope(self.name + "/5/" + str(i)):
+                self.feature_tranformation_dense.append(tf.keras.layers.Dense(self.n_feature_transformation[i],
+                                                                              activation='elu')) 
+    
     def get_config(self):
         config = {'n_feature_transformation': self.n_feature_transformation,
-                  }
-        base_config = super(DistanceWeightedMessagePassing, self).get_config()
+                  'add_mean': self.add_mean,
+                  'select_neighbours': self.select_neighbours,
+        }
+        base_config = super(EdgeConvStatic, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
-
-
-class WeightedCovariances(tf.keras.layers.Layer):
-    '''
-    allows distances after each passing operation to be dynamically adjusted.
-    this similar to FusedRaggedGravNetAggAtt, but incorporates the scaling in the message passing loop
-    '''
-
-    def __init__(self, **kwargs):
-        super(WeightedCovariances, self).__init__(**kwargs)
-
-
+    
     def build(self, input_shapes):
-        super(WeightedCovariances, self).build(input_shapes)
+        input_shape = input_shapes
+        if self.select_neighbours:
+            input_shape = input_shapes[0]
 
+        with tf.name_scope(self.name + "/5/" + str(0)):
+            self.feature_tranformation_dense[0].build((input_shape[0],None,input_shape[-1]))
 
-    def collect_neighbours(self, features, neighbour_indices):
-        neighbour_features = tf.gather_nd(features, neighbour_indices[..., tf.newaxis])
-        return neighbour_features
+        for i in range(1, len(self.feature_tranformation_dense)):
+            with tf.name_scope(self.name + "/5/" + str(i)):
+                self.feature_tranformation_dense[i].build((input_shape[0], self.n_feature_transformation[i - 1]))
 
+        super(EdgeConvStatic, self).build(input_shapes)
+
+    
+    def compute_output_shape(self, input_shapes): # data, idxs
+        if self.add_mean:
+            return (None, 2*self.feature_tranformation_dense[-1].units)
+        else:
+            return (None, self.feature_tranformation_dense[-1].units)
+    
+    
     def call(self, inputs):
-        x, coords, neighbor_indices = inputs
-        coords_collected = self.collect_neighbours(coords, neighbor_indices) # [V, N, F]
-
-        mean_est = coords[:, tf.newaxis, :]#just the central point #tf.reduce_mean(coords_collected, axis=1)[:, tf.newaxis, :]
-        centered = coords_collected - mean_est #[V,N,F]
-        centered_transposed = tf.transpose(centered, perm=[0, 2, 1]) # [V,F,N]
-        # [V,F,N]x[V,N,F]
-        cov_est = tf.linalg.matmul(centered_transposed, centered) / (tf.cast(tf.shape(coords_collected)[1], tf.float32) - 1.) # [V,F, F]
-
-        weighted = cov_est[:, tf.newaxis,:,:] * x[:,:,tf.newaxis, tf.newaxis]
-        weighted_flattened = tf.reshape(weighted, [tf.shape(coords_collected)[0], (coords.shape[1]*coords.shape[1]*x.shape[1])])
-
-        return weighted_flattened
+        feat = inputs
+        neighfeat = feat
+        
+        if self.select_neighbours:
+            feat, nidx = inputs
+            
+            nF = feat.shape[-1]
+            nN = nidx.shape[-1]
+            
+            TFnidx = tf.expand_dims(tf.where(nidx<0,0,nidx),axis=2)
+            neighfeat = tf.gather_nd(feat, TFnidx)
+            neighfeat = tf.where(tf.expand_dims(nidx,axis=2)<0, 0., neighfeat)#zero pad
+            neighfeat = tf.reshape(neighfeat, [-1, nN, nF])
+            
+        neighfeat = neighfeat - neighfeat[:,:,0:1] 
+        
+        for t in self.feature_tranformation_dense:
+            neighfeat = t(neighfeat)
+            
+        out = tf.reduce_max(neighfeat,axis=1)
+        if self.add_mean:
+            out = tf.concat([out, tf.reduce_mean(neighfeat,axis=1) ],axis=-1)
+        return out
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        

@@ -4,7 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import WeightedCovariances,NeighbourPCA,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -46,7 +46,8 @@ global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePass
 
 
 global_layers_list['ProcessFeatures']=ProcessFeatures
-global_layers_list['NeighbourPCA']=NeighbourPCA
+global_layers_list['LocalDistanceScaling']=LocalDistanceScaling
+
 global_layers_list['LocalClustering']=LocalClustering
 global_layers_list['CreateGlobalIndices']=CreateGlobalIndices
 global_layers_list['SelectFromIndices']=SelectFromIndices
@@ -58,10 +59,10 @@ global_layers_list['SoftPixelCNN']=SoftPixelCNN
 global_layers_list['SortAndSelectNeighbours']=SortAndSelectNeighbours
 global_layers_list['GraphClusterReshape']=GraphClusterReshape
 
-global_layers_list['WeightedCovariances']=WeightedCovariances
 global_layers_list['LocalClusterReshapeFromNeighbours']=LocalClusterReshapeFromNeighbours
 
 
+global_layers_list['NeighbourCovariance']=NeighbourCovariance
 
 
 global_layers_list['LLObjectCondensation']=LLObjectCondensation
@@ -72,6 +73,10 @@ global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 global_layers_list['LossLayerBase']=LossLayerBase
 global_layers_list['LLFullTrackMLObjectCondensation']=LLFullTrackMLObjectCondensation
 
+global_layers_list['NormalizeInputShapes']=NormalizeInputShapes
+global_layers_list['NeighbourApproxPCA']=NeighbourApproxPCA
+
+global_layers_list['EdgeConvStatic']=EdgeConvStatic
 
 
 from tensorflow.keras.layers import Layer
@@ -80,6 +85,17 @@ import tensorflow as tf
 from Loss_tools import deltaPhi
 
 
+
+class ReluPlusEps(Layer):
+    def __init__(self,**kwargs):
+        super(ReluPlusEps, self).__init__(**kwargs)
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    def call(self, inputs):
+        return tf.nn.relu(inputs)+1e-6
+    
+    
+global_layers_list['ReluPlusEps']=ReluPlusEps
 
 class InputNormalization(Layer):
     def __init__(self, 

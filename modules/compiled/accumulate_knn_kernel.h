@@ -26,7 +26,8 @@ struct AccumulateKnnOpFunctor {
 
             int n_out_feat,
 
-            int n_moments);
+            int n_moments,
+            bool mean_and_max);
 };
 
 

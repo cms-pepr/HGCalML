@@ -12,6 +12,9 @@ from IPython import embed
 class TrainData_NanoML(TrainData):
     def __init__(self):
         TrainData.__init__(self)
+    
+    def isValid(self):
+        return True #needs to be filled
 
     def buildObs(self, tree, hitType, label, ext=None):
         obs = tree["_".join([hitType, label])].array()
@@ -221,6 +224,23 @@ class TrainData_NanoML(TrainData):
         
         return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid],[t_rest], []
     
+
+    def interpretAllModelInputs(self, ilist):
+        '''
+        input: the full list of keras inputs
+        returns: 
+         - rechit feature array
+         - t_idxarr
+         - t_energyarr
+         - t_posarr
+         - t_time
+         - t_pid
+         - row_splits
+         
+        (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, row_splits)
+        '''
+        return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[1]
+     
     def createFeatureDict(self,feat,addxycomb=True):
         d = {
         'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
@@ -263,7 +283,43 @@ class TrainData_NanoML(TrainData):
             out[key] = truth[:,i:i+1]
         
         return out
- 
+    
+    
+    def createPandasDataFrame(self, eventno=-1):
+        #since this is only needed occationally
+        import pandas as pd
+        
+        if self.nElements() <= eventno:
+            raise IndexError("Event wrongly selected")
+        
+        tdc = self.copy()
+        if eventno>=0:
+            tdc.skim(eventno)
+        
+        f = tdc.transferFeatureListToNumpy(False)
+        featd = self.createFeatureDict(f[0])
+        rs = f[1]
+        t = tdc.transferTruthListToNumpy(False)
+        truthd = self.createTruthDict(t[0])
+        
+        featd.update(truthd)
+        
+        del featd['recHitXY'] #so that it's flat
+        
+        featd['recHitLogEnergy'] = np.log(featd['recHitEnergy']+1)
+        
+        allarr = []
+        for k in featd:
+            allarr.append(featd[k])
+        allarr = np.concatenate(allarr,axis=1)
+        
+        
+        frame = pd.DataFrame (allarr, columns = [k for k in featd])
+        if eventno>=0:
+            return frame
+        else:
+            return frame, rs
+    
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
         outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
         # print("hello", outfilename, inputfile)

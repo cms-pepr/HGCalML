@@ -42,7 +42,8 @@ struct AccumulateKnnOpFunctor<CPUDevice, dummy> {
 
             int n_out_feat,
 
-            int n_moments) {
+            int n_moments,
+            bool mean_and_max) {
 
 
         for (size_t i_v = 0; i_v < n_vert; i_v++) {
@@ -62,17 +63,18 @@ struct AccumulateKnnOpFunctor<CPUDevice, dummy> {
                     float wfeat = vnf * distanceWeight(distsq);
                     //DEBUGCOUT(wfeat);
                     t_mean += wfeat;
-                    if(wfeat >= t_max || !i_n){
+                    if(mean_and_max && (wfeat >= t_max || !i_n)){
                         max_i_n_gidx = nidx;
                         t_max = wfeat;
                     }
                 }
                 t_mean /= (float)n_neigh;
 
-                d_out_maxidxs[I2D(i_v,i_f,n_feat)] = max_i_n_gidx; //just used for gradient
                 d_out_feat[I2D(i_v,i_f,n_out_feat)] = t_mean;
-                d_out_feat[I2D(i_v,i_f+n_feat,n_out_feat)] = t_max;
-
+                if(mean_and_max){
+                    d_out_maxidxs[I2D(i_v,i_f,n_feat)] = max_i_n_gidx; //just used for gradient
+                    d_out_feat[I2D(i_v,i_f+n_feat,n_out_feat)] = t_max;
+                }
                 //moments in n_coords x n_neigh loop here {}
 
             }
@@ -87,6 +89,8 @@ public:
     explicit AccumulateKnnOp(OpKernelConstruction *context) : OpKernel(context) {
         OP_REQUIRES_OK(context,
                 context->GetAttr("n_moments", &n_moments));
+        OP_REQUIRES_OK(context,
+                context->GetAttr("mean_and_max", &mean_and_max));
     }
 
     void Compute(OpKernelContext *context) override {
@@ -102,7 +106,9 @@ public:
         int n_feat = d_feat_tensor.dim_size(1);
 
 
-        int n_out_feat = 2 * n_feat; //mean and max
+        int n_out_feat = n_feat; //mean and max
+        if(mean_and_max)
+            n_out_feat*=2;
 
         // after testing basic functionality!
         // n_out_feat += n_moments * n_feat * n_coords;
@@ -134,7 +140,8 @@ public:
                 n_coords,
                 n_feat,
                 n_out_feat,
-                n_moments
+                n_moments,
+                mean_and_max
         );
 
 
@@ -143,6 +150,7 @@ public:
 
 private:
     int n_moments;
+    bool mean_and_max;
 };
 
 REGISTER_KERNEL_BUILDER(Name("AccumulateKnn").Device(DEVICE_CPU), AccumulateKnnOp<CPUDevice>);
