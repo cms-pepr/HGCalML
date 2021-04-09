@@ -9,7 +9,7 @@ import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
 from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
-from tensorflow.keras.layers import Reshape, Dense, Concatenate, GaussianDropout, Dropout
+from tensorflow.keras.layers import Lambda, Reshape, Dense, Concatenate, GaussianDropout, Dropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
@@ -30,7 +30,7 @@ from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs
 
-from Layers import EdgeConvStatic,DistanceWeightedMessagePassing,SortAndSelectNeighbours,NeighbourCovariance,NeighbourApproxPCA,ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
+from Layers import ManualCoordTransform,EdgeConvStatic,DistanceWeightedMessagePassing,SortAndSelectNeighbours,NeighbourCovariance,NeighbourApproxPCA,ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
 from datastructures import TrainData_NanoML 
 td=TrainData_NanoML()
 
@@ -40,9 +40,14 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     ######## pre-process all inputs and create global indices etc. No DNN actions here
     
     feat,  t_idx, t_energy, t_pos, t_time, t_pid, row_splits = td.interpretAllModelInputs(Inputs)
-    feat,  t_idx, t_energy, t_pos, t_time, t_pid = NormalizeInputShapes()(
-        [feat,  t_idx, t_energy, t_pos, t_time, t_pid]
-        )
+    
+    # feat = Lambda(lambda x: tf.squeeze(x,axis=1)) (feat)
+    
+    #tf.print([(t.shape, t.name) for t in [feat,  t_idx, t_energy, t_pos, t_time, t_pid, row_splits]])
+    
+    #feat,  t_idx, t_energy, t_pos, t_time, t_pid = NormalizeInputShapes()(
+    #    [feat,  t_idx, t_energy, t_pos, t_time, t_pid]
+    #    )
     
     orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid, orig_row_splits = t_idx, t_energy, t_pos, t_time, t_pid, row_splits
     gidx_orig = CreateGlobalIndices()(feat)
@@ -50,8 +55,8 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     _, row_splits = RaggedConstructTensor()([feat, row_splits])
     rs = row_splits
     
-    feat_norm = ProcessFeatures()(feat)#get rid of unit scalings, almost normalise
-    feat_norm = BatchNormalization(momentum=0.6)(feat_norm)
+    #feat_norm = ProcessFeatures()(feat)#get rid of unit scalings, almost normalise
+    feat_norm = BatchNormalization(momentum=0.6)(feat)
     x=feat_norm
     
     energy = SelectFeatures(0,1)(feat)
@@ -69,19 +74,18 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     
     ####### create simple first coordinate transformation explicitly (time critical)
 
-    coords=orig_coords
-    coords = Dense(16,activation='elu')(x)
+    trans_coords = ManualCoordTransform()(orig_coords)
+    coords = Dense(32,activation='elu')(trans_coords)
     coords = Dense(16,activation='elu')(coords)
-    coords = Dense(3,use_bias=False)(coords)
-    coords = ScalarMultiply(0.1)(coords)
-    coords = Add()([coords, orig_coords])
-    coords = Dense(3,use_bias=False,kernel_initializer=tf.keras.initializers.identity())(coords)
+    coords = Concatenate()([trans_coords,coords])
+    coords = Dense(3,use_bias=False,kernel_initializer=tf.keras.initializers.Identity())(coords)
     
     first_coords = coords
-    
+    x = Concatenate()([x,coords,trans_coords])
     ###### apply one gravnet-like transformation (explicit here because we have created coords by hand) ###
 
     nidx, dist = KNN(K=48)([coords,rs])
+    dist = LocalDistanceScaling(max_scale=10.)([dist, Dense(1)(x)])
     x_mp = DistanceWeightedMessagePassing([32,32,16,8])([x,nidx,dist])
     x_mp = Dense(32, activation='elu')(x_mp)
     first_nidx = nidx
@@ -98,7 +102,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     
     ##### put together and process ####
     
-    x = Concatenate()([x,x_mp,ncov,coords])
+    x = Concatenate()([x,x_mp,ncov,coords,trans_coords])
     x = Dense(64, activation='elu',name='pre_dense_a')(x)
     x = BatchNormalization(momentum=0.6)(x)
     x = Dense(32, activation='elu',name='pre_dense_b')(x)
@@ -170,6 +174,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
          
         ### add neighbour summary statistics
+        dist = LocalDistanceScaling(max_scale=10.)([dist, Dense(1)(x_gn)])
                         
         x_ncov = NeighbourCovariance()([coords,dist,x_gn,nidx])
         x_ncov = Dense(64, activation='elu',name='dense_ncov_a_'+str(i))(x_ncov)
@@ -274,6 +279,8 @@ from plotting_callbacks import plotClusteringDuringTraining, plotGravNetCoordsDu
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
+print('path for plots',samplepath)
+
 cb = [plotClusteringDuringTraining(
            use_backgather_idx=7+i,
            outputfile=train.outputDir + "/plts/sn"+str(i)+'_',
@@ -300,16 +307,16 @@ cb += [
     plotGravNetCoordsDuringTraining(
             outputfile=train.outputDir + "/coords_"+str(i)+"/coord_"+str(i),
             samplefile=samplepath,
-            after_n_batches=300,
+            after_n_batches=100,
             batchsize=200000,  
             on_epoch_end=False,
             publish = publishpath+"_event_"+ str(0),
             use_event=0,
             use_prediction_idx=i,
             )
-    for i in  range(12,18) #between 16 and 21
-    ]
-learningrate = 5e-4
+    for i in range(12,18) #between 16 and 21
+    ] 
+learningrate = 5e-3
 nbatch = 120000 #quick first training with simple examples = low # hits
 
 train.compileModel(learningrate=learningrate,

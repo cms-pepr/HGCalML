@@ -61,7 +61,7 @@ class ProcessFeatures(tf.keras.layers.Layer):
         will apply some simple fixed preprocessing to the standard TrainData_OC features
         
         """
-        self.td=TrainData_OC()
+        self.td=TrainData_NanoML()
         super(ProcessFeatures, self).__init__(**kwargs)
         
         
@@ -92,6 +92,42 @@ class ProcessFeatures(tf.keras.layers.Layer):
             allf.append(fdict[k])
         return tf.concat(allf,axis=-1)
     
+
+
+class ManualCoordTransform(tf.keras.layers.Layer):
+    def __init__(self,**kwargs):
+        super(ManualCoordTransform, self).__init__(**kwargs)
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def build(self, input_shapes): #pure python
+        assert input_shapes[-1] == 3 #only works for x y z
+        super(ManualCoordTransform, self).build(input_shapes)
+    
+    
+    def _calc_r(self, x,y,z):
+        return tf.math.sqrt(x ** 2 + y ** 2 + z ** 2 + 1e-6)
+    
+    def _calc_abseta(self, x, y, z):
+        r = self._calc_r(x,y,0)
+        return -1 * tf.math.log(r / tf.abs(z + 1e-3) / 2.)
+    
+    def _calc_phi(self, x, y):
+        return tf.math.atan2(x, y)
+    
+    def call(self, inputs):
+        x,y,z = inputs[:,0:1], inputs[:,1:2], inputs[:,2:3]
+        eta = self._calc_abseta(x,y,z) #-> z
+        r = self._calc_r(x, y, z) #-> cylindrical r
+        phi = self._calc_phi(x, y)
+        newz = eta
+        newx = tf.math.cos(phi)*r
+        newy = tf.math.sin(phi)*r
+        
+        return tf.concat([newx,newy,newz],axis=-1)
+        
+
     
 class NeighbourCovariance(tf.keras.layers.Layer):
     def __init__(self,**kwargs):
@@ -102,11 +138,10 @@ class NeighbourCovariance(tf.keras.layers.Layer):
           - features (Vin x F)
           - neighbour indices (Vout x K)
           
-        Returns concatenated  (Vout x { F*(C*(C+1)/2 + F*C})
-          - feature weighted covariance matrices (lower triangle) (Vout x F*(C*(C+1)/2)
+        Returns concatenated  (Vout x { F*C^2 + F*C})
+          - feature weighted covariance matrices (lower triangle) (Vout x F*C^2)
           - feature weighted means (Vout x F*C)
           
-        THIS OPERATION HAS NO GRADIENT SO FAR!!
         """
         super(NeighbourCovariance, self).__init__(**kwargs)
         self.outshapes=None

@@ -48,7 +48,7 @@ class TrainData_NanoML(TrainData):
 
         return np.expand_dims(jagged.content, axis=1) if flatten else jagged
 
-    def bestMatch(self, tree, base, match, ext=None):
+    def bestMatch(self, tree, base, match, ext=None, defval=-1):
         matches = tree[f"{base}_{match}_MatchIdx"].array()
         nmatches = tree[f"{base}_{match}NumMatch"].array()
 
@@ -57,10 +57,11 @@ class TrainData_NanoML(TrainData):
             # First index is zero, not nmatches, don't need count of last entry
             offsets = np.zeros(len(nmatch), dtype='int32')
             offsets[1:] = np.cumsum(nmatch)[:-1]
-            bestmatch.append(np.where(nmatch > 0, match[offsets], -1))
+            bestmatch.append(match[offsets])
         obs = ak.JaggedArray.fromiter(bestmatch)
         if ext:
             obs = tree[ext].array()[obs]
+        obs[nmatches<1] = defval
         return obs
 
     def truthObjects(self, sc, indices, null, splitIdx=None):
@@ -142,9 +143,26 @@ class TrainData_NanoML(TrainData):
         # Mark simclusters outside of volume or with very few hits as noise
         # Maybe not a good idea if the merged SC pdgId is screwed up
         #noNeutrons = simClusterPdgId[recHitSimClusIdx] == 2112
-        outside = (np.abs(simClusterX[recHitSimClusIdx]) > 300) | (np.abs(simClusterY[recHitSimClusIdx]) > 300) 
+        #outside = (np.abs(simClusterX[recHitSimClusIdx]) > 300) | (np.abs(simClusterY[recHitSimClusIdx]) > 300) 
+        
+        #eta to R: z * exp(-eta)
+        #remove outside ans scraping - assuming x and y are on the front face
+        scCylRadius = simClusterX[recHitSimClusIdx]**2 + simClusterY[recHitSimClusIdx]**2
+        outside_a = scCylRadius > (321 * np.exp(-1.55))**2
+        outside_b = scCylRadius < (321 * np.exp(-2.95))**2
+        
+        #filter non-boundary positions
+        nonBoundary = abs(abs(simClusterZ[recHitSimClusIdx])-321) > 5
+        
+        
         fewHits = tree["MergedSimCluster_nHits"].array()[recHitSimClusIdx] < 10
-        recHitSimClusIdx[outside | fewHits] = -1
+        
+        nbefore = (recHitSimClusIdx < 0).sum().sum()
+        
+        recHitSimClusIdx[outside_a | outside_b | fewHits | nonBoundary] = -1
+        
+        nafter = (recHitSimClusIdx < 0).sum().sum()
+        print('removed another factor of', nafter/nbefore, ' bad simclusters')
 
         recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0., splitIdx=splitBy)
         recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, 0, splitIdx=splitBy)
@@ -158,9 +176,9 @@ class TrainData_NanoML(TrainData):
         recHitTruthTheta = np.arccos(np.divide(recHitTruthZ, recHitTruthR, out=np.zeros_like(recHitTruthZ), where=recHitTruthR!=0))
         recHitTruthPhi = np.arctan2(recHitTruthY, recHitTruthX)
         recHitTruthEta = -np.log(np.tan(recHitTruthTheta/2))
-        print(recHitTruthPhi)
-        print(np.max(recHitTruthPhi))
-        print(np.min(recHitTruthPhi))
+        #print(recHitTruthPhi)
+        #print(np.max(recHitTruthPhi))
+        #print(np.min(recHitTruthPhi))
 
         # Placeholder 
         zeroFeature = np.zeros(shape=(len(recHitEnergy), 1), dtype='float32')
@@ -182,6 +200,13 @@ class TrainData_NanoML(TrainData):
         del features  
 
         recHitSimClusIdx = np.expand_dims(self.splitJaggedArray(recHitSimClusIdx, splitIdx=splitBy).content.astype(np.int32), axis=1)
+        
+        print('noise',(100*np.count_nonzero(recHitSimClusIdx<0))//recHitSimClusIdx.shape[0],'% of hits')
+        print('truth eta min max',np.min(recHitTruthEta),np.max(recHitTruthEta))
+        print('non-boundary truth positions', 
+              np.count_nonzero(np.abs(np.abs(recHitTruthZ[recHitSimClusIdx>=0])-320)>5)/recHitTruthZ[recHitSimClusIdx>=0].shape[0])
+        
+        
         #now all numpy
         recHitTruthX[recHitSimClusIdx<0] = recHitX[recHitSimClusIdx<0]
         recHitTruthY[recHitSimClusIdx<0] = recHitY[recHitSimClusIdx<0]
@@ -189,6 +214,11 @@ class TrainData_NanoML(TrainData):
         recHitTruthEnergyCorrMu[recHitSimClusIdx<0] = recHitEnergy[recHitSimClusIdx<0]
         recHitTruthTime[recHitSimClusIdx<0] = recHitTime[recHitSimClusIdx<0]
         
+        
+        #import matplotlib.pyplot as plt
+        #plt.hist(np.abs(recHitTruthEnergyCorrMu[recHitSimClusIdx>=0]/recHitTruthDepEnergy[recHitSimClusIdx>=0])) 
+        #plt.yscale('log')
+        #plt.savefig("scat.pdf")
         
         truth = np.concatenate([
             np.array(recHitSimClusIdx,dtype='float32'), # 0

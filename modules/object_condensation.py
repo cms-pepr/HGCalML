@@ -92,7 +92,7 @@ def oc_per_batch_element(
     
     #determine object associations
     obj_ids,_ = tf.unique(tf.squeeze(truth_idx,axis=1)) # K+1
-    obj_ids = obj_ids[obj_ids>-0.1]
+    obj_ids = obj_ids[obj_ids>=0]
     
     K = tf.cast(obj_ids.shape[0], dtype='float32') 
     N = tf.cast(beta.shape[0], dtype='float32')
@@ -101,13 +101,13 @@ def oc_per_batch_element(
     
     obj_ids = tf.expand_dims(obj_ids, axis=1) #K x 1
     
-    is_noise = tf.where(truth_idx<0., tf.zeros_like(truth_idx), 1.)#V x 1
+    is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32'), 1.)#V x 1
     N_nonoise = N - tf.cast(tf.math.count_nonzero(is_noise), dtype='float32') #()
     
     M = tf.expand_dims(obj_ids, axis=1) - tf.expand_dims(truth_idx, axis=0) # K x V x 1
-    M_not = tf.where(tf.abs(M) > 0.1, tf.zeros_like(M) + 1., tf.zeros_like(M))
-    M = tf.where(tf.abs(M) < 0.1, tf.zeros_like(M) + 1., tf.zeros_like(M))
-    N_per_obj = tf.reduce_sum(M, axis=1) # K x 1
+    M_not = tf.where(tf.abs(M) > 0, tf.zeros_like(M,dtype='float32') + 1, tf.zeros_like(M,dtype='float32'))
+    M = tf.where(tf.abs(M) == 0, tf.zeros_like(M,dtype='float32') + 1, tf.zeros_like(M,dtype='float32'))
+    N_per_obj = tf.cast(tf.reduce_sum(M, axis=1), dtype='float32') # K x 1
     
     kalpha = tf.argmax(M * tf.expand_dims(beta_in, axis=0), axis=1) # K x 1
     

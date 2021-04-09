@@ -171,7 +171,7 @@ class LLLocalClusterCoordinates(LossLayerBase):
         rep_proto = repulsion_contrib * expdist #- 0.1 * distances
         
         
-        potential = tf.where(tf.abs(firsttruth-neightruth)<0.1, att_proto, rep_proto)
+        potential = tf.where(firsttruth==neightruth, att_proto, rep_proto)
         potential = hierarchy * tf.reduce_mean(potential, axis=1, keepdims=True)
         potential = tf.reduce_mean(potential)
         
