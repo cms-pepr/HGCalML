@@ -298,30 +298,32 @@ class TrainData_NanoML(TrainData):
             
         return d
     
-    def createTruthDict(self, truth):
+    def createTruthDict(self, truth, truthidx=None):
         out = {}
-        keys = ['truthHitAssignementIdx',
-                'truthHitAssignedEnergies', 
-                'truthHitAssignedX',    
-                'truthHitAssignedY',
-                'truthHitAssignedZ',  
-                'truthHitAssignedDirX',
-                'truthHitAssignedDirY', 
-                'truthHitAssignedDirZ',
-                'truthHitAssignedEta',
-                'truthHitAssignedPhi',
-                'truthHitAssignedT',  
-                'truthHitAssignedDirEta',
-                'truthHitAssignedDirR',
-                'truthHitAssignedDepEnergies', 
-                'ticlHitAssignementIdx'  , #17
-                'ticlHitAssignedEnergies', #18
-                'truthHitAssignedPIDs',
-                'truthHitAssignedEnergiesUncorr'] 
-
+        keys = ['truthHitAssignementIdx',             #np.array(recHitSimClusIdx,dtype='float32'), # 0
+                'truthHitAssignedEnergies',           # recHitTruthEnergyCorrMu,
+                'truthHitAssignedX',                  # recHitTruthX,
+                'truthHitAssignedY',                  # recHitTruthY,
+                'truthHitAssignedZ',                  # recHitTruthZ,  #4
+                'truthHitAssignedDirX',               # zeroFeature, #truthHitAssignedDirX,
+                'truthHitAssignedDirY',               # zeroFeature, #6
+                'truthHitAssignedDirZ',               # zeroFeature,
+                'truthHitAssignedEta',                # recHitTruthEta     ,
+                'truthHitAssignedPhi',                # recHitTruthPhi,
+                'truthHitAssignedT',                  # recHitTruthTime,  #10
+                'truthHitAssignedDirEta',             # zeroFeature,
+                'truthHitAssignedDirR',               # zeroFeature,
+                'truthHitAssignedDepEnergies',        # recHitTruthDepEnergy, #13
+                'ticlHitAssignementIdx'  , #17        # zeroFeature, #14  
+                'ticlHitAssignedEnergies', #18        # zeroFeature, #15  
+                'truthHitAssignedPIDs',               # recHitTruthPID #16
+                'truthHitAssignedEnergiesUncorr']     #  
+                                                                  
         for key, i in zip(keys, range(len(keys))):
             out[key] = truth[:,i:i+1]
         
+        if truthidx is not None:
+            out['truthHitAssignementIdx']=truthidx
         return out
     
     
