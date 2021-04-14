@@ -8,6 +8,11 @@ import gzip
 import numpy as np
 from numba import jit
 #from IPython import embed
+
+
+def calc_eta(x, y, z):
+    rsq = np.sqrt(x ** 2 + y ** 2)
+    return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.)
     
 class TrainData_NanoML(TrainData):
     def __init__(self):
@@ -137,6 +142,7 @@ class TrainData_NanoML(TrainData):
         simClusterX = tree["MergedSimCluster_impactPoint_x"].array()
         simClusterY = tree["MergedSimCluster_impactPoint_y"].array()
         simClusterZ = tree["MergedSimCluster_impactPoint_z"].array()
+        simClusterEta = calc_eta(simClusterX,simClusterY,simClusterZ)
         simClusterTime = tree["MergedSimCluster_impactPoint_t"].array()
         simClusterPdgId = tree["MergedSimCluster_pdgId"].array()
 
@@ -147,19 +153,21 @@ class TrainData_NanoML(TrainData):
         
         #eta to R: z * exp(-eta)
         #remove outside ans scraping - assuming x and y are on the front face
-        scCylRadius = simClusterX[recHitSimClusIdx]**2 + simClusterY[recHitSimClusIdx]**2
-        outside_a = scCylRadius > (321 * np.exp(-1.55))**2
-        outside_b = scCylRadius < (321 * np.exp(-2.95))**2
+        
+        #this is not working
+        outside_a = np.abs(simClusterEta[recHitSimClusIdx]) > 2.9
+        outside_b = np.abs(simClusterEta[recHitSimClusIdx]) < 1.55
         
         #filter non-boundary positions
-        nonBoundary = abs(abs(simClusterZ[recHitSimClusIdx])-321) > 5
+        #this is not working!
+        
         
         
         fewHits = tree["MergedSimCluster_nHits"].array()[recHitSimClusIdx] < 10
         
         nbefore = (recHitSimClusIdx < 0).sum().sum()
         
-        recHitSimClusIdx[outside_a | outside_b | fewHits | nonBoundary] = -1
+        recHitSimClusIdx[outside_a | outside_b | fewHits ] = -1
         
         nafter = (recHitSimClusIdx < 0).sum().sum()
         print('removed another factor of', nafter/nbefore, ' bad simclusters')
@@ -202,7 +210,7 @@ class TrainData_NanoML(TrainData):
         recHitSimClusIdx = np.expand_dims(self.splitJaggedArray(recHitSimClusIdx, splitIdx=splitBy).content.astype(np.int32), axis=1)
         
         print('noise',(100*np.count_nonzero(recHitSimClusIdx<0))//recHitSimClusIdx.shape[0],'% of hits')
-        print('truth eta min max',np.min(recHitTruthEta),np.max(recHitTruthEta))
+        print('truth eta min max',np.min(np.abs(recHitTruthEta[recHitSimClusIdx>=0])),np.max(np.abs(recHitTruthEta[recHitSimClusIdx>=0])))
         print('non-boundary truth positions', 
               np.count_nonzero(np.abs(np.abs(recHitTruthZ[recHitSimClusIdx>=0])-320)>5)/recHitTruthZ[recHitSimClusIdx>=0].shape[0])
         

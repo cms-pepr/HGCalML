@@ -1084,7 +1084,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,use_bias=False,kernel_initializer=tf.keras.initializers.identity())
 
         with tf.name_scope(self.name + "/3/"):
-            self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='tanh')
+            self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='relu')#changed to relu
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]
