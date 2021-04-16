@@ -53,17 +53,6 @@ class TrainData_NanoML(TrainData):
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
         return self.base_convertFromSourceFile(filename, weighterobjects, istraining, treename=treename)
 
-    def matchMergedUnmerged(self, merged, unmerged):
-        mm = merged.cross(unmerged, nested=True)
-        mm = mm[mm.i1.mergedIdx == mm.localindex]
-        return mm
-
-    def replaceMuonEnergy(self, matched):
-        muons = matched.i1[abs(matched.i1.id) == 13]
-        muDepE = muons.depE.sum()
-        # The sum basically just serves to collapse the inner array (should always have size 1)
-        return (matched.i0.eNoMu +  muDepE).sum()
-      
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events",
                                    removeTracks=True):
         
@@ -91,32 +80,24 @@ class TrainData_NanoML(TrainData):
         # Don't split this until the end, so it can be used to index the truth arrays
         recHitSimClusIdx = self.hitObservable(tree, hits, "BestMergedSimClusterIdx", split=False, flatten=False)
 
-        # These don't really need to be LorentzVectors, but I can't figure out how to
-        # do the same thing with regular arrays
-        # In any case a simpler workflow is possible using the MergedSimCluster_SimClusterIdx
-        # implementation, I just haven't figured it out yet
-        mergedSC = TLorentzVectorArray.from_ptetaphim(tree["MergedSimCluster_pt"].array(),
-                            tree["MergedSimCluster_eta"].array(),
-                            tree["MergedSimCluster_phi"].array(),
-                            tree["MergedSimCluster_mass"].array(),
-        )
-        unmergedSC = TLorentzVectorArray.from_ptetaphim(tree["SimCluster_pt"].array(),
-                            tree["SimCluster_eta"].array(),
-                            tree["SimCluster_phi"].array(),
-                            tree["SimCluster_mass"].array(),
-        )
-    
-        unmergedSC["mergedIdx"] = tree["SimCluster_MergedSimClusterIdx"].array()
-        unmergedSC["id"] = tree["SimCluster_pdgId"].array()
-        unmergedSC["depE"] = tree["SimCluster_recEnergy"].array()
-        mergedSC["eNoMu"] = tree["MergedSimCluster_boundaryEnergyNoMu"].array()
-
-        matched = self.matchMergedUnmerged(mergedSC, unmergedSC)
         simClusterDepEnergy = tree["MergedSimCluster_recEnergy"].array()
-        simClusterEnergyMuCorr = self.replaceMuonEnergy(matched)
-
         simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
         simClusterEnergyNoMu = tree["MergedSimCluster_boundaryEnergyNoMu"].array()
+    
+        # Remove muon energy, add back muon deposited energy
+        unmergedId = tree["SimCluster_pdgId"].array()
+        unmergedDepE = tree["SimCluster_recEnergy"].array()
+        unmergedMatchIdx = tree["MergedSimCluster_SimCluster_MatchIdx"].array()
+        unmergedMatches = tree["MergedSimCluster_SimClusterNumMatch"].array()
+        unmergedDepEMuOnly = unmergedDepE
+        unmergedDepEMuOnly[np.abs(unmergedId) != 13] = 0
+        # Add another layer of nesting, then sum over all unmerged associated to merged
+        unmergedDepEMuOnly = ak.JaggedArray.fromcounts(unmergedMatches.counts, 
+            ak.JaggedArray.fromcounts(unmergedMatches.content, unmergedDepEMuOnly[unmergedMatchIdx].flatten()))
+        depEMuOnly = unmergedDepEMuOnly.sum()
+
+        simClusterEnergyMuCorr = simClusterEnergyNoMu + depEMuOnly
+
         simClusterX = tree["MergedSimCluster_impactPoint_x"].array()
         simClusterY = tree["MergedSimCluster_impactPoint_y"].array()
         simClusterZ = tree["MergedSimCluster_impactPoint_z"].array()
