@@ -133,7 +133,7 @@ class TrainData_NanoML(TrainData):
         recHitTruthTime = self.truthObjects(simClusterTime, recHitSimClusIdx, 0)
         recHitTruthR = np.sqrt(recHitTruthX*recHitTruthX+recHitTruthY*recHitTruthY+recHitTruthZ*recHitTruthZ)
         recHitTruthTheta = np.arccos(np.divide(recHitTruthZ, recHitTruthR, out=np.zeros_like(recHitTruthZ), where=recHitTruthR!=0))
-        recHitTruthPhi = np.arctan2(recHitTruthY, recHitTruthX)
+        recHitTruthPhi = self.truthObjects(simClusterPhi, recHitSimClusIdx, 0)
         recHitTruthEta = self.truthObjects(simClusterEta, recHitSimClusIdx, 0)
         #print(recHitTruthPhi)
         #print(np.max(recHitTruthPhi))
