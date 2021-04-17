@@ -16,174 +16,125 @@ def calc_eta(x, y, z):
     
 class TrainData_NanoML(TrainData):
     def __init__(self):
+        self.splitIdx = None
         TrainData.__init__(self)
+
+    def setSplitIdx(self, idx):
+        self.splitIdx = idx
     
     def isValid(self):
         return True #needs to be filled
 
-    def buildObs(self, tree, hitType, label, ext=None):
-        obs = tree["_".join([hitType, label])].array()
-        if ext:
-            # If index is -1, take -1, not the last entry
-            newobs = tree[ext].array()[obs]
-            newobs[obs < 0] = -1
-            obs = newobs
-        return obs
-
-    def splitJaggedArray(self, jagged, splitIdx):
-        split1 = jagged[splitIdx]
-        split2 = jagged[~splitIdx]
+    def splitJaggedArray(self, jagged):
+        split1 = jagged[self.splitIdx]
+        split2 = jagged[~self.splitIdx]
         pairEvents = []
         for x in zip(split1, split2):
             pairEvents.extend(x)
         return ak.JaggedArray.fromiter(pairEvents)
 
-    def hitObservable(self, tree, hitTypes, label, ext=None, flatten=True, splitIdx=None):
-        # Kinda hacky...
-        func = self.buildObs if label != "SimCluster" else self.bestMatch
+    def hitObservable(self, tree, hitType, label, flatten=True, split=True):
+        obs = tree["_".join([hitType, label])].array()
+        if split:
+            obs = self.splitJaggedArray(obs)
 
-        obs = map(lambda x: func(tree, x, label, ext), hitTypes)
-        # For awkward1
-        # jagged = np.concatenate([x for x in obs], axis=1)
-        # off = np.cumsum(ak.to_numpy(ak.num(jagged)))
-        # off = np.insert(off, 0, 0)
-        jagged = ak.JaggedArray.concatenate([x for x in obs], axis=1)
-        if splitIdx is not None:
-            jagged = self.splitJaggedArray(jagged, splitIdx)
+        return np.expand_dims(obs.content, axis=1) if flatten else obs
 
-        return np.expand_dims(jagged.content, axis=1) if flatten else jagged
-
-    def bestMatch(self, tree, base, match, ext=None, defval=-1):
-        matches = tree[f"{base}_{match}_MatchIdx"].array()
-        nmatches = tree[f"{base}_{match}NumMatch"].array()
-
-        bestmatch = []
-        for nmatch, match in zip(nmatches, matches):
-            # First index is zero, not nmatches, don't need count of last entry
-            offsets = np.zeros(len(nmatch), dtype='int32')
-            offsets[1:] = np.cumsum(nmatch)[:-1]
-            bestmatch.append(match[offsets])
-        obs = ak.JaggedArray.fromiter(bestmatch)
-        if ext:
-            obs = tree[ext].array()[obs]
-        obs[nmatches<1] = defval
-        return obs
-
-    def truthObjects(self, sc, indices, null, splitIdx=None):
+    def truthObjects(self, sc, indices, null, split=True, flatten=True):
         vals = sc[indices]
         offsets = vals.offsets
         vals[indices < 0] = null
-        if splitIdx is not None:
-            vals = self.splitJaggedArray(vals, splitIdx)
+        if split:
+            vals = self.splitJaggedArray(vals)
+        if not flatten:
+            return vals
         return np.expand_dims(vals.content.astype(np.float32), axis=1)
         
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
         return self.base_convertFromSourceFile(filename, weighterobjects, istraining, treename=treename)
 
-    def matchMergedUnmerged(self, merged, unmerged):
-        mm = merged.cross(unmerged, nested=True)
-        mm = mm[mm.i1.mergedIdx == mm.localindex]
-        return mm
-
-    def replaceMuonEnergy(self, matched):
-        muons = matched.i1[abs(matched.i1.id) == 13]
-        musum = muons.sum()
-        muDepE = muons.depE.sum()
-        # The sum basically just serves to collapse the inner array (should always have size 1)
-        return (matched.i0 - musum).sum().energy + muDepE
-      
-    def mergeDepositedEnergy(self, matched):
-        return matched.i1.sum().energy 
-      
     def base_convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events",
                                    removeTracks=True):
         
         fileTimeOut(filename, 10)#10 seconds for eos to recover 
         tree = uproot.open(filename)[treename]
 
-        hits = ["RecHitHGC"+x for x in ["EE", "HEF", "HEB"]]
-        recHitZUnsplit = self.hitObservable(tree, hits, "z", flatten=False)
-        splitBy = recHitZUnsplit < 0
-        recHitZ = self.splitJaggedArray(recHitZUnsplit, splitBy)
+        hits = "RecHitHGC"
+        recHitZUnsplit = self.hitObservable(tree, hits, "z", split=False, flatten=False)
+        self.setSplitIdx(recHitZUnsplit < 0)
+
+        recHitZ = self.splitJaggedArray(recHitZUnsplit)
         offsets = recHitZ.offsets
         recHitZ = np.expand_dims(recHitZ.content, axis=1)
 
-        recHitX = self.hitObservable(tree, hits, "x", splitIdx=splitBy)
-        recHitY = self.hitObservable(tree, hits, "y", splitIdx=splitBy)
-        recHitEnergy = self.hitObservable(tree, hits, "energy", splitIdx=splitBy)
-        recHitDetaId = self.hitObservable(tree, hits, "detId", splitIdx=splitBy)
-        recHitTime = self.hitObservable(tree, hits, "time", splitIdx=splitBy)
+
+        recHitX = self.hitObservable(tree, hits, "x")
+        recHitY = self.hitObservable(tree, hits, "y")
+        recHitEnergy = self.hitObservable(tree, hits, "energy")
+        recHitDetaId = self.hitObservable(tree, hits, "detId")
+        recHitTime = self.hitObservable(tree, hits, "time")
         recHitR = np.sqrt(recHitX*recHitX+recHitY*recHitY+recHitZ*recHitZ)
         recHitTheta = np.arccos(recHitZ/recHitR)
         recHitEta = -np.log(np.tan(recHitTheta/2))
 
-        recHitSimClusIdx = self.hitObservable(tree, hits, "SimCluster", ext="SimCluster_MergedSimClusterIdx", flatten=False)
+        # Don't split this until the end, so it can be used to index the truth arrays
+        recHitSimClusIdx = self.hitObservable(tree, hits, "BestMergedSimClusterIdx", split=False, flatten=False)
 
-        mergedSC = TLorentzVectorArray.from_ptetaphim(tree["MergedSimCluster_pt"].array(),
-                            tree["MergedSimCluster_eta"].array(),
-                            tree["MergedSimCluster_phi"].array(),
-                            tree["MergedSimCluster_mass"].array(),
-        )
-        unmergedSC = TLorentzVectorArray.from_ptetaphim(tree["SimCluster_pt"].array(),
-                            tree["SimCluster_eta"].array(),
-                            tree["SimCluster_phi"].array(),
-                            tree["SimCluster_mass"].array(),
-        )
-
-        unmergedSC["mergedIdx"] = tree["SimCluster_MergedSimClusterIdx"].array()
-        unmergedSC["depE"] = tree["SimCluster_recEnergy"].array()
-        unmergedSC["id"] = tree["SimCluster_pdgId"].array()
-
-        matched = self.matchMergedUnmerged(mergedSC, unmergedSC)
-        simClusterDepEnergy = self.mergeDepositedEnergy(matched)
-        simClusterEnergyMuCorr = self.replaceMuonEnergy(matched)
-
+        simClusterDepEnergy = tree["MergedSimCluster_recEnergy"].array()
         simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
+        simClusterEnergyNoMu = tree["MergedSimCluster_boundaryEnergyNoMu"].array()
+    
+        # Remove muon energy, add back muon deposited energy
+        unmergedId = tree["SimCluster_pdgId"].array()
+        unmergedDepE = tree["SimCluster_recEnergy"].array()
+        unmergedMatchIdx = tree["MergedSimCluster_SimCluster_MatchIdx"].array()
+        unmergedMatches = tree["MergedSimCluster_SimClusterNumMatch"].array()
+        unmergedDepEMuOnly = unmergedDepE
+        unmergedDepEMuOnly[np.abs(unmergedId) != 13] = 0
+        # Add another layer of nesting, then sum over all unmerged associated to merged
+        unmergedDepEMuOnly = ak.JaggedArray.fromcounts(unmergedMatches.counts, 
+            ak.JaggedArray.fromcounts(unmergedMatches.content, unmergedDepEMuOnly[unmergedMatchIdx].flatten()))
+        depEMuOnly = unmergedDepEMuOnly.sum()
+
+        simClusterEnergyMuCorr = simClusterEnergyNoMu + depEMuOnly
+
         simClusterX = tree["MergedSimCluster_impactPoint_x"].array()
         simClusterY = tree["MergedSimCluster_impactPoint_y"].array()
         simClusterZ = tree["MergedSimCluster_impactPoint_z"].array()
-        simClusterEta = calc_eta(simClusterX,simClusterY,simClusterZ)
         simClusterTime = tree["MergedSimCluster_impactPoint_t"].array()
+        simClusterEta = tree["MergedSimCluster_impactPoint_eta"].array()
+        simClusterPhi = tree["MergedSimCluster_impactPoint_phi"].array()
         simClusterPdgId = tree["MergedSimCluster_pdgId"].array()
 
         # Mark simclusters outside of volume or with very few hits as noise
         # Maybe not a good idea if the merged SC pdgId is screwed up
+        # Probably removing neutrons is a good idea though
         #noNeutrons = simClusterPdgId[recHitSimClusIdx] == 2112
-        #outside = (np.abs(simClusterX[recHitSimClusIdx]) > 300) | (np.abs(simClusterY[recHitSimClusIdx]) > 300) 
         
-        #eta to R: z * exp(-eta)
-        #remove outside ans scraping - assuming x and y are on the front face
-        
-        #this is not working
-        outside_a = np.abs(simClusterEta[recHitSimClusIdx]) > 2.9
-        outside_b = np.abs(simClusterEta[recHitSimClusIdx]) < 1.55
-        
-        #filter non-boundary positions
-        #this is not working!
-        
-        
-        
-        fewHits = tree["MergedSimCluster_nHits"].array()[recHitSimClusIdx] < 10
+        #filter non-boundary positions. Hopefully working?
+        goodSimClus = tree["MergedSimCluster_isTrainable"].array()
+        # Don't split by index here to keep same dimensions as SimClusIdx
+        markNoise = self.truthObjects(~goodSimClus, recHitSimClusIdx, False, split=False, flatten=False).astype(np.bool_)
         
         nbefore = (recHitSimClusIdx < 0).sum().sum()
-        
-        recHitSimClusIdx[outside_a | outside_b | fewHits ] = -1
-        
+        recHitSimClusIdx[markNoise] = -1
         nafter = (recHitSimClusIdx < 0).sum().sum()
+
+        print("Number of noise hits before", nbefore, "after", nafter)
         print('removed another factor of', nafter/nbefore, ' bad simclusters')
 
-        recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0., splitIdx=splitBy)
-        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, 0, splitIdx=splitBy)
-        recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, 0, splitIdx=splitBy)
-        recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, 0, splitIdx=splitBy)
-        recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 0, splitIdx=splitBy)
-        recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0, splitIdx=splitBy)
-        recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0, splitIdx=splitBy)
-        recHitTruthTime = self.truthObjects(simClusterTime, recHitSimClusIdx, 0, splitIdx=splitBy)
+        recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0.)
+        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, 0)
+        recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, 0)
+        recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, 0)
+        recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 0)
+        recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0)
+        recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0)
+        recHitTruthTime = self.truthObjects(simClusterTime, recHitSimClusIdx, 0)
         recHitTruthR = np.sqrt(recHitTruthX*recHitTruthX+recHitTruthY*recHitTruthY+recHitTruthZ*recHitTruthZ)
         recHitTruthTheta = np.arccos(np.divide(recHitTruthZ, recHitTruthR, out=np.zeros_like(recHitTruthZ), where=recHitTruthR!=0))
-        recHitTruthPhi = np.arctan2(recHitTruthY, recHitTruthX)
-        recHitTruthEta = -np.log(np.tan(recHitTruthTheta/2))
+        recHitTruthPhi = self.truthObjects(simClusterPhi, recHitSimClusIdx, 0)
+        recHitTruthEta = self.truthObjects(simClusterEta, recHitSimClusIdx, 0)
         #print(recHitTruthPhi)
         #print(np.max(recHitTruthPhi))
         #print(np.min(recHitTruthPhi))
@@ -207,7 +158,7 @@ class TrainData_NanoML(TrainData):
         farr.createFromNumpy(features, offsets)
         del features  
 
-        recHitSimClusIdx = np.expand_dims(self.splitJaggedArray(recHitSimClusIdx, splitIdx=splitBy).content.astype(np.int32), axis=1)
+        recHitSimClusIdx = np.expand_dims(self.splitJaggedArray(recHitSimClusIdx).content.astype(np.int32), axis=1)
         
         print('noise',(100*np.count_nonzero(recHitSimClusIdx<0))//recHitSimClusIdx.shape[0],'% of hits')
         print('truth eta min max',np.min(np.abs(recHitTruthEta[recHitSimClusIdx>=0])),np.max(np.abs(recHitTruthEta[recHitSimClusIdx>=0])))
@@ -391,7 +342,7 @@ class TrainData_NanoML(TrainData):
 
 def main():
     data = TrainData_NanoML()
-    info = data.convertFromSourceFile("/eos/cms/store/user/kelong/ML4Reco/Gun50Part_CHEPDef/0_nanoML.root",
+    info = data.convertFromSourceFile("/eos/cms/store/user/kelong/ML4Reco/Gun10Part_CHEPDef/Gun10Part_CHEPDef_fineCalo_nano.root",
                     [], False)
     print(info)    
 
