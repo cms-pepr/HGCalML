@@ -163,11 +163,13 @@ print('==============')
 
 
 override_settings = dict()
-override_settings['recHitEnergy'] = (True, [0,5], [])
-override_settings['recHitTime'] = (True, [0, 10], [])
+override_settings['recHitEnergy'] = (True, [0,5], [], 50)
+override_settings['recHitTime'] = (True, [0, 10], [], 50)
+override_settings['recHitEta'] = (True, [], [], 50)
 
 additional = dict()
 additional['recHitZ-abs'] = ('recHitZ', True, [], [], True)
+additional['truthHitAssignedZ-abs'] = ('truthHitAssignedZ', True, [], [], True)
 
 
 def validate_event(event_dict):
@@ -208,10 +210,10 @@ else:
         for k in plot_variables:
             if k not in override_settings:
                 plotter.add(k, np.array(d[k]).flatten(),
-                            log=False, xlabel=k, ylabel='Frequency')
+                            log=False, xlabel=k, ylabel='Frequency', bins=50)
             else:
                 plotter.add(k, np.array(d[k]).flatten(),
-                            log=override_settings[k][0], xlabel=k, ylabel='Frequency', xlim=override_settings[k][1], ylim=override_settings[k][2])
+                            log=override_settings[k][0], xlabel=k, ylabel='Frequency', xlim=override_settings[k][1], ylim=override_settings[k][2], bins=override_settings[k][3])
 
         for k in additional:
             x = d[additional[k][0]]
@@ -237,10 +239,11 @@ else:
                     )
 
         plotter.add("Deposted over true energy", x = depvstrue,
-                    xlabel='$E_{dep}/E_{true}$$', ylabel='Events',
+                    xlabel='$E_{dep}/E_{true}$', ylabel='Events',
                     log=True,
-                    xlim=[-0.2,2],
+                    xlim=[],
                     bins=40
+
                     )
 
 
