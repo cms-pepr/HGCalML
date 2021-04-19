@@ -241,7 +241,7 @@ else:
         plotter.add("Deposted over true energy", x = depvstrue,
                     xlabel='$E_{dep}/E_{true}$', ylabel='Events',
                     log=True,
-                    xlim=[],
+                    xlim=[0.2, 2],
                     bins=40
 
                     )
