@@ -753,7 +753,6 @@ class RaggedGlobalExchange(keras.layers.Layer):
 
     def build(self, input_shape):
         data_shape = input_shape[0]
-        row_splits_shape = input_shape[1]
         # assert (data_shape[0]== row_splits_shape[0])
         self.num_features = data_shape[1]
         super(RaggedGlobalExchange, self).build(input_shape)

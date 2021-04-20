@@ -30,7 +30,7 @@ from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs
 
-from Layers import ManualCoordTransform,EdgeConvStatic,DistanceWeightedMessagePassing,SortAndSelectNeighbours,NeighbourCovariance,NeighbourApproxPCA,ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
+from Layers import RaggedGlobalExchange,ManualCoordTransform,EdgeConvStatic,DistanceWeightedMessagePassing,SortAndSelectNeighbours,NeighbourCovariance,NeighbourApproxPCA,ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
 from datastructures import TrainData_NanoML 
 td=TrainData_NanoML()
 
@@ -164,7 +164,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
         ### now these are the new cluster features, up for the next iteration of building new latent space
         
-        x_gn, coords, nidx, dist = RaggedGravNet(n_neighbours = 64+32*i,
+        x_gn, coords, nidx, dist = RaggedGravNet(n_neighbours = 64,
                                                  n_dimensions= 3+i,
                                                  n_filters = 16,
                                                  n_propagate = 64,
@@ -209,10 +209,11 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
         
     x = Concatenate(name='allconcat')(allfeat)
+    x = RaggedGlobalExchange()([x,row_splits])
     x = BatchNormalization(momentum=0.6)(x)
     #x = Dropout(0.2)(x)
-    x_mp = DistanceWeightedMessagePassing([64,64,32])([x,first_nidx,first_dist])
-    x = Concatenate()([x,x_mp])
+    #x_mp = DistanceWeightedMessagePassing([64,64,32])([x,first_nidx,first_dist])
+    #x = Concatenate()([x,x_mp])
     
     x = Dense(128, activation='elu',name='alldense' )(x)
     x = Dense(64, activation='elu')(x)
