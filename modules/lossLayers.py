@@ -471,8 +471,10 @@ class LLFullObjectCondensation(LossLayerBase):
             raise NotImplemented('Not implemented yet')
         
         
-    def calc_energy_weights(self, t_energy, flatat=10.):
-        return tf.where(t_energy > 10., 1., (t_energy / flatat + 0.1)/1.1)
+    def calc_energy_weights(self, t_energy):
+        lower_cut = 0.5
+        w = tf.where(t_energy > 10., 1., ((t_energy-lower_cut) / 10.)*10./(10.-lower_cut))
+        return tf.nn.relu(w)
             
     def calc_energy_loss(self, t_energy, pred_energy): 
         if not self.energy_loss_weight:
