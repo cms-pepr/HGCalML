@@ -376,7 +376,7 @@ def oc_loss(
     if energyweights is None:
         energyweights=tf.zeros_like(beta)+1.
         
-    if row_splits.shape[0] is None:
+    if row_splits.shape[0] is None or row_splits.shape[0] < 2:
         return tf.constant(0,dtype='float32')
     batch_size = row_splits.shape[0] - 1
     

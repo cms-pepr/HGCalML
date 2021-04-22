@@ -10,7 +10,7 @@ def NeighbourCovariance(coordinates, distsq, features, n_idxs):
     expands to V x F x C**2, but not in the neighbour dimension
     '''
     
-    features = tf.nn.relu(features)#sure they're>=0
+    features = tf.nn.relu(features) + 1e-4#sure they're>=0
     #create feature and distance weighted coordinate means
     featcoordinates = tf.expand_dims(coordinates,axis=1) * tf.expand_dims(features,axis=2) # V x F x C
     featcoordinates = tf.reshape(featcoordinates, [-1, features.shape[1] * coordinates.shape[1]]) # V x F*C
@@ -19,7 +19,6 @@ def NeighbourCovariance(coordinates, distsq, features, n_idxs):
     fcdsum = tf.reshape(fcdsum, [-1, features.shape[1], coordinates.shape[1]])
     
     fdsum = AccumulateKnn(distsq,  features, n_idxs, mean_and_max=False)[0] * distsq.shape[1] # V x F
-    fdsum += 1e-9
     fdsum = tf.expand_dims(fdsum, axis=2)
     
     fcdmean = tf.math.divide_no_nan(fcdsum, fdsum) # V x F x C
@@ -31,7 +30,7 @@ def NeighbourCovariance(coordinates, distsq, features, n_idxs):
     
     distweightcov = AccumulateKnn(distsq,  xi, n_idxs, mean_and_max=False)[0] * distsq.shape[1]
     distweightcov = tf.reshape(distweightcov, [-1, features.shape[1], coordinates.shape[1]**2])
-    distweightcov /= fdsum
+    distweightcov = tf.math.divide_no_nan(distweightcov, fdsum)
     
     return distweightcov, fcdmean  # V x F x C**2, V x F x C
         

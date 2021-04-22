@@ -382,7 +382,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
                  classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
                  use_average_cc_pos=False, payload_rel_threshold=0.1, rel_energy_mse=False, smooth_rep_loss=False,
-                 pre_train=False, huber_energy_scale=2., downweight_low_energy=True, n_ccoords=2, energy_den_offset=1.,
+                 pre_train=False, huber_energy_scale=-1., downweight_low_energy=True, n_ccoords=2, energy_den_offset=1.,
                  noise_scaler=1., too_much_beta_scale=0., cont_beta_loss=False, log_energy=False, n_classes=0,
                  prob_repulsion=False,
                  phase_transition=0.,
@@ -480,13 +480,16 @@ class LLFullObjectCondensation(LossLayerBase):
         if not self.energy_loss_weight:
             return pred_energy**2 #just learn 0
         
+        #FIXME: this is just for debugging
+        #return (t_energy-pred_energy)**2
+        
         if self.huber_energy_scale > 0:
             l = tf.abs(t_energy-pred_energy)
             sqrt_t_e = tf.sqrt(t_energy+1e-3)
-            l /= tf.sqrt(t_energy+1e-3) + self.energy_den_offset
+            l = tf.math.divide_no_nan(l, tf.sqrt(t_energy+1e-3) + self.energy_den_offset)
             return huber(l, sqrt_t_e*self.huber_energy_scale)
         else:
-            return (t_energy-pred_energy)**2/(t_energy + self.energy_den_offset)
+            return tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))
 
     
     def calc_position_loss(self, t_pos, pred_pos):
@@ -499,7 +502,7 @@ class LLFullObjectCondensation(LossLayerBase):
         if not self.timing_loss_weight:
             return pred_time**2
         
-        return (t_time*1e9 - pred_time)**2 #rechit time is in ns, true time in s
+        return (t_time - pred_time)**2 #rechit time is in ns, true time in s
     
     def calc_classification_loss(self, t_pid, pred_id):
         '''
@@ -527,7 +530,7 @@ class LLFullObjectCondensation(LossLayerBase):
             
         
         t_energy    = tf.debugging.check_numerics(t_energy, "t_energy has NaNs")
-        t_energy = tf.where(t_energy<=0,0.,t_energy)
+        #t_energy = tf.where(t_energy<=0,0.,t_energy)
         pred_energy    = tf.debugging.check_numerics(pred_energy, "pred_energy has NaNs")
         energy_weights    = tf.debugging.check_numerics(energy_weights, "energy_weights has NaNs")
             
@@ -561,6 +564,12 @@ class LLFullObjectCondensation(LossLayerBase):
                                            cut_payload_beta_gradient=self.cut_payload_beta_gradient
                                            )
 
+        
+        
+        energy_loss = tf.debugging.check_numerics(att, "att loss has NaNs")
+        energy_loss = tf.debugging.check_numerics(rep, "rep loss has NaNs")
+        energy_loss = tf.debugging.check_numerics(min_b, "min_b loss has NaNs")
+        energy_loss = tf.debugging.check_numerics(noise, "noise loss has NaNs")
         
         att *= self.potential_scaling
         rep *= self.potential_scaling * self.repulsion_scaling
