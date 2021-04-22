@@ -1,5 +1,6 @@
 import tensorflow as tf
 from select_knn_op import SelectKnn
+from new5_knn_op import New5Knn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
 
@@ -1119,7 +1120,12 @@ class RaggedGravNet(tf.keras.layers.Layer):
         row_splits = inputs[1]
         
         coordinates = self.input_spatial_transform(x)
-        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+        #  neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+        if (len(inputs)==3):
+            auxaliry_knn_arrays = inputs[2]
+            neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq_knn5(coordinates, row_splits, auxaliry_knn_arrays)
+        else:
+            neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits)
         neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours-1]) #for proper output shape for keras
         distancesq = tf.reshape(distancesq, [-1, self.n_neighbours-1])
 
@@ -1142,8 +1148,25 @@ class RaggedGravNet(tf.keras.layers.Layer):
                (input_shapes[0][0], self.n_dimensions),\
                (input_shapes[0][0], self.n_neighbours-1),\
                (input_shapes[0][0], self.n_neighbours-1)
-              
-    
+
+
+
+    def compute_neighbours_and_distancesq_knn5(self, coordinates, row_splits, add_pars):
+
+        add_pars_numpy = add_pars.numpy()
+
+        n_bins_x = add_pars_numpy[0][0]
+        n_bins_y = add_pars_numpy[1][0]
+        n_vtx_per_bin_cumulative_ = add_pars_numpy[2:2+n_bins_x*n_bins_y+1].T[0]
+        bin_neighbours_ = add_pars_numpy[2+n_bins_x*n_bins_y+1:2+n_bins_x*n_bins_y+1+9*n_bins_x*n_bins_y].T[0]
+        bin_vtx_assoc_ = add_pars_numpy[2+n_bins_x*n_bins_y+1+9*n_bins_x*n_bins_y:].T[0]
+
+        idx,dist = New5Knn(K = self.n_neighbours, coords=coordinates, n_vtx_per_bin_cumulative=n_vtx_per_bin_cumulative_, bin_neighbours = bin_neighbours_, vtx_bin_assoc=bin_vtx_assoc_)
+
+        idx = idx[:, 1:]
+        dist = dist[:, 1:]
+
+        return idx,dist, None, None
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
         idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
