@@ -383,7 +383,7 @@ def oc_loss(
     V_att, V_rep, Noise_pen, B_pen, pll,to_much_B_pen = 6*[tf.constant(0., tf.float32)]
     
     for b in tf.range(batch_size):
-        att,rep,noise,bp,pl,tmb = oc_per_batch_element(
+        att,rep,noise,bp,pl,tmb = oc_per_batch_element_old(
             
             beta[row_splits[b]:row_splits[b + 1]],
             x[row_splits[b]:row_splits[b + 1]],
