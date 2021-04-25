@@ -43,7 +43,7 @@ for meanmax in [True, False]:
     if not meanmax:
         name = "GravNet_meanonly"
     bm = Benchmarker(tf_impl, custom_impl,name, use_distances_direct=True, 
-                     tfoncpu=usecpu, customoncpu=usecpu,mean_and_max=False)
+                     tfoncpu=usecpu, customoncpu=usecpu,mean_and_max=meanmax)
     bm.debugout=True
     bm.difference(nvert = 5, nfeat = 3, nneigh = 2, ncoords = 4)    
     bm.debugout=False
@@ -58,7 +58,7 @@ for meanmax in [True, False]:
     
     bm.run_extended_difference(nvert,nneigh,nfeat)
     
-    exit()
+    continue
     v100=True
     vertmulti = 1000
     if v100:

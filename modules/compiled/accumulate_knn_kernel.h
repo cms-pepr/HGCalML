@@ -21,7 +21,6 @@ struct AccumulateKnnOpFunctor {
 
             int n_vert,
             int n_neigh,
-            int n_coords,
             int n_feat,
 
             int n_out_feat,

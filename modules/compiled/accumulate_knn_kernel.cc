@@ -37,7 +37,6 @@ struct AccumulateKnnOpFunctor<CPUDevice, dummy> {
 
             int n_vert,
             int n_neigh,
-            int n_coords,
             int n_feat,
 
             int n_out_feat,
@@ -56,7 +55,7 @@ struct AccumulateKnnOpFunctor<CPUDevice, dummy> {
                 for(size_t i_n=0;i_n<n_neigh;i_n++){
                     int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
 
-                    if(nidx<0) break;
+                    if(nidx<0) continue;
 
                     float vnf = d_feat[I2D(nidx,i_f,n_feat)];
                     float distsq = d_distances[I2D(i_v,i_n,n_neigh)];
@@ -95,16 +94,21 @@ public:
 
     void Compute(OpKernelContext *context) override {
 
-        const Tensor &d_coord_tensor = context->input(0);
+        const Tensor &d_dist_tensor = context->input(0);
         const Tensor &d_feat_tensor = context->input(1);
         const Tensor &d_idxs_tensor = context->input(2);
 
 
-        int n_vert = d_coord_tensor.dim_size(0);
+        int n_vert = d_dist_tensor.dim_size(0);
         int n_neigh = d_idxs_tensor.dim_size(1);
-        int n_coords = d_coord_tensor.dim_size(1);
+        int n_coords = d_dist_tensor.dim_size(1);
         int n_feat = d_feat_tensor.dim_size(1);
 
+        OP_REQUIRES(context, n_vert == d_idxs_tensor.dim_size(0) && n_vert == d_feat_tensor.dim_size(0),
+                    errors::InvalidArgument("AccumulateKnnOp expects first dimensions of all inputs to match."));
+
+        OP_REQUIRES(context, n_neigh == d_dist_tensor.dim_size(1),
+                    errors::InvalidArgument("AccumulateKnnOp expects second dimension of distance and neighbour index tensor to match"));
 
         int n_out_feat = n_feat; //mean and max
         if(mean_and_max)
@@ -128,16 +132,16 @@ public:
         Tensor *output_max_idxs_tensor = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, outputShape_max_idxs, &output_max_idxs_tensor));
 
+
         AccumulateKnnOpFunctor<Device, int>()(
                 context->eigen_device<Device>(),
-                d_coord_tensor.flat<float>().data(),
+                d_dist_tensor.flat<float>().data(),
                 d_feat_tensor.flat<float>().data(),
                 d_idxs_tensor.flat<int>().data(),
                 output_tensor->flat<float>().data(),
                 output_max_idxs_tensor->flat<int>().data(),
                 n_vert,
                 n_neigh,
-                n_coords,
                 n_feat,
                 n_out_feat,
                 n_moments,

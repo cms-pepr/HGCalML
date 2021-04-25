@@ -521,6 +521,14 @@ class LLFullObjectCondensation(LossLayerBase):
         t_idx, t_energy, t_pos, t_time, t_pid,\
         rowsplits = inputs
         
+        
+        pred_beta    = tf.debugging.check_numerics(pred_beta, "pred_beta has NaNs")
+        pred_ccoords    = tf.debugging.check_numerics(pred_ccoords, "pred_ccoords has NaNs")
+        pred_energy    = tf.debugging.check_numerics(pred_energy, "pred_energy has NaNs")
+        pred_pos    = tf.debugging.check_numerics(pred_pos, "pred_pos has NaNs")
+        pred_time    = tf.debugging.check_numerics(pred_time, "pred_time has NaNs")
+        pred_id    = tf.debugging.check_numerics(pred_id, "pred_id has NaNs")
+        
         if rowsplits.shape[0] is None:
             return tf.constant(0,dtype='float32')
         

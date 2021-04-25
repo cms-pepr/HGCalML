@@ -31,7 +31,6 @@ void acc_knn_kernel(
 
         int n_vert,
         int n_neigh,
-        int n_coords,
         int n_feat,
 
         int n_out_feat,
@@ -54,11 +53,10 @@ void acc_knn_kernel(
     //parallel over neigh? (requires atmomic add later)
     for(size_t i_n=0;i_n<n_neigh;i_n++){
 
-        __syncthreads();
 
         int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
 
-        if(nidx<0) break;
+        if(nidx<0) continue;
 
         float vnf = d_feat[I2D(nidx,i_f,n_feat)];
         float distsq = d_distances[I2D(i_v,i_n,n_neigh)];
@@ -100,7 +98,6 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
 
             int n_vert,
             int n_neigh,
-            int n_coords,
             int n_feat,
 
             int n_out_feat,
@@ -131,7 +128,6 @@ struct AccumulateKnnOpFunctor<GPUDevice, dummy> {
                 d_out_maxidxs,
                 n_vert,
                 n_neigh,
-                n_coords,
                 n_feat,
                 n_out_feat,
                 n_moments,

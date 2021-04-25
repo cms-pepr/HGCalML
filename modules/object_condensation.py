@@ -171,8 +171,8 @@ def oc_per_batch_element(
     
     #explicit payload weight function here, the old one was odd
     
-    p_w = tf.math.atanh(beta_m)**2 #already zero-padded  , K x V_perobj x 1
-    p_w = tf.math.divide_no_nan(p_w, tf.reduce_max(p_w,axis=1,keepdims=True)) #normalise to maximum
+    p_w = tf.math.atanh(tf.clip_by_value(beta_m, 1e-4, 1.-1e-4))**2 #already zero-padded  , K x V_perobj x 1
+    p_w = tf.math.divide_no_nan(p_w, tf.reduce_max(p_w, axis=1, keepdims=True)) #normalise to maximum
     
     if cut_payload_beta_gradient:
         p_w = tf.stop_gradient(p_w)
@@ -383,7 +383,7 @@ def oc_loss(
     V_att, V_rep, Noise_pen, B_pen, pll,to_much_B_pen = 6*[tf.constant(0., tf.float32)]
     
     for b in tf.range(batch_size):
-        att,rep,noise,bp,pl,tmb = oc_per_batch_element_old(
+        att,rep,noise,bp,pl,tmb = oc_per_batch_element(
             
             beta[row_splits[b]:row_splits[b + 1]],
             x[row_splits[b]:row_splits[b + 1]],

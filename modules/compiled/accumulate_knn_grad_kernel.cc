@@ -53,9 +53,12 @@ static void calc_feature_gradients(
 
             const float ginu = d_grad_from_out_features[I2D(i_v, nu_f, n_grad_from_out_feat)];
             float ginu_max = 0;
-            if(mean_and_max)
+            int max_for_iv = -1;
+            if(mean_and_max){
                 ginu_max = d_grad_from_out_features[I2D(i_v, nu_f+n_feat, n_grad_from_out_feat)];
-            const int max_for_iv = d_max_feat_indices[I2D(i_v,nu_f,n_feat)];
+                max_for_iv = d_max_feat_indices[I2D(i_v,nu_f,n_feat)];
+            }
+
 
             bool firstself=true;
             for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
@@ -115,8 +118,10 @@ static void calc_distance_gradients(
 
 
             int l_g = d_neigh_indices[I2D(m,l,n_neigh)];
-            if(l_g  < 0 )
-                return;
+            if(l_g  < 0 ){
+                d_out_grad_distances[I2D(m,l,n_neigh)] = 0;
+                continue;
+            }
 
             float mean_contrib=0;
             float max_contrib=0;
@@ -135,7 +140,9 @@ static void calc_distance_gradients(
                 float flb = d_feat[I2D(l_g, b_f, n_feat)];
 
                 mean_contrib += gmb * flb *expml;
-                size_t maxform = d_max_feat_indices[I2D(m,b_f,n_feat)] ;
+                int maxform = -1;
+                if(mean_and_max)
+                    maxform = d_max_feat_indices[I2D(m,b_f,n_feat)] ;
                 if( l_g == maxform){
                     if( l_g == m){
                         if(firstself){
