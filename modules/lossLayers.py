@@ -390,6 +390,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  alt_potential_norm=False,
                  print_time=True,
                  cut_payload_beta_gradient=False,
+                 payload_beta_clip=0.1,
                  standard_configuration=None,
                  **kwargs):
         """
@@ -465,6 +466,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.alt_potential_norm = alt_potential_norm
         self.print_time = print_time
         self.cut_payload_beta_gradient = cut_payload_beta_gradient
+        self.payload_beta_clip = payload_beta_clip
         self.loc_time=time.time()
 
         if standard_configuration is not None:
@@ -549,6 +551,10 @@ class LLFullObjectCondensation(LossLayerBase):
         classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id)
         
         full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss], axis=-1)
+        
+        if self.payload_beta_clip > 0:
+            full_payload = tf.where(pred_beta<self.payload_beta_clip, 0., full_payload)
+            #clip not weight, so there is no gradient to push below threshold!
         
         is_spectator = tf.zeros_like(pred_beta) #not used right now, and likely never again (if the truth remains ok)
         
@@ -652,7 +658,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'phase_transition_double_weight': self.phase_transition_double_weight,
             'alt_potential_norm': self.alt_potential_norm,
             'print_time' : self.print_time,
-            'cut_payload_beta_gradient': self.cut_payload_beta_gradient
+            'cut_payload_beta_gradient': self.cut_payload_beta_gradient,
+            'payload_beta_clip' : self.payload_beta_clip
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

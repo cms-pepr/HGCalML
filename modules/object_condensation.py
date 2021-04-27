@@ -125,8 +125,8 @@ def oc_per_batch_element(
     
     x_kalpha_m = tf.gather_nd(x_m,kalpha_m, batch_dims=1) # K x C
     if use_mean_x:
-        x_kalpha_m = tf.reduce_sum(x_m * padmask_m,axis=1) # K x C
-        x_kalpha_m = tf.math.divide_no_nan(x_kalpha_m,N_per_obj)
+        x_kalpha_m = tf.reduce_sum(q_m * x_m * padmask_m,axis=1) # K x C
+        x_kalpha_m = tf.math.divide_no_nan(x_kalpha_m, tf.reduce_sum(q_m * padmask_m, axis=1))
     
     q_kalpha_m = tf.gather_nd(q_m,kalpha_m, batch_dims=1) # K x 1
     beta_kalpha_m = tf.gather_nd(beta_m,kalpha_m, batch_dims=1) # K x 1
@@ -162,6 +162,9 @@ def oc_per_batch_element(
     B_pen += 1. #remove self-interaction term (just for offset)
     B_pen *= object_weights_kalpha_m * beta_kalpha_m
     B_pen = tf.math.divide_no_nan(B_pen, N_per_obj) # K x 1
+    #now 'standard' 1-beta
+    #B_pen -= object_weights_kalpha_m * tf.math.sqrt(beta_kalpha_m+1e-6) 
+    #another "-> 1, but slower" per object
     B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K) # 1
     
     
@@ -171,7 +174,7 @@ def oc_per_batch_element(
     
     #explicit payload weight function here, the old one was odd
     
-    p_w = tf.math.atanh(tf.clip_by_value(beta_m, 1e-4, 1.-1e-4))**2 #already zero-padded  , K x V_perobj x 1
+    p_w = tf.math.atanh(padmask_m * tf.clip_by_value(beta_m, 1e-4, 1.-1e-4))**2 #already zero-padded  , K x V_perobj x 1
     p_w = tf.math.divide_no_nan(p_w, tf.reduce_max(p_w, axis=1, keepdims=True)) #normalise to maximum
     
     if cut_payload_beta_gradient:
