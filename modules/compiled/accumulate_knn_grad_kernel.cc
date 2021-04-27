@@ -79,7 +79,7 @@ static void calc_feature_gradients(
                     if(m_v == i_v){
                         if(firstself){//count self just once
                             max_contrib = ginu_max * weight_im;
-                            //DEBUG firstself=false;
+                            firstself=false;
                         }
                     }
                     else{

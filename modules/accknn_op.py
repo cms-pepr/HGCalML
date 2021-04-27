@@ -39,13 +39,13 @@ def _AccumulateKnnGrad(op, grad, gradmaxidxs):
     max_feat_indices = op.outputs[1]
     neigh_indices = op.inputs[2]
     
-    coord_grad , feat_grad = _accknn_grad_op.AccumulateKnnGrad(grad_from_out_features=grad,
+    dist_grad , feat_grad = _accknn_grad_op.AccumulateKnnGrad(grad_from_out_features=grad,
                                                                distances=distances,
                                                                features=features,
                                                                neigh_indices=neigh_indices,
                                                                max_feat_indices=max_feat_indices)
     
-    return [coord_grad , feat_grad, None] #no gradient for indices
+    return [dist_grad , feat_grad, None] #no gradient for indices
   
   
 

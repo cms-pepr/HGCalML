@@ -90,7 +90,7 @@ static void calc_feature_gradients(
             if(m_v == i_v){
                 if(firstself){//count self just once
                     max_contrib = ginu_max * weight_im;
-                    //DEBUG firstself=false;
+                    firstself=false;
                 }
             }
             else{
@@ -199,7 +199,7 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
             bool mean_and_max) {
 
 
-        grid_and_block feat_par(n_vert, 16, n_feat, 32);
+        grid_and_block feat_par(n_vert, 64, n_feat, 8);
 
         set_feature_grad_zero<<<feat_par.grid(), feat_par.block(), 0,  d.stream()>>>(d_out_grad_features, n_vert, n_feat);
 
