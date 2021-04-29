@@ -190,17 +190,17 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     
     #loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=1e-4,
-                                         position_loss_weight=1e-2,
-                                         timing_loss_weight=1e-3,
+                                         energy_loss_weight=1e-1,
+                                         position_loss_weight=1e-1,
+                                         timing_loss_weight=1e-1,
                                          beta_loss_scale=1.,
                                          repulsion_scaling=1.,
-                                         q_min=1.5,
-                                         use_average_cc_pos=0.1,
+                                         q_min=2.0,
+                                         use_average_cc_pos=0.,
                                          prob_repulsion=True,
                                          phase_transition=1,
                                          alt_potential_norm=True,
-                                         kalpha_damping_strength=0.5,#1.,
+                                         kalpha_damping_strength=0.8,#1.,
                                          name="FullOCLoss"
                                          )([pred_beta, pred_ccoords, pred_energy, 
                                             pred_pos, pred_time, pred_id,
@@ -241,7 +241,7 @@ from plotting_callbacks import plotClusteringDuringTraining, plotGravNetCoordsDu
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
-plot_after_batches=50
+plot_after_batches=2*250
 
 cb = [plotClusteringDuringTraining(
            use_backgather_idx=7+i,
@@ -279,8 +279,8 @@ cb += [
     for i in  range(12,18) #between 16 and 21
     ]
 
-learningrate = 3e-3
-nbatch = 100000 #quick first training with simple examples = low # hits
+learningrate = 2e-3
+nbatch = 150000 #quick first training with simple examples = low # hits
 
 train.compileModel(learningrate=learningrate,
                           loss=None,
@@ -305,9 +305,7 @@ model, history = train.trainModel(nepochs=1,
 print("freeze BN")
 for l in train.keras_model.layers:
     if 'FullOCLoss' in l.name:
-        l.use_average_cc_pos=False
-        l.q_min = 0.5
-        l.beta_loss_scale = 3.
+        pass #loss changes
         
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=10.

@@ -391,7 +391,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  alt_potential_norm=False,
                  print_time=True,
                  cut_payload_beta_gradient=False,
-                 payload_beta_clip=0.1,
+                 payload_beta_clip=0.01,
                  kalpha_damping_strength=0.,
                  standard_configuration=None,
                  **kwargs):
