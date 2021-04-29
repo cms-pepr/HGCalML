@@ -23,6 +23,7 @@ def AccumulateKnn(distances,  features, indices, mean_and_max=True):
     Other than the padding, the indices must be unique
     
     '''
+    
     return _accknn_op.AccumulateKnn(n_moments=0, mean_and_max=mean_and_max, 
                                     distances=distances,  features=features, indices=indices)
 

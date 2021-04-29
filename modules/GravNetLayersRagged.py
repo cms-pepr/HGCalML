@@ -11,6 +11,8 @@ import numpy as np
 #### helper###
 from datastructures import TrainData_OC,TrainData_NanoML
 
+from oc_helper_ops import SelectWithDefault
+
 def check_type_return_shape(s):
     if not isinstance(s, tf.TensorSpec):
         raise TypeError('Only TensorSpec signature types are supported, '
@@ -86,6 +88,8 @@ class ProcessFeatures(tf.keras.layers.Layer):
         fdict['recHitX'] /= 100.
         fdict['recHitY'] /= 100.
         fdict['recHitZ'] = (tf.abs(fdict['recHitZ'])-400)/100.
+        fdict['recHitEta'] = tf.abs(fdict['recHitEta'])
+        fdict['recHitTheta'] = tf.abs(fdict['recHitTheta'])
         fdict['recHitTime'] = tf.nn.relu(fdict['recHitTime'])/10. #remove -1 default
         allf = []
         for k in fdict:
@@ -188,34 +192,38 @@ class NeighbourCovariance(tf.keras.layers.Layer):
         return tf.concat([cov,means],axis=-1)
         
 class NeighbourApproxPCA(tf.keras.layers.Layer):
-    def __init__(self,hidden_nodes=16, **kwargs):
+    def __init__(self,hidden_nodes=[32,32,32], **kwargs):
         """
         Inputs: 
           - coordinates (Vin x C)
+          - distsq (Vin x K)
           - features (Vin x F)
-          - neighbour indices (Vout x K)
+          - neighbour indices (Vin x K)
           
         Returns concatenated:
-          - feature weighted covariance matrices (lower triangle) (Vout x F*(C^2+C))
+          - feature weighted covariance matrices (lower triangle) (Vout x F*C**2)
           - feature weighted means (Vout x F*C)
           
-        THIS OPERATION HAS NO GRADIENT SO FAR!!
         """
         super(NeighbourApproxPCA, self).__init__(**kwargs)
-        with tf.name_scope(self.name + "/1/"):
-            self.hidden_dense = tf.keras.layers.Dense(hidden_nodes,activation='elu')
-        self.output_dense = None #tf.keras.layers.Dense(hidden_nodes,activation='elu')
+        
+        self.hidden_dense=[]
+        self.hidden_nodes = hidden_nodes
+        
+        for i in range(len(hidden_nodes)):
+            with tf.name_scope(self.name + "/1/" + str(i)):
+                self.hidden_dense.append( tf.keras.layers.Dense( hidden_nodes[i],activation='elu'))
+                
         self.nF = None
         self.nC = None
         self.covshape = None
-        self.hidden_nodes = hidden_nodes
+        
+        
+        print('NeighbourApproxPCA: Warning. This layer is still very sensitive to the input normalisations and the learning rates.')
         
         
     def get_config(self):
-        config = {'hidden_nodes': self.hidden_nodes,
-                  'nF': self.nF,
-                  'nC': self.nC,
-                  'covshape': self.covshape}
+        config = {'hidden_nodes': self.hidden_nodes}
         base_config = super(NeighbourApproxPCA, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
@@ -225,27 +233,30 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         self.nC = nC
         self.covshape = covshape
         
-        with tf.name_scope(self.name + "/1/"):
-            self.hidden_dense.build((None,None,covshape//nF))
-            
-        with tf.name_scope(self.name + "/2/"):
-            self.output_dense = tf.keras.layers.Dense(nC**2+nC)
-            self.output_dense.build((None,None,self.hidden_dense.units))
-            
+        
+        dshape=(None, None, nC**2)
+        for i in range(len(self.hidden_dense)):
+            with tf.name_scope(self.name + "/1/" + str(i)):
+                self.hidden_dense[i].build(dshape)
+                dshape = (None, None, self.hidden_dense[i].units)
+                
         super(NeighbourApproxPCA, self).build(input_shapes)  
         
     def compute_output_shape(self, input_shapes):
-        nF, nC = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
-        return (None, nF*(nC**2 + nC) + nF*nC)
+        nF, _,_ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        return (None, nF * self.hidden_dense[-1].units)
 
     def call(self, inputs):
-        coordinates, features, n_idxs = inputs
-        cov,means = NeighbourCovariance.raw_call(coordinates, features, n_idxs)
-        cov = tf.reshape(cov, [-1, self.nF, self.covshape//self.nF])
-        cov = self.hidden_dense(cov)
-        cov = self.output_dense(cov)
+        coordinates, distsq, features, n_idxs = inputs
         
-        cov = tf.reshape(cov, [-1, self.nF*(self.nC**2 + self.nC)])
+        cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
+                                           distsq=10. * distsq,#same as gravnet scaling
+                                         features=features, 
+                                         n_idxs=n_idxs)
+        for d in self.hidden_dense:
+            cov = d(cov)
+        
+        cov = tf.reshape(cov, [-1, self.nF * self.hidden_dense[-1].units ])
         means = tf.reshape(means, [-1, self.nF*self.nC])
         
         return tf.concat([cov,means],axis=-1)
@@ -841,13 +852,201 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
         return [out, rs, backgather] + other
         
         
+class LocalClusterReshapeFromNeighbours2(tf.keras.layers.Layer):
+    def __init__(self, K=-1, 
+                 radius=-1, 
+                 print_reduction=False, 
+                 loss_enabled=False, 
+                 hier_transforms=[],
+                 loss_scale = 1., 
+                 loss_repulsion=0.5,
+                 print_loss=False,
+                 **kwargs):
+        '''
+        
+        This layer is a simple, but handy combination of: 
+        - SortAndSelectNeighbours
+        - LocalClustering
+        - SelectFromIndices
+        - GraphClusterReshape
+        
+        and comes with it's own loss layer (LLLocalClusterCoordinates) to implement
+        a gradient on all operations and inputs.
+        
+        Inputs:
+         - features
+         - distances
+         - neighbour indices
+         - row splits
+         - +[] of other tensors to be selected according to clustering
+         
+         - truth idx (can be dummy if loss is disabled
+         
+        
+        When applied, the layer graph reshapes a max. selected number of neighbours (K),
+        within a maximum radius. At the same time, other features of the new found cluster
+        centres can be selected in one go.
+        
+        The included loss function implements a gradient on the input distances, and the hierarchy feature
+        following a similar approach as object condensation (but applied only locally to selected neighbours).
+        Those vertices within the same neighbourhood (given by neighbour indices) that have the same truth
+        index are pulled together while others are being pushed away. The corresponding loss per vertex is scaled
+        by the hierarchy index (which receives a penalty to be >0 at the same time) such that it can be interpreted
+        as a confidence measure that the corresponding grouping is valid.
+        
+        As a consequence, this layer will aim to reshape the graph in a way that vertices from the same object form
+        groups.
+         
+        Outputs:
+         - reshaped features
+         - new row splits
+         - backgather indices
+         - +[] other tensors with selection applied
+        
+        '''
+        self.K = K
+        self.radius = radius
+        self.print_reduction = print_reduction
+        self.loss_enabled = loss_enabled
+        self.loss_scale = loss_scale
+        self.loss_repulsion = loss_repulsion
+        self.print_loss = print_loss
+        
+        if 'dynamic' in kwargs:
+            super(LocalClusterReshapeFromNeighbours2, self).__init__(**kwargs)
+        else:
+            super(LocalClusterReshapeFromNeighbours2, self).__init__(dynamic=False,**kwargs)
+        
+        self.hier_transforms = hier_transforms
+        self.hier_tdense = []
+        for i in range(len(hier_transforms)):
+            with tf.name_scope(self.name + "/1/"+str(i)):
+                self.hier_tdense.append(tf.keras.layers.Dense(hier_transforms[i],activation='elu'))
+        
+        with tf.name_scope(self.name + "/2/"):
+            self.hier_dense = tf.keras.layers.Dense(1)
+    
+    def get_config(self):
+        config = {'K': self.K,
+                  'radius': self.radius,
+                  'print_reduction': self.print_reduction,
+                  'loss_enabled': self.loss_enabled,
+                  'loss_scale': self.loss_scale,
+                  'hier_transforms': self.hier_transforms,
+                  'loss_repulsion': self.loss_repulsion,
+                  'print_loss': self.print_loss}
+        
+        base_config = super(LocalClusterReshapeFromNeighbours2, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def _sel_pass_shape(self, input_shape):
+        shapes =  input_shape[5:-1] 
+        return [(None, s[1:]) for s in shapes]
+
+    def compute_output_shape(self, input_shapes): #features, nidx = inputs
+        K = self.K
+        if K < 0:
+            K = input_shapes[3][-1]#no neighbour selection
+        
+        
+        if len(input_shapes) > 5:
+            return [(input_shapes[0][0], input_shapes[0][1]*K), (None, 1), (None, 1)] + self._sel_pass_shape(input_shapes)
+        else:
+            return (input_shapes[0][0], input_shapes[0][1]*K), (None, 1), (None, 1)
+
+    
+    def compute_output_signature(self, input_signature):
+        
+        input_shapes = [x.shape for x in input_signature]
+        input_dtypes = [x.dtype for x in input_signature]
+        output_shapes = self.compute_output_shape(input_shapes)
+
+        lenin = len(input_signature)
+        # out, rs, backgather
+        if lenin > 5:
+            return  [tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
+                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
+                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])] + \
+                    [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i-2]) for i in range(5,lenin)]
+        else:
+            return  tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
+                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
+                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])
+            
+    
+
+    def build(self, input_shape):
+        
+        shapelast = input_shape[0][-1]*self.K + self.K
+        
+        for i in range(len(self.hier_tdense)):
+            with tf.name_scope(self.name + "/1/"+str(i)):
+                self.hier_tdense[i].build((None, shapelast))
+            shapelast = self.hier_tdense[i].units
+        
+        
+        with tf.name_scope(self.name + "/2/"):
+            self.hier_dense.build((None, shapelast))
+        
+        super(LocalClusterReshapeFromNeighbours2, self).build(input_shape)
+
+
+    def call(self, inputs):
+        features, distances, nidxs, row_splits, other, tidxs = 6*[None]
+        
+        if len(inputs) > 5:
+            features, distances, nidxs, row_splits, *other, tidxs = inputs
+        else:
+            features, distances, nidxs, row_splits, tidxs = inputs
+            other=[]
+            
+        sdist, snidx = distances, nidxs #  
+        lossdist,lossnidx = distances,nidxs
+        sdist, snidx = SortAndSelectNeighbours.raw_call(sdist, snidx,K=self.K, radius=self.radius)
+        
+        #determine hierarchy from full features
+        fullfeat = SelectWithDefault(snidx, features, 0.)
+        fullfeat = tf.reshape(fullfeat, [-1, fullfeat.shape[-1]*self.K])
+        fullfeat = tf.concat([fullfeat,sdist],axis=-1)
+        for t in self.hier_tdense:
+            fullfeat = t(fullfeat)
+        
+        hierarchy = self.hier_dense(fullfeat)
+        
+        #generate loss
+        if self.loss_enabled:
+            #some headroom for radius
+            lossval = self.loss_scale * LLLocalClusterCoordinates.raw_loss(
+                lossdist/(self.radius**2), 
+                hierarchy, 
+                lossnidx, tidxs,  #or distances/(1.5*self.radius)**2
+                add_self_reference=False, repulsion_contrib=self.loss_repulsion,
+                print_loss=self.print_loss,name=self.name)
+            self.add_loss(lossval)
+        # do the reshaping
+        
+        sel, rs, backgather = LocalClustering.raw_call(snidx,hierarchy,row_splits,
+                                                       print_reduction=self.print_reduction,name=self.name)
+        
+        rs = tf.cast(rs, tf.int32)#just so keras knows
+        #be explicit because of keras
+        #backgather = tf.cast(backgather, tf.int32)
+        seloutshapes =  [[-1,] + list(s.shape[1:]) for s in [snidx, sdist]+other] 
+        snidx, sdist, *other = SelectFromIndices.raw_call(sel, [snidx, sdist]+other, seloutshapes)
+        
+        out = GraphClusterReshape()([features,snidx])
+        
+        return [out, rs, backgather] + other
+        
+        
+
 
 
 ### soft pixel section
 
 
 class SoftPixelCNN(tf.keras.layers.Layer):
-    def __init__(self, length_scale_momentum=0.01, mode: str='onlyaxes', subdivisions: int=3 ,**kwargs):
+    def __init__(self, length_scale_momentum=0.01, mode: str='onlyaxes', subdivisions: int=3 , **kwargs):
         """
         Inputs: 
         - coordinates
@@ -1081,7 +1280,9 @@ class RaggedGravNet(tf.keras.layers.Layer):
                 self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation='relu')
 
         with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,use_bias=False,kernel_initializer=tf.keras.initializers.identity())
+            self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,
+                                                                 kernel_initializer=tf.keras.initializers.identity(),
+                                                                 use_bias=False)
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='relu')#changed to relu
@@ -1315,6 +1516,7 @@ class MessagePassing(tf.keras.layers.Layer):
         return features
 
     def collect_neighbours(self, features, neighbour_indices):
+        neighbour_indices = tf.stop_gradient(neighbour_indices)
         f,_ = AccumulateKnn(tf.cast(neighbour_indices*0, tf.float32),  features, neighbour_indices)
         return f
 

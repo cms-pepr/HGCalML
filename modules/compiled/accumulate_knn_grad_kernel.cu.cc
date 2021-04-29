@@ -198,8 +198,14 @@ struct AccumulateKnnGradOpFunctor<GPUDevice, dummy> {
             int n_moments,
             bool mean_and_max) {
 
-
+        //try to minimise number of vertices per thread because of atomic add
         grid_and_block feat_par(n_vert, 64, n_feat, 8);
+        if(n_feat >= 32)
+            feat_par=grid_and_block(n_vert, 16, n_feat, 32);
+        if(n_feat >= 64)
+            feat_par=grid_and_block(n_vert, 8, n_feat, 64);
+        if(n_feat >= 128)
+            feat_par=grid_and_block(n_vert, 4, n_feat, 128);
 
         set_feature_grad_zero<<<feat_par.grid(), feat_par.block(), 0,  d.stream()>>>(d_out_grad_features, n_vert, n_feat);
 

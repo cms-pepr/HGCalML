@@ -8,7 +8,7 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
-from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
+from GravNetLayersRagged import ProcessFeatures, RaggedGravNet, DistanceWeightedMessagePassing
 from tensorflow.keras.layers import Lambda, Reshape, Dense, Concatenate, GaussianDropout, Dropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -18,6 +18,7 @@ from tensorflow.keras import Model
 from DeepJetCore.modeltools import fixLayersContaining
 # from tensorflow.keras.models import load_model
 from DeepJetCore.training.training_base import custom_objects_list
+
 
 # from tensorflow.keras.optimizer_v2 import Adam
 
@@ -33,6 +34,13 @@ from model_blocks import create_outputs
 from Layers import RaggedGlobalExchange,ManualCoordTransform,EdgeConvStatic,DistanceWeightedMessagePassing,SortAndSelectNeighbours,NeighbourCovariance,NeighbourApproxPCA,ReluPlusEps,NormalizeInputShapes,NeighbourCovariance,LocalDistanceScaling,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
 from datastructures import TrainData_NanoML 
 td=TrainData_NanoML()
+
+
+class BatchNormalization2(object):
+    def __init__(self,momentum):
+        pass
+    def __call__(self, x):
+        return x
 
 def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     
@@ -55,8 +63,8 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     _, row_splits = RaggedConstructTensor()([feat, row_splits])
     rs = row_splits
     
-    #feat_norm = ProcessFeatures()(feat)#get rid of unit scalings, almost normalise
-    feat_norm = BatchNormalization(momentum=0.6)(feat)
+    feat_norm = ProcessFeatures()(feat)#get rid of unit scalings, almost normalise
+    feat_norm = BatchNormalization(momentum=0.6)(feat_norm)
     x=feat_norm
     
     energy = SelectFeatures(0,1)(feat)
@@ -74,43 +82,40 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     
     ####### create simple first coordinate transformation explicitly (time critical)
 
-    trans_coords = ManualCoordTransform()(orig_coords)
-    coords = Dense(32,activation='elu')(trans_coords)
-    coords = Dense(16,activation='elu')(coords)
-    coords = Concatenate()([trans_coords,coords])
+    #trans_coords = ManualCoordTransform()(orig_coords)
+    coords = orig_coords 
     coords = Dense(3,use_bias=False,kernel_initializer=tf.keras.initializers.Identity())(coords)
     
-    first_coords = coords
-    x = Concatenate()([x,coords,trans_coords])
-    ###### apply one gravnet-like transformation (explicit here because we have created coords by hand) ###
 
     nidx, dist = KNN(K=48)([coords,rs])
-    dist = LocalDistanceScaling(max_scale=10.)([dist, Dense(1)(x)])
-    x_mp = DistanceWeightedMessagePassing([32,32,16,8])([x,nidx,dist])
-    x_mp = Dense(32, activation='elu')(x_mp)
+    
     first_nidx = nidx
     first_dist = dist
+    first_coords = coords
+    
+    dist = LocalDistanceScaling(max_scale=10.)([dist, Dense(1)(x)])
+    
+    x_mp = DistanceWeightedMessagePassing([32,16,8])([x,nidx,dist])
+    x_mp = Dense(32, activation='elu')(x_mp)
+    x_mp = BatchNormalization(momentum=0.6)(x_mp)
+    x = Concatenate()([x,x_mp])
     
     ###### collect information about the surrounding energy and time distributions per vertex ###
-
-    ncov = NeighbourCovariance()([coords,dist, Concatenate()([energy,time]),nidx])
-    ncov = BatchNormalization(momentum=0.6)(ncov)
-    ncov = Dense(64, activation='elu',name='pre_dense_ncov_a')(ncov)
-    ncov = Dense(32, activation='elu',name='pre_dense_ncov_b')(ncov)
+    ncov = Dense(4,kernel_initializer=tf.keras.initializers.Identity())(Concatenate()([energy,time,x]))
+    ncov = NeighbourCovariance()([coords,dist, ncov,nidx])
     ncov = Dense(24, activation='elu',name='pre_dense_ncov_c')(ncov) 
+    ncov = BatchNormalization(momentum=0.6)(ncov)
     #should be enough for PCA, total info: 2 * (9+3)
     
     ##### put together and process ####
     
-    x = Concatenate()([x,x_mp,ncov,coords,trans_coords])
-    x = Dense(64, activation='elu',name='pre_dense_a')(x)
-    x = BatchNormalization(momentum=0.6)(x)
-    x = Dense(32, activation='elu',name='pre_dense_b')(x)
+    x = Concatenate()([x,x_mp,ncov])
+    #x = Dense(64, activation='elu',name='pre_dense_a')(x)
+    x = Dense(64, activation='elu',name='pre_dense_b')(x)
     
     ####### add first set of outputs to output lists
     
     allfeat.append(x)
-    allfeat.append(first_coords)
     backgathered_coords.append(coords)
     
     total_iterations=5
@@ -123,23 +128,26 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
         hier = Dense(1)(x)
         #narrow the local scaling down at each iteration as the coords become more abstract
-        dist = LocalDistanceScaling(max_scale=10.)([dist, Dense(1)(x)])
+        dist = LocalDistanceScaling(max_scale=10.)([dist, Dense(1)(Concatenate()([x,dist]))])
+                                                   
         
         x_cl, rs, bidxs, sel_gidx, energy, x, t_idx,coords = LocalClusterReshapeFromNeighbours(
                  K=6, 
                  radius=0.2, #doesn't really have an effect because of local distance scaling
-                 print_reduction=False, 
+                 print_reduction=True, 
                  loss_enabled=True, 
                  loss_scale = 1., 
-                 loss_repulsion=0.3,
+                 loss_repulsion=0.4,
                  print_loss=True,
                  name='clustering_'+str(i)
                  )([x, dist, hier, nidx, rs, sel_gidx, energy, x, t_idx, coords, t_idx])#last is truth index used by layer
         
         gatherids.append(bidxs)
         
+        energy = ReduceSumEntirely()(energy)
+        
         #use EdgeConv operation to determine cluster properties
-        if i: #only after second iteration because of OOM
+        if True or i: #only after second iteration because of OOM
             x_cl = Reshape([-1, x.shape[-1]])(x_cl) #get to shape V x K x F
             x_cl = EdgeConvStatic([64,
                                    64,
@@ -147,43 +155,48 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                                    add_mean = True,
                                    name="ec_static_"+str(i))(x_cl)
             x_cl = Concatenate()([x,x_cl])
-        
-        
-        ### explicitly sum energy and re-add to features
-        
-        energy = ReduceSumEntirely()(energy)
-        
-        ## add normed energy sum explicitly
-        n_energy = BatchNormalization(momentum=0.6)(energy)
-        x = Concatenate()([x_cl,n_energy,StopGradient()(coords)]) #re-add explicit energy, coordinates
+            
+        x = Concatenate()([x_cl,StopGradient()(coords)])
         
         x = Dense(64, activation='elu',name='dense_clc0_'+str(i))(x)
-        x = Dense(64, activation='relu',name='dense_clc1_'+str(i))(x)
+        x = Dense(64, activation='elu',name='dense_clc1_'+str(i))(x)
+        
         x = BatchNormalization(momentum=0.6)(x)
         #notice last relu for feature weighting later
         
         ### now these are the new cluster features, up for the next iteration of building new latent space
+        #x = RaggedGlobalExchange()([x,rs])
         
-        x_gn, coords, nidx, dist = RaggedGravNet(n_neighbours = 64,
-                                                 n_dimensions= 3+i,
-                                                 n_filters = 16,
+        x_gn, coords, nidx, dist = RaggedGravNet(n_neighbours = 64+32*i,
+                                                 n_dimensions= 3,
+                                                 n_filters = 64,
                                                  n_propagate = 64,
                                                  return_self=True)([Concatenate()([coords,x]), 
                                                                     rs])
         
+        ng_coords = StopGradient()(coords)
+        ng_dist = StopGradient()(dist)
         
+        x_gn = Dense(32, activation='elu')(x_gn)
          
         ### add neighbour summary statistics
-        dist = LocalDistanceScaling(max_scale=10.)([dist, Dense(1)(x_gn)])
-                        
-        x_ncov = NeighbourCovariance()([coords,dist,x_gn,nidx])
+        #dist = LocalDistanceScaling(max_scale=10.)([dist, Dense(1)(x_gn)])
+        
+        x_ncov = Dense(16)(x)               
+        x_ncov = NeighbourCovariance()([ng_coords,ng_dist,x_ncov,nidx])
         x_ncov = Dense(64, activation='elu',name='dense_ncov_a_'+str(i))(x_ncov)
         x_ncov = Dense(64, activation='elu',name='dense_ncov_b_'+str(i))(x_ncov)
-        ### with all this information perform a few message passing steps
+        x_ncov = BatchNormalization(momentum=0.6)(x_ncov) 
         
-        x_mp = DistanceWeightedMessagePassing([32,32,16,16,8,8])([x_gn,nidx,dist])
-        x = Concatenate()([x,x_mp,x_ncov])
-        x = BatchNormalization(momentum=0.6)(x)
+        ### with all this information perform a few message passing steps
+        x_mp = x
+        x_mp = DistanceWeightedMessagePassing([32,16,8])([x_mp,nidx,ng_dist])
+        x_mp = Dense(64, activation='elu')(x_mp)
+        x_mp = Dense(32, activation='elu')(x_mp)
+        x_mp = BatchNormalization(momentum=0.6)(x_mp)
+        
+        
+        x = Concatenate()([x,x_mp,x_ncov,x_gn,ng_coords,ng_dist])
         
         ##### prepare output of this iteration
                                             
@@ -194,11 +207,9 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         #### compress further for output, but forward fill 64 feature x to next iteration
         
         x_r = Dense(32, activation='elu',name='dense_out_c_'+str(i))(x)
-        
-        if i >= total_iterations-1:
-            x_r = x
+        #x_r = Concatenate()([x_r, ng_coords, ng_dist])
 
-        x_r = Concatenate()([StopGradient()(coords),x_r]) ## add coordinates, might come handy for cluster space
+        #x_r = Concatenate()([StopGradient()(coords),x_r]) ## add coordinates, might come handy for cluster space
         
         if i >= total_iterations-1:
             energy = MultiBackGather()([energy, gatherids])#assign energy sum to all cluster components
@@ -210,14 +221,14 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         
     x = Concatenate(name='allconcat')(allfeat)
     x = RaggedGlobalExchange()([x,row_splits])
-    x = BatchNormalization(momentum=0.6)(x)
-    #x = Dropout(0.2)(x)
-    #x_mp = DistanceWeightedMessagePassing([64,64,32])([x,first_nidx,first_dist])
-    #x = Concatenate()([x,x_mp])
+    x = Dense(256, activation='elu',name='globalexdense' )(x)
+    x = RaggedGlobalExchange()([x,row_splits])
     
     x = Dense(128, activation='elu',name='alldense' )(x)
     x = Dense(64, activation='elu')(x)
     x = Dense(32, activation='elu')(x)
+    x = Concatenate()([first_coords, x])
+    x = BatchNormalization(momentum=0.6)(x)
 
     pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat)
     
@@ -229,14 +240,16 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     #
     
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=0.,
-                                         position_loss_weight=0., #seems broken
-                                         timing_loss_weight=0.,#1e-3,
-                                         beta_loss_scale=2.,
+                                         energy_loss_weight=1e-5,
+                                         position_loss_weight=1e-5, #seems broken
+                                         timing_loss_weight=1e-5,#1e-3,
+                                         beta_loss_scale=3.,
                                          repulsion_scaling=1.,
-                                         q_min=2.2,
+                                         q_min=2.0,
+                                         use_average_cc_pos=False,
+                                         use_energy_weights=True,
                                          prob_repulsion=True,
-                                         phase_transition=1,
+                                         phase_transition=True,
                                          phase_transition_double_weight=False,
                                          alt_potential_norm=True,
                                          cut_payload_beta_gradient=False
@@ -290,13 +303,13 @@ cb = [plotClusteringDuringTraining(
            on_epoch_end=False,
            publish=publishpath+"_cl_"+str(i),
            use_event=0) 
-    for i in [0,4]]
+    for i in [4,5]]
 
 cb += [   
     plotEventDuringTraining(
             outputfile=train.outputDir + "/plts2/sn0",
             samplefile=samplepath,
-            after_n_batches=300,
+            after_n_batches=100,
             batchsize=200000,
             on_epoch_end=False,
             publish = publishpath+"_event_"+ str(0),
@@ -318,7 +331,7 @@ cb += [
     for i in range(12,18) #between 16 and 21
     ] 
 learningrate = 5e-3
-nbatch = 120000 #quick first training with simple examples = low # hits
+nbatch = 100000 #quick first training with simple examples = low # hits
 
 train.compileModel(learningrate=learningrate,
                           loss=None,
@@ -336,7 +349,7 @@ model, history = train.trainModel(nepochs=1,
                                   additional_callbacks=
                                   [CyclicLR (base_lr = learningrate/10.,
                                   max_lr = learningrate,
-                                  step_size = 100)]+cb)
+                                  step_size = 20)]+cb)
 
 #print("freeze BN")
 #for l in train.keras_model.layers:

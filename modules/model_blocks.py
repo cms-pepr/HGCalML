@@ -226,8 +226,12 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
     feat = td.createFeatureDict(feat)
     
     pred_beta = Dense(1, activation='sigmoid')(x)
-    pred_ccoords = Dense(n_ccoords,use_bias=False)(x) #bias has no effect
-    pred_energy = Dense(1,kernel_initializer='zeros')(x)
+    pred_ccoords = Dense(n_ccoords,
+                         #this initialisation is much better than standard glorot
+                         kernel_initializer=tf.keras.initializers.RandomNormal(mean=0., stddev=1./float(x.shape[-1])),
+                         use_bias=False)(x) #bias has no effect
+    
+    pred_energy = ScalarMultiply(10.)(Dense(1)(x))
     if energy is not None:
         pred_energy = Multiply()([pred_energy,energy])
         

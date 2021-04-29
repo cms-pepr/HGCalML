@@ -70,13 +70,14 @@ def oc_per_batch_element(
         S_B=1.,
         payload_weight_function = None,  #receives betas as K x V x 1 as input, and a threshold val
         payload_weight_threshold = 0.8,
-        use_mean_x = False,
+        use_mean_x = 0.,
         cont_beta_loss=False,
         prob_repulsion=False,
         phase_transition=False,
         phase_transition_double_weight=False,
         alt_potential_norm=False,
-        cut_payload_beta_gradient=False
+        cut_payload_beta_gradient=False,
+        kalpha_damping_strength=0.
         ):
     '''
     all inputs
@@ -124,9 +125,13 @@ def oc_per_batch_element(
     kalpha_m = tf.argmax(beta_m, axis=1) # K x 1
     
     x_kalpha_m = tf.gather_nd(x_m,kalpha_m, batch_dims=1) # K x C
-    if use_mean_x:
-        x_kalpha_m = tf.reduce_sum(q_m * x_m * padmask_m,axis=1) # K x C
-        x_kalpha_m = tf.math.divide_no_nan(x_kalpha_m, tf.reduce_sum(q_m * padmask_m, axis=1))
+    if use_mean_x>0:
+        x_kalpha_m_m = tf.reduce_sum(q_m * x_m * padmask_m,axis=1) # K x C
+        x_kalpha_m_m = tf.math.divide_no_nan(x_kalpha_m_m, tf.reduce_sum(q_m * padmask_m, axis=1)+1e-9)
+        x_kalpha_m = use_mean_x * x_kalpha_m_m + (1. - use_mean_x)*x_kalpha_m
+    
+    if kalpha_damping_strength > 0:
+        x_kalpha_m = kalpha_damping_strength * tf.stop_gradient(x_kalpha_m) + (1. - kalpha_damping_strength)*x_kalpha_m
     
     q_kalpha_m = tf.gather_nd(q_m,kalpha_m, batch_dims=1) # K x 1
     beta_kalpha_m = tf.gather_nd(beta_m,kalpha_m, batch_dims=1) # K x 1
@@ -137,8 +142,8 @@ def oc_per_batch_element(
     V_att = q_m * tf.expand_dims(q_kalpha_m,axis=1) * distancesq_m #K x V-obj x 1
     V_att = V_att * tf.expand_dims(object_weights_kalpha_m,axis=1) #K x V-obj x 1
     
-    V_att = tf.math.divide_no_nan(tf.reduce_sum(padmask_m * V_att,axis=1), N_per_obj) # K x 1
-    V_att = tf.math.divide_no_nan(tf.reduce_sum(V_att,axis=0), K) # 1
+    V_att = tf.math.divide_no_nan(tf.reduce_sum(padmask_m * V_att,axis=1), N_per_obj+1e-9) # K x 1
+    V_att = tf.math.divide_no_nan(tf.reduce_sum(V_att,axis=0), K+1e-9) # 1
     
     
     #now the bit that needs Mnot
@@ -153,19 +158,19 @@ def oc_per_batch_element(
     V_rep *= object_weights_kalpha_m * q_kalpha_m #K x 1
     
     V_rep = tf.math.divide_no_nan(V_rep, 
-                                  tf.expand_dims(tf.expand_dims(N,axis=0),axis=0) - N_per_obj) # K x 1
-    V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=0), K) # 1
+                                  tf.expand_dims(tf.expand_dims(N,axis=0),axis=0) - N_per_obj+1e-9) # K x 1
+    V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=0), K+1e-9) # 1
     
     
     ## beta terms
     B_pen = - tf.reduce_sum(padmask_m * 1./(20.*distancesq_m + 1.),axis=1) # K x 1
     B_pen += 1. #remove self-interaction term (just for offset)
     B_pen *= object_weights_kalpha_m * beta_kalpha_m
-    B_pen = tf.math.divide_no_nan(B_pen, N_per_obj) # K x 1
+    B_pen = tf.math.divide_no_nan(B_pen, N_per_obj+1e-9) # K x 1
     #now 'standard' 1-beta
-    #B_pen -= object_weights_kalpha_m * tf.math.sqrt(beta_kalpha_m+1e-6) 
+    B_pen -= 0.2*object_weights_kalpha_m * tf.math.sqrt(beta_kalpha_m+1e-6) 
     #another "-> 1, but slower" per object
-    B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K) # 1
+    B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9) # 1
     
     
     too_much_B_pen = tf.constant([0.],dtype='float32')
@@ -175,7 +180,8 @@ def oc_per_batch_element(
     #explicit payload weight function here, the old one was odd
     
     p_w = tf.math.atanh(padmask_m * tf.clip_by_value(beta_m, 1e-4, 1.-1e-4))**2 #already zero-padded  , K x V_perobj x 1
-    p_w = tf.math.divide_no_nan(p_w, tf.reduce_max(p_w, axis=1, keepdims=True)) #normalise to maximum
+    p_w = tf.math.divide_no_nan(p_w, tf.reduce_max(p_w, axis=1, keepdims=True)+1e-9) 
+    #normalise to maximum; this + 1e-9 might be an issue POSSIBLE FIXME
     
     if cut_payload_beta_gradient:
         p_w = tf.stop_gradient(p_w)
@@ -183,8 +189,8 @@ def oc_per_batch_element(
     payload_loss_m = p_w * SelectWithDefault(Msel, payload_loss, 0.) #K x V_perobj x P
     payload_loss_m = tf.reduce_sum(payload_loss_m, axis=1)
     
-    pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj) # K x P
-    pll = tf.math.divide_no_nan(tf.reduce_sum(pll,axis=0), K) # P
+    pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj+1e-9) # K x P
+    pll = tf.math.divide_no_nan(tf.reduce_sum(pll,axis=0), K+1e-9) # P
     
     return V_att, V_rep, Noise_pen, B_pen, pll, too_much_B_pen
 
@@ -201,13 +207,14 @@ def oc_per_batch_element_old(
         S_B=1.,
         payload_weight_function = payload_weight_function,  #receives betas as K x V x 1 as input, and a threshold val
         payload_weight_threshold = 0.8,
-        use_mean_x = False,
+        use_mean_x = 0.,
         cont_beta_loss=False,
         prob_repulsion=False,
         phase_transition=False,
         phase_transition_double_weight=False,
         alt_potential_norm=False,
-        cut_payload_beta_gradient=False
+        cut_payload_beta_gradient=False,
+        kalpha_damping_strength=0
         ):
     '''
     all inputs
@@ -247,6 +254,9 @@ def oc_per_batch_element_old(
     if use_mean_x: #q weighted mean here
         x_kalpha = tf.reduce_sum( M * tf.expand_dims(q, axis=0) * tf.expand_dims(x,axis=0), axis=1, keepdims=True) # K x 1 x C
         x_kalpha = tf.math.divide_no_nan(x_kalpha, tf.reduce_sum(M * tf.expand_dims(q, axis=0), axis=1, keepdims=True)) # K x 1 x C
+    
+    if kalpha_damping_strength > 0:
+        x_kalpha = kalpha_damping_strength * tf.stop_gradient(x_kalpha) + (1. - kalpha_damping_strength)*x_kalpha
     
     q_kalpha = gather_for_obj_from_vert(q, kalpha) # K x 1 x 1
     qraw_kalpha = gather_for_obj_from_vert(qraw, kalpha) # K x 1 x 1
@@ -374,6 +384,7 @@ def oc_loss(
         phase_transition_double_weight=False,
         alt_potential_norm=False,
         cut_payload_beta_gradient=False,
+        kalpha_damping_strength=0.
         ):   
     
     if energyweights is None:
@@ -407,7 +418,8 @@ def oc_loss(
             phase_transition=phase_transition,
             phase_transition_double_weight=phase_transition_double_weight,
             alt_potential_norm=alt_potential_norm,
-            cut_payload_beta_gradient=cut_payload_beta_gradient
+            cut_payload_beta_gradient=cut_payload_beta_gradient,
+            kalpha_damping_strength=kalpha_damping_strength
             )
         V_att += att
         V_rep += rep

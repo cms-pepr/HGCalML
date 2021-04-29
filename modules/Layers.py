@@ -4,7 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -60,6 +60,8 @@ global_layers_list['SortAndSelectNeighbours']=SortAndSelectNeighbours
 global_layers_list['GraphClusterReshape']=GraphClusterReshape
 
 global_layers_list['LocalClusterReshapeFromNeighbours']=LocalClusterReshapeFromNeighbours
+global_layers_list['LocalClusterReshapeFromNeighbours2']=LocalClusterReshapeFromNeighbours2
+
 
 
 global_layers_list['NeighbourCovariance']=NeighbourCovariance
@@ -87,7 +89,15 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
 
+class CheckNaN(Layer):
+    def __init__(self,**kwargs):
+        super(CheckNaN, self).__init__(**kwargs)
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    def call(self, inputs):
+        return tf.debugging.check_numerics(inputs, self.name+' detected NaNs or Infs')
 
+global_layers_list['CheckNaN']=CheckNaN
 
 class ReluPlusEps(Layer):
     def __init__(self,**kwargs):

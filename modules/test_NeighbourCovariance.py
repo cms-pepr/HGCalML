@@ -33,8 +33,10 @@ def test_NeighbourCovariance():
     #expected shapes: V x F x 2 * 2, V x F x 2
     print(cov.shape, mean_C.shape)
     
+    print('op neighbour covariance and mean')
     print(cov[0],'\n',mean_C[0]) #all the same
     
+    print('numpy neighbour covariance')
     print(np.cov(coords, aweights=features[:,0]*np.exp(-distsq[0]), rowvar=False, ddof=0))
     print(np.cov(coords, aweights=features[:,1]*np.exp(-distsq[0]), rowvar=False, ddof=0))
     
