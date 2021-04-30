@@ -233,12 +233,13 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         self.nC = nC
         self.covshape = covshape
         
-        
+        #build is actually called for this layer
         dshape=(None, None, nC**2)
         for i in range(len(self.hidden_dense)):
             with tf.name_scope(self.name + "/1/" + str(i)):
                 self.hidden_dense[i].build(dshape)
                 dshape = (None, None, self.hidden_dense[i].units)
+                
                 
         super(NeighbourApproxPCA, self).build(input_shapes)  
         

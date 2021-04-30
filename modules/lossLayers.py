@@ -391,8 +391,9 @@ class LLFullObjectCondensation(LossLayerBase):
                  alt_potential_norm=False,
                  print_time=True,
                  cut_payload_beta_gradient=False,
-                 payload_beta_clip=0.01,
+                 payload_beta_clip=0.,
                  kalpha_damping_strength=0.,
+                 cc_damping_strength=0.001,
                  standard_configuration=None,
                  **kwargs):
         """
@@ -470,6 +471,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.cut_payload_beta_gradient = cut_payload_beta_gradient
         self.payload_beta_clip = payload_beta_clip
         self.kalpha_damping_strength = kalpha_damping_strength
+        self.cc_damping_strength = cc_damping_strength
         self.loc_time=time.time()
         
         assert kalpha_damping_strength >= 0. and kalpha_damping_strength <= 1.
@@ -603,10 +605,16 @@ class LLFullObjectCondensation(LossLayerBase):
         time_loss   = tf.debugging.check_numerics(payload[2], "time loss has NaNs")
         class_loss  = tf.debugging.check_numerics(payload[3], "classification loss has NaNs")
         
-        lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta
+        
+        #explicit cc damping
+        ccdamp = self.cc_damping_strength * tf.reduce_mean(pred_ccoords)# gently keep them around 0
+        
+        
+        lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta + ccdamp
             
         lossval = tf.debugging.check_numerics(lossval, "loss has nan")
         lossval = tf.reduce_mean(lossval)
+        
         
         if self.print_time:
             print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms')
@@ -627,7 +635,7 @@ class LLFullObjectCondensation(LossLayerBase):
                   'pos_loss', pos_loss.numpy(),
                   'time_loss', time_loss.numpy(),
                   'class_loss', class_loss.numpy(),
-                  'exceed_beta', exceed_beta.numpy(),'\n')
+                  'ccdamp', ccdamp.numpy(),'\n')
 
         return lossval
 
@@ -666,7 +674,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'print_time' : self.print_time,
             'cut_payload_beta_gradient': self.cut_payload_beta_gradient,
             'payload_beta_clip' : self.payload_beta_clip,
-            'kalpha_damping_strength' : self.kalpha_damping_strength
+            'kalpha_damping_strength' : self.kalpha_damping_strength,
+            'cc_damping_strength' : self.cc_damping_strength
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

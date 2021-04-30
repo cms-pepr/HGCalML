@@ -4,6 +4,7 @@ Can be trained using the *latest* deepjetcore (there was a minor change to allow
 A dataset can be found here: /eos/home-j/jkiesele/DeepNtuples/HGCal/Sept2020_19_production_1x1
 '''
 import tensorflow as tf
+from argparse import ArgumentParser
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
@@ -33,8 +34,19 @@ from model_blocks import create_outputs
 from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
 from datastructures import TrainData_OC 
 td=TrainData_OC()
+'''
 
-def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
+'''
+
+def gravnet_model(Inputs, 
+                  beta_loss_scale,
+                  q_min,
+                  use_average_cc_pos,
+                  kalpha_damping_strength
+                  ):
+    
+    feature_dropout=-1.
+    addBackGatherInfo=True,
     
     feat,  t_idx, t_energy, t_pos, t_time, t_pid, row_splits = td.interpretAllModelInputs(Inputs)
     orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid, orig_row_splits = t_idx, t_energy, t_pos, t_time, t_pid, row_splits
@@ -56,8 +68,10 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
     
     #really simple real coordinates
     energy = SelectFeatures(0,1)(feat)
-    orig_coords = SelectFeatures(4,7)(feat_norm)
-    coords = Dense(3, use_bias=False, kernel_initializer=tf.keras.initializers.Identity()  )(orig_coords)#just rotation and scaling
+    orig_coords = SelectFeatures(5,8)(feat)
+    coords = ManualCoordTransform()(orig_coords)
+    coords = BatchNormalization(momentum=0.6)(coords)
+    coords = Dense(3, use_bias=False, kernel_initializer=tf.keras.initializers.Identity()  )(coords)#just rotation and scaling
     
     
     #see whats there
@@ -94,7 +108,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         n_dimensions = 3 #make it plottable
         #derive new coordinates for clustering
         if i:
-            ccoords = Add()([ccoords,(Dense(n_dimensions,use_bias=False,name='newcoords'+str(i),
+            ccoords = Add()([ccoords,ScalarMultiply(0.3)(Dense(n_dimensions,name='newcoords'+str(i),
                                          kernel_initializer='zeros'
                                          )(x))])
             nidx, cdist = KNN(K=6*cluster_neighbours,radius=-1.0)([ccoords,rs]) 
@@ -115,7 +129,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                  loss_enabled=True, 
                  loss_scale = 1., 
                  loss_repulsion=0.4, #.5
-                 hier_transforms=[64,32,32],
+                 hier_transforms=[64,32,32,32],
                  print_loss=True,
                  name='clustering_'+str(i)
                  )([x, cdist, nidx, rs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist, t_idx])
@@ -129,12 +143,12 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
         x = Concatenate()([x_cl,n_energy])
         x = Dense(128, activation='elu',name='dense_clc_a'+str(i))(x)
         x = BatchNormalization(momentum=0.6)(x)
-        #x = Dense(128, activation='elu',name='dense_clc_b'+str(i))(x)
+        x = Dense(128, activation='elu',name='dense_clc_b'+str(i))(x)
         x = Dense(64, activation='elu')(x)
         x = BatchNormalization(momentum=0.6)(x)
         
 
-        nneigh = 64
+        nneigh = 128
         nfilt = 64
         nprop = 64
         
@@ -177,13 +191,12 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
           
         
         
-    x = Concatenate(name='allconcat')(allfeat)
+    x = Concatenate(name='allconcat')(allfeat+energysums)
     x = RaggedGlobalExchange()([x,row_splits])
-    #x - Dropout(0.3)(x)#force to use different information sources
     x = Dense(128, activation='elu', name='alldense')(x)
-    x = BatchNormalization(momentum=0.6)(x)
+    x = RaggedGlobalExchange()([x,row_splits])
     x = Dense(64, activation='elu')(x)
-    #x = Concatenate()([x]+energysums)
+    x = BatchNormalization(momentum=0.6)(x)
     
 
     pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat)
@@ -193,14 +206,14 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                                          energy_loss_weight=1e-1,
                                          position_loss_weight=1e-1,
                                          timing_loss_weight=1e-1,
-                                         beta_loss_scale=1.,
+                                         beta_loss_scale=beta_loss_scale,
                                          repulsion_scaling=1.,
-                                         q_min=2.0,
-                                         use_average_cc_pos=0.,
+                                         q_min=q_min,
+                                         use_average_cc_pos=use_average_cc_pos,
                                          prob_repulsion=True,
                                          phase_transition=1,
                                          alt_potential_norm=True,
-                                         kalpha_damping_strength=0.8,#1.,
+                                         kalpha_damping_strength=kalpha_damping_strength,#1.,
                                          name="FullOCLoss"
                                          )([pred_beta, pred_ccoords, pred_energy, 
                                             pred_pos, pred_time, pred_id,
@@ -218,13 +231,30 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
 
 
 
+parser = ArgumentParser('Run the training')
+parser.add_argument("-b",  help="betascale", default=1., type=float)
+parser.add_argument("-q",  help="qmin", default=2., type=float)
+parser.add_argument("-a",  help="averaging strength", default=0., type=float)
+parser.add_argument("-d",  help="kalpha damp", default=0.8, type=float)
+        
 
-train = training_base(testrun=False, resumeSilently=True, renewtokens=False)
+train = training_base(parser=parser, testrun=False, resumeSilently=True, renewtokens=False)
 
 
 if not train.modelSet():
+    
+    print('>>>>>>>>>>>>>\nsetting parameters to \nbeta_loss_scale',train.args.b)
+    print('q_min',train.args.q)
+    print('use_average_cc_pos',train.args.a)
+    print('kalpha_damping_strength',train.args.d)
+    print('<<<<<<<<<<<<<')
 
-    train.setModel(gravnet_model)
+    train.setModel(gravnet_model,
+                   beta_loss_scale = train.args.b,
+                   q_min = train.args.q,
+                   use_average_cc_pos = train.args.a,
+                   kalpha_damping_strength = train.args.d
+                   )
     train.setCustomOptimizer(tf.keras.optimizers.Nadam())
 
     train.compileModel(learningrate=1e-4,
@@ -280,7 +310,7 @@ cb += [
     ]
 
 learningrate = 2e-3
-nbatch = 150000 #quick first training with simple examples = low # hits
+nbatch = 100000 #quick first training with simple examples = low # hits
 
 train.compileModel(learningrate=learningrate,
                           loss=None,
