@@ -7,6 +7,13 @@ import time
 from oc_helper_ops import CreateMidx, SelectWithDefault
 
 
+
+def huber(x, d):
+    losssq  = x**2   
+    absx = tf.abs(x)                
+    losslin = d**2 + 2. * d * (absx - d)
+    return tf.where(absx < d, losssq, losslin)
+
 def remove_zero_length_elements_from_ragged_tensors(row_splits):
     lengths = row_splits[1:] - row_splits[:-1]
     row_splits = tf.concat(([0], tf.cumsum(tf.gather_nd(lengths, tf.where(tf.not_equal(lengths, 0))))), axis=0)
@@ -108,7 +115,7 @@ def oc_per_batch_element(
     #q = tf.where(beta_in<1.-1e-4, q, tf.math.atanh(1.-1e-4)**2 + q_min + beta_in) #just give the rest above clip a gradient
     
     N = tf.cast(beta.shape[0], dtype='float32')
-    is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32'), 1.)#V x 1
+    is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32')+1., 0.)#V x 1
     
     Msel, M_not, N_per_obj = CreateMidx(truth_idx, calc_m_not=True)
     
@@ -139,7 +146,8 @@ def oc_per_batch_element(
     object_weights_kalpha_m = tf.gather_nd(object_weights_m,kalpha_m, batch_dims=1) # K x 1
     
     distancesq_m = tf.reduce_sum( (tf.expand_dims(x_kalpha_m, axis=1) - x_m)**2, axis=-1, keepdims=True) #K x V-obj x 1
-    V_att = q_m * tf.expand_dims(q_kalpha_m,axis=1) * distancesq_m #K x V-obj x 1
+    huberdistsq = huber(tf.sqrt(distancesq_m + 1e-5), d=4) #acts at 4
+    V_att = q_m * tf.expand_dims(q_kalpha_m,axis=1) * huberdistsq #K x V-obj x 1
     V_att = V_att * tf.expand_dims(object_weights_kalpha_m,axis=1) #K x V-obj x 1
     
     V_att = tf.math.divide_no_nan(tf.reduce_sum(padmask_m * V_att,axis=1), N_per_obj+1e-9) # K x 1
@@ -186,7 +194,7 @@ def oc_per_batch_element(
     if cut_payload_beta_gradient:
         p_w = tf.stop_gradient(p_w)
         
-    payload_loss_m = p_w * SelectWithDefault(Msel, payload_loss, 0.) #K x V_perobj x P
+    payload_loss_m = p_w * SelectWithDefault(Msel, (1.-is_noise)*payload_loss, 0.) #K x V_perobj x P
     payload_loss_m = tf.reduce_sum(payload_loss_m, axis=1)
     
     pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj+1e-9) # K x P
