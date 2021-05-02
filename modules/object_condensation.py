@@ -83,8 +83,10 @@ def oc_per_batch_element(
         phase_transition=False,
         phase_transition_double_weight=False,
         alt_potential_norm=False,
-        cut_payload_beta_gradient=False,
-        kalpha_damping_strength=0.
+        payload_beta_gradient_damping_strength=0.,
+        kalpha_damping_strength=0.,
+        beta_gradient_damping=0.,
+        soft_q_scaling=True
         ):
     '''
     all inputs
@@ -107,10 +109,16 @@ def oc_per_batch_element(
         
     
     #set all spectators invalid here, everything scales with beta, so:
+    if beta_gradient_damping > 0.:
+        beta = beta_gradient_damping * tf.stop_gradient(beta) + (1. - beta_gradient_damping)*beta
     beta_in = beta
     beta = tf.clip_by_value(beta, 0.,1.-1e-4)
     beta *= (1. - is_spectator)
     qraw = tf.math.atanh(beta)**2 
+    if soft_q_scaling:
+        qraw = beta_in**4 *(1.+10.*q_min)
+        beta = beta_in*(1. - is_spectator) # no need for clipping
+    
     q = qraw + q_min * (1. - is_spectator) # V x 1
     #q = tf.where(beta_in<1.-1e-4, q, tf.math.atanh(1.-1e-4)**2 + q_min + beta_in) #just give the rest above clip a gradient
     
@@ -187,18 +195,20 @@ def oc_per_batch_element(
     
     #explicit payload weight function here, the old one was odd
     
-    p_w = tf.math.atanh(padmask_m * tf.clip_by_value(beta_m, 1e-4, 1.-1e-4))**2 #already zero-padded  , K x V_perobj x 1
-    p_w = tf.math.divide_no_nan(p_w, tf.reduce_max(p_w, axis=1, keepdims=True)+1e-9) 
+    #too aggressive scaling is bad for high learning rates. Move to simple x^4
+    p_w = padmask_m * tf.clip_by_value(beta_m**2, 1e-6,10.) #already zero-padded  , K x V_perobj x 1
     #normalise to maximum; this + 1e-9 might be an issue POSSIBLE FIXME
     
-    if cut_payload_beta_gradient:
-        p_w = tf.stop_gradient(p_w)
+    if payload_beta_gradient_damping_strength > 0:
+        p_w = payload_beta_gradient_damping_strength * tf.stop_gradient(p_w) + \
+        (1.- payload_beta_gradient_damping_strength)* p_w
         
     payload_loss_m = p_w * SelectWithDefault(Msel, (1.-is_noise)*payload_loss, 0.) #K x V_perobj x P
-    payload_loss_m = tf.reduce_sum(payload_loss_m, axis=1)
+    payload_loss_m = object_weights_kalpha_m * tf.reduce_sum(payload_loss_m, axis=1) 
+    payload_loss_m = tf.math.divide_no_nan(payload_loss_m, tf.reduce_sum(p_w, axis=1))
     
-    pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj+1e-9) # K x P
-    pll = tf.math.divide_no_nan(tf.reduce_sum(pll,axis=0), K+1e-9) # P
+    #pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj+1e-9) # K x P #really?
+    pll = tf.math.divide_no_nan(tf.reduce_sum(payload_loss_m,axis=0), K+1e-9) # P
     
     return V_att, V_rep, Noise_pen, B_pen, pll, too_much_B_pen
 
@@ -248,7 +258,7 @@ def oc_per_batch_element_old(
     
     obj_ids = tf.expand_dims(obj_ids, axis=1) #K x 1
     
-    is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32'), 1.)#V x 1
+    is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32')+1., 0.)#V x 1
     N_nonoise = N - tf.cast(tf.math.count_nonzero(is_noise), dtype='float32') #()
     
     M = tf.expand_dims(obj_ids, axis=1) - tf.expand_dims(truth_idx, axis=0) # K x V x 1
@@ -391,7 +401,7 @@ def oc_loss(
         phase_transition=False,
         phase_transition_double_weight=False,
         alt_potential_norm=False,
-        cut_payload_beta_gradient=False,
+        payload_beta_gradient_damping_strength=0.,
         kalpha_damping_strength=0.
         ):   
     
@@ -426,7 +436,7 @@ def oc_loss(
             phase_transition=phase_transition,
             phase_transition_double_weight=phase_transition_double_weight,
             alt_potential_norm=alt_potential_norm,
-            cut_payload_beta_gradient=cut_payload_beta_gradient,
+            payload_beta_gradient_damping_strength=payload_beta_gradient_damping_strength,
             kalpha_damping_strength=kalpha_damping_strength
             )
         V_att += att

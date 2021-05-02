@@ -42,7 +42,8 @@ def gravnet_model(Inputs,
                   beta_loss_scale,
                   q_min,
                   use_average_cc_pos,
-                  kalpha_damping_strength
+                  kalpha_damping_strength,
+                  batchnorm_momentum=0.9999 #that's actually the damping factor. High -> slow
                   ):
     
     feature_dropout=-1.
@@ -56,7 +57,7 @@ def gravnet_model(Inputs,
     rs = row_splits
     
     feat_norm = ProcessFeatures()(feat)
-    feat_norm = BatchNormalization(momentum=0.6)(feat_norm)
+    #feat_norm = BatchNormalization(momentum=batchnorm_momentum)(feat_norm)
     allfeat=[]
     x = feat_norm
     
@@ -70,25 +71,22 @@ def gravnet_model(Inputs,
     energy = SelectFeatures(0,1)(feat)
     orig_coords = SelectFeatures(5,8)(feat)
     coords = ManualCoordTransform()(orig_coords)
-    coords = BatchNormalization(momentum=0.6)(coords)
     coords = Dense(3, use_bias=False, kernel_initializer=tf.keras.initializers.Identity()  )(coords)#just rotation and scaling
     
     
     #see whats there
     nidx, dist = KNN(K=64,radius=1.0)([coords,rs])
     
-    x = RaggedGlobalExchange()([x,row_splits])
     x_c = Dense(32,activation='elu')(x)
     x_c = Dense(8)(x_c) #just a few features are enough here
     #this can be full blown because of the small number of input features
-    x_c = NeighbourApproxPCA(hidden_nodes=[32,32,9])([coords,dist,x_c,nidx])
+    x_c = NeighbourApproxPCA()([coords,dist,x_c,nidx])
     x_mp = DistanceWeightedMessagePassing([32,16,8])([x,nidx,dist])
     x = Concatenate()([x,x_c,x_mp])
     #this is going to be among the most expensive operations:
     x = Dense(64, activation='elu',name='pre_dense_a')(x)
-    x = BatchNormalization(momentum=0.6)(x)
-    x = Dense(32, activation='elu',name='pre_dense_b')(x)
-    x = BatchNormalization(momentum=0.6)(x)
+    x = Dense(32, activation='selu',name='pre_dense_b')(x)
+    x = BatchNormalization(momentum=batchnorm_momentum)(x)
     
     allfeat.append(x)
     backgathered_coords.append(coords)
@@ -125,12 +123,12 @@ def gravnet_model(Inputs,
         x_cl, rs, bidxs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist = LocalClusterReshapeFromNeighbours2(
                  K=cluster_neighbours, 
                  radius=0.1, 
-                 print_reduction=True, 
+                 print_reduction=False, 
                  loss_enabled=True, 
                  loss_scale = 1., 
                  loss_repulsion=0.4, #.5
                  hier_transforms=[64,32,32,32],
-                 print_loss=True,
+                 print_loss=False,
                  name='clustering_'+str(i)
                  )([x, cdist, nidx, rs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist, t_idx])
         
@@ -138,14 +136,14 @@ def gravnet_model(Inputs,
         
         #explicit
         energy = ReduceSumEntirely()(energy)#sums up all contained energy per cluster
-        n_energy = BatchNormalization(momentum=0.6)(energy)
+        #n_energy = BatchNormalization(momentum=batchnorm_momentum)(energy)
                  
-        x = Concatenate()([x_cl,n_energy])
+        x = x_cl #Concatenate()([x_cl,n_energy])
         x = Dense(128, activation='elu',name='dense_clc_a'+str(i))(x)
-        x = BatchNormalization(momentum=0.6)(x)
+        #x = BatchNormalization(momentum=batchnorm_momentum)(x)
         x = Dense(128, activation='elu',name='dense_clc_b'+str(i))(x)
-        x = Dense(64, activation='elu')(x)
-        x = BatchNormalization(momentum=0.6)(x)
+        x = Dense(64, activation='selu')(x)
+        x = BatchNormalization(momentum=batchnorm_momentum)(x)
         
 
         nneigh = 128
@@ -164,20 +162,20 @@ def gravnet_model(Inputs,
         x_sp = NeighbourApproxPCA(hidden_nodes=[32,32,n_dimensions**2])([coords,
                                                                          dist,
                                                                          x_sp,nidx])
-        x_sp = BatchNormalization(momentum=0.6)(x_sp)
+        x_sp = BatchNormalization(momentum=batchnorm_momentum)(x_sp)
         
         x_mp = DistanceWeightedMessagePassing([32,32,16,16,8,8])([x,nidx,dist])
-        x_mp = BatchNormalization(momentum=0.6)(x_mp)
+        #x_mp = BatchNormalization(momentum=batchnorm_momentum)(x_mp)
         #x_sp=x_mp
         
         x = Concatenate()([x,x_mp,x_sp,x_gn])
         #check and compress it all                                      
         x = Dense(128, activation='elu',name='dense_a_'+str(i))(x)  
-        x = BatchNormalization(momentum=0.6)(x)    
+        #x = BatchNormalization(momentum=batchnorm_momentum)(x)    
         #x = Dense(128, activation='elu',name='dense_b_'+str(i))(x)
-        x = Dense(64, activation='elu',name='dense_c_'+str(i))(x)
+        x = Dense(64, activation='selu',name='dense_c_'+str(i))(x)
         x = Concatenate()([StopGradient()(ccoords),StopGradient()(cdist),x])
-        x = BatchNormalization(momentum=0.6)(x)
+        x = BatchNormalization(momentum=batchnorm_momentum)(x)
         
          
         #record more and more the deeper we go
@@ -191,12 +189,12 @@ def gravnet_model(Inputs,
           
         
         
-    x = Concatenate(name='allconcat')(allfeat+energysums)
-    x = RaggedGlobalExchange()([x,row_splits])
+    x = Concatenate(name='allconcat')(allfeat)
+    x = Concatenate()([x]+energysums)
     x = Dense(128, activation='elu', name='alldense')(x)
     x = RaggedGlobalExchange()([x,row_splits])
-    x = Dense(64, activation='elu')(x)
-    x = BatchNormalization(momentum=0.6)(x)
+    x = Dense(64, activation='selu')(x)
+    x = BatchNormalization(momentum=batchnorm_momentum)(x)
     
 
     pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat)
@@ -212,7 +210,9 @@ def gravnet_model(Inputs,
                                          use_average_cc_pos=use_average_cc_pos,
                                          prob_repulsion=True,
                                          phase_transition=1,
+                                         huber_energy_scale = 3,
                                          alt_potential_norm=True,
+                                         payload_beta_gradient_damping_strength=0.,
                                          kalpha_damping_strength=kalpha_damping_strength,#1.,
                                          name="FullOCLoss"
                                          )([pred_beta, pred_ccoords, pred_energy, 
@@ -233,9 +233,9 @@ def gravnet_model(Inputs,
 
 parser = ArgumentParser('Run the training')
 parser.add_argument("-b",  help="betascale", default=1., type=float)
-parser.add_argument("-q",  help="qmin", default=2., type=float)
-parser.add_argument("-a",  help="averaging strength", default=0., type=float)
-parser.add_argument("-d",  help="kalpha damp", default=0.8, type=float)
+parser.add_argument("-q",  help="qmin", default=1., type=float)
+parser.add_argument("-a",  help="averaging strength", default=0.1, type=float)
+parser.add_argument("-d",  help="kalpha damp", default=0., type=float)
         
 
 train = training_base(parser=parser, testrun=False, resumeSilently=True, renewtokens=False)
@@ -277,11 +277,11 @@ cb = [plotClusteringDuringTraining(
            use_backgather_idx=7+i,
            outputfile=train.outputDir + "/plts/sn"+str(i)+'_',
            samplefile=  samplepath,
-           after_n_batches=plot_after_batches,
+           after_n_batches=4*plot_after_batches,
            on_epoch_end=False,
            publish=publishpath+"_cl_"+str(i),
            use_event=0) 
-    for i in [4,5]]
+    for i in [4]]
 
 cb += [   
     plotEventDuringTraining(
@@ -299,7 +299,7 @@ cb += [
     plotGravNetCoordsDuringTraining(
             outputfile=train.outputDir + "/coords_"+str(i)+"/coord_"+str(i),
             samplefile=samplepath,
-            after_n_batches=plot_after_batches,
+            after_n_batches=4*plot_after_batches,
             batchsize=200000,  
             on_epoch_end=False,
             publish = publishpath+"_event_"+ str(0),
@@ -309,15 +309,14 @@ cb += [
     for i in  range(12,18) #between 16 and 21
     ]
 
-learningrate = 2e-3
+learningrate = 1e-3
 nbatch = 100000 #quick first training with simple examples = low # hits
 
 train.compileModel(learningrate=learningrate,
                           loss=None,
                           metrics=None,
-                          #clipnorm=0.01
+                          clipnorm=0.001
                           )
-
 
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
@@ -326,7 +325,7 @@ model, history = train.trainModel(nepochs=1,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
-                                  backup_after_batches=100,
+                                  backup_after_batches=500,
                                   additional_callbacks=
                                   [CyclicLR (base_lr = learningrate/3.,
                                   max_lr = learningrate,
@@ -334,12 +333,13 @@ model, history = train.trainModel(nepochs=1,
 
 print("freeze BN")
 for l in train.keras_model.layers:
-    if 'FullOCLoss' in l.name:
-        pass #loss changes
+    if 'atch_norm' in l.name:
+        print('freezing', l.name)
+        l.trainable=False #loss changes
         
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=10.
-nbatch = 180000
+nbatch = 110000
 
 train.compileModel(learningrate=learningrate,
                           loss=None,

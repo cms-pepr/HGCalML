@@ -120,7 +120,8 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
             
             shuffle_truth_colors(df)
             
-            fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", color="truthHitAssignementIdx", size="recHitLogEnergy",
+            fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", 
+                                color="truthHitAssignementIdx", size="recHitLogEnergy",
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
@@ -172,6 +173,10 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             truths = td.createTruthDict(truth[0])
             
             predBeta = predicted[0]
+            
+            print('>>>> plotting cluster coordinates... average beta',np.mean(predBeta), ' lowest beta ', 
+                  np.min(predBeta), 'highest beta', np.max(predBeta))
+            
             predCCoords = predicted[1]
             if not predCCoords.shape[-1] == 3:
                 return #just for 3D ccoords
@@ -180,6 +185,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             predEnergy = predicted[2]
             predX = predicted[3][:,0:1]
             predY = predicted[3][:,1:2]
+            predT = predicted[4]
             
             data = {}
             data.update(feats)
@@ -195,6 +201,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             data['predEnergy'] = predEnergy
             data['predX']=predX
             data['predY']=predY
+            data['predT']=predT
             data['(predBeta+0.05)**2'] = data['predBeta+0.05']**2
             data['(thresh(predBeta)+0.05))**2'] = np.where(predBeta>self.beta_threshold ,data['(predBeta+0.05)**2'], 0.)
             
@@ -207,10 +214,16 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             #fig.write_html(self.outputfile + str(self.keep_counter) + "_truth.html")
             shuffle_truth_colors(df)
             #now the cluster indices
+            
+            hover_data=['predBeta','predEnergy','truthHitAssignedEnergies',
+                        'predT','truthHitAssignedT',
+                        'predX', 'truthHitAssignedX',
+                        'predY', 'truthHitAssignedY',
+                        'truthHitAssignementIdx']
+            
             fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
-                                hover_data=['predBeta','predEnergy', 'predX', 'predY', 'truthHitAssignementIdx', 
-                                            'truthHitAssignedEnergies', 'truthHitAssignedX','truthHitAssignedY'],
+                                hover_data=hover_data,
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
@@ -223,8 +236,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             
             fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
                                 color="truthHitAssignementIdx", size="(predBeta+0.05)**2",
-                                hover_data=['predBeta','predEnergy', 'predX', 'predY', 'truthHitAssignementIdx', 
-                                            'truthHitAssignedEnergies', 'truthHitAssignedX','truthHitAssignedY'],
+                                hover_data=hover_data,
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))

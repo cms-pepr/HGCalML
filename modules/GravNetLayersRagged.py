@@ -94,7 +94,13 @@ class ProcessFeatures(tf.keras.layers.Layer):
         allf = []
         for k in fdict:
             allf.append(fdict[k])
-        return tf.concat(allf,axis=-1)
+        feat = tf.concat(allf,axis=-1)
+        
+        mean = tf.constant([[0.0740814656, 2.46156192, 0., 2.95798588, 3.55599976, 0.0609507263, -0.00401970092, -0.515379727, 0.0874295086]])
+        std =  tf.constant([[0.299679846, 0.382687777, 1., 0.0780506283, 0.250777304, 0.485394388, 0.518072903, 0.240222782, 0.194716245]   ])
+        feat -= mean
+        feat /= std
+        return feat
     
 
 
@@ -129,7 +135,9 @@ class ManualCoordTransform(tf.keras.layers.Layer):
         newx = tf.math.cos(phi)*r
         newy = tf.math.sin(phi)*r
         
-        return tf.concat([newx,newy,newz],axis=-1)
+        coords = tf.concat([newx,newy,newz],axis=-1)
+        coords /= tf.constant([[262.897095, 246.292236, 0.422947705]])
+        return coords
         
 
     
