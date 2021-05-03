@@ -13,7 +13,8 @@ from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropou
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
-
+from tensorboard_manager import TensorBoardManager
+from running_plots import RunningEfficiencyFakeRateCallback
 
 from DeepJetCore.modeltools import fixLayersContaining
 # from tensorflow.keras.models import load_model
@@ -30,7 +31,7 @@ from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs
 
-from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing
+from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, ExtendedMetricsModel
 from datastructures import TrainData_OC 
 td=TrainData_OC()
 
@@ -207,7 +208,7 @@ def gravnet_model(Inputs, feature_dropout=-1., addBackGatherInfo=True):
                                             orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid,
                                             row_splits])
 
-    return Model(inputs=Inputs, outputs=[pred_beta, 
+    return ExtendedMetricsModel(inputs=Inputs, outputs=[pred_beta,
                                          pred_ccoords,
                                          pred_energy, 
                                          pred_pos, 
@@ -278,6 +279,11 @@ cb += [
             )
     for i in  range(12,18) #between 16 and 21
     ]
+
+cb = []
+os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
+tensorboard_manager = TensorBoardManager(train.outputDir + "/summary/")
+cb += [RunningEfficiencyFakeRateCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5)]
 
 learningrate = 3e-3
 nbatch = 100000 #quick first training with simple examples = low # hits
