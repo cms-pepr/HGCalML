@@ -225,21 +225,22 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
     
     feat = td.createFeatureDict(feat)
     
-    pred_beta = Dense(1, activation='sigmoid')(x)
+    pred_beta = Dense(1, activation='sigmoid',use_bias=False)(x)
     pred_ccoords = Dense(n_ccoords,
                          #this initialisation is much better than standard glorot
-                         kernel_initializer=tf.keras.initializers.RandomNormal(mean=0., stddev=1./float(x.shape[-1])),
-                         use_bias=False)(x) #bias has no effect
+                         kernel_initializer=tf.keras.initializers.RandomNormal(mean=0., stddev=10./float(x.shape[-1])),
+                         use_bias=False
+                         )(x) #bias has no effect
     
-    pred_energy = ScalarMultiply(10.)(Dense(1)(x))
+    pred_energy = ScalarMultiply(10.)(Dense(1,use_bias=False)(x))
     if energy is not None:
         pred_energy = Multiply()([pred_energy,energy])
         
-    pred_pos =  Dense(2)(x)
-    pred_time = ScalarMultiply(10.)(Dense(1)(x))
+    pred_pos =  Dense(2,use_bias=False)(x)
+    pred_time = ScalarMultiply(10.)(Dense(1,use_bias=False)(x))
+    
     if add_features:
         pred_pos =  Add()([feat['recHitXY'],pred_pos])
-        pred_time = Add()([feat['recHitTime'],pred_time])
     pred_id = Dense(n_classes, activation="softmax")(x)
     
     return pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
