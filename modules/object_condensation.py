@@ -196,7 +196,7 @@ def oc_per_batch_element(
     #explicit payload weight function here, the old one was odd
     
     #too aggressive scaling is bad for high learning rates. Move to simple x^4
-    p_w = padmask_m * tf.clip_by_value(beta_m**2, 1e-6,10.) #already zero-padded  , K x V_perobj x 1
+    p_w = padmask_m * tf.clip_by_value(beta_m**2, 1e-3,10.) #already zero-padded  , K x V_perobj x 1
     #normalise to maximum; this + 1e-9 might be an issue POSSIBLE FIXME
     
     if payload_beta_gradient_damping_strength > 0:
@@ -208,7 +208,7 @@ def oc_per_batch_element(
     payload_loss_m = tf.math.divide_no_nan(payload_loss_m, tf.reduce_sum(p_w, axis=1))
     
     #pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj+1e-9) # K x P #really?
-    pll = tf.math.divide_no_nan(tf.reduce_sum(payload_loss_m,axis=0), K+1e-9) # P
+    pll = tf.math.divide_no_nan(tf.reduce_sum(payload_loss_m,axis=0), K+1e-3) # P
     
     return V_att, V_rep, Noise_pen, B_pen, pll, too_much_B_pen
 
@@ -233,7 +233,8 @@ def oc_loss(
         phase_transition_double_weight=False,
         alt_potential_norm=False,
         payload_beta_gradient_damping_strength=0.,
-        kalpha_damping_strength=0.
+        kalpha_damping_strength=0.,
+        beta_gradient_damping=0.
         ):   
     
     if energyweights is None:
@@ -268,7 +269,9 @@ def oc_loss(
             phase_transition_double_weight=phase_transition_double_weight,
             alt_potential_norm=alt_potential_norm,
             payload_beta_gradient_damping_strength=payload_beta_gradient_damping_strength,
-            kalpha_damping_strength=kalpha_damping_strength
+            kalpha_damping_strength=kalpha_damping_strength,
+            beta_gradient_damping=beta_gradient_damping
+            
             )
         V_att += att
         V_rep += rep

@@ -395,6 +395,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  kalpha_damping_strength=0.,
                  cc_damping_strength=0.001,
                  standard_configuration=None,
+                 beta_gradient_damping=0.,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -472,6 +473,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.payload_beta_clip = payload_beta_clip
         self.kalpha_damping_strength = kalpha_damping_strength
         self.cc_damping_strength = cc_damping_strength
+        self.beta_gradient_damping=beta_gradient_damping
         self.loc_time=time.time()
         
         assert kalpha_damping_strength >= 0. and kalpha_damping_strength <= 1.
@@ -504,14 +506,14 @@ class LLFullObjectCondensation(LossLayerBase):
     def calc_position_loss(self, t_pos, pred_pos):
         if not self.position_loss_weight:
             t_pos = 0.
-        
-        return tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) #is in cm
+        #reduce risk of NaNs
+        return huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) + 1e-2), 10.) #is in cm
     
     def calc_timing_loss(self, t_time, pred_time):
         if not self.timing_loss_weight:
             return pred_time**2
         
-        return (t_time - pred_time)**2 #rechit time is in ns, true time in s
+        return huber((t_time - pred_time),2.) #rechit time is in ns, true time in s
     
     def calc_classification_loss(self, t_pid, pred_id):
         '''
@@ -583,7 +585,8 @@ class LLFullObjectCondensation(LossLayerBase):
                                            phase_transition_double_weight = self.phase_transition_double_weight,
                                            alt_potential_norm=self.alt_potential_norm,
                                            payload_beta_gradient_damping_strength=self.payload_beta_gradient_damping_strength,
-                                           kalpha_damping_strength = self.kalpha_damping_strength
+                                           kalpha_damping_strength = self.kalpha_damping_strength,
+                                           beta_gradient_damping=self.beta_gradient_damping
                                            )
 
         
@@ -675,7 +678,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'payload_beta_gradient_damping_strength': self.payload_beta_gradient_damping_strength,
             'payload_beta_clip' : self.payload_beta_clip,
             'kalpha_damping_strength' : self.kalpha_damping_strength,
-            'cc_damping_strength' : self.cc_damping_strength
+            'cc_damping_strength' : self.cc_damping_strength,
+            'beta_gradient_damping': self.beta_gradient_damping
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
