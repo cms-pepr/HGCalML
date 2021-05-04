@@ -45,10 +45,6 @@ class Worker(threading.Thread):
 
                 response, sum_response = graph_functions.compute_response_mean(pred_sid, truth_sid, rechit_energy, truth_energy, pred_energy, beta)
 
-                print("\n\nY test start")
-                print("XYZ", response, sum_response, eff, fake_rate)
-                print("Y test end\n\n")
-
             dic = dict()
             dic['efficiency'] = eff
             dic['fake_rate'] = fake_rate
@@ -71,7 +67,7 @@ class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
 
     def add(self, data):
         if self.q.empty():
-            print("Putting on")
+            # print("Putting on")
             self.q.put(data)
 
     def on_train_batch_end(self, batch, logs=None):
