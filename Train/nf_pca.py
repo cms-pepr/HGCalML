@@ -32,7 +32,7 @@ from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs
 
-from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, ExtendedMetricsModel
+from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, ExtendedMetricsModel, RobustModel
 from datastructures import TrainData_OC 
 td=TrainData_OC()
 '''
@@ -221,7 +221,7 @@ def gravnet_model(Inputs,
                                             orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid,
                                             row_splits])
 
-    return ExtendedMetricsModel(inputs=Inputs, outputs=[pred_beta,
+    return RobustModel(inputs=Inputs, outputs=[pred_beta,
                                          pred_ccoords,
                                          pred_energy, 
                                          pred_pos, 

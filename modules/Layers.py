@@ -6,6 +6,7 @@ global_layers_list = {}
 from LayersRagged import *
 from GravNetLayersRagged import GooeyBatchNorm,LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
+import traceback
 
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -409,4 +410,70 @@ class ExtendedMetricsModel(tf.keras.Model):
 
         return ret_dict
 
+class RobustModel(tf.keras.Model):
+    def __init__(self, skip_non_finite=5, *args, **kwargs):
+        """
+
+        :param skip_non_finite: Number of consecutive times to skip nans/inf loss and gradient values
+        :param args: For subclass Model
+        :param kwargs:  For subclass Model
+        """
+        super(RobustModel, self).__init__(*args, **kwargs)
+        self.skip_non_finite = skip_non_finite
+        self.non_finite_count = 0
+
+    def train_step(self, data):
+        # Unpack the data. Its structure depends on your model and
+        # on what you pass to `fit()`.
+        x, y = data
+
+
+        is_valid = True
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)  # Forward pass
+            # Compute the loss value
+            # (the loss function is configured in `compile()`)
+            try:
+                loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+            except Exception as e:
+                is_valid = False
+                traceback.print_stack()
+
+        # Compute gradients
+        trainable_vars = self.trainable_variables
+
+        is_valid = is_valid and bool(tf.math.is_finite(loss))
+        gradients = tape.gradient(loss, trainable_vars)
+        is_valid = is_valid and not bool(tf.reduce_any([_grad is None for _grad in gradients]))
+
+        if is_valid:
+            num_non_finite_tensors = float(tf.reduce_sum(tf.cast([tf.reduce_any(tf.math.logical_not(tf.math.is_finite(_grad))) for _grad in gradients], tf.float32)))
+            is_valid = is_valid and num_non_finite_tensors == 0.0
+
+        if is_valid:
+            self.non_finite_count = 0
+            # Update weights
+            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        else:
+            if self.non_finite_count < self.skip_non_finite:
+                print("\n\nWARNING: loss or gradient is not finite or error in loss. Got loss = %f\nSkipping optimizer step %d/%d\n\n" % (float(loss), self.non_finite_count+1, self.skip_non_finite))
+            else:
+                print("\n\nERROR: loss or gradient is not finite or error in loss. Got loss = %f\nThrowing exception.\n\n" % float(loss))
+                raise RuntimeError("Loss or gradient is not finite")
+
+            self.non_finite_count += 1
+
+        # Update metrics (includes the metric that tracks the loss)
+        self.compiled_metrics.update_state(y, y_pred)
+        # Return a dict mapping metric names to current value
+
+        ret_dict = {m.name: m.result() for m in self.metrics}
+
+        ret_dict['x'] = x
+        ret_dict['y_pred'] = y_pred
+
+        return ret_dict
+
+
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel
+global_layers_list['RobustModel']=RobustModel
