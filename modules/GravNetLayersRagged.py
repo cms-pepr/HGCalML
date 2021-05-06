@@ -23,6 +23,85 @@ def check_type_return_shape(s):
 ############# Some layers for convenience ############
 
 
+class GooeyBatchNorm(tf.keras.layers.Layer):
+    def __init__(self,
+                 viscosity=0.8,
+                 fluidity_decay=1e-4,
+                 max_viscosity=1.-1e-6,
+                 epsilon=1e-4,
+                 **kwargs):
+        super(GooeyBatchNorm, self).__init__(**kwargs)
+        
+        assert viscosity >= 0 and viscosity <= 1.
+        assert fluidity_decay >= 0 and fluidity_decay <= 1.
+        assert max_viscosity >= viscosity
+        
+        self.fluidity_decay = fluidity_decay
+        self.max_viscosity = max_viscosity
+        self.viscosity_init = viscosity
+        self.epsilon = epsilon
+        
+    def get_config(self):
+        config = {'viscosity': self.viscosity_init,
+                  'fluidity_decay': self.fluidity_decay,
+                  'max_viscosity': self.max_viscosity,
+                  'epsilon': self.epsilon
+                  }
+        base_config = super(GooeyBatchNorm, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+ 
+    def compute_output_shape(self, input_shapes):
+        #return input_shapes[0]
+        return input_shapes
+    
+    
+    def build(self, input_shapes):
+        
+        #shape = (1,)+input_shapes[0][1:]
+        shape = (1,)+input_shapes[1:]
+        
+        self.mean = self.add_weight(name = 'mean',shape = shape, 
+                                    initializer = 'zeros', trainable = False) 
+        
+        self.variance = self.add_weight(name = 'variance',shape = shape, 
+                                    initializer = 'ones', trainable = False) 
+        
+        self.viscosity = tf.Variable(initial_value=self.viscosity_init, 
+                                         name='viscosity',
+                                         trainable=False,dtype='float32')
+            
+        super(GooeyBatchNorm, self).build(input_shapes)
+    
+
+    def call(self, inputs, training=None):
+        #x, _ = inputs
+        x = inputs
+        
+        #update only if trainable flag is set, AND in training mode
+        if self.trainable:
+            newmean = tf.reduce_mean(x,axis=0,keepdims=True) #FIXME
+            newmean = (1. - self.viscosity)*newmean + self.viscosity*self.mean
+            updated_mean = tf.keras.backend.in_train_phase(newmean,self.mean,training=training)
+            tf.keras.backend.update(self.mean,updated_mean)
+            
+            newvar = tf.math.reduce_std(x-self.mean,axis=0,keepdims=True) #FIXME
+            newvar = (1. - self.viscosity)*newvar + self.viscosity*self.variance
+            updated_var = tf.keras.backend.in_train_phase(newvar,self.variance,training=training)
+            tf.keras.backend.update(self.variance,updated_var)
+            
+            #increase viscosity
+            if self.fluidity_decay > 0:
+                newvisc = self.viscosity + (self.max_viscosity - self.viscosity)*self.fluidity_decay
+                newvisc = tf.keras.backend.in_train_phase(newvisc,self.viscosity,training=training)
+                tf.keras.backend.update(self.viscosity,newvisc)
+        
+        #apply
+        x -= self.mean
+        x = tf.math.divide_no_nan(x, self.variance + self.epsilon)
+        
+        return x
+
+
 class NormalizeInputShapes(tf.keras.layers.Layer):
     def __init__(self,
                  **kwargs):

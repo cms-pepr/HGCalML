@@ -4,7 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import GooeyBatchNorm,LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
 
@@ -83,6 +83,7 @@ global_layers_list['NeighbourApproxPCA']=NeighbourApproxPCA
 global_layers_list['EdgeConvStatic']=EdgeConvStatic
 global_layers_list['ManualCoordTransform']=ManualCoordTransform
 
+global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
 
 
 
