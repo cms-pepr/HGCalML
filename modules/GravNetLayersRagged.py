@@ -26,9 +26,10 @@ def check_type_return_shape(s):
 class GooeyBatchNorm(tf.keras.layers.Layer):
     def __init__(self,
                  viscosity=0.8,
-                 fluidity_decay=1e-4,
+                 fluidity_decay=5e-4,
                  max_viscosity=1.-1e-6,
                  epsilon=1e-4,
+                 print_viscosity=False,
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
         
@@ -40,12 +41,14 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
         self.max_viscosity = max_viscosity
         self.viscosity_init = viscosity
         self.epsilon = epsilon
+        self.print_viscosity = print_viscosity
         
     def get_config(self):
         config = {'viscosity': self.viscosity_init,
                   'fluidity_decay': self.fluidity_decay,
                   'max_viscosity': self.max_viscosity,
-                  'epsilon': self.epsilon
+                  'epsilon': self.epsilon,
+                  'print_viscosity': self.print_viscosity
                   }
         base_config = super(GooeyBatchNorm, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -94,6 +97,8 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
                 newvisc = self.viscosity + (self.max_viscosity - self.viscosity)*self.fluidity_decay
                 newvisc = tf.keras.backend.in_train_phase(newvisc,self.viscosity,training=training)
                 tf.keras.backend.update(self.viscosity,newvisc)
+                if self.print_viscosity:
+                    tf.print(self.name, 'viscosity',newvisc)
         
         #apply
         x -= self.mean

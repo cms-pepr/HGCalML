@@ -204,157 +204,6 @@ class LLLocalClusterCoordinates(LossLayerBase):
 
 
 
-class LLObjectCondensation(LossLayerBase):
-    '''
-    Cluster using truth index and coordinates
-    '''
-
-    def __init__(self, *, energy_loss_weight=1., use_energy_weights=False, q_min=0.5, no_beta_norm=False,
-                 potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
-                 classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
-                 use_average_cc_pos=False, payload_rel_threshold=0.1, rel_energy_mse=False, smooth_rep_loss=False,
-                 pre_train=False, huber_energy_scale=2., downweight_low_energy=True, n_ccoords=2, energy_den_offset=1.,
-                 noise_scaler=1., too_much_beta_scale=0.1, cont_beta_loss=False, log_energy=False, n_classes=0,
-                 standard_configuration=None,
-                 **kwargs):
-        """
-        Read carefully before changing parameters
-
-        :param energy_loss_weight:
-        :param use_energy_weights:
-        :param q_min:
-        :param no_beta_norm:
-        :param potential_scaling:
-        :param repulsion_scaling:
-        :param s_b:
-        :param position_loss_weight:
-        :param classification_loss_weight:
-        :param timing_loss_weight:
-        :param use_spectators:
-        :param beta_loss_scale:
-        :param use_average_cc_pos:
-        :param payload_rel_threshold:
-        :param rel_energy_mse:
-        :param smooth_rep_loss:
-        :param pre_train:
-        :param huber_energy_scale:
-        :param downweight_low_energy:
-        :param n_ccoords:
-        :param energy_den_offset:
-        :param noise_scaler:
-        :param too_much_beta_scale:
-        :param cont_beta_loss:
-        :param log_energy:
-        :param n_classes: give the real number of classes, in the truth labelling, class 0 is always ignored so if you
-                          have 6 classes, label them from 1 to 6 not 0 to 5. If n_classes is 0, no classification loss
-                          is applied
-        :param standard_configuration:
-        :param kwargs:
-        """
-        if 'dynamic' in kwargs:
-            super(LLObjectCondensation, self).__init__(**kwargs)
-        else:
-            super(LLObjectCondensation, self).__init__(dynamic=True, **kwargs)
-
-        self.energy_loss_weight = energy_loss_weight
-        self.use_energy_weights = use_energy_weights
-        self.q_min = q_min
-        self.no_beta_norm = no_beta_norm
-        self.potential_scaling = potential_scaling
-        self.repulsion_scaling = repulsion_scaling
-        self.s_b = s_b
-        self.position_loss_weight = position_loss_weight
-        self.classification_loss_weight = classification_loss_weight
-        self.timing_loss_weight = timing_loss_weight
-        self.use_spectators = use_spectators
-        self.beta_loss_scale = beta_loss_scale
-        self.use_average_cc_pos = use_average_cc_pos
-        self.payload_rel_threshold = payload_rel_threshold
-        self.rel_energy_mse = rel_energy_mse
-        self.smooth_rep_loss = smooth_rep_loss
-        self.pre_train = pre_train
-        self.huber_energy_scale = huber_energy_scale
-        self.downweight_low_energy = downweight_low_energy
-        self.n_ccoords = n_ccoords
-        self.energy_den_offset = energy_den_offset
-        self.noise_scaler = noise_scaler
-        self.too_much_beta_scale = too_much_beta_scale
-        self.cont_beta_loss = cont_beta_loss
-        self.log_energy = log_energy
-        self.n_classes = n_classes
-
-        if standard_configuration is not None:
-            raise NotImplemented('Not implemented yet')
-
-    def loss(self, inputs):
-        x, truth_dict, pred_dict, feat_dict, row_splits = inputs
-
-        config = {
-            'energy_loss_weight': self.energy_loss_weight,
-            'use_energy_weights': self.use_energy_weights,
-            'q_min': self.q_min,
-            'no_beta_norm': self.no_beta_norm,
-            'potential_scaling': self.potential_scaling,
-            'repulsion_scaling': self.repulsion_scaling,
-            's_b': self.s_b,
-            'position_loss_weight': self.position_loss_weight,
-            'classification_loss_weight' : self.classification_loss_weight,
-            'timing_loss_weight': self.timing_loss_weight,
-            'use_spectators': self.use_spectators,
-            'beta_loss_scale': self.beta_loss_scale,
-            'use_average_cc_pos': self.use_average_cc_pos,
-            'payload_rel_threshold': self.payload_rel_threshold,
-            'rel_energy_mse': self.rel_energy_mse,
-            'smooth_rep_loss': self.smooth_rep_loss,
-            'pre_train': self.pre_train,
-            'huber_energy_scale': self.huber_energy_scale,
-            'downweight_low_energy': self.downweight_low_energy,
-            'n_ccoords': self.n_ccoords,
-            'energy_den_offset': self.energy_den_offset,
-            'noise_scaler': self.noise_scaler,
-            'too_much_beta_scale': self.too_much_beta_scale,
-            'cont_beta_loss': self.cont_beta_loss,
-            'log_energy': self.log_energy,
-            'n_classes': self.n_classes
-        }
-
-        loss = obj_cond_loss(truth_dict, pred_dict, feat_dict, row_splits, config)
-        return loss
-
-    def get_config(self):
-        config = {
-            'energy_loss_weight': self.energy_loss_weight,
-            'use_energy_weights': self.use_energy_weights,
-            'q_min': self.q_min,
-            'no_beta_norm': self.no_beta_norm,
-            'potential_scaling': self.potential_scaling,
-            'repulsion_scaling': self.repulsion_scaling,
-            's_b': self.s_b,
-            'position_loss_weight': self.position_loss_weight,
-            'classification_loss_weight' : self.classification_loss_weight,
-            'timing_loss_weight': self.timing_loss_weight,
-            'use_spectators': self.use_spectators,
-            'beta_loss_scale': self.beta_loss_scale,
-            'use_average_cc_pos': self.use_average_cc_pos,
-            'payload_rel_threshold': self.payload_rel_threshold,
-            'rel_energy_mse': self.rel_energy_mse,
-            'smooth_rep_loss': self.smooth_rep_loss,
-            'pre_train': self.pre_train,
-            'huber_energy_scale': self.huber_energy_scale,
-            'downweight_low_energy': self.downweight_low_energy,
-            'n_ccoords': self.n_ccoords,
-            'energy_den_offset': self.energy_den_offset,
-            'noise_scaler': self.noise_scaler,
-            'too_much_beta_scale': self.too_much_beta_scale,
-            'cont_beta_loss': self.cont_beta_loss,
-            'log_energy': self.log_energy,
-            'n_classes': self.n_classes
-        }
-        base_config = super(LLObjectCondensation, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-
-
 ### LLSelectedDistances
 # slim
 # takes neighbour indices and distances, and (truth) ass idx
@@ -378,7 +227,7 @@ class LLFullObjectCondensation(LossLayerBase):
     making the config explode (more)
     '''
 
-    def __init__(self, *, energy_loss_weight=1., use_energy_weights=True, q_min=0.5, no_beta_norm=False,
+    def __init__(self, *, energy_loss_weight=1., use_energy_weights=True, q_min=0.1, no_beta_norm=False,
                  potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
                  classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
                  use_average_cc_pos=0.,
@@ -396,6 +245,8 @@ class LLFullObjectCondensation(LossLayerBase):
                  cc_damping_strength=0.001,
                  standard_configuration=None,
                  beta_gradient_damping=0.,
+                 alt_energy_loss=True,
+                 repulsion_q_min=4.,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -431,6 +282,7 @@ class LLFullObjectCondensation(LossLayerBase):
         :param prob_repulsion
         :param phase_transition
         :param standard_configuration:
+        :param alt_energy_loss: introduces energy loss with very mild gradient for large delta. (modified 1-exp form)
         :param kwargs:
         """
         if 'dynamic' in kwargs:
@@ -474,6 +326,8 @@ class LLFullObjectCondensation(LossLayerBase):
         self.kalpha_damping_strength = kalpha_damping_strength
         self.cc_damping_strength = cc_damping_strength
         self.beta_gradient_damping=beta_gradient_damping
+        self.alt_energy_loss=alt_energy_loss
+        self.repulsion_q_min=repulsion_q_min
         self.loc_time=time.time()
         
         assert kalpha_damping_strength >= 0. and kalpha_damping_strength <= 1.
@@ -499,6 +353,10 @@ class LLFullObjectCondensation(LossLayerBase):
             sqrt_t_e = tf.sqrt(t_energy+1e-3)
             l = tf.math.divide_no_nan(l, tf.sqrt(t_energy+1e-3) + self.energy_den_offset)
             return huber(l, sqrt_t_e*self.huber_energy_scale)
+        elif self.alt_energy_loss:
+            ediff = tf.abs(t_energy-pred_energy)
+            l = 10. * tf.exp(-0.1 * ediff**2 ) + 0.01*ediff
+            return l
         else:
             return tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))
 
@@ -586,7 +444,8 @@ class LLFullObjectCondensation(LossLayerBase):
                                            alt_potential_norm=self.alt_potential_norm,
                                            payload_beta_gradient_damping_strength=self.payload_beta_gradient_damping_strength,
                                            kalpha_damping_strength = self.kalpha_damping_strength,
-                                           beta_gradient_damping=self.beta_gradient_damping
+                                           beta_gradient_damping=self.beta_gradient_damping,
+                                           repulsion_q_min=self.repulsion_q_min
                                            )
 
         
@@ -610,7 +469,7 @@ class LLFullObjectCondensation(LossLayerBase):
         
         
         #explicit cc damping
-        ccdamp = self.cc_damping_strength * tf.reduce_mean(pred_ccoords)**2# gently keep them around 0
+        ccdamp = self.cc_damping_strength * (0.02*tf.reduce_mean(pred_ccoords))**4# gently keep them around 0
         
         
         lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta + ccdamp
@@ -621,7 +480,8 @@ class LLFullObjectCondensation(LossLayerBase):
         
         if self.print_time:
             print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms')
-            print('loss layer info:',self.name,'batch took',int((time.time()-self.loc_time)*100000.)/100.,'ms')
+            print('loss layer info:',self.name,'batch took',int((time.time()-self.loc_time)*100000.)/100.,'ms',
+                  'for',len(rowsplits.numpy())-1,'batch elements')
             self.loc_time = time.time()
             
         if self.print_loss:
@@ -679,257 +539,10 @@ class LLFullObjectCondensation(LossLayerBase):
             'payload_beta_clip' : self.payload_beta_clip,
             'kalpha_damping_strength' : self.kalpha_damping_strength,
             'cc_damping_strength' : self.cc_damping_strength,
-            'beta_gradient_damping': self.beta_gradient_damping
+            'beta_gradient_damping': self.beta_gradient_damping,
+            'repulsion_q_min': self.repulsion_q_min
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-
-
-
-class LLFullTrackMLObjectCondensation(LossLayerBase):
-    '''
-    Cluster using truth index and coordinates
-    
-    This is a copy of the above, reducing the nested function calls.
-    
-    keep the individual loss definitions as separate functions, even if they are trivial.
-    inherit from this class to implement different variants of the loss ingredients without
-    making the config explode (more)
-    '''
-
-    def __init__(self, *, energy_loss_weight=1., use_energy_weights=True, q_min=0.5, no_beta_norm=False,
-                 potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
-                 classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
-                 use_average_cc_pos=False, payload_rel_threshold=0.1, rel_energy_mse=False, smooth_rep_loss=False,
-                 pre_train=False, huber_energy_scale=2., downweight_low_energy=True, n_ccoords=2, energy_den_offset=1.,
-                 noise_scaler=1., too_much_beta_scale=0., cont_beta_loss=False, log_energy=False, n_classes=0,
-                 prob_repulsion=False,
-                 phase_transition=0.,
-                 alt_potential_norm=False,
-                 print_time=True,
-                 standard_configuration=None,
-                 **kwargs):
-        """
-        Read carefully before changing parameters
-
-        :param energy_loss_weight:
-        :param use_energy_weights:
-        :param q_min:
-        :param no_beta_norm:
-        :param potential_scaling:
-        :param repulsion_scaling:
-        :param s_b:
-        :param position_loss_weight:
-        :param classification_loss_weight:
-        :param timing_loss_weight:
-        :param use_spectators:
-        :param beta_loss_scale:
-        :param use_average_cc_pos:
-        :param payload_rel_threshold:
-        :param rel_energy_mse:
-        :param smooth_rep_loss:
-        :param pre_train:
-        :param huber_energy_scale:
-        :param downweight_low_energy:
-        :param n_ccoords:
-        :param energy_den_offset:
-        :param noise_scaler:
-        :param too_much_beta_scale:
-        :param cont_beta_loss:
-        :param log_energy:
-        :param n_classes: give the real number of classes, in the truth labelling, class 0 is always ignored so if you
-                          have 6 classes, label them from 1 to 6 not 0 to 5. If n_classes is 0, no classification loss
-                          is applied
-        :param prob_repulsion
-        :param phase_transition
-        :param standard_configuration:
-        :param kwargs:
-        """
-        if 'dynamic' in kwargs:
-            super(LLFullTrackMLObjectCondensation, self).__init__(**kwargs)
-        else:
-            super(LLFullTrackMLObjectCondensation, self).__init__(dynamic=True,**kwargs)
-
-        self.energy_loss_weight = energy_loss_weight
-        self.use_energy_weights = use_energy_weights
-        self.q_min = q_min
-        self.no_beta_norm = no_beta_norm
-        self.potential_scaling = potential_scaling
-        self.repulsion_scaling = repulsion_scaling
-        self.s_b = s_b
-        self.position_loss_weight = position_loss_weight
-        self.classification_loss_weight = classification_loss_weight
-        self.timing_loss_weight = timing_loss_weight
-        self.use_spectators = use_spectators
-        self.beta_loss_scale = beta_loss_scale
-        self.use_average_cc_pos = use_average_cc_pos
-        self.payload_rel_threshold = payload_rel_threshold
-        self.rel_energy_mse = rel_energy_mse
-        self.smooth_rep_loss = smooth_rep_loss
-        self.pre_train = pre_train
-        self.huber_energy_scale = huber_energy_scale
-        self.downweight_low_energy = downweight_low_energy
-        self.n_ccoords = n_ccoords
-        self.energy_den_offset = energy_den_offset
-        self.noise_scaler = noise_scaler
-        self.too_much_beta_scale = too_much_beta_scale
-        self.cont_beta_loss = cont_beta_loss
-        self.log_energy = log_energy
-        self.n_classes = n_classes
-        self.prob_repulsion = prob_repulsion
-        self.phase_transition = phase_transition
-        self.alt_potential_norm = alt_potential_norm
-        self.print_time = print_time
-
-        self.loc_time=time.time()
-
-        if standard_configuration is not None:
-            raise NotImplemented('Not implemented yet')
-        
-        
-    def calc_energy_weights(self, t_energy, flatat=10.):
-        return tf.where(t_energy > 10., 1., (t_energy / flatat + 0.1)/1.1)
-            
-    def calc_energy_loss(self, t_energy, pred_energy): 
-        return (t_energy-pred_energy)**2/(t_energy**2)
-
-    
-    def calc_position_loss(self, t_pos, pred_pos):
-        outl = (t_pos-pred_pos)**2/(t_pos**2)
-        return tf.reduce_sum(outl, axis=-1, keepdims=True)
-    
-    def calc_timing_loss(self, t_time, pred_time):
-        return (t_time*1e9 - pred_time)**2 #rechit time is in ns, true time in s
-    
-    def calc_classification_loss(self, t_pid, pred_id):
-        '''
-        to be implemented, t_pid is not one-hot encoded
-        '''
-        return 1e-8*tf.reduce_mean(pred_id**2,axis=-1,keepdims=True) #V x 1
-    
-    def loss(self, inputs):
-        
-        start_time = 0
-        if self.print_time:
-            start_time = time.time()
-        
-        
-        pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
-        t_idx, t_energy, t_pos, t_time, t_pid,\
-        rowsplits = inputs
-        
-        if rowsplits.shape[0] is None:
-            return tf.constant(0,dtype='float32')
-        
-        #these are the weights
-        energy_weights = t_time 
-            
-        #pz
-        energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
-        
-        #px py
-        position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
-        
-        #0
-        timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
-        
-        #0
-        classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id)
-        
-        full_payload = tf.concat([energy_loss,position_loss], axis=-1)
-        
-        is_spectator = tf.zeros_like(pred_beta) #not used right now, and likely never again (if the truth remains ok)
-        
-        att, rep, noise, min_b, payload, exceed_beta = oc_loss(
-                                           x=pred_ccoords,
-                                           beta=pred_beta,
-                                           truth_indices=t_idx,
-                                           row_splits=rowsplits,
-                                           is_spectator=is_spectator,
-                                           payload_loss=full_payload,
-                                           Q_MIN=self.q_min,
-                                           S_B=self.s_b,
-                                           energyweights=energy_weights,
-                                           use_average_cc_pos=self.use_average_cc_pos,
-                                           payload_rel_threshold=self.payload_rel_threshold,
-                                           cont_beta_loss=self.cont_beta_loss,
-                                           prob_repulsion=self.prob_repulsion,
-                                           phase_transition=self.phase_transition>0. ,
-                                           alt_potential_norm=self.alt_potential_norm
-                                           )
-
-        
-        att *= self.potential_scaling
-        rep *= self.potential_scaling * self.repulsion_scaling
-        min_b *= self.beta_loss_scale
-        noise *= self.noise_scaler
-        exceed_beta *= self.too_much_beta_scale
-
-        
-        energy_loss = tf.debugging.check_numerics(payload[0], "pz loss has NaN")
-        pos_loss = tf.debugging.check_numerics(payload[1], "px py loss has NaN")
-        
-        lossval = att + rep + min_b + noise + energy_loss + pos_loss + exceed_beta
-            
-        lossval = tf.debugging.check_numerics(lossval, "loss has nan")
-        lossval = tf.reduce_mean(lossval)
-        
-        if self.print_time:
-            print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms')
-            print('loss layer info:',self.name,'batch took',int((time.time()-self.loc_time)*100000.)/100.,'ms')
-            self.loc_time = time.time()
-            
-        if self.print_loss:
-            minbtext = 'min_beta_loss'
-            if self.phase_transition>0:
-                minbtext = 'phase transition loss'
-                print('avg beta', tf.reduce_mean(pred_beta))
-            print('loss', lossval.numpy(),
-                  'attractive_loss', att.numpy(),
-                  'rep_loss', rep.numpy(),
-                  minbtext, min_b.numpy(),
-                  'noise_loss', noise.numpy(),
-                  'pz', energy_loss.numpy(),
-                  'px py', pos_loss.numpy(),
-                  'exceed_beta', exceed_beta.numpy(),'\n')
-
-        return lossval
-
-    def get_config(self):
-        config = {
-            'energy_loss_weight': self.energy_loss_weight,
-            'use_energy_weights': self.use_energy_weights,
-            'q_min': self.q_min,
-            'no_beta_norm': self.no_beta_norm,
-            'potential_scaling': self.potential_scaling,
-            'repulsion_scaling': self.repulsion_scaling,
-            's_b': self.s_b,
-            'position_loss_weight': self.position_loss_weight,
-            'classification_loss_weight' : self.classification_loss_weight,
-            'timing_loss_weight': self.timing_loss_weight,
-            'use_spectators': self.use_spectators,
-            'beta_loss_scale': self.beta_loss_scale,
-            'use_average_cc_pos': self.use_average_cc_pos,
-            'payload_rel_threshold': self.payload_rel_threshold,
-            'rel_energy_mse': self.rel_energy_mse,
-            'smooth_rep_loss': self.smooth_rep_loss,
-            'pre_train': self.pre_train,
-            'huber_energy_scale': self.huber_energy_scale,
-            'downweight_low_energy': self.downweight_low_energy,
-            'n_ccoords': self.n_ccoords,
-            'energy_den_offset': self.energy_den_offset,
-            'noise_scaler': self.noise_scaler,
-            'too_much_beta_scale': self.too_much_beta_scale,
-            'cont_beta_loss': self.cont_beta_loss,
-            'log_energy': self.log_energy,
-            'n_classes': self.n_classes,
-            'prob_repulsion': self.prob_repulsion,
-            'phase_transition': self.phase_transition,
-            'alt_potential_norm': self.alt_potential_norm,
-            'print_time' : self.print_time
-        }
-        base_config = super(LLFullTrackMLObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
 

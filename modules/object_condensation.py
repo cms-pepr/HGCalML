@@ -86,12 +86,15 @@ def oc_per_batch_element(
         payload_beta_gradient_damping_strength=0.,
         kalpha_damping_strength=0.,
         beta_gradient_damping=0.,
-        soft_q_scaling=True
+        soft_q_scaling=True,
+        weight_by_q=False, 
+        repulsion_q_min=-1. #FIXME
         ):
     '''
     all inputs
     V x X , where X can be 1
     '''
+    
     
     if not alt_potential_norm:
         raise ValueError("not alt_potential_norm not implemented")
@@ -106,8 +109,6 @@ def oc_per_batch_element(
     if payload_weight_function is not None:
         raise ValueError("payload_weight_function not implemented")
         
-        
-    
     #set all spectators invalid here, everything scales with beta, so:
     if beta_gradient_damping > 0.:
         beta = beta_gradient_damping * tf.stop_gradient(beta) + (1. - beta_gradient_damping)*beta
@@ -115,8 +116,9 @@ def oc_per_batch_element(
     beta = tf.clip_by_value(beta, 0.,1.-1e-4)
     beta *= (1. - is_spectator)
     qraw = tf.math.atanh(beta)**2 
+    
     if soft_q_scaling:
-        qraw = beta_in**4 *(1.+10.*q_min)
+        qraw = beta_in**4 *20.
         beta = beta_in*(1. - is_spectator) # no need for clipping
     
     q = qraw + q_min * (1. - is_spectator) # V x 1
@@ -158,22 +160,36 @@ def oc_per_batch_element(
     V_att = q_m * tf.expand_dims(q_kalpha_m,axis=1) * huberdistsq #K x V-obj x 1
     V_att = V_att * tf.expand_dims(object_weights_kalpha_m,axis=1) #K x V-obj x 1
     
-    V_att = tf.math.divide_no_nan(tf.reduce_sum(padmask_m * V_att,axis=1), N_per_obj+1e-9) # K x 1
+    if weight_by_q:
+        V_att = tf.math.divide_no_nan(tf.reduce_sum(padmask_m * V_att,axis=1), tf.reduce_sum(q_m, axis=1)) # K x 1
+    else:
+        V_att = tf.math.divide_no_nan(tf.reduce_sum(padmask_m * V_att,axis=1), N_per_obj+1e-9) # K x 1
     V_att = tf.math.divide_no_nan(tf.reduce_sum(V_att,axis=0), K+1e-9) # 1
     
+    
+    #what if Vatt and Vrep are weighted by q, not scaled by it?
+    
+    q_rep = q
+    if repulsion_q_min >= 0:
+        q_rep = qraw + repulsion_q_min
+        #works bette rwithout this: q_kalpha_m += repulsion_q_min - q_min
     
     #now the bit that needs Mnot
     V_rep = tf.expand_dims(x_kalpha_m, axis=1) #K x 1 x C
     V_rep = V_rep - tf.expand_dims(x, axis=0) #K x V x C
     V_rep = tf.reduce_sum(V_rep**2, axis=-1, keepdims=True)  #K x V x 1
     
-    V_rep = -2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
-    V_rep *= M_not * tf.expand_dims(q, axis=0) #K x V x 1
+    V_rep =  1. / (V_rep + 0.1)    #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
+    V_rep *= M_not * tf.expand_dims(q_rep, axis=0) #K x V x 1
     V_rep = tf.reduce_sum(V_rep, axis=1) #K x 1
     
     V_rep *= object_weights_kalpha_m * q_kalpha_m #K x 1
     
-    V_rep = tf.math.divide_no_nan(V_rep, 
+    if weight_by_q:
+        sumq = tf.reduce_sum(M_not * tf.expand_dims(q_rep, axis=0), axis=1)
+        V_rep = tf.math.divide_no_nan(V_rep, sumq) # K x 1
+    else:
+        V_rep = tf.math.divide_no_nan(V_rep, 
                                   tf.expand_dims(tf.expand_dims(N,axis=0),axis=0) - N_per_obj+1e-9) # K x 1
     V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=0), K+1e-9) # 1
     
@@ -210,6 +226,23 @@ def oc_per_batch_element(
     #pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj+1e-9) # K x P #really?
     pll = tf.math.divide_no_nan(tf.reduce_sum(payload_loss_m,axis=0), K+1e-3) # P
     
+    #explicit K**2 repulsion
+    #if k_sq_repulsion_strength > 0.: #x_kalpha_m: K  x C
+    #    k_sq_rep = tf.expand_dims(x_kalpha_m, axis=0) - tf.expand_dims(x_kalpha_m, axis=1) #x_kalpha_m: K  x K x C
+    #    k_sq_rep = tf.reduce_sum(k_sq_rep**2, axis=-1) #distances**2 K x K 
+    #    k_sq_rep = -2.*tf.math.log(1.-tf.math.exp(-k_sq_rep/2.)+1e-5) #K x K 
+    #    #add qTq scaling also here?
+    #    k_sq_rep *= q_kalpha_m # adding the latter term would just add a factor of 2. to the corresponding kalpha Mnot term * tf.expand_dims(q_kalpha_m[:,0], axis=0) #K x K
+    #    k_sq_rep *= object_weights_kalpha_m * tf.expand_dims(object_weights_kalpha_m[:,0], axis=0) #K x K
+    #    k_sq_rep = tf.math.divide_no_nan(tf.reduce_sum(k_sq_rep,axis=0), K+1e-9)
+    #    k_sq_rep = tf.math.divide_no_nan(tf.reduce_sum(k_sq_rep,axis=0), K+1e-9)
+    #    
+    #    V_rep += k_sq_repulsion_strength * k_sq_rep
+    #    #object_weights_kalpha_m
+        
+        
+    
+    
     return V_att, V_rep, Noise_pen, B_pen, pll, too_much_B_pen
 
 
@@ -234,7 +267,8 @@ def oc_loss(
         alt_potential_norm=False,
         payload_beta_gradient_damping_strength=0.,
         kalpha_damping_strength=0.,
-        beta_gradient_damping=0.
+        beta_gradient_damping=0.,
+        repulsion_q_min=-1
         ):   
     
     if energyweights is None:
@@ -270,8 +304,8 @@ def oc_loss(
             alt_potential_norm=alt_potential_norm,
             payload_beta_gradient_damping_strength=payload_beta_gradient_damping_strength,
             kalpha_damping_strength=kalpha_damping_strength,
-            beta_gradient_damping=beta_gradient_damping
-            
+            beta_gradient_damping=beta_gradient_damping,
+            repulsion_q_min=repulsion_q_min
             )
         V_att += att
         V_rep += rep

@@ -5,7 +5,7 @@ global_layers_list = {}
 
 from LayersRagged import *
 from GravNetLayersRagged import GooeyBatchNorm,LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
-from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
+from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
 
 
@@ -68,14 +68,11 @@ global_layers_list['LocalClusterReshapeFromNeighbours2']=LocalClusterReshapeFrom
 
 global_layers_list['NeighbourCovariance']=NeighbourCovariance
 
-
-global_layers_list['LLObjectCondensation']=LLObjectCondensation
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 
 global_layers_list['LossLayerBase']=LossLayerBase
-global_layers_list['LLFullTrackMLObjectCondensation']=LLFullTrackMLObjectCondensation
 
 global_layers_list['NormalizeInputShapes']=NormalizeInputShapes
 global_layers_list['NeighbourApproxPCA']=NeighbourApproxPCA
