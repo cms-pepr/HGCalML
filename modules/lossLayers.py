@@ -247,6 +247,8 @@ class LLFullObjectCondensation(LossLayerBase):
                  beta_gradient_damping=0.,
                  alt_energy_loss=True,
                  repulsion_q_min=4.,
+                 super_repulsion=False,
+                 use_local_distances=False,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -328,6 +330,9 @@ class LLFullObjectCondensation(LossLayerBase):
         self.beta_gradient_damping=beta_gradient_damping
         self.alt_energy_loss=alt_energy_loss
         self.repulsion_q_min=repulsion_q_min
+        self.super_repulsion=super_repulsion
+        self.use_local_distances = use_local_distances
+        
         self.loc_time=time.time()
         
         assert kalpha_damping_strength >= 0. and kalpha_damping_strength <= 1.
@@ -340,6 +345,13 @@ class LLFullObjectCondensation(LossLayerBase):
         lower_cut = 0.5
         w = tf.where(t_energy > 10., 1., ((t_energy-lower_cut) / 10.)*10./(10.-lower_cut))
         return tf.nn.relu(w)
+    
+    def softclip(self, toclip, startclipat):
+        toclip /= startclipat
+        toclip = tf.where(toclip>1, tf.math.log(toclip+1.), toclip)
+        toclip *= startclipat
+        return toclip
+        
             
     def calc_energy_loss(self, t_energy, pred_energy): 
         if not self.energy_loss_weight:
@@ -347,31 +359,38 @@ class LLFullObjectCondensation(LossLayerBase):
         
         #FIXME: this is just for debugging
         #return (t_energy-pred_energy)**2
+        eloss=0
         
         if self.huber_energy_scale > 0:
             l = tf.abs(t_energy-pred_energy)
             sqrt_t_e = tf.sqrt(t_energy+1e-3)
             l = tf.math.divide_no_nan(l, tf.sqrt(t_energy+1e-3) + self.energy_den_offset)
-            return huber(l, sqrt_t_e*self.huber_energy_scale)
+            eloss = huber(l, sqrt_t_e*self.huber_energy_scale)
         elif self.alt_energy_loss:
             ediff = tf.abs(t_energy-pred_energy)
             l = 10. * tf.exp(-0.1 * ediff**2 ) + 0.01*ediff
-            return l
+            eloss = l
         else:
-            return tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))
+            eloss = tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))
+        
+        eloss = self.softclip(eloss, 10.) 
+        return eloss
+
 
     
     def calc_position_loss(self, t_pos, pred_pos):
         if not self.position_loss_weight:
             t_pos = 0.
         #reduce risk of NaNs
-        return huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) + 1e-2), 10.) #is in cm
+        ploss = huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) + 1e-2), 10.) #is in cm
+        return self.softclip(ploss, 3.) 
     
     def calc_timing_loss(self, t_time, pred_time):
         if not self.timing_loss_weight:
             return pred_time**2
         
-        return huber((t_time - pred_time),2.) #rechit time is in ns, true time in s
+        tloss = huber((t_time - pred_time),2.) 
+        return self.softclip(tloss, 6.) 
     
     def calc_classification_loss(self, t_pid, pred_id):
         '''
@@ -385,10 +404,15 @@ class LLFullObjectCondensation(LossLayerBase):
         if self.print_time:
             start_time = time.time()
         
-        
-        pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
-        t_idx, t_energy, t_pos, t_time, t_pid,\
-        rowsplits = inputs
+        pred_distscale=None
+        if self.use_local_distances:
+            pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
+            t_idx, t_energy, t_pos, t_time, t_pid,\
+            rowsplits = inputs
+        else:
+            pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
+            t_idx, t_energy, t_pos, t_time, t_pid,\
+            rowsplits = inputs
         
         
         pred_beta    = tf.debugging.check_numerics(pred_beta, "pred_beta has NaNs")
@@ -434,6 +458,7 @@ class LLFullObjectCondensation(LossLayerBase):
                                            payload_loss=full_payload,
                                            Q_MIN=self.q_min,
                                            S_B=self.s_b,
+                                           distance_scale=pred_distscale,
                                            energyweights=energy_weights,
                                            use_average_cc_pos=self.use_average_cc_pos,
                                            payload_rel_threshold=self.payload_rel_threshold,
@@ -445,7 +470,8 @@ class LLFullObjectCondensation(LossLayerBase):
                                            payload_beta_gradient_damping_strength=self.payload_beta_gradient_damping_strength,
                                            kalpha_damping_strength = self.kalpha_damping_strength,
                                            beta_gradient_damping=self.beta_gradient_damping,
-                                           repulsion_q_min=self.repulsion_q_min
+                                           repulsion_q_min=self.repulsion_q_min,
+                                           super_repulsion=self.super_repulsion
                                            )
 
         
@@ -476,6 +502,8 @@ class LLFullObjectCondensation(LossLayerBase):
             
         lossval = tf.debugging.check_numerics(lossval, "loss has nan")
         lossval = tf.reduce_mean(lossval)
+        lossval = self.softclip(lossval, 10.) 
+        #loss should be <1 pretty quickly in most cases; avoid very hard hits from high LRs shooting to the moon
         
         
         if self.print_time:
@@ -540,7 +568,9 @@ class LLFullObjectCondensation(LossLayerBase):
             'kalpha_damping_strength' : self.kalpha_damping_strength,
             'cc_damping_strength' : self.cc_damping_strength,
             'beta_gradient_damping': self.beta_gradient_damping,
-            'repulsion_q_min': self.repulsion_q_min
+            'repulsion_q_min': self.repulsion_q_min,
+            'super_repulsion': self.super_repulsion,
+            'use_local_distances': self.use_local_distances
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

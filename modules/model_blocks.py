@@ -218,7 +218,7 @@ def create_output_layers(x, x_row_splits, n_ccoords=2,
 
 from datastructures import TrainData_OC
 #new format!
-def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_OC(), add_features=True):
+def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_OC(), add_features=True, add_distance_scale=False):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
@@ -242,6 +242,11 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
     if add_features:
         pred_pos =  Add()([feat['recHitXY'],pred_pos])
     pred_id = Dense(n_classes, activation="softmax")(x)
+    
+    if add_distance_scale:
+        pred_dist = Dense(1, activation='sigmoid')(x) 
+        #this needs to be bound otherwise fully anti-correlated with coordates scale
+        return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id
     
     return pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
 

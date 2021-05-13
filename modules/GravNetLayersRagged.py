@@ -27,7 +27,7 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
     def __init__(self,
                  viscosity=0.8,
                  fluidity_decay=5e-4,
-                 max_viscosity=1.-1e-6,
+                 max_viscosity=1.,
                  epsilon=1e-4,
                  print_viscosity=False,
                  **kwargs):
