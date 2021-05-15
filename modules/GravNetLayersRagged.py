@@ -22,6 +22,18 @@ def check_type_return_shape(s):
 
 ############# Some layers for convenience ############
 
+class PrintMeanAndStd(tf.keras.layers.Layer):
+    def __init__(self,**kwargs):
+        super(PrintMeanAndStd, self).__init__(**kwargs)
+        
+    def compute_output_shape(self, input_shapes):
+        #return input_shapes[0]
+        return input_shapes
+        
+    def call(self, inputs):
+        tf.print(self.name,'mean',tf.reduce_mean(inputs,axis=0),summarize=100)
+        tf.print(self.name,'std',tf.math.reduce_std(inputs,axis=0),summarize=100)
+        return inputs
 
 class GooeyBatchNorm(tf.keras.layers.Layer):
     def __init__(self,
@@ -173,17 +185,21 @@ class ProcessFeatures(tf.keras.layers.Layer):
         fdict['recHitY'] /= 100.
         fdict['recHitZ'] = (tf.abs(fdict['recHitZ'])-400)/100.
         fdict['recHitEta'] = tf.abs(fdict['recHitEta'])
-        fdict['recHitTheta'] = tf.abs(fdict['recHitTheta'])
+        fdict['recHitTheta'] = 2.*tf.math.atan(tf.exp(-fdict['recHitEta']))
         fdict['recHitTime'] = tf.nn.relu(fdict['recHitTime'])/10. #remove -1 default
         allf = []
         for k in fdict:
             allf.append(fdict[k])
         feat = tf.concat(allf,axis=-1)
         
-        mean = tf.constant([[0.0740814656, 2.46156192, 0., 2.95798588, 3.55599976, 0.0609507263, -0.00401970092, -0.515379727, 0.0874295086]])
-        std =  tf.constant([[0.299679846, 0.382687777, 1., 0.0780506283, 0.250777304, 0.485394388, 0.518072903, 0.240222782, 0.194716245]   ])
+        mean = tf.constant([[0.0740814656, 2.46156192, 0., 0.207392946, 3.55599976, 0.0609507263, 
+                             -0.00401970092, -0.515379727, 0.0874295086]])
+        std =  tf.constant([[0.299679846, 0.382687777, 1., 0.0841238275, 0.250777304, 0.485394388, 
+                             0.518072903,     0.240222782, 0.194716245]])
+        
         feat -= mean
         feat /= std
+        
         return feat
     
 
@@ -212,6 +228,7 @@ class ManualCoordTransform(tf.keras.layers.Layer):
     
     def call(self, inputs):
         x,y,z = inputs[:,0:1], inputs[:,1:2], inputs[:,2:3]
+        z = tf.abs(z) #take absolute
         eta = self._calc_abseta(x,y,z) #-> z
         r = self._calc_r(x, y, z) #-> cylindrical r
         phi = self._calc_phi(x, y)
