@@ -410,16 +410,20 @@ class ExtendedMetricsModel(tf.keras.Model):
         return ret_dict
 
 class RobustModel(tf.keras.Model):
-    def __init__(self, skip_non_finite=5, *args, **kwargs):
+    def __init__(self, skip_non_finite=5, 
+                 return_data=False,
+                 *args, **kwargs):
         """
 
         :param skip_non_finite: Number of consecutive times to skip nans/inf loss and gradient values
+        :param return_data: also returns input features as well as prediction in addition to metrics (potential memory leak?)
         :param args: For subclass Model
         :param kwargs:  For subclass Model
         """
         super(RobustModel, self).__init__(*args, **kwargs)
         self.skip_non_finite = skip_non_finite
         self.non_finite_count = 0
+        self.return_data = return_data
 
     def train_step(self, data):
         # Unpack the data. Its structure depends on your model and
@@ -467,12 +471,13 @@ class RobustModel(tf.keras.Model):
         # Return a dict mapping metric names to current value
 
         ret_dict = {m.name: m.result() for m in self.metrics}
-
-        ret_dict['x'] = x
-        ret_dict['y_pred'] = y_pred
-
+        if self.return_data:
+            ret_dict['x'] = x
+            ret_dict['y_pred'] = y_pred
+            
         return ret_dict
-
+    
+    
 
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel
 global_layers_list['RobustModel']=RobustModel
