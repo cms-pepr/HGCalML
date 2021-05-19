@@ -60,6 +60,8 @@ class TrainData_NanoML(TrainData):
         tree = uproot.open(filename)[treename]
 
         hits = "RecHitHGC"
+        front_face_z = 323 #this needs to be more precise
+        
         recHitZUnsplit = self.hitObservable(tree, hits, "z", split=False, flatten=False)
         self.setSplitIdx(recHitZUnsplit < 0)
 
@@ -83,7 +85,8 @@ class TrainData_NanoML(TrainData):
         simClusterDepEnergy = tree["MergedSimCluster_recEnergy"].array()
         simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
         simClusterEnergyNoMu = tree["MergedSimCluster_boundaryEnergyNoMu"].array()
-    
+        simClusterNumHits = tree["MergedSimCluster_nHits"].array()
+
         # Remove muon energy, add back muon deposited energy
         unmergedId = tree["SimCluster_pdgId"].array()
         unmergedDepE = tree["SimCluster_recEnergy"].array()
@@ -95,6 +98,8 @@ class TrainData_NanoML(TrainData):
         unmergedDepEMuOnly = ak.JaggedArray.fromcounts(unmergedMatches.counts, 
             ak.JaggedArray.fromcounts(unmergedMatches.content, unmergedDepEMuOnly[unmergedMatchIdx].flatten()))
         depEMuOnly = unmergedDepEMuOnly.sum()
+        #why wasn't it possible to just do instead of all of the above : simClusterEnergy[simClusterPdgId == 13] = simClusterDepEnergy ?
+        
 
         simClusterEnergyMuCorr = simClusterEnergyNoMu + depEMuOnly
 
@@ -116,6 +121,7 @@ class TrainData_NanoML(TrainData):
         # Don't split by index here to keep same dimensions as SimClusIdx
         markNoise = self.truthObjects(~goodSimClus, recHitSimClusIdx, False, split=False, flatten=False).astype(np.bool_)
         
+        
         nbefore = (recHitSimClusIdx < 0).sum().sum()
         recHitSimClusIdx[markNoise] = -1
         nafter = (recHitSimClusIdx < 0).sum().sum()
@@ -124,8 +130,12 @@ class TrainData_NanoML(TrainData):
         print('removed another factor of', nafter/nbefore, ' bad simclusters')
 
         recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0.)
-        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, 0)
         recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, 0)
+        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, 0)
+        low_energy_shower_cutoff = 3
+        recHitTruthEnergy = np.expand_dims(np.where(recHitTruthEnergy>low_energy_shower_cutoff, recHitTruthEnergy,recHitTruthDepEnergy),axis=1)
+
+        #very bad names because these quatities are associated to Merged Clusters and not hits
         recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, 0)
         recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 0)
         recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0)
@@ -135,6 +145,8 @@ class TrainData_NanoML(TrainData):
         recHitTruthTheta = np.arccos(np.divide(recHitTruthZ, recHitTruthR, out=np.zeros_like(recHitTruthZ), where=recHitTruthR!=0))
         recHitTruthPhi = self.truthObjects(simClusterPhi, recHitSimClusIdx, 0)
         recHitTruthEta = self.truthObjects(simClusterEta, recHitSimClusIdx, 0)
+        recHitAverageEnergy =  self.truthObjects(simClusterDepEnergy/simClusterNumHits, recHitSimClusIdx, 0) #this is not technically very good because simClusterNumHits is number of sim clusters, not reco
+        
         #print(recHitTruthPhi)
         #print(np.max(recHitTruthPhi))
         #print(np.min(recHitTruthPhi))
@@ -167,6 +179,7 @@ class TrainData_NanoML(TrainData):
         
         
         #now all numpy
+        #Why do we want noise (-1) sim hits to be equal rec?
         recHitTruthX[recHitSimClusIdx<0] = recHitX[recHitSimClusIdx<0]
         recHitTruthY[recHitSimClusIdx<0] = recHitY[recHitSimClusIdx<0]
         recHitTruthZ[recHitSimClusIdx<0] = recHitZ[recHitSimClusIdx<0]
@@ -178,6 +191,7 @@ class TrainData_NanoML(TrainData):
         #plt.hist(np.abs(recHitTruthEnergyCorrMu[recHitSimClusIdx>=0]/recHitTruthDepEnergy[recHitSimClusIdx>=0])) 
         #plt.yscale('log')
         #plt.savefig("scat.pdf")
+        spectator_efrac_cutoff = 0.05 #energy fraction cut off : recHitEnergy < X.X * averageRecHitEnergyInShower
         
         truth = np.concatenate([
             np.array(recHitSimClusIdx,dtype='float32'), # 0
@@ -194,12 +208,12 @@ class TrainData_NanoML(TrainData):
             zeroFeature,
             zeroFeature,
             recHitTruthDepEnergy, #13
-            
             zeroFeature, #14
             zeroFeature, #15
-            recHitTruthPID #16 - 16+n_classes #won't be used anymore
-            
-            ], axis=1)
+            recHitTruthPID, #16 - 16+n_classes #won't be used anymore
+            np.where(recHitEnergy<spectator_efrac_cutoff*recHitAverageEnergy,1.,0.).astype('float32'),
+            np.where(recHitTruthZ<front_face_z,1.,0.).astype('float32')], axis=1)
+        
         
         
         
@@ -217,11 +231,17 @@ class TrainData_NanoML(TrainData):
         t_pid = SimpleArray(name="recHitTruthID")
         t_pid.createFromNumpy(recHitTruthPID, offsets)
         
+        t_spectator = SimpleArray(name="recHitSpectatorFlag") #why do we have inconsistent namings, where is it needed? wrt. to truth array
+        t_spectator.createFromNumpy(np.where(recHitEnergy<spectator_efrac_cutoff*recHitAverageEnergy,1.,0.).astype('float32'), offsets)
+                
+        t_fully_contained = SimpleArray(name="recHitFullyContainedFlag")
+        t_fully_contained.createFromNumpy(np.where(recHitTruthZ<front_face_z,1.,0.).astype('float32'), offsets)
+        
         #remaining truth is mostly for consistency in the plotting tools
         t_rest = SimpleArray(name="recHitTruth")
         t_rest.createFromNumpy(truth, offsets)
         
-        return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid],[t_rest], []
+        return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid, t_spectator, t_fully_contained],[t_rest], []
     
 
     def interpretAllModelInputs(self, ilist):
@@ -234,11 +254,13 @@ class TrainData_NanoML(TrainData):
          - t_posarr
          - t_time
          - t_pid
+         - t_spectator
+         - t_fully_contained
          - row_splits
          
-        (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, row_splits)
+        (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator ,t_fully_contained, row_splits)
         '''
-        return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[1]
+        return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1] 
      
     def createFeatureDict(self,feat,addxycomb=True):
         d = {
@@ -275,8 +297,9 @@ class TrainData_NanoML(TrainData):
                 'truthHitAssignedDepEnergies',        # recHitTruthDepEnergy, #13
                 'ticlHitAssignementIdx'  , #17        # zeroFeature, #14  
                 'ticlHitAssignedEnergies', #18        # zeroFeature, #15  
-                'truthHitAssignedPIDs',               # recHitTruthPID #16
-                'truthHitAssignedEnergiesUncorr']     #  
+                'truthHitAssignedPIDs',                # recHitTruthPID #16
+                'truthHitSpectatorFlag',
+                'truthHitFullyContainedFlag']
                                                                   
         for key, i in zip(keys, range(len(keys))):
             out[key] = truth[:,i:i+1]
@@ -313,7 +336,6 @@ class TrainData_NanoML(TrainData):
         for k in featd:
             allarr.append(featd[k])
         allarr = np.concatenate(allarr,axis=1)
-        
         
         frame = pd.DataFrame (allarr, columns = [k for k in featd])
         if eventno>=0:

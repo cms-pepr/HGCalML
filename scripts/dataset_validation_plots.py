@@ -73,7 +73,7 @@ def get_event_and_make_dict(reset_after=False):
     # truth = truth[:, 0, :]
     feat,  truth_sid, truth_energy, truth_pos, truth_time, truth_particle_id, row_splits = td.interpretAllModelInputs(feat)
     all_dict = td.createFeatureDict(feat)
-    all_dict.update( td.createTruthDict(truth, truth_sid) )
+    all_dict.update( td.createTruthDict(truth, truth_sid) ) #what is the point of this ? #row splits is the rest of the truth i guess
     return all_dict
 
 
@@ -241,9 +241,9 @@ else:
 
         noise_filter = (d['truthHitAssignementIdx'] > -1)
         hgcal_front_face_filter = (abs(d['truthHitAssignedZ']) < front_face_z) # < - on front, > not on front
-       # pid_filter = (abs(d['truthHitAssignedPIDs'])!=2112)
-       # eta_filter = (abs(d['truthHitAssignedEta'])<1.5)
-     #   energy_true = (d['truthHitAssignedEnergies'] > 0)
+        #pid_filter = (abs(d['truthHitAssignedPIDs'])!=2112)
+        #eta_filter = (abs(d['truthHitAssignedEta'])<1.5)
+        #energy_true = (d['truthHitAssignedEnergies'] > 0)
         energy_true = (d['truthHitAssignedEnergies'] > 0.)
         energy_depvstrue = d['truthHitAssignedDepEnergies']/ \
                     (d['truthHitAssignedEnergies']+1e-6)
@@ -254,9 +254,9 @@ else:
         selection_filter = selection_filter.flatten()
 
         for key in d.keys():
-           d[key] = d[key][selection_filter] #apply all selections 
-      #  d['truthHitAssignedEnergies'] = np.where(d['truthHitAssignedEnergies']>3, d['truthHitAssignedEnergies'], d['truthHitAssignedDepEnergies'])
-
+            d[key] = d[key][selection_filter] #apply all selections 
+        #d['truthHitAssignedEnergies'] = np.where(d['truthHitAssignedEnergies']>3, d['truthHitAssignedEnergies'], d['truthHitAssignedDepEnergies'])
+        
         _,simcluster_sel,recHits_counts = np.unique(d['truthHitAssignementIdx'],return_index=True,return_counts=True)#shower based only (not hits)
      
     #print event information   
@@ -345,7 +345,6 @@ else:
     plotter.write_to_pdf()
     pdf.close()
     print('done')
-
 
 
 
