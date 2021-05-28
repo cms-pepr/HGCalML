@@ -7,8 +7,28 @@ import pickle
 import gzip
 import numpy as np
 from numba import jit
+import pandas as pd
+from sklearn.decomposition import PCA
+from scipy.spatial.distance import cdist
+from sklearn.preprocessing import StandardScaler
 #from IPython import embed
 
+def find_pcas(x_to_fit,PCA_n=2,spectator_dist=5,min_hits=10):
+    if x_to_fit.shape[0] < min_hits : #minimal number of hits , with less PCA does not make sense
+        return None
+    x_to_fit = StandardScaler().fit_transform(x_to_fit) # normalizing the features
+    pca = PCA(n_components=PCA_n)
+    pca.fit(x_to_fit)
+    x_transformed = pca.fit_transform(x_to_fit)
+    
+    means=[x_transformed[:,i].mean() for i in range(0,PCA_n)]
+    covs = np.cov(x_transformed.T)
+    metric = 'mahalanobis'    
+    mdist = cdist(x_transformed,[means] , metric=metric, V=covs)[:,0]
+    # Find where the Mahalanobis distance is less than threshold
+    spectators_mask = mdist > spectator_dist
+    spectators_mask_idx = np.where(spectators_mask)[0]
+    return spectators_mask_idx
 
 def calc_eta(x, y, z):
     rsq = np.sqrt(x ** 2 + y ** 2)
@@ -64,14 +84,38 @@ class TrainData_NanoML(TrainData):
         
         recHitZUnsplit = self.hitObservable(tree, hits, "z", split=False, flatten=False)
         self.setSplitIdx(recHitZUnsplit < 0)
-
         recHitZ = self.splitJaggedArray(recHitZUnsplit)
         offsets = recHitZ.offsets
+        
+        recHitX = self.hitObservable(tree, hits, "x", split=True, flatten=False)
+        recHitY = self.hitObservable(tree, hits, "y", split=True, flatten=False)
+        recHitSimClusIdx = self.hitObservable(tree, hits, "BestMergedSimClusterIdx", split=True, flatten=False)
+
+        #Define spectators 
+        recHit_df_events = [pd.DataFrame({"recHitX":recHitX[i],
+                                  "recHitY":recHitY[i],
+                                  "recHitZ":recHitZ[i],
+                                  "recHitSimClusIdx":recHitSimClusIdx[i]
+                                  }) for i in range(recHitX.shape[0])]  
+        for ievent in range(len(recHit_df_events)):
+            df_event = recHit_df_events[ievent]
+            unique_shower_idx = np.unique(df_event['recHitSimClusIdx'])
+            df_event['spectator_mask'] = False #
+            for idx in unique_shower_idx:
+                df_shower = df_event[df_event['recHitSimClusIdx']==idx]
+                x_to_fit = df_shower[['recHitX','recHitY','recHitZ']].to_numpy()
+                spectators_shower_idx = find_pcas(x_to_fit,PCA_n=2,spectator_dist=5,min_hits=10)
+                if (spectators_shower_idx is not None) and (len(spectators_shower_idx)>0) : 
+                    spectators_to_mask = (df_shower.iloc[spectators_shower_idx,:].index.tolist())
+                    df_event.loc[spectators_to_mask,'spectator_mask'] = True
+
+        #Expand back
+        recHitX = np.expand_dims(recHitX.content, axis=1)
+        recHitY = np.expand_dims(recHitY.content, axis=1)
         recHitZ = np.expand_dims(recHitZ.content, axis=1)
-
-
-        recHitX = self.hitObservable(tree, hits, "x")
-        recHitY = self.hitObservable(tree, hits, "y")
+        recHitSpectatorFlag = np.concatenate(np.array([recHit_df_events[i]['spectator_mask'].to_numpy() 
+                                                       for i in range(len(recHit_df_events))],dtype=object)).reshape(-1,1)
+                                                       
         recHitEnergy = self.hitObservable(tree, hits, "energy")
         recHitDetaId = self.hitObservable(tree, hits, "detId")
         recHitTime = self.hitObservable(tree, hits, "time")
@@ -191,7 +235,6 @@ class TrainData_NanoML(TrainData):
         #plt.hist(np.abs(recHitTruthEnergyCorrMu[recHitSimClusIdx>=0]/recHitTruthDepEnergy[recHitSimClusIdx>=0])) 
         #plt.yscale('log')
         #plt.savefig("scat.pdf")
-        spectator_efrac_cutoff = 0.05 #energy fraction cut off : recHitEnergy < X.X * averageRecHitEnergyInShower
         
         truth = np.concatenate([
             np.array(recHitSimClusIdx,dtype='float32'), # 0
@@ -211,7 +254,7 @@ class TrainData_NanoML(TrainData):
             zeroFeature, #14
             zeroFeature, #15
             recHitTruthPID, #16 - 16+n_classes #won't be used anymore
-            np.where(recHitEnergy<spectator_efrac_cutoff*recHitAverageEnergy,1.,0.).astype('float32'),
+            recHitSpectatorFlag,
             np.where(recHitTruthZ<front_face_z,1.,0.).astype('float32')], axis=1)
         
         
@@ -232,7 +275,7 @@ class TrainData_NanoML(TrainData):
         t_pid.createFromNumpy(recHitTruthPID, offsets)
         
         t_spectator = SimpleArray(name="recHitSpectatorFlag") #why do we have inconsistent namings, where is it needed? wrt. to truth array
-        t_spectator.createFromNumpy(np.where(recHitEnergy<spectator_efrac_cutoff*recHitAverageEnergy,1.,0.).astype('float32'), offsets)
+        t_spectator.createFromNumpy(recHitSpectatorFlag.astype('float32'), offsets)
                 
         t_fully_contained = SimpleArray(name="recHitFullyContainedFlag")
         t_fully_contained.createFromNumpy(np.where(recHitTruthZ<front_face_z,1.,0.).astype('float32'), offsets)

@@ -92,15 +92,14 @@ for event_num in range(1,2,2): #looking at jsut one half of event
     hgcal_front_face_filter = (df['truthHitFullyContainedFlag'] > 0) 
     selected_pids = [22,11,211,2211,13,2112]
     pid_filter = np.isin(abs(df['truthHitAssignedPIDs']), selected_pids)
-    filt = noise_filter & hgcal_front_face_filter & np.logical_not(pid_filter)
+    filt = noise_filter & hgcal_front_face_filter   #if including the filter np.logical_not(pid_filter)
     df = df[filt]
     spectator_filter = (df['truthHitSpectatorFlag'] == 1) # 1 - spectator, 0 - normal
     df_spectators_only = df[filt & spectator_filter]
     showers_with_spectators = np.unique(df_spectators_only['truthHitAssignementIdx'])
     showers_spec_filt = np.isin(df['truthHitAssignementIdx'], showers_with_spectators)
     df_spec_filt = df[showers_spec_filt]
-    
-    
+        
     
     df['recHitRxy'] = (df['recHitY']**2+df['recHitX']).pow(1./2)
     df['recHitX_shower_mean'] = df.groupby('truthHitAssignementIdx').recHitX.transform('mean')
@@ -122,8 +121,7 @@ for event_num in range(1,2,2): #looking at jsut one half of event
     df['spectator_mask'] = False #
     for idx in unique_idx:
         df_shower = df[df['truthHitAssignementIdx']==idx]
-        df_shower.head()
-        to_mask = find_pcas(df_shower,PCA_n=3,spectator_dist=5,min_hits=10)
+        to_mask = find_pcas(df_shower,PCA_n=2,spectator_dist=5,min_hits=10)
         if (to_mask is not None) and (len(to_mask)>0) : 
             df.loc[to_mask,'spectator_mask'] = True
     df_pca_spectators = df[df['spectator_mask']==True]
