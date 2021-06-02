@@ -7,6 +7,9 @@ from LayersRagged import *
 from GravNetLayersRagged import GooeyBatchNorm,LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
+from tensorflow.python.framework import ops
+from tensorflow.python.ops import math_ops
+
 
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -469,10 +472,14 @@ class RobustModel(tf.keras.Model):
 
         ret_dict = {m.name: m.result() for m in self.metrics}
 
-        ret_dict['x'] = x
-        ret_dict['y_pred'] = y_pred
+        self.data_x = x
+        self.data_y_pred = y_pred
+
+        # ret_dict['x'] = x
+        # ret_dict['y_pred'] = y_pred
 
         return ret_dict
+
 
 
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel

@@ -71,8 +71,11 @@ class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
             self.q.put(data)
 
     def on_train_batch_end(self, batch, logs=None):
-        y_pred = logs['y_pred']
-        x = logs['x']
+        # y_pred = logs['y_pred']
+        # x = logs['x']
+
+        x = self.model.data_x
+        y_pred = self.model.data_y_pred
 
         beta = y_pred[0]
         cc = y_pred[1]
@@ -82,12 +85,7 @@ class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
 
         feat_dict = self.td.createFeatureDict(feat)
 
-        data = batch, cc, beta[:, 0], t_idx[:, 0], feat_dict['recHitEnergy'][:, 0], t_energy[:, 0], pred_energy[:, 0], row_splits[:, 0]
-
-        # print("\n\nX test start")
-        # for x in data[1:]:
-        #     print(x.shape)
-        # print("X test end\n\n")
+        data = batch, cc.numpy(), beta[:, 0].numpy(), t_idx[:, 0].numpy(), feat_dict['recHitEnergy'][:, 0].numpy(), t_energy[:, 0].numpy(), pred_energy[:, 0].numpy(), row_splits[:, 0].numpy()
 
         self.add(data)
 
