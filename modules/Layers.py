@@ -4,8 +4,8 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import GooeyBatchNorm,LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
-from lossLayers import LLFullTrackMLObjectCondensation,LLLocalClusterCoordinates,LLObjectCondensation, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
+from GravNetLayersRagged import PrintMeanAndStd,GooeyBatchNorm,LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
@@ -71,14 +71,11 @@ global_layers_list['LocalClusterReshapeFromNeighbours2']=LocalClusterReshapeFrom
 
 global_layers_list['NeighbourCovariance']=NeighbourCovariance
 
-
-global_layers_list['LLObjectCondensation']=LLObjectCondensation
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 
 global_layers_list['LossLayerBase']=LossLayerBase
-global_layers_list['LLFullTrackMLObjectCondensation']=LLFullTrackMLObjectCondensation
 
 global_layers_list['NormalizeInputShapes']=NormalizeInputShapes
 global_layers_list['NeighbourApproxPCA']=NeighbourApproxPCA
@@ -87,6 +84,8 @@ global_layers_list['EdgeConvStatic']=EdgeConvStatic
 global_layers_list['ManualCoordTransform']=ManualCoordTransform
 
 global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
+global_layers_list['PrintMeanAndStd']=PrintMeanAndStd
+
 
 
 
@@ -414,16 +413,20 @@ class ExtendedMetricsModel(tf.keras.Model):
         return ret_dict
 
 class RobustModel(tf.keras.Model):
-    def __init__(self, skip_non_finite=5, *args, **kwargs):
+    def __init__(self, skip_non_finite=5, 
+                 return_data=False,
+                 *args, **kwargs):
         """
 
         :param skip_non_finite: Number of consecutive times to skip nans/inf loss and gradient values
+        :param return_data: also returns input features as well as prediction in addition to metrics (potential memory leak?)
         :param args: For subclass Model
         :param kwargs:  For subclass Model
         """
         super(RobustModel, self).__init__(*args, **kwargs)
         self.skip_non_finite = skip_non_finite
         self.non_finite_count = 0
+        self.return_data = return_data
 
     def train_step(self, data):
         # Unpack the data. Its structure depends on your model and
@@ -475,11 +478,9 @@ class RobustModel(tf.keras.Model):
         self.data_x = x
         self.data_y_pred = y_pred
 
-        # ret_dict['x'] = x
-        # ret_dict['y_pred'] = y_pred
-
         return ret_dict
-
+    
+    
 
 
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel

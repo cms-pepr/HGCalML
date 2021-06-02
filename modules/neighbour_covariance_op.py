@@ -22,7 +22,6 @@ def NeighbourCovariance(coordinates, distsq, features, n_idxs):
     #calc mean of features over all neighbours (1/K factor too much)
     sum_F = AccumulateKnn(distsq,  features, n_idxs, mean_and_max=False)[0] * nKf
     #not gonna work like this
-    sum_F    = tf.debugging.check_numerics(sum_F, "sum_F has NaNs\n")
     
     
     #build feature-weighted coordinates: V x 1 x C * V x F x 1 
@@ -33,16 +32,12 @@ def NeighbourCovariance(coordinates, distsq, features, n_idxs):
     
     sum_FC = AccumulateKnn(distsq,  FC, n_idxs, mean_and_max=False)[0] * nKf
     
-    sum_FC    = tf.debugging.check_numerics(sum_FC, "sum_FC has NaNs\n")
-    
     #reshape back to V x F x C
     mean_C = tf.reshape(sum_FC, [-1, nF, nC])
     mean_C = tf.math.divide_no_nan(mean_C, tf.expand_dims(sum_F, axis=2)+1e-3)
     
     #now we have centred coordinates: V x F x C
     centered_C = tf.expand_dims(coordinates,axis=1) - mean_C
-    
-    centered_C    = tf.debugging.check_numerics(centered_C, "centered_C has NaNs\n")
     
     #build covariance input: V x F x C x 1  *  V x F x 1 x C
     cov = tf.expand_dims(centered_C, axis=3) * tf.expand_dims(centered_C, axis=2)
@@ -57,11 +52,6 @@ def NeighbourCovariance(coordinates, distsq, features, n_idxs):
     cov = tf.math.divide_no_nan(cov, tf.expand_dims(sum_F, axis=2)+1e-3)
     cov = tf.reshape(cov, [-1, nF, nC**2])#just for keras
     
-    #debug checks
-    cov    = tf.debugging.check_numerics(cov, "cov has NaNs\n")
-    mean_C    = tf.debugging.check_numerics(mean_C, "mean_C has NaNs\n")
-    
-    #print('cov mean',cov.shape,mean_C.shape)
     return cov, mean_C
 
 
