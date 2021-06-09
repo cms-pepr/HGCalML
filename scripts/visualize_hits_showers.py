@@ -94,38 +94,26 @@ for event_num in range(1,2,2): #looking at jsut one half of event
     pid_filter = np.isin(abs(df['truthHitAssignedPIDs']), selected_pids)
     filt = noise_filter & hgcal_front_face_filter   #if including the filter np.logical_not(pid_filter)
     df = df[filt]
-    spectator_filter = (df['truthHitSpectatorFlag'] == 1) # 1 - spectator, 0 - normal
-    df_spectators_only = df[filt & spectator_filter]
+    spectator_filter = (df['truthHitSpectatorFlag'] > 7) 
+    df_spectators_only = df[spectator_filter]
     showers_with_spectators = np.unique(df_spectators_only['truthHitAssignementIdx'])
     showers_spec_filt = np.isin(df['truthHitAssignementIdx'], showers_with_spectators)
     df_spec_filt = df[showers_spec_filt]
         
-    
     df['recHitRxy'] = (df['recHitY']**2+df['recHitX']).pow(1./2)
-    df['recHitX_shower_mean'] = df.groupby('truthHitAssignementIdx').recHitX.transform('mean')
-    df['recHitY_shower_mean'] = df.groupby('truthHitAssignementIdx').recHitY.transform('mean')
-    df['recHitZ_shower_mean'] = df.groupby('truthHitAssignementIdx').recHitZ.transform('mean')
     df['recHitRxy_shower_mean'] = df.groupby('truthHitAssignementIdx').recHitRxy.transform('mean')
-    df['recHitX_shower_std'] = df.groupby('truthHitAssignementIdx').recHitX.transform('std')
-    df['recHitY_shower_std'] = df.groupby('truthHitAssignementIdx').recHitY.transform('std')
-    df['recHitZ_shower_std'] = df.groupby('truthHitAssignementIdx').recHitZ.transform('std')
-    df['recHitR_shower_std'] = df.groupby('truthHitAssignementIdx').recHitRxy.transform('std')
     df['recHitRxy_shower_std'] = df.groupby('truthHitAssignementIdx').recHitRxy.transform('std')
     df['recHit_Nhits'] = df.groupby('truthHitAssignementIdx').recHitX.transform(len)
-    df['spectator'] = ((df['recHitX']-df['recHitX_shower_mean']).abs()>4*df['recHitX_shower_std']) | ((df['recHitY']-df['recHitY_shower_mean']).abs()>4*df['recHitY_shower_std'])
-    newfitler = df['spectator']==True
-    df_new_spectators = df[newfitler]
-    
-    
+    ############ To test that the implementation in the class is correct, verified.
     unique_idx = np.unique(df['truthHitAssignementIdx'])
     df['spectator_mask'] = False #
     for idx in unique_idx:
         df_shower = df[df['truthHitAssignementIdx']==idx]
-        to_mask = find_pcas(df_shower,PCA_n=2,spectator_dist=5,min_hits=10)
+        to_mask = find_pcas(df_shower,PCA_n=2,spectator_dist=7,min_hits=10)
         if (to_mask is not None) and (len(to_mask)>0) : 
             df.loc[to_mask,'spectator_mask'] = True
     df_pca_spectators = df[df['spectator_mask']==True]
-
+    #################################
 
 
     fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", 
@@ -173,152 +161,36 @@ for event_num in range(1,2,2): #looking at jsut one half of event
             showlegend=True
             ),
         go.Scatter3d(
-            name='Spectator Hits',
+            name='PCA Spectator Hits',
             x=df_spectators_only['recHitX'],
             y=df_spectators_only['recHitZ'],
             z=df_spectators_only['recHitY'],
             mode='markers',
             # marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
             marker=dict(color='red',
-                        symbol='x',size=3,line=dict(width=3,
-                                                    color=df_spectators_only['truthHitAssignementIdx'],colorscale='Viridis')),
+                        symbol='cross',size=5),
+            text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
+                  for (idx,e,pdgid) in zip(df_spectators_only['truthHitAssignementIdx'],
+                                           df_spectators_only['recHitEnergy'],df_spectators_only['truthHitAssignedPIDs'])],
+            showlegend=True
+            ),       
+        go.Scatter3d(
+            name='New Spectator Hits',
+            x=df_spectators_only['recHitX'],
+            y=df_spectators_only['recHitZ'],
+            z=df_spectators_only['recHitY'],
+            mode='markers',
+            # marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
+            marker=dict(color=df_spectators_only['truthHitAssignementIdx'],
+                        symbol='cross',size=3),
             text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
                   for (idx,e,pdgid) in zip(df_spectators_only['truthHitAssignementIdx'],
                                            df_spectators_only['recHitEnergy'],df_spectators_only['truthHitAssignedPIDs'])],
             showlegend=True
             )
         ])     
-      
-    fig2.write_html(outdir+ 'recHits_3D_AllfrontFaceWithSpectators_event%i.html'%event_num)
-    
-    fig3 = go.Figure([
-        go.Scatter3d(
-            name='Showers',
-            x=df['recHitX'],
-            y=df['recHitZ'],
-            z=df['recHitY'],
-            mode='markers',
-            #marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
-            #            size=hitSize(df_spec_filt["recHitEnergy"]), line=dict(width=0)),
-            marker=dict(color=df['truthHitAssignementIdx'],colorscale='Viridis',
-                        size=hitSize(df["recHitEnergy"]), line=dict(width=0)),
-            text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
-                  for (idx,e,pdgid) in zip(df['truthHitAssignementIdx'],
-                                           df['recHitEnergy'],df['truthHitAssignedPIDs'])],
-            hovertemplate
-            
-            ="x: %{x:0.2f}<br>y: %{z:0.2f}<br>z: %{y:0.2f}<br>%{text}<br>",
-            showlegend=True
-            ),
-        go.Scatter3d(
-            name='New Spectator Hits',
-            x=df_new_spectators['recHitX'],
-            y=df_new_spectators['recHitZ'],
-            z=df_new_spectators['recHitY'],
-            mode='markers',
-            # marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
-            marker=dict(color='red',
-                        symbol='cross',size=5),
-            text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
-                  for (idx,e,pdgid) in zip(df_new_spectators['truthHitAssignementIdx'],
-                                           df_new_spectators['recHitEnergy'],df_new_spectators['truthHitAssignedPIDs'])],
-            showlegend=True
-            ),       
-        go.Scatter3d(
-            name='New Spectator Hits',
-            x=df_new_spectators['recHitX'],
-            y=df_new_spectators['recHitZ'],
-            z=df_new_spectators['recHitY'],
-            mode='markers',
-            # marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
-            marker=dict(color=df_new_spectators['truthHitAssignementIdx'],
-                        symbol='cross',size=3),
-            text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
-                  for (idx,e,pdgid) in zip(df_new_spectators['truthHitAssignementIdx'],
-                                           df_new_spectators['recHitEnergy'],df_new_spectators['truthHitAssignedPIDs'])],
-            showlegend=True
-            )
-        ])     
-      
-    fig3.write_html(outdir+ 'recHits_3D_AllfrontFaceWithNewSpectators_event%i.html'%event_num)
-    
-    fig4 = go.Figure([
-        go.Scatter3d(
-            name='Showers',
-            x=df['recHitX'],
-            y=df['recHitZ'],
-            z=df['recHitY'],
-            mode='markers',
-            #marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
-            #            size=hitSize(df_spec_filt["recHitEnergy"]), line=dict(width=0)),
-            marker=dict(color=df['truthHitAssignementIdx'],colorscale='Viridis',
-                        size=hitSize(df["recHitEnergy"]), line=dict(width=0)),
-            text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
-                  for (idx,e,pdgid) in zip(df['truthHitAssignementIdx'],
-                                           df['recHitEnergy'],df['truthHitAssignedPIDs'])],
-            hovertemplate
-            
-            ="x: %{x:0.2f}<br>y: %{z:0.2f}<br>z: %{y:0.2f}<br>%{text}<br>",
-            showlegend=True
-            )
-        ])     
-      
-    fig4.write_html(outdir+ 'recHits_3D_AllfrontFaceWithoutNewSpectators_event%i.html'%event_num)    
-    
-    fig5 = go.Figure([
-        go.Scatter3d(
-            name='Showers',
-            x=df['recHitX'],
-            y=df['recHitZ'],
-            z=df['recHitY'],
-            mode='markers',
-            #marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
-            #            size=hitSize(df_spec_filt["recHitEnergy"]), line=dict(width=0)),
-            marker=dict(color=df['truthHitAssignementIdx'],colorscale='Viridis',
-                        size=hitSize(df["recHitEnergy"]), line=dict(width=0)),
-            text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
-                  for (idx,e,pdgid) in zip(df['truthHitAssignementIdx'],
-                                           df['recHitEnergy'],df['truthHitAssignedPIDs'])],
-            hovertemplate
-            
-            ="x: %{x:0.2f}<br>y: %{z:0.2f}<br>z: %{y:0.2f}<br>%{text}<br>",
-            showlegend=True
-            ),
-        go.Scatter3d(
-            name='New Spectator Hits',
-            x=df_pca_spectators['recHitX'],
-            y=df_pca_spectators['recHitZ'],
-            z=df_pca_spectators['recHitY'],
-            mode='markers',
-            # marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
-            marker=dict(color='red',
-                        symbol='cross',size=5),
-            text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
-                  for (idx,e,pdgid) in zip(df_pca_spectators['truthHitAssignementIdx'],
-                                           df_pca_spectators['recHitEnergy'],df_pca_spectators['truthHitAssignedPIDs'])],
-            showlegend=True
-            ),       
-        go.Scatter3d(
-            name='New Spectator Hits',
-            x=df_pca_spectators['recHitX'],
-            y=df_pca_spectators['recHitZ'],
-            z=df_pca_spectators['recHitY'],
-            mode='markers',
-            # marker=dict(color=mapColors(df_spec_filt['truthHitAssignementIdx'].to_numpy()),
-            marker=dict(color=df_pca_spectators['truthHitAssignementIdx'],
-                        symbol='cross',size=3),
-            text=["Cluster Idx %i<br>RecHit Energy: %.4f<br>PDG Id: %i<br>" % (idx,e,pdgid)
-                  for (idx,e,pdgid) in zip(df_pca_spectators['truthHitAssignementIdx'],
-                                           df_pca_spectators['recHitEnergy'],df_pca_spectators['truthHitAssignedPIDs'])],
-            showlegend=True
-            )
-        ])     
-      
-    fig5.write_html(outdir+ 'recHits_3D_AllfrontFaceWithPcaSpectators_event%i.html'%event_num)
-    
-    ######################
-    
+    fig2.write_html(outdir+ 'recHits_3D_AllfrontFaceWithSpectators_event%i.html'%event_num)   
 
-    
+
     
 

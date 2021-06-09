@@ -71,9 +71,9 @@ def get_event_and_make_dict(reset_after=False):
     #print(len(feat), len(truth))
     truth = truth[0]
     # truth = truth[:, 0, :]
-    feat,  truth_sid, truth_energy, truth_pos, truth_time, truth_particle_id, row_splits = td.interpretAllModelInputs(feat)
+    feat,  truth_sid, truth_energy, truth_pos, truth_time, truth_particle_id,truth_spectator, truth_fully_contained, row_splits = td.interpretAllModelInputs(feat)
     all_dict = td.createFeatureDict(feat)
-    all_dict.update( td.createTruthDict(truth, truth_sid) ) #what is the point of this ? #row splits is the rest of the truth i guess
+    all_dict.update( td.createTruthDict(truth, truth_sid) ) 
     return all_dict
 
 
@@ -258,17 +258,10 @@ else:
         #d['truthHitAssignedEnergies'] = np.where(d['truthHitAssignedEnergies']>3, d['truthHitAssignedEnergies'], d['truthHitAssignedDepEnergies'])
         
         _,simcluster_sel,recHits_counts = np.unique(d['truthHitAssignementIdx'],return_index=True,return_counts=True)#shower based only (not hits)
-     
-    #print event information   
-    #    if (d['truthHitAssignementIdx'].shape[0]>0) : 
-    #         print(i)
-    #         print(d['truthHitAssignementIdx'])
-    #         print(d['truthHitAssignedDepEnergies'])
-    #         print(d['truthHitAssignedEnergies'])
+
  
         plotter.add("Num rec hit counts", x=recHits_counts,
                     log=True, xlabel='# rec hit counts', ylabel='Events', color='dodgerblue') 
-
 
         energy_depvstrue = d['truthHitAssignedDepEnergies']/ \
                     (d['truthHitAssignedEnergies']+1e-6)
