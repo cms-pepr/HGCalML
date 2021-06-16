@@ -194,7 +194,7 @@ def oc_per_batch_element(
         
     V_rep *= distance_scale_kalpha_m_exp**2  #K x V x 1 , same scaling as attractive potential
     
-    V_rep =  1. / (V_rep + 0.1) #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
+    V_rep =  tf.math.exp(-4.* V_rep) #1. / (V_rep + 0.1) #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
     
     V_rep *= M_not * tf.expand_dims(q_rep, axis=0) #K x V x 1
     V_rep = tf.reduce_sum(V_rep, axis=1) #K x 1
