@@ -7,7 +7,9 @@ import pickle
 import gzip
 import numpy as np
 from numba import jit
+import mgzip
 #from IPython import embed
+import os
 
 
 def calc_eta(x, y, z):
@@ -227,7 +229,7 @@ class TrainData_NanoML(TrainData):
     def interpretAllModelInputs(self, ilist):
         '''
         input: the full list of keras inputs
-        returns: 
+        returns: td
          - rechit feature array
          - t_idxarr
          - t_energyarr
@@ -322,7 +324,6 @@ class TrainData_NanoML(TrainData):
             return frame, rs
     
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
-        import os
         outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
         # print("hello", outfilename, inputfile)
 
@@ -335,7 +336,13 @@ class TrainData_NanoML(TrainData):
         with gzip.open(outfilename, "wb") as mypicklefile:
             pickle.dump(outdict, mypicklefile)
         print("Done")
-    
+
+    def writeOutPredictionDict(self, dumping_data, outfilename):
+        outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
+
+        with mgzip.open(outfilename, 'wb', thread=8, blocksize=2*10**7) as f2:
+            pickle.dump(dumping_data, f2)
+
     def readPredicted(self, predfile):
         with gzip.open(predfile) as mypicklefile:
             return pickle.load(mypicklefile)

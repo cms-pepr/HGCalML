@@ -9,6 +9,7 @@ from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates, LossLaye
 import traceback
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
+import os
 
 
 
@@ -412,21 +413,99 @@ class ExtendedMetricsModel(tf.keras.Model):
 
         return ret_dict
 
+
 class RobustModel(tf.keras.Model):
-    def __init__(self, skip_non_finite=5, 
-                 return_data=False,
+    def __init__(self, skip_non_finite=5,
+                 model_inputs=None,
+                 model_outputs=None,
+                 custom_objects=None,
+                 submodel=None,
                  *args, **kwargs):
         """
 
         :param skip_non_finite: Number of consecutive times to skip nans/inf loss and gradient values
-        :param return_data: also returns input features as well as prediction in addition to metrics (potential memory leak?)
+        :param model_inputs: All the inputs to the model as a list
+        :param model_outputs: All the outputs to the model as form of list of tupes where the first is the name of the output
         :param args: For subclass Model
         :param kwargs:  For subclass Model
         """
+
         super(RobustModel, self).__init__(*args, **kwargs)
+
+        # if 'config' in kwargs:
+        #     config = kwargs.pop('config')
+
+
         self.skip_non_finite = skip_non_finite
         self.non_finite_count = 0
-        self.return_data = return_data
+
+        if submodel is not None:
+            self.outputs_keys = [x[0] for x in model_outputs]
+            self.model = keras.Model().from_config(submodel, custom_objects=custom_objects)
+        else:
+            self.outputs_keys = [x[0] for x in model_outputs]
+            outputs_placeholders = [x[1] for x in model_outputs]
+            self.model = keras.Model(inputs=model_inputs, outputs=outputs_placeholders)
+
+
+    def save(self, *args, **kwargs):
+        if 'filepath' in kwargs:
+            filepath = kwargs.pop('filepath')
+        else:
+            filepath = args[0]
+            args = args[1:]
+
+        if 'save_format' in kwargs:
+            kwargs.pop('save_format')
+
+        filepath_tf = filepath
+        if str(filepath).endswith('.h5'):
+            self.model.save(filepath=filepath)
+            filepath_tf = os.path.splitext(filepath)[0] + '_save'
+
+        save_format='tf'
+
+        super().save(filepath=filepath_tf, save_format=save_format, save_traces=False)
+
+    def call(self, inputs):
+        outputs = self.model(inputs)
+
+        return outputs
+
+    def call_with_dict_as_output(self, inputs):
+        outputs = self.call(inputs)
+        output_keyed = {}
+        for i in range(len(self.outputs_keys)):
+            output_keyed[self.outputs_keys[i]] = outputs[i]
+
+        return output_keyed
+
+
+    # def build(self, input_shape):
+    #     super().build(input_shape)
+    #     self.model.build(input_shape)
+
+    def compile(self,
+              *args,
+              **kwargs):
+        self.model.compile(*args, **kwargs)
+        super().compile(*args, **kwargs)
+
+    # def build(self, input_shape):
+    #     self.model.build(input_shape)
+    #     self.built=True
+
+    def get_config(self):
+        config = {'skip_non_finite': self.skip_non_finite, 'outputs_keys':self.outputs_keys}
+        config['submodel'] = self.model.get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        outputs_keys = config.pop('outputs_keys')
+        outputs = [(x, None) for x in outputs_keys]
+        xyz = cls(model_outputs=outputs, custom_objects=custom_objects, **config)
+        return xyz
 
     def train_step(self, data):
         # Unpack the data. Its structure depends on your model and
