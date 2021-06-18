@@ -49,7 +49,7 @@ cd Train
 python3 june_format_example_nf_pca_double_coords.py /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop/dataCollection.djcdc /mnt/ceph/users/sqasim/trainings/training_folder
 ```
 
-After training the model for a while, navigate to scripts directory and do the inference:
+After training the model for a while, navigate to scripts directory and do the inference. Please note that this is *different* from the standard DeepJetCore procedure.
 
 ```
 predict_hgcal.py /mnt/ceph/users/sqasim/trainings/training_folder/KERAS_check_model_last_save/ /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop/dataCollection.djcdc /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop/test_files.txt /mnt/ceph/users/sqasim/trainings/training_folder/inference
