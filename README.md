@@ -52,9 +52,7 @@ python3 june_format_example_nf_pca_double_coords.py /mnt/ceph/users/sqasim/Datas
 After training the model for a while, navigate to scripts directory and do the inference:
 
 ```
-cd ../scripts
-
-python3 predict_hgcal.py /mnt/ceph/users/sqasim/trainings/training_folder/KERAS_check_model_last_save/ /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop/dataCollection.djcdc /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop/test_files.txt /mnt/ceph/users/sqasim/trainings/training_folder/inference
+predict_hgcal.py /mnt/ceph/users/sqasim/trainings/training_folder/KERAS_check_model_last_save/ /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop/dataCollection.djcdc /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop/test_files.txt /mnt/ceph/users/sqasim/trainings/training_folder/inference
 ```
 
 
