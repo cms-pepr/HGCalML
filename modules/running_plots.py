@@ -12,12 +12,13 @@ import tensorflow.keras.callbacks.experimental
 
 
 class Worker(threading.Thread):
-    def __init__(self, q, tensorboard_manager, beta_threshold=0.5, dist_threshold=0.5, *args, **kwargs):
+    def __init__(self, q, tensorboard_manager, beta_threshold=0.5, dist_threshold=0.5, database_manager=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.q = q
         self.tensorboard_manager = tensorboard_manager
         self.beta_threshold = beta_threshold
         self.dist_threshold = dist_threshold
+        self.database_manager = database_manager
 
     def run(self):
         while True:
@@ -51,19 +52,35 @@ class Worker(threading.Thread):
             dic['response'] = response
             dic['sum_response'] = sum_response
 
-            self.tensorboard_manager.step(step, dic)
+
+            if self.tensorboard_manager is not None:
+                self.tensorboard_manager.step(step, dic)
+
+            dic['beta_threshold'] = self.beta_threshold
+            dic['distance_threshold'] = self.dist_threshold
+            dic['iteration'] = step
+
+            if self.database_manager is not None:
+                print("\n\n\nAdding new data to experiment with train step\n\n\n", step)
+
+                self.database_manager.insert_experiment_data('training_performance_metrics', dic)
 
             self.q.task_done()
 
 
 class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
-    def __init__(self, td, tensorboard_manager, beta_threshold=0.5, dist_threshold=0.5):
+    def __init__(self, td, tensorboard_manager=None, beta_threshold=0.5, dist_threshold=0.5, database_manager=None):
         """Initialize intermediate variables for batches and lists."""
         super().__init__()
         self.td = td
         q = queue.Queue()
         self.q = q
-        self.thread = Worker(self.q, tensorboard_manager, beta_threshold=beta_threshold, dist_threshold=dist_threshold).start()
+
+        if tensorboard_manager is None and database_manager is None:
+            raise RuntimeError("Both tensorboard manager and database managers are None. No where to write to.")
+
+        self.thread = Worker(self.q, tensorboard_manager, beta_threshold=beta_threshold, dist_threshold=dist_threshold, database_manager=database_manager).start()
+
 
     def add(self, data):
         if self.q.empty():
@@ -85,8 +102,11 @@ class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
 
         feat_dict = self.td.createFeatureDict(feat)
 
-        data = batch, cc.numpy(), beta[:, 0].numpy(), t_idx[:, 0].numpy(), feat_dict['recHitEnergy'][:, 0].numpy(), t_energy[:, 0].numpy(), pred_energy[:, 0].numpy(), row_splits[:, 0].numpy()
+        data = self.model.num_train_step, cc.numpy(), beta[:, 0].numpy(), t_idx[:, 0].numpy(), feat_dict['recHitEnergy'][:, 0].numpy(), t_energy[:, 0].numpy(), pred_energy[:, 0].numpy(), row_splits[:, 0].numpy()
 
         self.add(data)
+
+
+
 
 

@@ -10,7 +10,7 @@ class HGCalTraining(training_base):
             filename = os.path.splitext(filename)[0] + '_save'
 
         if os.path.exists(filename):
-            keras.models.load_model(filename, custom_objects=custom_objects_list)
+            self.keras_model = keras.models.load_model(filename, custom_objects=custom_objects_list)
         else:
             super().loadModel(filename)
 

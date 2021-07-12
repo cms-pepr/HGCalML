@@ -416,6 +416,7 @@ class ExtendedMetricsModel(tf.keras.Model):
 
 class RobustModel(tf.keras.Model):
     def __init__(self, skip_non_finite=5,
+                 num_train_step=0,
                  model_inputs=None,
                  model_outputs=None,
                  custom_objects=None,
@@ -438,6 +439,7 @@ class RobustModel(tf.keras.Model):
 
         self.skip_non_finite = skip_non_finite
         self.non_finite_count = 0
+        self.num_train_step = num_train_step # Since keras one is  not reliable (new epochs, if model is loaded from in between etc)
 
         if submodel is not None:
             self.outputs_keys = [x[0] for x in model_outputs]
@@ -480,6 +482,13 @@ class RobustModel(tf.keras.Model):
 
         return output_keyed
 
+    def convert_output_to_dict(self, outputs):
+        output_keyed = {}
+
+        for i in range(len(self.outputs_keys)):
+            output_keyed[self.outputs_keys[i]] = outputs[i]
+
+        return output_keyed
 
     # def build(self, input_shape):
     #     super().build(input_shape)
@@ -498,12 +507,14 @@ class RobustModel(tf.keras.Model):
     def get_config(self):
         config = {'skip_non_finite': self.skip_non_finite, 'outputs_keys':self.outputs_keys}
         config['submodel'] = self.model.get_config()
+        config['num_train_step'] = self.num_train_step
         return config
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
         outputs_keys = config.pop('outputs_keys')
         outputs = [(x, None) for x in outputs_keys]
+
         xyz = cls(model_outputs=outputs, custom_objects=custom_objects, **config)
         return xyz
 
@@ -531,6 +542,8 @@ class RobustModel(tf.keras.Model):
         gradients = tape.gradient(loss, trainable_vars)
         is_valid = is_valid and not bool(tf.reduce_any([_grad is None for _grad in gradients]))
 
+
+
         if is_valid:
             num_non_finite_tensors = float(tf.reduce_sum(tf.cast([tf.reduce_any(tf.math.logical_not(tf.math.is_finite(_grad))) for _grad in gradients], tf.float32)))
             is_valid = is_valid and num_non_finite_tensors == 0.0
@@ -556,10 +569,11 @@ class RobustModel(tf.keras.Model):
 
         self.data_x = x
         self.data_y_pred = y_pred
+        self.num_train_step += 1
 
         return ret_dict
-    
-    
+
+
 
 
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel
