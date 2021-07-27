@@ -98,7 +98,7 @@ class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
         cc = y_pred[1]
         pred_energy = y_pred[2]
 
-        feat, t_idx, t_energy, t_pos, t_time, t_pid, row_splits = self.td.interpretAllModelInputs(x)
+        feat, t_idx, t_energy, t_pos, t_time, t_pid, t_spectator, t_fully_contained, row_splits = self.td.interpretAllModelInputs(x)
 
         feat_dict = self.td.createFeatureDict(feat)
 
