@@ -54,7 +54,10 @@ REGISTER_OP("MIndicesOpFunctor")
     unique_idxs, _, cperunique = tf.unique_with_counts(c_truth_idxs)
     
     nmax_per_unique = tf.reduce_max(cperunique)
-
+    #for empty tensors tf.reduce_max returns -lowest 32 bit integer or similar here
+    #eager
+    if nmax_per_unique.numpy() < 1:
+        return None, None, None
 
     sel_dxs, m_not = _op.MIndices( 
         calc_m_not=calc_m_not,

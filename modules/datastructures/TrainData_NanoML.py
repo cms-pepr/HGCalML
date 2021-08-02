@@ -182,11 +182,14 @@ class TrainData_NanoML(TrainData):
         recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0.)
         recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, 0)
         recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, 0)
+        recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, 0)
+
         low_energy_shower_cutoff = 3
-        recHitTruthEnergy = np.expand_dims(np.where(recHitTruthEnergy>low_energy_shower_cutoff, recHitTruthEnergy,recHitTruthDepEnergy),axis=1)
+        # Uncorrected currently not used 
+        recHitTruthEnergy = np.where(recHitTruthEnergy>low_energy_shower_cutoff, recHitTruthEnergy,recHitTruthDepEnergy)
+        recHitTruthEnergy = np.where(recHitTruthEnergyCorrMu>low_energy_shower_cutoff, recHitTruthEnergyCorrMu,recHitTruthDepEnergy)
 
         #very bad names because these quatities are associated to Merged Clusters and not hits
-        recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, 0)
         recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 0)
         recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0)
         recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0)
@@ -270,7 +273,7 @@ class TrainData_NanoML(TrainData):
         t_idxarr = SimpleArray(recHitSimClusIdx, offsets, name="recHitTruthClusterIdx")
         
         t_energyarr = SimpleArray(name="recHitTruthEnergy")
-        t_energyarr.createFromNumpy(recHitTruthEnergy, offsets)
+        t_energyarr.createFromNumpy(recHitTruthEnergyCorrMu, offsets)
         
         t_posarr = SimpleArray(name="recHitTruthPosition")
         t_posarr.createFromNumpy(np.concatenate([recHitTruthX, recHitTruthY],axis=-1), offsets)

@@ -130,6 +130,13 @@ def oc_per_batch_element(
     is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32')+1., 0.)#V x 1
     
     Msel, M_not, N_per_obj = CreateMidx(truth_idx, calc_m_not=True)
+    #use eager here
+    if Msel is None:
+        #V_att, V_rep, Noise_pen, B_pen, pll, too_much_B_pen
+        print('>>> WARNING: Event has no objects, only noise! Will return zero loss. <<<')
+        zero_tensor = tf.reduce_mean(q,axis=0)*0.
+        zero_payload = tf.reduce_mean(payload_loss,axis=0)*0.
+        return zero_tensor,zero_tensor,zero_tensor,zero_tensor,zero_payload,zero_tensor
     
     N_per_obj = tf.cast(N_per_obj, dtype='float32') # K x 1
     
