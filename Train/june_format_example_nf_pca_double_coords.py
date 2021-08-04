@@ -13,10 +13,13 @@ from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropou
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
+
+# from experiment_database_manager import ExperimentDatabaseManager
 from tensorboard_manager import TensorBoardManager
 from running_plots import RunningEfficiencyFakeRateCallback
 import tensorflow.keras as keras
 from datastructures import TrainData_NanoML
+
 
 from DeepJetCore.modeltools import fixLayersContaining
 # from tensorflow.keras.models import load_model
@@ -24,7 +27,7 @@ from DeepJetCore.training.training_base import custom_objects_list
 
 # from tensorflow.keras.optimizer_v2 import Adam
 
-from plotting_callbacks import plotEventDuringTraining
+from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining
 from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
 
 from clr_callback import CyclicLR
@@ -35,6 +38,9 @@ from model_blocks import create_outputs
 from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
 from Layers import GooeyBatchNorm #make a new line
 from datastructures import TrainData_OC
+import sql_credentials
+from datetime import datetime
+
 
 td=TrainData_NanoML()
 '''
@@ -233,15 +239,18 @@ def gravnet_model(Inputs,
                                             orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid,
                                             row_splits])
 
-    return RobustModel(model_inputs=Inputs, model_outputs=[('pred_beta', pred_beta),
-                                                           ('pred_ccoords',pred_ccoords),
-                                                           ('pred_energy',pred_energy),
-                                                           ('pred_pos',pred_pos),
-                                                           ('pred_time',pred_time),
-                                                           ('pred_id',pred_id),
-                                                           ('pred_dist',pred_dist),
-                                                           ('row_splits',rs)])
+    model_outputs = [('pred_beta', pred_beta), ('pred_ccoords',pred_ccoords),
+       ('pred_energy',pred_energy),
+       ('pred_pos',pred_pos),
+       ('pred_time',pred_time),
+       ('pred_id',pred_id),
+       ('pred_dist',pred_dist),
+       ('row_splits',rs)]
 
+    for i, (x, y) in enumerate(zip(backgatheredids, backgathered_coords)):
+        model_outputs.append(('backgatheredids_'+str(i), x))
+        model_outputs.append(('backgathered_coords_'+str(i), y))
+    return RobustModel(model_inputs=Inputs, model_outputs=model_outputs)
 
 import training_base_hgcal
 train = training_base_hgcal.HGCalTraining(testrun=False, resumeSilently=True, renewtokens=False)
@@ -266,9 +275,51 @@ publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_tr
 cb = []
 os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
 tensorboard_manager = TensorBoardManager(train.outputDir + "/summary/")
-
+# database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
+# database_manager.set_experiment('alpha_experiment_june_pca_double_cords_' + datetime.now().strftime("%Y%m%d_%H%M%S"))
 cb += [RunningEfficiencyFakeRateCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5, database_manager=None)]
 
+cb = [plotClusteringDuringTraining(
+    use_backgather_idx=8 + i,
+    outputfile=train.outputDir + "/plts/sn" + str(i) + '_',
+    samplefile=samplepath,
+    after_n_batches=20,
+    on_epoch_end=False,
+    publish=publishpath + "_cl_" + str(i),
+    use_event=0)
+    for i in [0, 2]]
+
+cb += [
+    plotEventDuringTraining(
+        outputfile=train.outputDir + "/plts2/sn0",
+        samplefile=samplepath,
+        after_n_batches=20,
+        batchsize=200000,
+        on_epoch_end=False,
+        publish=publishpath + "_event_" + str(0),
+        use_event=0)
+
+]
+
+cb += [
+    plotGravNetCoordsDuringTraining(
+        outputfile=train.outputDir + "/coords_" + str(i) + "/coord_" + str(i),
+        samplefile=samplepath,
+        after_n_batches=20,
+        batchsize=200000,
+        on_epoch_end=False,
+        publish=publishpath + "_event_" + str(0),
+        use_event=0,
+        use_prediction_idx=i,
+    )
+    for i in range(12, 18)  # between 16 and 21
+]
+learningrate = 5e-3
+nbatch = 120000  # quick first training with simple examples = low # hits
+
+train.compileModel(learningrate=learningrate,
+                   loss=None,
+                   metrics=None)
 
 learningrate = 1e-3
 nbatch = 140000 #quick first training with simple examples = low # hits
