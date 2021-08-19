@@ -107,7 +107,7 @@ class HGCalAnalysisPlotter:
         bs = ','.join(['%.2f'%x for x in self.beta_thresholds])
         ds = ','.join(['%.2f'%x for x in self.dist_thresholds])
         iss = ','.join(['%.2f'%x for x in self.iou_thresholds])
-        softs = ','.join([x for x in self.soft])
+        softs = ','.join([x for x in str(self.soft)])
 
         s = 'Beta threshold: %s\nDist threshold: %s\niou  threshold: %s\n Is soft: %r' % (bs, ds, iss, softs)
 
