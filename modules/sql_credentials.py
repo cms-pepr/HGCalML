@@ -1,14 +1,14 @@
 # Do not upload username/password to github
 # Change your username, password, and host and then changed "fixed" variable to True
 
-password=''
-username=''
-host = ''
-database = ''
+password='yF!8&cU3QXe8'
+username='user_klong'
+host = '31.164.89.251'
+database = 'database_h1'
 
 credentials = {'host':host, 'password':password, 'username':username, 'database':database}
 
-fixed = False
+fixed = True
 
 
 if not fixed:
