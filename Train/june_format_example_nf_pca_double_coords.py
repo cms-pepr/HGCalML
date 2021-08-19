@@ -288,7 +288,7 @@ else:
 
 
 database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
-database_manager.set_experiment(train.outputDir + unique_id)
+database_manager.set_experiment(unique_id)
 cb += [RunningMetricsCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5, database_manager=database_manager)]
 
 cb += [plotClusteringDuringTraining(
