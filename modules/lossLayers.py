@@ -418,6 +418,7 @@ class LLFullObjectCondensation(LossLayerBase):
                 pred_energy, pred_pos, pred_time, pred_id,\
                 t_idx, t_energy, t_pos, t_time, t_pid,\
                 rowsplits = inputs
+
             else:
                 pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
                 t_idx, t_energy, t_pos, t_time, t_pid,\
@@ -427,8 +428,8 @@ class LLFullObjectCondensation(LossLayerBase):
             pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
             t_idx, t_energy, t_pos, t_time, t_pid,\
             rowsplits = inputs
-        
-        
+
+
         if rowsplits.shape[0] is None:
             return tf.constant(0,dtype='float32')
         
