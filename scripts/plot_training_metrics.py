@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import sql_credentials
 import experiment_database_reading_manager
 import matplotlib.pyplot as plt
