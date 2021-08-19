@@ -9,16 +9,19 @@ from importlib import reload
 graph_functions = reload(graph_functions)
 from tensorflow.keras import backend as K
 import tensorflow.keras.callbacks.experimental
+from matching_and_analysis import analyse_hgcal_endcap
+from scalar_metrics import compute_scalar_metrics
 
 
 class Worker(threading.Thread):
-    def __init__(self, q, tensorboard_manager, beta_threshold=0.5, dist_threshold=0.5, database_manager=None, *args, **kwargs):
+    def __init__(self, q, tensorboard_manager, beta_threshold=0.5, dist_threshold=0.5, database_manager=None, with_local_distance_scaling=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.q = q
         self.tensorboard_manager = tensorboard_manager
         self.beta_threshold = beta_threshold
         self.dist_threshold = dist_threshold
         self.database_manager = database_manager
+        self.with_local_distance_scaling = with_local_distance_scaling
 
     def run(self):
         while True:
@@ -29,47 +32,76 @@ class Worker(threading.Thread):
                 continue
 
             with tf.device('/cpu:0'):
-                step, cc, beta, truth_sid, rechit_energy, truth_energy, pred_energy, row_splits = data
-                first_end = int(row_splits[1])
+                step, feat_dict, pred_dict, truth_dict, loss_value = data
 
-                truth_sid = truth_sid[0:first_end]
-                cc = cc[0:first_end, :]
-                beta = beta[0:first_end]
-                rechit_energy = rechit_energy[0:first_end]
-                truth_energy = truth_energy[0:first_end]
-                pred_energy = pred_energy[0:first_end]
+                endcap_analysis_result = analyse_hgcal_endcap(feat_dict, truth_dict, pred_dict, self.beta_threshold, self.dist_threshold, iou_threshold=0.1, endcap_id=10, with_local_distance_scaling=False) # endcap id is not needed, so its just some bogus value
 
-                _pred_sid, pred_shower_idx = graph_functions.reconstruct_showers(cc, beta, return_alpha_indices=True, beta_threshold=self.beta_threshold, dist_threshold=self.dist_threshold)
-                pred_sid = graph_functions.match(truth_sid, _pred_sid, rechit_energy)
-                eff, fake_rate = graph_functions.compute_efficiency_and_fake_rate(pred_sid, truth_sid)
-
-
-                response, sum_response = graph_functions.compute_response_mean(pred_sid, truth_sid, rechit_energy, truth_energy, pred_energy, beta)
-
+            try:
+                eff = endcap_analysis_result['endcap_num_found_showers'] / float(endcap_analysis_result['endcap_num_truth_showers'])
+            except ZeroDivisionError:
+                eff = 0
+            try:
+                fake_rate = endcap_analysis_result['endcap_num_fake_showers'] / float(endcap_analysis_result['endcap_num_pred_showers'])
+            except ZeroDivisionError:
+                fake_rate = 0
             dic = dict()
             dic['efficiency'] = eff
             dic['fake_rate'] = fake_rate
-            dic['response'] = response
-            dic['sum_response'] = sum_response
+
+            filter = np.array(endcap_analysis_result['truth_shower_found_or_not'])
 
 
-            if self.tensorboard_manager is not None:
-                self.tensorboard_manager.step(step, dic)
+            if len(filter) != 0:
+                response_2 = np.array(endcap_analysis_result['truth_shower_matched_energy_regressed'])[filter] / np.array(endcap_analysis_result['truth_shower_energy'])[filter]
+                sum_response_2 = np.array(endcap_analysis_result['truth_shower_matched_energy_sum'])[filter] / np.array(endcap_analysis_result['truth_shower_energy'])[filter]
+                response_2 = np.mean(response_2).item()
+                sum_response_2 = np.mean(sum_response_2).item()
+            else:
+                response_2 = 0
+                sum_response_2 = 0
+
+
+            dic['response'] = response_2
+            dic['sum_response'] = sum_response_2
+
 
             dic['beta_threshold'] = self.beta_threshold
             dic['distance_threshold'] = self.dist_threshold
             dic['iteration'] = step
 
-            if self.database_manager is not None:
-                print("\n\n\nAdding new data to experiment with train step\n\n\n", step)
+            precision, recall, f_score, precision_energy, recall_energy, f_score_energy = compute_scalar_metrics(result=endcap_analysis_result)
+            dic['loss'] = loss_value
 
+            dic['f_score_energy'] = f_score_energy
+
+            if self.database_manager is not None:
+                print("Adding new values to database ne")
+                print(dic.keys())
                 self.database_manager.insert_experiment_data('training_performance_metrics', dic)
+
+            dic = dic.copy()
+            dic['precision_without_energy'] = precision
+            dic['recall_without_energy'] = recall
+            dic['f_score_without_energy'] = f_score
+            dic['precision_energy'] = precision_energy
+            dic['recall_energy'] = recall_energy
+            dic['num_truth_showers'] = endcap_analysis_result['endcap_num_truth_showers']
+            dic['num_pred_showers'] = endcap_analysis_result['endcap_num_pred_showers']
+
+            if self.database_manager is not None:
+                print("Adding new values to database e")
+                print(dic.keys())
+                self.database_manager.insert_experiment_data('training_performance_metrics_extended', dic)
+
+            if self.tensorboard_manager is not None:
+                self.tensorboard_manager.step(step, dic)
 
             self.q.task_done()
 
 
-class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
-    def __init__(self, td, tensorboard_manager=None, beta_threshold=0.5, dist_threshold=0.5, database_manager=None):
+
+class RunningMetricsCallback(tf.keras.callbacks.Callback):
+    def __init__(self, td, tensorboard_manager=None, beta_threshold=0.5, dist_threshold=0.5, with_local_distance_scaling=False, database_manager=None):
         """Initialize intermediate variables for batches and lists."""
         super().__init__()
         self.td = td
@@ -79,7 +111,7 @@ class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
         if tensorboard_manager is None and database_manager is None:
             raise RuntimeError("Both tensorboard manager and database managers are None. No where to write to.")
 
-        self.thread = Worker(self.q, tensorboard_manager, beta_threshold=beta_threshold, dist_threshold=dist_threshold, database_manager=database_manager).start()
+        self.thread = Worker(self.q, tensorboard_manager, beta_threshold=beta_threshold, dist_threshold=dist_threshold, database_manager=database_manager, with_local_distance_scaling=with_local_distance_scaling).start()
 
 
     def add(self, data):
@@ -94,15 +126,63 @@ class RunningEfficiencyFakeRateCallback(tf.keras.callbacks.Callback):
         x = self.model.data_x
         y_pred = self.model.data_y_pred
 
+
+
         beta = y_pred[0]
         cc = y_pred[1]
         pred_energy = y_pred[2]
 
+
+
         feat, t_idx, t_energy, t_pos, t_time, t_pid, t_spectator, t_fully_contained, row_splits = self.td.interpretAllModelInputs(x)
+        #
+        # print(t_fully_contained.shape)
+        # 0/0
+        #
+        predictions_dict = self.model.convert_output_to_dict(y_pred)
+        truth_dict = dict()
+        truth_dict['truthHitAssignementIdx'] = t_idx
+        truth_dict['truthHitAssignedEnergies'] = t_energy
+        truth_dict['truthHitAssignedT'] = t_time
+        truth_dict['truthHitAssignedPIDs'] = t_pid
+        truth_dict['truthHitAssignedDepEnergies'] = t_energy*0
+        truth_dict['truthHitAssignedEta'] = t_pos[:, 0:1]
+        truth_dict['truthHitAssignedPhi'] = t_pos[:, 1:2]
 
         feat_dict = self.td.createFeatureDict(feat)
 
-        data = self.model.num_train_step, cc.numpy(), beta[:, 0].numpy(), t_idx[:, 0].numpy(), feat_dict['recHitEnergy'][:, 0].numpy(), t_energy[:, 0].numpy(), pred_energy[:, 0].numpy(), row_splits[:, 0].numpy()
+
+        loss_value = logs['loss']
+        print('\n\nBeginning x test')
+
+        print("Loss value", loss_value, self.model.num_train_step, batch)
+
+
+        feat_dict_numpy = dict()
+        pred_dict_numpy = dict()
+        truth_dict_numpy = dict()
+        for key, value in feat_dict.items():
+            if type(value) is not np.ndarray:
+                feat_dict_numpy[key] = value[0:row_splits[1,0]].numpy()
+            else:
+                feat_dict_numpy[key] = value[0:row_splits[1,0]].numpy()
+
+        for key, value in predictions_dict.items():
+            if type(value) is not np.ndarray:
+                pred_dict_numpy[key] = value[0:row_splits[1,0]].numpy()
+            else:
+                pred_dict_numpy[key] = value[0:row_splits[1,0]].numpy()
+
+        for key, value in truth_dict.items():
+            if type(value) is not np.ndarray:
+                truth_dict_numpy[key] = value[0:row_splits[1,0]].numpy()
+            else:
+                truth_dict_numpy[key] = value[0:row_splits[1,0]].numpy()
+
+
+        data = self.model.num_train_step, feat_dict_numpy, pred_dict_numpy, truth_dict_numpy, loss_value
+
+        # data_2  = self.model.num_train_step, cc.numpy(), beta[:, 0].numpy(), t_idx[:, 0].numpy(), feat_dict['recHitEnergy'][:, 0].numpy(), t_energy[:, 0].numpy(), pred_energy[:, 0].numpy(), row_splits[:, 0].numpy()
 
         self.add(data)
 

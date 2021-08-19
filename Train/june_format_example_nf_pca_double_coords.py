@@ -2,6 +2,7 @@
 This is one of the really good models and configurations.
 Keep this in mind
 '''
+from experiment_database_manager import ExperimentDatabaseManager
 import tensorflow as tf
 from argparse import ArgumentParser
 # from K import Layer
@@ -14,12 +15,11 @@ from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
 
-# from experiment_database_manager import ExperimentDatabaseManager
 from tensorboard_manager import TensorBoardManager
-from running_plots import RunningEfficiencyFakeRateCallback
+from running_plots import RunningMetricsCallback
 import tensorflow.keras as keras
 from datastructures import TrainData_NanoML
-
+import uuid
 
 from DeepJetCore.modeltools import fixLayersContaining
 # from tensorflow.keras.models import load_model
@@ -269,23 +269,35 @@ verbosity = 2
 import os
 
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
-publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
+# publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 
 cb = []
 os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
 tensorboard_manager = TensorBoardManager(train.outputDir + "/summary/")
-# database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
-# database_manager.set_experiment('alpha_experiment_june_pca_double_cords_' + datetime.now().strftime("%Y%m%d_%H%M%S"))
-cb += [RunningEfficiencyFakeRateCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5, database_manager=None)]
 
-cb = [plotClusteringDuringTraining(
+unique_id_path = os.path.join(train.outputDir,'unique_id.txt')
+if os.path.exists(unique_id_path):
+        with open(unique_id_path, 'r') as f:
+            unique_id = f.readlines()[0].strip()
+
+else:
+    unique_id = str(uuid.uuid4())[:8]
+    with open(unique_id_path, 'w') as f:
+        f.write(unique_id+'\n')
+
+
+database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
+database_manager.set_experiment('alpha_experiment_june_pca_double_cords_' + unique_id)
+cb += [RunningMetricsCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5, database_manager=database_manager)]
+
+cb += [plotClusteringDuringTraining(
     use_backgather_idx=8 + i,
     outputfile=train.outputDir + "/plts/sn" + str(i) + '_',
     samplefile=samplepath,
     after_n_batches=20,
     on_epoch_end=False,
-    publish=publishpath + "_cl_" + str(i),
+    publish=None,
     use_event=0)
     for i in [0, 2]]
 
@@ -296,7 +308,7 @@ cb += [
         after_n_batches=20,
         batchsize=200000,
         on_epoch_end=False,
-        publish=publishpath + "_event_" + str(0),
+        publish=None,
         use_event=0)
 
 ]
@@ -308,7 +320,7 @@ cb += [
         after_n_batches=20,
         batchsize=200000,
         on_epoch_end=False,
-        publish=publishpath + "_event_" + str(0),
+        publish=None,
         use_event=0,
         use_prediction_idx=i,
     )
@@ -328,7 +340,6 @@ train.compileModel(learningrate=learningrate,
                           loss=None,
                           metrics=None,
                           )
-
 
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
@@ -374,3 +385,5 @@ model, history = train.trainModel(nepochs=121,
                                   max_lr = learningrate,
                                   step_size = 100)]+cb)
 #
+
+

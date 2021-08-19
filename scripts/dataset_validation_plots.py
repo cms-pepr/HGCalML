@@ -14,7 +14,7 @@ from collections import Counter
 
 from argparse import ArgumentParser
 parser = ArgumentParser(
-    'Dataset validation plots script')
+    'Dataset validation hplots script')
 parser.add_argument('-d', help="Data collection file")
 parser.add_argument('-p', help="PDF file path (will be ignored in validate mode)")
 parser.add_argument('-n', help="Number of events to produce dataset stats pdf on", default="50")
@@ -73,7 +73,10 @@ def get_event_and_make_dict(reset_after=False):
     # truth = truth[:, 0, :]
     feat,  truth_sid, truth_energy, truth_pos, truth_time, truth_particle_id,truth_spectator, truth_fully_contained, row_splits = td.interpretAllModelInputs(feat)
     all_dict = td.createFeatureDict(feat)
-    all_dict.update( td.createTruthDict(truth, truth_sid) ) 
+    all_dict.update( td.createTruthDict(truth, truth_sid) )
+
+    print(truth_energy.shape)
+    0/0
     return all_dict
 
 
@@ -334,7 +337,7 @@ else:
             print('/{}'.format(int(pid_counter[int(-1*value)])))
         else: print()
 
-    print('writing plots...')
+    print('writing hplots...')
     plotter.write_to_pdf()
     pdf.close()
     print('done')
