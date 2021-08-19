@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 
 from experiment_database_reading_manager import ExperimentDatabaseReadingManager
