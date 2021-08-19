@@ -326,17 +326,12 @@ cb += [
     )
     for i in range(12, 18)  # between 16 and 21
 ]
-learningrate = 5e-3
-nbatch = 120000  # quick first training with simple examples = low # hits
 
-train.compileModel(learningrate=learningrate,
-                   loss=None,
-                   metrics=None)
 
 learningrate = 1e-3
-nbatch = 140000 #quick first training with simple examples = low # hits
+nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
-train.compileModel(learningrate=learningrate,
+train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
                           metrics=None,
                           )
