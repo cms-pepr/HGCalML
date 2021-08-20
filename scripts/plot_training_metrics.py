@@ -14,7 +14,7 @@ def running_mean(x, w):
 parser = argparse.ArgumentParser(
     'Produce running metrics plot (loss, efficiency and more)')
 parser.add_argument('experiment_name',
-                    help='Experiment name on the server (normally exists in model_train_output/unique_id.txt')
+                    help='Experiment name on the server (normally exists in model_train_output/unique_id.txt) or database file path (check is_database_file argument)')
 parser.add_argument('--is_database_file', help='If you want to plot from a database file instead of server \nThe database file is normally located in model_train_output/training_metrics.db', action='store_true')
 parser.add_argument('--plot_all',
                     help='Plot only a few metrics for faster performance or all of them?',action='store_true')
@@ -26,11 +26,16 @@ parser.add_argument('output',
 
 args = parser.parse_args()
 
-
 if not args.is_database_file:
     print("Gonna get data from the server, using experiment_name %s" % args.experiment_name)
     manager = experiment_database_reading_manager.ExperimentDatabaseReadingManager(mysql_credentials=sql_credentials.credentials)
     training_performance_metrics = manager.get_data('training_performance_metrics_extended', experiment_name=args.experiment_name)
+
+    if training_performance_metrics is None:
+        print("Experiment not found, in your configured database, the following experiments were found:")
+        available_experiment_names = manager.get_data_from_query('SELECT DISTINCT(experiment_name) FROM training_performance_metrics_extended')
+        available_experiment_names = [x[0] for x in available_experiment_names]
+        print(available_experiment_names)
 else:
     manager = experiment_database_reading_manager.ExperimentDatabaseReadingManager(file=args.experiment_name)
     training_performance_metrics = manager.get_data('training_performance_metrics_extended')
