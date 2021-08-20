@@ -92,7 +92,6 @@ class ExperimentDatabaseReadingManager():
             print(query)
 
         con, cur = self.connect()
-        print(query)
         cur.execute(query)
         result = cur.fetchall()
         con.close()

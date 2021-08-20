@@ -1,4 +1,5 @@
 import sqlite3
+import traceback
 
 import mysql.connector
 import os
@@ -6,6 +7,7 @@ from datetime import datetime, timezone
 import threading
 from queue import Queue
 import numpy as np
+import time
 
 
 class DValueError(ValueError):
@@ -80,12 +82,13 @@ class ExperimentDatabaseManager():
     def _data_pusher_thread(self, queue):
         while True:
             try:
+                con, cur = self.connect()
+
                 data_to_be_pushed = queue.get()  # 3s timeout
                 if data_to_be_pushed is None:
                     # End of thread
                     break
 
-                con, cur = self.connect()
 
                 for table_name, data, is_array in data_to_be_pushed:
                     if is_array:
@@ -123,8 +126,17 @@ class ExperimentDatabaseManager():
                 con.commit()
                 con.close()
 
-            except queue.Empty:
-                continue
+            except Exception as e:
+                print(type(e))
+                if type(e) == mysql.connector.errors.InterfaceError or type(mysql.connector.errors.OperationalError):
+                    print("Error connecting to server, will try again in a second")
+                    time.sleep(1)
+                    if con.is_connected():
+                        con.close()
+                    continue
+                print(e.args)
+                print(e)
+                traceback.print_exc()
 
     def connect(self):
         if self.mysql_credentials:
