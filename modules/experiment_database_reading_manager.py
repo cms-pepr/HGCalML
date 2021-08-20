@@ -7,7 +7,7 @@ import threading
 from queue import Queue
 
 
-_debug_mode = True
+_debug_mode = False
 
 
 class ExperimentDatabaseReadingManager():
