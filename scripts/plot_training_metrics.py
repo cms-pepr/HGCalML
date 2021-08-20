@@ -14,64 +14,66 @@ def running_mean(x, w):
 parser = argparse.ArgumentParser(
     'Produce running metrics plot (loss, efficiency and more)')
 parser.add_argument('experiment_name',
-                    help='Experiment name')
+                    help='Experiment name on the server (normally exists in model_train_output/unique_id.txt) or database file path (check is_database_file argument)')
+parser.add_argument('--is_database_file', help='If you want to plot from a database file instead of server \nThe database file is normally located in model_train_output/training_metrics.db', action='store_true')
+parser.add_argument('--plot_all',
+                    help='Plot only a few metrics for faster performance or all of them?',action='store_true')
+parser.add_argument('--running_average',
+                    help='N running average elements, 1 means no running average', default='10')
 parser.add_argument('output',
                     help='PDF file')
 
 
 args = parser.parse_args()
 
+if not args.is_database_file:
+    print("Gonna get data from the server, using experiment_name %s" % args.experiment_name)
+    manager = experiment_database_reading_manager.ExperimentDatabaseReadingManager(mysql_credentials=sql_credentials.credentials)
+    training_performance_metrics = manager.get_data('training_performance_metrics_extended', experiment_name=args.experiment_name)
+
+    if training_performance_metrics is None:
+        print("Experiment not found, in your configured database, the following experiments were found:")
+        available_experiment_names = manager.get_data_from_query('SELECT DISTINCT(experiment_name) FROM training_performance_metrics_extended')
+        available_experiment_names = [x[0] for x in available_experiment_names]
+        print(available_experiment_names)
+else:
+    manager = experiment_database_reading_manager.ExperimentDatabaseReadingManager(file=args.experiment_name)
+    training_performance_metrics = manager.get_data('training_performance_metrics_extended')
 
 
-manager = experiment_database_reading_manager.ExperimentDatabaseReadingManager(mysql_credentials=sql_credentials.credentials)
-print("Getting data now")
-# args.exper
-training_performance_metrics = manager.get_data('training_performance_metrics_extended', experiment_name=args.experiment_name)
-print("Received data")
+
+average_over = int(args.running_average)
+
+if average_over<=0:
+    print("Error in running average, should be 1 or more (and less than number of iterations)")
 
 
-average_over = 10
+def plot_metric(metric):
+    global training_performance_metrics, average_over
+    training_performance_metrics[metric] = [float(x) for x in training_performance_metrics[metric]]
+    plt.figure()
+    y_values = training_performance_metrics[metric]
+    if average_over > len(y_values):
+        print("Running over can't be greater than number of iterations...")
+        raise RuntimeError("Running over can't be greater than number of iterations...")
+    if average_over > 1:
+        y_values = running_mean(y_values, average_over)
+    plt.plot(training_performance_metrics['iteration'], y_values)
+    plt.xlabel('iteration')
+    plt.ylabel(metric)
+    pdf.savefig()
 
 pdf = PdfPages(args.output)
-training_performance_metrics['efficiency'] = [float(x) for x in training_performance_metrics['efficiency']]
-plt.figure()
-eff = training_performance_metrics['efficiency']
-eff = running_mean(eff, average_over)
-plt.plot(training_performance_metrics['iteration'], eff)
-plt.xlabel('iteration')
-plt.ylabel('efficiency')
-pdf.savefig()
 
+plot_metric('loss')
+plot_metric('efficiency')
+plot_metric('fake_rate')
+plot_metric('sum_response')
+plot_metric('response')
 
-training_performance_metrics['fake_rate'] = [float(x) for x in training_performance_metrics['fake_rate']]
-
-plt.figure()
-fak = training_performance_metrics['fake_rate']
-fak = running_mean(fak, average_over)
-plt.plot(training_performance_metrics['iteration'], fak)
-plt.xlabel('iteration')
-plt.ylabel('fake_rate')
-pdf.savefig()
-
-training_performance_metrics['sum_response'] = [float(x) for x in training_performance_metrics['sum_response']]
-
-plt.figure()
-sres = training_performance_metrics['sum_response']
-sres = running_mean(sres, average_over)
-plt.plot(training_performance_metrics['iteration'], sres)
-plt.xlabel('iteration')
-plt.ylabel('response')
-pdf.savefig()
-
-
-
-plt.figure()
-loss = training_performance_metrics['loss']
-loss = running_mean(sres, average_over)
-plt.plot(training_performance_metrics['iteration'], loss)
-plt.xlabel('iteration')
-plt.ylabel('loss')
-
-pdf.savefig()
+if bool(args.plot_all):
+    plot_metric('f_score_energy')
+    plot_metric('num_pred_showers')
+    plot_metric('num_truth_showers')
 
 pdf.close()

@@ -287,7 +287,12 @@ else:
         f.write(unique_id+'\n')
 
 
-database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
+
+# For writing to database server
+database_manager = ExperimentDatabaseManager(sql_credentials.credentials, cache_size=40)
+
+#For writing to to file
+#database_manager = ExperimentDatabaseManager(file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
 database_manager.set_experiment(unique_id)
 cb += [RunningMetricsCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5, database_manager=database_manager)]
 

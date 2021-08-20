@@ -12,11 +12,11 @@ import os
 config = configparser.ConfigParser()
 configfile = os.path.expanduser("~/private/ml4reco_sql.config")
 if not os.path.isfile(configfile):
-    raise NotImplementedError(f"Please create the file '{configfile}' with your data base credentials added")
+    credentials = -1
+else:
+    config.read(configfile)
 
-config.read(configfile)
+    credentials = dict(config['settings'])
 
-credentials = dict(config['settings'])
-
-if not all(credentials.values()):
-    raise NotImplementedError("Set  username, password, etc in this file before proceeding.")
+    if not all(credentials.values()):
+        raise NotImplementedError("Set  username, password, etc in this file before proceeding.")

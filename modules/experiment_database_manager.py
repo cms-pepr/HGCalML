@@ -1,9 +1,13 @@
+import sqlite3
+import traceback
+
 import mysql.connector
 import os
 from datetime import datetime, timezone
 import threading
 from queue import Queue
 import numpy as np
+import time
 
 
 class DValueError(ValueError):
@@ -13,28 +17,56 @@ class DValueError(ValueError):
 _debug_mode = False
 
 class ExperimentDatabaseManager():
-    def __init__(self, mysql_credentials, cache_size = 100):
+    def __init__(self, mysql_credentials=None, file=None, cache_size = 100):
+        if mysql_credentials==-1:
+            raise NotImplementedError("MySQL credentials not set, follow instructions in sql_credentials.py to set them up.")
+
+        if file == None and mysql_credentials == None:
+            raise RuntimeError("Both file and mysql credentials are None. No where to store data")
+        if file != None and mysql_credentials != None:
+            raise RuntimeError("Can't set both file and mysql. Choose one.")
 
         self.mysql_credentials = mysql_credentials
+        self.file = file
+
+        self.is_mysql = self.mysql_credentials!=None
 
         con, cur = self.connect()
 
-        query = "SELECT table_name from information_schema.tables WHERE table_name='experiments';"
-        cur.execute(query)
-        result = cur.fetchall()
+        if self.is_mysql:
+            query = "SELECT table_name from information_schema.tables WHERE table_name='experiments';"
+            cur.execute(query)
+            result = cur.fetchall()
 
-        if len(result) == 0:
-            cur.execute('''CREATE TABLE experiments
-                           (experiment_name text NOT NULL, date_started DATETIME)''')
-            cur.execute('''CREATE UNIQUE INDEX idx_training ON experiments (experiment_name(300));''')
+            if len(result) == 0:
+                cur.execute('''CREATE TABLE experiments
+                               (experiment_name text NOT NULL, date_started DATETIME)''')
+                cur.execute('''CREATE UNIQUE INDEX idx_training ON experiments (experiment_name(300));''')
 
-            cur.execute('''CREATE TABLE data_tables
-                           (data_table_name text)''')
-            cur.execute('''CREATE UNIQUE INDEX idx_data_table_name ON data_tables (data_table_name(300));''')
+                cur.execute('''CREATE TABLE data_tables
+                               (data_table_name text)''')
+                cur.execute('''CREATE UNIQUE INDEX idx_data_table_name ON data_tables (data_table_name(300));''')
 
-            con.commit()
+                con.commit()
 
-        con.close()
+            con.close()
+        else:
+            query = "SELECT name FROM sqlite_master WHERE type='table' AND name='experiments';"
+            cur.execute(query)
+            result = cur.fetchall()
+            if len(result) == 0:
+                cur.execute('''CREATE TABLE experiments
+                               (experiment_name text NOT NULL, date_started DATETIME)''')
+                cur.execute('''CREATE UNIQUE INDEX idx_training ON experiments (experiment_name);''')
+
+                cur.execute('''CREATE TABLE data_tables
+                               (data_table_name text)''')
+                cur.execute('''CREATE UNIQUE INDEX idx_data_table_name ON data_tables (data_table_name);''')
+
+                con.commit()
+
+            con.close()
+
 
         self.experiment_name = ''
 
@@ -50,12 +82,13 @@ class ExperimentDatabaseManager():
     def _data_pusher_thread(self, queue):
         while True:
             try:
+                con, cur = self.connect()
+
                 data_to_be_pushed = queue.get()  # 3s timeout
                 if data_to_be_pushed is None:
                     # End of thread
                     break
 
-                con, cur = self.connect()
 
                 for table_name, data, is_array in data_to_be_pushed:
                     if is_array:
@@ -93,21 +126,34 @@ class ExperimentDatabaseManager():
                 con.commit()
                 con.close()
 
-            except queue.Empty:
-                continue
+            except Exception as e:
+                print(type(e))
+                if type(e) == mysql.connector.errors.InterfaceError or type(mysql.connector.errors.OperationalError):
+                    print("Error connecting to server, will try again in a second")
+                    time.sleep(1)
+                    if con.is_connected():
+                        con.close()
+                    continue
+                print(e.args)
+                print(e)
+                traceback.print_exc()
 
     def connect(self):
-        con = mysql.connector.connect(
-            host=self.mysql_credentials['host'],
-            user=self.mysql_credentials['username'],
-            password=self.mysql_credentials['password'],
-            database=self.mysql_credentials['database'],
-        )
+        if self.mysql_credentials:
+            con = mysql.connector.connect(
+                host=self.mysql_credentials['host'],
+                user=self.mysql_credentials['username'],
+                password=self.mysql_credentials['password'],
+                database=self.mysql_credentials['database'],
+            )
 
-        cur = con.cursor()
+            cur = con.cursor()
 
-        return con, cur
-
+            return con, cur
+        else:
+            con = sqlite3.connect(self.file)
+            cur = con.cursor()
+            return con, cur
 
     def set_experiment(self, experiment_name):
         self.experiment_name = experiment_name
@@ -161,7 +207,10 @@ class ExperimentDatabaseManager():
     def _verify_data_table(self, table_name, data):
         if table_name not in self.data_tables_verified:
             con, cur = self.connect()
-            query = "SELECT table_name from information_schema.tables WHERE table_name='%s';" % table_name
+            if self.is_mysql:
+                query = "SELECT table_name from information_schema.tables WHERE table_name='%s';" % table_name
+            else:
+                query = "SELECT name FROM sqlite_master WHERE type='table' AND name='%s';" % table_name
 
             # query = "SELECT name from sqlite_master WHERE type='table' AND name='" + table_name + "'"
             cur.execute(query)
@@ -172,19 +221,6 @@ class ExperimentDatabaseManager():
                 query += 'experiment_name text NOT NULL'
 
                 for key, value in data.items():
-                    # if type(value) is np.ndarray:
-                    #     if len(value) == 0:
-                    #         con.commit()
-                    #         con.close()
-                    #         raise ValueError('Array length is zero')
-                    #     value = value[0].item()
-                    #
-                    #     if type(value) is list:
-                    #         if len(value) == 0:
-                    #             con.commit()
-                    #             con.close()
-                    #             raise ValueError('Array length is zero')
-                    #         value = value[0]
                     try:
                         typex = self._get_type(value)
                     except DValueError:
@@ -199,9 +235,11 @@ class ExperimentDatabaseManager():
                 # print(query)
                 cur.execute(query)
 
-
-                cur.execute(
-                    '''CREATE INDEX idx_%s ON %s(experiment_name(300));''' % (table_name, table_name))
+                if self.is_mysql:
+                    query = '''CREATE INDEX idx_%s ON %s(experiment_name(300));''' % (table_name, table_name)
+                else:
+                    query = '''CREATE INDEX idx_%s ON %s(experiment_name);''' % (table_name, table_name)
+                cur.execute(query)
 
                 cur.execute("SELECT * from data_tables WHERE data_table_name='%s'" % (table_name))
                 rows = cur.fetchall()
