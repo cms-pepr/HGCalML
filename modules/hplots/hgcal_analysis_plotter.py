@@ -89,7 +89,7 @@ class HGCalAnalysisPlotter:
         self.efficiency_plot = EfficiencyFoTruthEnergyPlot()
         self.fake_rate_plot = FakeRateFoPredEnergyPlot()
         self.response_plot = ResponseFoTruthEnergyPlot()
-        self.response_sum_plot = ResponseFoTruthEnergyPlot()
+        self.response_sum_plot = ResponseFoTruthEnergyPlot(y_label='Response (sum/truth)')
 
         self.dist_thresholds = []
         self.beta_thresholds = []
