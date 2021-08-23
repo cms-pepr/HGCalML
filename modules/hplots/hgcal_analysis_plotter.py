@@ -88,7 +88,6 @@ class HGCalAnalysisPlotter:
     def __init__(self):
         self.efficiency_plot = EfficiencyFoTruthEnergyPlot()
         self.fake_rate_plot = FakeRateFoPredEnergyPlot()
-        self.fake_rate_sum_plot = FakeRateFoPredEnergyPlot()
         self.response_plot = ResponseFoTruthEnergyPlot()
         self.response_sum_plot = ResponseFoTruthEnergyPlot()
 
@@ -117,7 +116,6 @@ class HGCalAnalysisPlotter:
     def write_data_to_database(self, database_manager, table_prefix):
         self.efficiency_plot.write_to_database(database_manager, table_prefix+'_efficiency_plot')
         self.fake_rate_plot.write_to_database(database_manager, table_prefix+'_fake_rate_plot')
-        self.fake_rate_sum_plot.write_to_database(database_manager, table_prefix+'_fake_rate_sum_plot')
         self.response_plot.write_to_database(database_manager, table_prefix+'_response_plot')
         self.response_sum_plot.write_to_database(database_manager, table_prefix+'_response_sum_plot')
         database_manager.flush()
@@ -125,7 +123,6 @@ class HGCalAnalysisPlotter:
     def add_data_from_database(self, database_reading_manager, table_prefix, experiment_name=None):
         self.efficiency_plot.read_from_database(database_reading_manager, table_prefix + '_efficiency_plot', experiment_name=experiment_name)
         self.fake_rate_plot.read_from_database(database_reading_manager, table_prefix + '_fake_rate_plot', experiment_name=experiment_name)
-        self.fake_rate_sum_plot.read_from_database(database_reading_manager, table_prefix + '_fake_rate_sum_plot', experiment_name=experiment_name)
         self.response_plot.read_from_database(database_reading_manager, table_prefix + '_response_plot', experiment_name=experiment_name)
         self.response_sum_plot.read_from_database(database_reading_manager, table_prefix + '_response_sum_plot', experiment_name=experiment_name)
 
@@ -170,16 +167,16 @@ class HGCalAnalysisPlotter:
                                        dataset_analysis_dict['truth_shower_found_or_not'], tags)
 
         self.fake_rate_plot.add_raw_values(dataset_analysis_dict['pred_shower_regressed_energy'],
-                                      dataset_analysis_dict['pred_shower_matched_energy'], tags)
+                                      dataset_analysis_dict['pred_shower_matched_energy']==-1, tags)
 
-        self.fake_rate_sum_plot.add_raw_values(dataset_analysis_dict['pred_shower_energy_sum'],
-                                          dataset_analysis_dict['pred_shower_matched_energy'], tags)
 
-        self.response_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'],
-                                     dataset_analysis_dict['truth_shower_matched_energy_regressed'], tags)
+        filter_truth_found = dataset_analysis_dict['truth_shower_found_or_not']
 
-        self.response_sum_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'],
-                                         dataset_analysis_dict['truth_shower_matched_energy_sum'], tags)
+        self.response_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'][filter_truth_found],
+                                     dataset_analysis_dict['truth_shower_matched_energy_regressed'][filter_truth_found], tags)
+
+        self.response_sum_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'][filter_truth_found],
+                                         dataset_analysis_dict['truth_shower_matched_energy_sum'][filter_truth_found], tags)
 
     def write_to_pdf(self, pdfpath, formatter=lambda x:''):
         pdf = PdfPages(pdfpath)
@@ -191,8 +188,6 @@ class HGCalAnalysisPlotter:
         self.efficiency_plot.draw(formatter)
         pdf.savefig()
         self.fake_rate_plot.draw(formatter)
-        pdf.savefig()
-        self.fake_rate_sum_plot.draw(formatter)
         pdf.savefig()
         self.response_plot.draw(formatter)
         pdf.savefig()
