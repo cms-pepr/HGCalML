@@ -1,3 +1,5 @@
+import traceback
+
 import numpy as np
 import tensorflow as tf
 import tensorboard_manager as tm
@@ -207,9 +209,18 @@ class RunningMetricsPlotterCallback(tf.keras.callbacks.Callback):
         else:
             return
         print("Gonna run callback to make htmls for loss and more")
-        self.plotter.do_plot_to_html(self.output_location, average_over=self.average_over)
-        if self.publish is not None:
-            publish(self.output_location, self.publish)
+        try:
+            try:
+                self.plotter.do_plot_to_html(self.output_location, average_over=self.average_over)
+            except TrainingMetricPlots.ExperimentNotFoundError as e:
+                print("Possible experiment name problem, otherwise maybe data isn't yet written. Skipping writing HTML file.")
+            if self.publish is not None:
+                print("Publishing")
+                publish(self.output_location, self.publish)
+        except Exception as e:
+            print(e.args)
+            print(e)
+            traceback.print_exc()
 
 
 class RunningMetricsCallback(RunningMetricsDatabaseAdditionCallback):
