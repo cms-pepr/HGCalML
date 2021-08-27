@@ -15,8 +15,9 @@ from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
 
+from experiment_database_reading_manager import ExperimentDatabaseReadingManager
 from tensorboard_manager import TensorBoardManager
-from running_plots import RunningMetricsCallback
+from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
 import tensorflow.keras as keras
 from datastructures import TrainData_NanoML
 import uuid
@@ -288,13 +289,14 @@ else:
 
 
 
-# For writing to database server
-database_manager = ExperimentDatabaseManager(sql_credentials.credentials, cache_size=40)
-
+# This will both to server and a local file
+database_manager = ExperimentDatabaseManager(sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
+database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
 #For writing to to file
 #database_manager = ExperimentDatabaseManager(file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
 database_manager.set_experiment(unique_id)
-cb += [RunningMetricsCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5, database_manager=database_manager)]
+cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5, database_manager=database_manager)]
+cb += [RunningMetricsPlotterCallback(after_n_batches=100, database_reading_manager=database_reading_manager,output_html_location=os.path.join(train.outputDir,"training_metrics.html"))]
 
 cb += [plotClusteringDuringTraining(
     use_backgather_idx=8 + i,

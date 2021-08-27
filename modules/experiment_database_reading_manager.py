@@ -74,19 +74,38 @@ class ExperimentDatabaseReadingManager():
         con.close()
         return result
 
+    class TableDoesNotExistError(RuntimeError):
+        pass
 
-    def get_data(self, table_name, experiment_name=None, field_names=None):
+
+    def get_data(self, table_name, experiment_names=None, field_names=None, condition_string=None):
         query = "SELECT "
         if field_names is None:
             field_names = self.get_field_names(table_name)
-
+        if len(field_names) == 0:
+            raise ExperimentDatabaseReadingManager.TableDoesNotExistError('Table %s does not exist'%table_name)
 
         query += '%s ' % ','.join(field_names)
 
         query += 'FROM %s ' % table_name
 
-        if experiment_name is not None:
-            query += "WHERE experiment_name = '%s'"%experiment_name
+        where_added = False
+        if experiment_names is not None:
+            if type(experiment_names) is list:
+                if len(experiment_names) ==0:
+                    raise RuntimeError("Length of experiment names is zero")
+                query += "WHERE "
+                operands = []
+                for exp in experiment_names:
+                    operands .append("experiment_name='%s'" % exp)
+                query += ' (%s) '% ' OR '.join(operands)
+
+            else:
+                query += "WHERE experiment_name = '%s'" % experiment_names
+            where_added=True
+
+        if condition_string is not None:
+            query += (' AND ' if where_added else ' WHERE ') + condition_string
 
         if _debug_mode:
             print(query)
