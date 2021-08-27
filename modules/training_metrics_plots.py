@@ -93,8 +93,6 @@ class TrainingMetricPlots():
         new_data = self.reading_manager.get_data('training_performance_metrics_extended', experiment_names=experiment_name,
                                     condition_string=condition_string)
 
-        print("New data is ", new_data)
-
         if new_data is not None and training_performance_metrics is not None:
             training_performance_metrics = self._combine(training_performance_metrics, new_data)
         elif new_data is not None and training_performance_metrics is None:
