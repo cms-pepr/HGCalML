@@ -112,7 +112,7 @@ class HGCalAnalysisPlotter:
         bs = ','.join(['%.2f'%x for x in self.beta_thresholds])
         ds = ','.join(['%.2f'%x for x in self.dist_thresholds])
         iss = ','.join(['%.2f'%x for x in self.iou_thresholds])
-        softs = ','.join([x for x in str(self.soft)])
+        softs = ','.join([str(x) for x in self.soft])
 
         s = 'Beta threshold: %s\nDist threshold: %s\niou  threshold: %s\n Is soft: %r' % (bs, ds, iss, softs)
 
@@ -181,10 +181,16 @@ class HGCalAnalysisPlotter:
         filter_truth_found = dataset_analysis_dict['truth_shower_found_or_not']
 
         self.response_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'][filter_truth_found],
-                                     dataset_analysis_dict['truth_shower_matched_energy_regressed'][filter_truth_found], tags)
+                                     dataset_analysis_dict['truth_shower_matched_energy_regressed'][filter_truth_found] /
+                                          dataset_analysis_dict['truth_shower_energy'][
+                                              filter_truth_found]
+
+                                          , tags)
 
         self.response_sum_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'][filter_truth_found],
-                                         dataset_analysis_dict['truth_shower_matched_energy_sum'][filter_truth_found], tags)
+                                         dataset_analysis_dict['truth_shower_matched_energy_sum'][filter_truth_found]
+                                        /dataset_analysis_dict['truth_shower_energy'][filter_truth_found],
+                                              tags)
 
 
         # TODO: Nadya Just adding a histogram of all the truth shower energy as a placeholder
