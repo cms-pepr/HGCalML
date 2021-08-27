@@ -16,24 +16,113 @@ class DValueError(ValueError):
 
 _debug_mode = False
 
+
 class ExperimentDatabaseManager():
+    class DataPusherThread(threading.Thread):
+        def __init__(self, queue, database_manager_class, is_mysql=False, is_file=False):
+            threading.Thread.__init__(self)
+
+            if is_mysql and is_file:
+                raise RuntimeError("Error...")
+            if not is_mysql and not is_file:
+                raise RuntimeError("Error...")
+
+            self.is_mysql = is_mysql
+            self.is_file = is_file
+            self.queue = queue
+            self.database_manager_object=database_manager_class
+
+        def run(self):
+            get_new_element = True
+            data_to_be_pushed = None
+            while True:
+                try:
+                    if self.is_mysql:
+                        con, cur = self.database_manager_object.connect_to_mysql()
+                    else:
+                        con, cur = self.database_manager_object.connect_to_file()
+
+                    if get_new_element or data_to_be_pushed is None:
+                        data_to_be_pushed = self.queue.get()  # 3s timeout
+                    else:
+                        get_new_element = True
+
+                    if data_to_be_pushed is None:
+                        # End of thread
+                        break
+
+                    for table_name, data, is_array in data_to_be_pushed:
+                        if is_array:
+                            query = 'insert into %s (experiment_name' % table_name
+                            # values_query_section = '(\'%s\'' % (self.experiment_name)
+
+                            values = []
+                            for key, value in data.items():
+                                query += ', %s' % key
+                                values.append(value.tolist() if type(value) is np.ndarray else value)
+                            values = [[(v if np.isfinite(v) else 0) if type(v) is float else v for v in value_array] for
+                                      value_array in values]
+
+                            query += ') values\n'
+                            values_query_section = ['(\'' + self.database_manager_object.experiment_name + '\',' + ','.join(
+                                ['\'' + str(s) + '\'' for s in vtuple]) + ')' for vtuple in zip(*values)]
+                            values_query_section = ',\n'.join(values_query_section)
+
+                            query += values_query_section
+                        else:
+                            query = 'INSERT INTO %s (experiment_name' % table_name
+
+                            values_query_section = '(\'%s\'' % (self.database_manager_object.experiment_name)
+                            for key, value in data.items():
+                                if type(value) is float:
+                                    value = value if np.isfinite(value) else 0.0
+                                query += ', %s' % key
+                                values_query_section += ', \'%s\'' % (value)
+                            #
+                            query += ') VALUES '
+                            query += values_query_section + ')'
+
+                        if _debug_mode:
+                            print(query)
+                        cur.execute(query)
+
+                    con.commit()
+                    con.close()
+
+                except Exception as e:
+                    if self.is_mysql:
+                        if type(e) == mysql.connector.errors.InterfaceError or type(
+                                mysql.connector.errors.OperationalError):
+                            print("Error connecting to server, will try again in a second")
+                            time.sleep(1)
+                            if con.is_connected():
+                                con.close()
+                            get_new_element = False
+                            continue
+                    print(e.args)
+                    print(e)
+                    traceback.print_exc()
+
+
+
     def __init__(self, mysql_credentials=None, file=None, cache_size = 100):
         if mysql_credentials==-1:
             raise NotImplementedError("MySQL credentials not set, follow instructions in sql_credentials.py to set them up.")
 
         if file == None and mysql_credentials == None:
             raise RuntimeError("Both file and mysql credentials are None. No where to store data")
-        if file != None and mysql_credentials != None:
-            raise RuntimeError("Can't set both file and mysql. Choose one.")
+        # if file != None and mysql_credentials != None:
+        #     raise RuntimeError("Can't set both file and mysql. Choose one.")
 
         self.mysql_credentials = mysql_credentials
         self.file = file
 
-        self.is_mysql = self.mysql_credentials!=None
+        self.has_mysql = self.mysql_credentials != None
+        self.has_file = self.file != None
 
-        con, cur = self.connect()
 
-        if self.is_mysql:
+        if self.has_mysql:
+            con, cur = self.connect_to_mysql()
             query = "SELECT table_name from information_schema.tables WHERE table_name='experiments';"
             cur.execute(query)
             result = cur.fetchall()
@@ -50,7 +139,9 @@ class ExperimentDatabaseManager():
                 con.commit()
 
             con.close()
-        else:
+        if self.has_file:
+            con, cur = self.connect_to_file()
+
             query = "SELECT name FROM sqlite_master WHERE type='table' AND name='experiments';"
             cur.execute(query)
             result = cur.fetchall()
@@ -73,73 +164,44 @@ class ExperimentDatabaseManager():
         self.data_tables_verified = set()
         self.data_queue = Queue()
         self.cache_size = cache_size
-        self.pusher_queue = Queue()
 
-        t = threading.Thread(target=self._data_pusher_thread, args=(self.pusher_queue,))
-        t.start()
-        self.pusher_thead = t
+        if self.has_mysql:
+            self.mysql_pusher_queue = Queue()
+            t = ExperimentDatabaseManager.DataPusherThread(self.mysql_pusher_queue, self, is_mysql=True)
+            t.start()
+            self.mysql_pusher_thread = t
 
-    def _data_pusher_thread(self, queue):
-        while True:
-            try:
-                con, cur = self.connect()
-
-                data_to_be_pushed = queue.get()  # 3s timeout
-                if data_to_be_pushed is None:
-                    # End of thread
-                    break
+        if self.has_file:
+            self.file_pusher_queue = Queue()
+            t = ExperimentDatabaseManager.DataPusherThread(self.file_pusher_queue, self, is_file=True)
+            t.start()
+            self.file_pusher_thread = t
 
 
-                for table_name, data, is_array in data_to_be_pushed:
-                    if is_array:
-                        query = 'insert into %s (experiment_name' % table_name
-                        # values_query_section = '(\'%s\'' % (self.experiment_name)
+    def connect_to_mysql(self):
+        if not self.has_mysql:
+            raise RuntimeError("Not saving to mysql. Try using connect_to_file instead.")
+        con = mysql.connector.connect(
+            host=self.mysql_credentials['host'],
+            user=self.mysql_credentials['username'],
+            password=self.mysql_credentials['password'],
+            database=self.mysql_credentials['database'],
+        )
 
-                        values = []
-                        for key, value in data.items():
-                            query += ', %s' % key
-                            values.append(value.tolist() if type(value) is np.ndarray else value)
-                        values = [[(v if np.isfinite(v) else 0) if type(v) is float else v for v in value_array] for value_array in values]
+        cur = con.cursor()
 
-                        query += ') values\n'
-                        values_query_section = ['(\'' +self.experiment_name+'\',' + ','.join(['\''+str(s) +'\'' for s in vtuple])+')' for vtuple in zip(*values)]
-                        values_query_section = ',\n'.join(values_query_section)
+        return con, cur
+    def connect_to_file(self):
+        if not self.has_file:
+            raise RuntimeError("Not saving to file. Try using connect_to_mysql instead.")
+        con = sqlite3.connect(self.file)
+        cur = con.cursor()
 
-                        query += values_query_section
-                    else:
-                        query = 'INSERT INTO %s (experiment_name' % table_name
-
-                        values_query_section = '(\'%s\'' % (self.experiment_name)
-                        for key, value in data.items():
-                            if type(value) is float:
-                                value = value if np.isfinite(value) else 0.0
-                            query += ', %s' % key
-                            values_query_section += ', \'%s\'' % (value)
-                        #
-                        query += ') VALUES '
-                        query += values_query_section + ')'
-
-                    if _debug_mode:
-                        print(query)
-                    cur.execute(query)
-
-                con.commit()
-                con.close()
-
-            except Exception as e:
-                print(type(e))
-                if type(e) == mysql.connector.errors.InterfaceError or type(mysql.connector.errors.OperationalError):
-                    print("Error connecting to server, will try again in a second")
-                    time.sleep(1)
-                    if con.is_connected():
-                        con.close()
-                    continue
-                print(e.args)
-                print(e)
-                traceback.print_exc()
+        return con, cur
 
     def connect(self):
-        if self.mysql_credentials:
+        print("Function obselete... use connect_to_mysql or connect_to_file instead.")
+        if self.has_mysql:
             con = mysql.connector.connect(
                 host=self.mysql_credentials['host'],
                 user=self.mysql_credentials['username'],
@@ -197,58 +259,78 @@ class ExperimentDatabaseManager():
         return typex
 
     def add_another_field_to_experiment_data(self, table_name, field_name, field_example):
-        con, cur = self.connect()
         datatype = self._get_type(field_example)
         query = 'ALTER TABLE %s ADD %s %s;' % (table_name, field_name, datatype)
-        con.execute(query)
-        con.commit()
-        con.close()
 
-    def _verify_data_table(self, table_name, data):
-        if table_name not in self.data_tables_verified:
-            con, cur = self.connect()
-            if self.is_mysql:
-                query = "SELECT table_name from information_schema.tables WHERE table_name='%s';" % table_name
-            else:
-                query = "SELECT name FROM sqlite_master WHERE type='table' AND name='%s';" % table_name
-
-            # query = "SELECT name from sqlite_master WHERE type='table' AND name='" + table_name + "'"
-            cur.execute(query)
-            result = cur.fetchall()
-
-            if len(result) == 0:
-                query = 'CREATE TABLE %s (' % table_name
-                query += 'experiment_name text NOT NULL'
-
-                for key, value in data.items():
-                    try:
-                        typex = self._get_type(value)
-                    except DValueError:
-                        con.commit()
-                        con.close()
-                        raise ValueError('Error occured in getting data type\n'
-                                         'Supported types are long, double and string.\n'
-                                         'Could also be list/numpy array of size zero.')
-                    query += ', %s %s' % (key, typex)
-
-                query += ');'
-                # print(query)
-                cur.execute(query)
-
-                if self.is_mysql:
-                    query = '''CREATE INDEX idx_%s ON %s(experiment_name(300));''' % (table_name, table_name)
-                else:
-                    query = '''CREATE INDEX idx_%s ON %s(experiment_name);''' % (table_name, table_name)
-                cur.execute(query)
-
-                cur.execute("SELECT * from data_tables WHERE data_table_name='%s'" % (table_name))
-                rows = cur.fetchall()
-                if len(rows) ==0:
-                    cur.execute("INSERT INTO data_tables VALUES ('%s')" % (table_name))
-
-            self.data_tables_verified.add(table_name)
+        if self.has_mysql:
+            con, cur = self.connect_to_mysql()
+            con.execute(query)
             con.commit()
             con.close()
+
+        if self.has_file:
+            con, cur = self.connect_to_file()
+            con.execute(query)
+            con.commit()
+            con.close()
+
+    def _verify_data_table(self, table_name, data):
+        def work(for_mysql):
+            if table_name not in self.data_tables_verified:
+                if for_mysql:
+                    con, cur = self.connect_to_mysql()
+                else:
+                    con, cur = self.connect_to_file()
+
+                if for_mysql:
+                    query = "SELECT table_name from information_schema.tables WHERE table_name='%s';" % table_name
+                else:
+                    query = "SELECT name FROM sqlite_master WHERE type='table' AND name='%s';" % table_name
+
+                # query = "SELECT name from sqlite_master WHERE type='table' AND name='" + table_name + "'"
+                cur.execute(query)
+                result = cur.fetchall()
+
+                if len(result) == 0:
+                    query = 'CREATE TABLE %s (' % table_name
+                    query += 'experiment_name text NOT NULL'
+
+                    for key, value in data.items():
+                        try:
+                            typex = self._get_type(value)
+                        except DValueError:
+                            con.commit()
+                            con.close()
+                            raise ValueError('Error occured in getting data type\n'
+                                             'Supported types are long, double and string.\n'
+                                             'Could also be list/numpy array of size zero.')
+                        query += ', %s %s' % (key, typex)
+
+                    query += ');'
+                    # print(query)
+                    cur.execute(query)
+
+                    if for_mysql:
+                        query = '''CREATE INDEX idx_%s ON %s(experiment_name(300));''' % (table_name, table_name)
+                    else:
+                        query = '''CREATE INDEX idx_%s ON %s(experiment_name);''' % (table_name, table_name)
+                    cur.execute(query)
+
+                    cur.execute("SELECT * from data_tables WHERE data_table_name='%s'" % (table_name))
+                    rows = cur.fetchall()
+                    if len(rows) == 0:
+                        cur.execute("INSERT INTO data_tables VALUES ('%s')" % (table_name))
+
+                con.commit()
+                con.close()
+
+        if self.has_mysql:
+            work(for_mysql=True)
+        if self.has_file:
+            work(for_mysql=False)
+        self.data_tables_verified.add(table_name)
+
+
 
     def insert_experiment_data(self, table_name, data):
         if len(self.experiment_name) == 0:
@@ -269,7 +351,11 @@ class ExperimentDatabaseManager():
             while self.data_queue.qsize() > 0:
                 table_name, data, is_array = self.data_queue.get()
                 data_to_be_pushed.append([table_name, data, is_array])
-            self.pusher_queue.put(data_to_be_pushed)
+
+            if self.has_mysql:
+                self.mysql_pusher_queue.put(data_to_be_pushed)
+            if self.has_file:
+                self.file_pusher_queue.put(data_to_be_pushed)
 
     def close(self):
         data_to_be_pushed = []
@@ -277,9 +363,18 @@ class ExperimentDatabaseManager():
             table_name, data, is_array = self.data_queue.get()
             data_to_be_pushed.append([table_name, data, is_array])
         if len(data_to_be_pushed) > 0:
-            self.pusher_queue.put(data_to_be_pushed)
-        self.pusher_queue.put(None)
-        self.pusher_thead.join()
+            if self.has_mysql:
+                self.mysql_pusher_queue.put(data_to_be_pushed)
+            if self.has_file:
+                self.file_pusher_queue.put(data_to_be_pushed)
+
+        if self.has_mysql:
+            self.mysql_pusher_queue.put(None)
+            self.mysql_pusher_thread.join()
+
+        if self.has_file:
+            self.file_pusher_queue.put(None)
+            self.file_pusher_thread.join()
 
     def flush(self):
         data_to_be_pushed = []
@@ -287,40 +382,53 @@ class ExperimentDatabaseManager():
             table_name, data, is_array = self.data_queue.get()
             data_to_be_pushed.append([table_name, data, is_array])
         if len(data_to_be_pushed) > 0:
-            self.pusher_queue.put(data_to_be_pushed)
+            if self.has_mysql:
+                self.mysql_pusher_queue.put(data_to_be_pushed)
+            if self.has_file:
+                self.file_pusher_queue.put(data_to_be_pushed)
 
     def insert_experiment(self, name):
-        con, cur = self.connect()
-        command = "INSERT INTO experiments VALUES ('%s','%s')" % (name, datetime.now(timezone.utc))
-        if _debug_mode:
-            print(command)
-        cur.execute(command)
-        con.commit()
-        con.close()
+        query = "INSERT INTO experiments VALUES ('%s','%s')" % (name, datetime.now(timezone.utc))
+        if self.has_mysql:
+            con, cur = self.connect_to_mysql()
+            cur.execute(query)
+            con.commit()
+            con.close()
+        if self.has_file:
+            con, cur = self.connect_to_file()
+            cur.execute(query)
+            con.commit()
+            con.close()
 
     def experiment_exists(self, name):
-        con, cur = self.connect()
-        cur.execute("SELECT * FROM experiments WHERE experiment_name='%s';" % (name))
+        query = "SELECT * FROM experiments WHERE experiment_name='%s';" % (name)
+        if self.has_mysql:
+            con, cur = self.connect_to_mysql()
+        else:
+            con, cur = self.connect_to_file()
+
+        cur.execute(query)
         rows = cur.fetchall()
         len_of_rows = len(rows) > 0
         con.commit()
         con.close()
         return len_of_rows > 0
 
-    def delete_experiment(self, experiment_name):
-        con, cur = self.connect()
-
+    def _delete_experiment(self, con, cur, experiment_name):
         query = "SELECT data_table_name from data_tables"
         cur.execute(query)
         result = cur.fetchall()
         for table_name in result:
             table_name = table_name[0]
-            cur.execute("DELETE FROM %s WHERE experiment_name='%s';" % (table_name, experiment_name))
+            query = "DELETE FROM %s WHERE experiment_name='%s';" % (table_name, experiment_name)
+            cur.execute(query)
 
 
-            cur.execute("SELECT * FROM %s" % (table_name))
+            query = "SELECT count(experiment_name) FROM %s" % (table_name)
+            cur.execute(query)
             rows = cur.fetchall()
-            if len(rows) == 0:
+
+            if rows[0][0] == 0:
                 # Delete the table as well as well as its reference from data_tables table
                 cur.execute("DELETE FROM data_tables WHERE data_table_name='%s';" % (table_name))
                 cur.execute('DROP TABLE %s' % table_name)
@@ -328,4 +436,14 @@ class ExperimentDatabaseManager():
         cur.execute("DELETE FROM experiments WHERE experiment_name='%s';" % (experiment_name))
         con.commit()
 
-        con.close()
+
+
+    def delete_experiment(self, experiment_name):
+        if self.has_mysql:
+            con, cur = self.connect_to_mysql()
+            self._delete_experiment(con, cur, experiment_name)
+            con.close()
+        if self.has_file:
+            con, cur = self.connect_to_file()
+            self._delete_experiment(con, cur, experiment_name)
+            con.close()

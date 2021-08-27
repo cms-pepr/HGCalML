@@ -4,8 +4,11 @@ import tensorboard_manager as tm
 import threading
 import queue
 import graph_functions
-from DeepJetCore.training.DeepJet_callbacks import PredictCallback
+from plotting_callbacks import publish
 from importlib import reload
+
+from training_metrics_plots import TrainingMetricPlots
+
 graph_functions = reload(graph_functions)
 from tensorflow.keras import backend as K
 import tensorflow.keras.callbacks.experimental
@@ -100,7 +103,7 @@ class Worker(threading.Thread):
 
 
 
-class RunningMetricsCallback(tf.keras.callbacks.Callback):
+class RunningMetricsDatabaseAdditionCallback(tf.keras.callbacks.Callback):
     def __init__(self, td, tensorboard_manager=None, beta_threshold=0.5, dist_threshold=0.5, with_local_distance_scaling=False, database_manager=None):
         """Initialize intermediate variables for batches and lists."""
         super().__init__()
@@ -188,5 +191,29 @@ class RunningMetricsCallback(tf.keras.callbacks.Callback):
 
 
 
+class RunningMetricsPlotterCallback(tf.keras.callbacks.Callback):
+    def __init__(self, after_n_batches, database_reading_manager, output_html_location, average_over=100, publish=None):
+        super().__init__()
+        self.after_n_batches = after_n_batches
+        self.database_reading_manager = database_reading_manager
+        self.output_location = output_html_location
+        self.average_over = average_over
+        self.plotter = TrainingMetricPlots(database_reading_manager, experiment_name=None, ignore_cache=True)
+        self.publish = publish
+
+    def on_train_batch_end(self, batch, logs=None):
+        if self.model.num_train_step > 0 and self.model.num_train_step % self.after_n_batches==0:
+            pass
+        else:
+            return
+        print("Gonna run callback to make htmls for loss and more")
+        self.plotter.do_plot_to_html(self.output_location, average_over=self.average_over)
+        if self.publish is not None:
+            publish(self.output_location, self.publish)
 
 
+class RunningMetricsCallback(RunningMetricsDatabaseAdditionCallback):
+    def __init__(self, *args, **kwargs):
+        print("Obselete: Please change the name to RunningMetricsDatabaseAdditionCallback instead of RunningMetricsCallback."
+              "This is to avoid confusion with RunningMetricsPlotterCallback. This class will be removed in the future.")
+        super(RunningMetricsCallback, self).__init__(*args, **kwargs)
