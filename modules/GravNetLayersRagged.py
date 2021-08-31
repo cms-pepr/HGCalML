@@ -1,4 +1,5 @@
 import tensorflow as tf
+import yaml
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
@@ -10,7 +11,6 @@ import numpy as np
 #just for the moment
 #### helper###
 from datastructures import TrainData_OC,TrainData_NanoML
-
 from oc_helper_ops import SelectWithDefault
 
 def check_type_return_shape(s):
@@ -300,8 +300,45 @@ class NeighbourCovariance(tf.keras.layers.Layer):
         
         return tf.concat([cov,means],axis=-1)
         
+        
+class ApproximatePCA(tf.keras.layers.Layer):
+    def __init__(self, D, modelpath, **kwargs):
+        """
+        Layer that performs an approximate PCA on the input covariance matrix
+        At the moment only a model for 5x5 covariance matrices exists (D=5)
+        Inputs: 
+          - flattended covariance matrices (N_batch x D**2)
+
+        Outpus:
+          - flattened, non normalized eigenvectors V
+            if reshaped to (D, D):
+            || V[:,D-k] || is the kth eigenvalue (k in {1..D})
+            V[:,D-k] / || V[:,D-k || is the kth eigenvector
+        """
+        super().__init__(**kwargs)
+        self.D = D
+        with open(modelpath + 'config.yaml', 'r') as yamlfile:
+            config = yaml.load(yamlfile, Loader=yaml.FullLoader)
+        model = tf.keras.models.load_model(modelpath, compile=False)
+        loss_fn = modular_loss(D,
+                               MSE=config['MSE'],
+                               ORTHO=config['ORTHO'],
+                               ANGLE=config['ANGLE'],
+                               NORM=config['NORM'],
+                               COS=config['COS'])
+        model.compile(optimizer='Adam', loss=loss_fn)
+        self.model = model
+        
+    def get_config(self):
+        base_config = super(NeighbourApproxPCA, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def call(self, inputs):
+        return model(inputs) 
+
+
 class NeighbourApproxPCA(tf.keras.layers.Layer):
-    def __init__(self,hidden_nodes=[32,32,32], **kwargs):
+    def __init__(self, path, **kwargs):
         """
         Inputs: 
           - coordinates (Vin x C)
@@ -327,7 +364,6 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         self.nC = None
         self.covshape = None
         
-        
         print('NeighbourApproxPCA: Warning. This layer is still very sensitive to the input normalisations and the learning rates.')
         
         
@@ -336,6 +372,23 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         base_config = super(NeighbourApproxPCA, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
+
+    def make_model(self, path):
+        """Creates a tf model with dense layers"""
+        with open(path + 'config.yaml', 'r') as yfile:
+            config = yaml.load(yfile, Loader=yaml.FullLoader)
+        nodes = config['nodes']
+        D = config['D']
+        inputs = tf.keras.layers.Input(shape=(D*D,))
+        x = inputs
+        for node in nodes:
+            x = tf.keras.layers.Dense(node, activation='elu')(x)
+        outputs = Dense(D*D)(x)
+        model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+        model.load_weights(path)
+        return model
+
+
     def build(self, input_shapes): #pure python
         nF, nC, covshape = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
         self.nF = nF
@@ -352,13 +405,14 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
                 
         super(NeighbourApproxPCA, self).build(input_shapes)  
         
+
     def compute_output_shape(self, input_shapes):
         nF, _,_ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
         return (None, nF * self.hidden_dense[-1].units)
 
+
     def call(self, inputs):
         coordinates, distsq, features, n_idxs = inputs
-        
         cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
                                            distsq=10. * distsq,#same as gravnet scaling
                                          features=features, 
