@@ -144,7 +144,8 @@ class LLLocalClusterCoordinates(LossLayerBase):
 
     @staticmethod
     def raw_loss(distances, hierarchy, neighbour_indices, truth_indices,
-                 add_self_reference, repulsion_contrib, print_loss, name):
+                 add_self_reference, repulsion_contrib, print_loss, name,
+                 hierarchy_penalty=True):
         
         
         hierarchy = (tf.nn.sigmoid(hierarchy)+1.)/2.
@@ -161,12 +162,12 @@ class LLLocalClusterCoordinates(LossLayerBase):
         neighbour_indices = tf.expand_dims(neighbour_indices,axis=2)#tf like
         
         firsttruth = truth_indices #[,tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,0:1]),axis=2)
-        neightruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,1:] ),axis=2)
+        neightruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,1:,:] ),axis=2)
         
         #distances are actually distances**2
         expdist = tf.exp(- 3. * distances)
         att_proto = (1.-repulsion_contrib)* (1.-expdist)  #+ 0.01*distances  #mild attractive to help learn
-        att_proto = tf.where(truth_indices<0, att_proto*0.001, att_proto) #milder term for noise
+        att_proto = tf.where(truth_indices<0, att_proto*0.01, att_proto) #milder term for noise
         
         rep_proto = repulsion_contrib * expdist #- 0.01 * distances
         
@@ -178,7 +179,9 @@ class LLLocalClusterCoordinates(LossLayerBase):
         penalty = 1. - hierarchy
         penalty = tf.reduce_mean(penalty)
         
-        lossval = penalty + potential
+        lossval = potential
+        if hierarchy_penalty:
+            lossval += penalty 
         
         if print_loss:
             if hasattr(lossval, "numpy"):
@@ -246,7 +249,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  standard_configuration=None,
                  beta_gradient_damping=0.,
                  alt_energy_loss=True,
-                 repulsion_q_min=4.,
+                 repulsion_q_min=-1.,
                  super_repulsion=False,
                  use_local_distances=False,
                  energy_weighted_qmin=False,

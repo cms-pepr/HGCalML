@@ -58,13 +58,15 @@ struct LocalClusterOpFunctor<CPUDevice, dummy> {
 
             for(int _i_v=d_row_splits[i_rs];_i_v<d_row_splits[i_rs+1]; _i_v++){
                 int i_v = d_hierarchy_idxs[_i_v];
+                bool below_threshold = i_v < 0;
+                if(below_threshold)
+                    i_v = -i_v-1;
                 if(mask[i_v])
                     continue;
 
                 d_out_selection_idxs[nseltotal] = i_v;
                 int v_gl_idx = d_global_idxs[i_v];
                 d_out_backgather[v_gl_idx] = nseltotal; //global self-associate
-
 
                 for(int i_n=0;i_n<n_neigh;i_n++){
 
@@ -78,6 +80,9 @@ struct LocalClusterOpFunctor<CPUDevice, dummy> {
                     mask[nidx]=1;
                     int ngl_idx = d_global_idxs[nidx];
                     d_out_backgather[ngl_idx] = nseltotal; //global associate
+
+                    if(below_threshold)
+                        break; //below threshold, only allow self-reference
                 }
                 nseltotal++;
             }

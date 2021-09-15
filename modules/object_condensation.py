@@ -102,8 +102,6 @@ def oc_per_batch_element(
         raise ValueError("not alt_potential_norm not implemented")
     if not prob_repulsion:
         raise ValueError("not prob_repulsion not implemented")
-    if not phase_transition:
-        raise ValueError("not phase_transition not implemented")
     if phase_transition_double_weight:
         raise ValueError("phase_transition_double_weight not implemented")
     if cont_beta_loss:
@@ -216,17 +214,23 @@ def oc_per_batch_element(
                                   tf.expand_dims(tf.expand_dims(N,axis=0),axis=0) - N_per_obj+1e-9) # K x 1
     V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=0), K+1e-9) # 1
     
-    
+    B_pen = None
+    if phase_transition:
     ## beta terms
-    B_pen = - tf.reduce_sum(padmask_m * 1./(20.*distancesq_m + 1.),axis=1) # K x 1
-    B_pen += 1. #remove self-interaction term (just for offset)
-    B_pen *= object_weights_kalpha_m * beta_kalpha_m
-    B_pen = tf.math.divide_no_nan(B_pen, N_per_obj+1e-9) # K x 1
-    #now 'standard' 1-beta
-    B_pen -= 0.2*object_weights_kalpha_m * (tf.math.log(beta_kalpha_m+1e-9))#tf.math.sqrt(beta_kalpha_m+1e-6) 
-    #another "-> 1, but slower" per object
-    B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9) # 1
+        B_pen = - tf.reduce_sum(padmask_m * 1./(20.*distancesq_m + 1.),axis=1) # K x 1
+        B_pen += 1. #remove self-interaction term (just for offset)
+        B_pen *= object_weights_kalpha_m * beta_kalpha_m
+        B_pen = tf.math.divide_no_nan(B_pen, N_per_obj+1e-9) # K x 1
+        #now 'standard' 1-beta
+        B_pen -= 0.2*object_weights_kalpha_m * (tf.math.log(beta_kalpha_m+1e-9))#tf.math.sqrt(beta_kalpha_m+1e-6) 
+        #another "-> 1, but slower" per object
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9) # 1
     
+    else:
+        B_pen = object_weights_kalpha_m * (1. - beta_kalpha_m)
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9)
+        
+        
     
     too_much_B_pen = tf.constant([0.],dtype='float32')
     
