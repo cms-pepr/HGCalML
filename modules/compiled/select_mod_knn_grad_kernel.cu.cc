@@ -41,7 +41,7 @@ static void select_mod_knn_grad_selfloop_kernel(
     if(nu_c >= n_coords)
         return;
 
-    const float xinu = d_coord[I2D(i_v,nu_c,n_coords)];
+    //const float xinu = d_coord[I2D(i_v,nu_c,n_coords)];
 
     float self_contrib=0;
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
@@ -49,20 +49,25 @@ static void select_mod_knn_grad_selfloop_kernel(
         int k = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
         if(k<0) break;
 
+
+
+        float modifier=0;
+        for(size_t la=0;la<n_coords;la++){
+            const float Rinula = d_coord_mod[I3D(i_v,nu_c,la,n_coords,n_coords)];
+            for(size_t a=0;a<n_coords;a++){
+                float xia = d_coord[I2D(i_v,a,n_coords)];
+                float xma = d_coord[I2D(k,a,n_coords)];
+                modifier += d_coord_mod[I3D(i_v,a,la,n_coords,n_coords)] * (xia - xma) * Rinula;
+            }
+        }
         const float gik = d_grad_dist[I2D(i_v,i_i_n,n_neigh)];
-        const float xknu = d_coord[I2D(k,nu_c,n_coords)];
-
-
-        self_contrib -= 2. * gik * (xknu - xinu);
+        //???????
+        self_contrib += 2 * modifier * gik; //2. * gik * (xinu - xknu);
 
     }
     //add mod
-    float totcontr=0;
-    for(size_t nc=0;nc<n_coords;nc++){
-        float R = d_coord_mod[I3D(i_v,nu_c,nc,n_coords,n_coords)];
-        totcontr += R*R*self_contrib;
-    }
-    d_grad_coord[I2D(i_v,nu_c,n_coords)] = totcontr;
+
+    d_grad_coord[I2D(i_v,nu_c,n_coords)] = self_contrib;
 }
 
 __global__
@@ -88,7 +93,7 @@ static void select_mod_knn_grad_neighloop_kernel(
     if(nu_c >= n_coords)
         return;
 
-    const float xinu = d_coord[I2D(i_v,nu_c,n_coords)];
+    //const float xinu = d_coord[I2D(i_v,nu_c,n_coords)];
 
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
@@ -96,16 +101,21 @@ static void select_mod_knn_grad_neighloop_kernel(
         if(m<0) break;//padded with -1
 
         const float gim = d_grad_dist[I2D(i_v,i_i_n,n_neigh)];
-        const float xmnu = d_coord[I2D(m,nu_c,n_coords)];
+        //const float xmnu = d_coord[I2D(m,nu_c,n_coords)];
 
-        float add = 2. * gim * (xmnu - xinu);
-        float totcontr=0;
-        for(size_t nc=0;nc<n_coords;nc++){
-            float R = d_coord_mod[I3D(m,nu_c,nc,n_coords,n_coords)];//m->i_v
-            totcontr += R*R*add;
+        float modifier=0;
+        for(size_t la=0;la<n_coords;la++){
+            const float Rinula = d_coord_mod[I3D(i_v,nu_c,la,n_coords,n_coords)];
+            for(size_t a=0;a<n_coords;a++){
+                float xia = d_coord[I2D(i_v,a,n_coords)];
+                float xma = d_coord[I2D(m,a,n_coords)];
+                modifier += d_coord_mod[I3D(i_v,a,la,n_coords,n_coords)] * (xia - xma) * Rinula;
+            }
         }
 
-        atomicAdd( &d_grad_coord[I2D(m, nu_c, n_coords)], totcontr);
+        float add = - 2. * gim * modifier;// (xinu - xmnu);
+
+        atomicAdd( &d_grad_coord[I2D(m, nu_c, n_coords)], add);
 
     }
 }
@@ -156,9 +166,9 @@ static void select_mod_knn_grad_mod_kernel(
             float Rivatau = d_coord_mod[I3D(i_v, a, tau, n_coords, n_coords)];
             coorddist += Rivatau * (d_coord[I2D(i_v,a,n_coords)]-d_coord[I2D(m,a,n_coords)]);
         }
-        contrib += 2. * gim *  coorddist * dimnu ;// * Rtaunui;
+        contrib += gim *  coorddist * dimnu ;// * Rtaunui;
     }
-    d_grad_coord_mod[I3D(i_v,nu_c,tau,n_coords,n_coords)] = contrib;
+    d_grad_coord_mod[I3D(i_v,nu_c,tau,n_coords,n_coords)] = 2. * contrib;
 }
 
 
