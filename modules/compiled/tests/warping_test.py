@@ -3,7 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from select_mod_knn_op import SelectKnn
+from select_mod_knn_op import SelectModKnn as SelectKnn
 
 #extent = 4
 

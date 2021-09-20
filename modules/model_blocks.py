@@ -1,6 +1,6 @@
 
 from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply
-from Layers import ExpMinusOne, CondensateToPseudoRS, RaggedSumAndScatter, FusedRaggedGravNetLinParse, VertexScatterer, FusedRaggedGravNetAggAtt
+from Layers import OnesLike, ExpMinusOne, CondensateToPseudoRS, RaggedSumAndScatter, FusedRaggedGravNetLinParse, VertexScatterer, FusedRaggedGravNetAggAtt
 from DeepJetCore.DJCLayers import  StopGradient, SelectFeatures, ScalarMultiply
 
 import tensorflow as tf
@@ -243,12 +243,13 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
         pred_pos =  Add()([feat['recHitXY'],pred_pos])
     pred_id = Dense(n_classes, activation="softmax")(x)
     
+    pred_dist = OnesLike()(pred_time)
     if add_distance_scale:
         pred_dist = Dense(1, activation='sigmoid')(x) 
         #this needs to be bound otherwise fully anti-correlated with coordates scale
-        return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id
+    return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id
     
-    return pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
+    
 
 
 

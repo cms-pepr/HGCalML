@@ -253,6 +253,8 @@ class LLFullObjectCondensation(LossLayerBase):
                  super_repulsion=False,
                  use_local_distances=False,
                  energy_weighted_qmin=False,
+                 super_attraction=False,
+                 div_repulsion=False,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -337,6 +339,8 @@ class LLFullObjectCondensation(LossLayerBase):
         self.super_repulsion=super_repulsion
         self.use_local_distances = use_local_distances
         self.energy_weighted_qmin=energy_weighted_qmin
+        self.super_attraction = super_attraction
+        self.div_repulsion=div_repulsion
         
         self.loc_time=time.time()
         
@@ -480,7 +484,9 @@ class LLFullObjectCondensation(LossLayerBase):
                                            kalpha_damping_strength = self.kalpha_damping_strength,
                                            beta_gradient_damping=self.beta_gradient_damping,
                                            repulsion_q_min=self.repulsion_q_min,
-                                           super_repulsion=self.super_repulsion
+                                           super_repulsion=self.super_repulsion,
+                                           super_attraction = self.super_attraction,
+                                           div_repulsion = self.div_repulsion
                                            )
 
         
@@ -579,7 +585,9 @@ class LLFullObjectCondensation(LossLayerBase):
             'repulsion_q_min': self.repulsion_q_min,
             'super_repulsion': self.super_repulsion,
             'use_local_distances': self.use_local_distances,
-            'energy_weighted_qmin': self.energy_weighted_qmin
+            'energy_weighted_qmin': self.energy_weighted_qmin,
+            'super_attraction':self.super_attraction,
+            'div_repulsion' : self.div_repulsion
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

@@ -96,6 +96,17 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
 
+
+class OnesLike(Layer):
+    def __init__(self,**kwargs):
+        super(OnesLike, self).__init__(**kwargs)
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    def call(self, inputs):
+        return tf.ones_like(inputs)
+    
+global_layers_list['OnesLike']=OnesLike
+
 class CheckNaN(Layer):
     def __init__(self,**kwargs):
         super(CheckNaN, self).__init__(**kwargs)

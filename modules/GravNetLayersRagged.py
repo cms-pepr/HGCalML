@@ -682,7 +682,7 @@ class KNN(tf.keras.layers.Layer):
 
 
 class SortAndSelectNeighbours(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float, **kwargs):
+    def __init__(self,K: int, radius: float=-1., **kwargs):
         """
         
         This layer will sort neighbour indices by distance and possibly select neighbours
