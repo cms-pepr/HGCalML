@@ -138,8 +138,8 @@ class GeneralHistogramPlot():
     def get_tags(self):
         return [x['tags'] for x in self.models_data]
 
-    def read_from_database(self, database_reading_manager, table_name, experiment_name=None):
-        results_dict = database_reading_manager.get_data(table_name, experiment_name)
+    def read_from_database(self, database_reading_manager, table_name, experiment_name=None, condition=None):
+        results_dict = database_reading_manager.get_data(table_name, experiment_name, condition_string=condition)
         num_rows = len(results_dict['experiment_name'])
 
         results_dict_copy = results_dict.copy()

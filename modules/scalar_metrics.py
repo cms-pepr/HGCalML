@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 from importlib import reload
 import matplotlib.pyplot as plt
+import matching_and_analysis
 
 
 def w_func(x, alpha):
@@ -13,15 +14,17 @@ Reall = found / found + missed
 
 """
 
-def compute_precision_and_recall_analytic(energy_truth, energy_matched_to_truth, energy_predicted, energy_matched_to_predicted, alpha=0., beta=1., return_all_dict=False):
+def compute_precision_and_recall_analytic(energy_truth, energy_matched_to_truth, energy_predicted, energy_matched_to_predicted, alpha=0., beta=1., return_all_dict=False, prevent_norm=False):
     upper_limit = 200
 
     energy_matched_to_truth = np.array(energy_matched_to_truth)
     # print(energy_matched_to_truth.shape)
     energy_truth = np.array(energy_truth)
     # print(energy_truth.shape)
-    energy_matched_to_truth = energy_matched_to_truth[energy_truth<upper_limit]
-    energy_truth = energy_truth[energy_truth< upper_limit]
+
+    if not prevent_norm:
+        energy_matched_to_truth = energy_matched_to_truth[energy_truth<upper_limit]
+        energy_truth = energy_truth[energy_truth< upper_limit]
     energy_matched_to_truth_fixed = np.maximum(energy_matched_to_truth, 0)
 
 
@@ -30,16 +33,17 @@ def compute_precision_and_recall_analytic(energy_truth, energy_matched_to_truth,
     if len(energy_predicted.shape)==2:
         energy_predicted = energy_predicted[:, 0]
 
-    energy_matched_to_predicted = energy_matched_to_predicted[energy_predicted < upper_limit]
-    energy_predicted = energy_predicted[energy_predicted < upper_limit]
+    if not prevent_norm:
+        energy_matched_to_predicted = energy_matched_to_predicted[energy_predicted < upper_limit]
+        energy_predicted = energy_predicted[energy_predicted < upper_limit]
     energy_predicted = np.maximum(energy_predicted, 0)
 
     found_mask = energy_matched_to_truth!=-1
     missed_mask = energy_matched_to_truth==-1
     fake_mask = energy_matched_to_predicted==-1
 
-    wt = w_func(energy_truth/upper_limit, alpha)
-    wp = w_func(energy_predicted/upper_limit, alpha)
+    wt = w_func(energy_truth/upper_limit, alpha) * float(not prevent_norm) + 1 * float(prevent_norm)
+    wp = w_func(energy_predicted/upper_limit, alpha) * float(not prevent_norm) + 1 * float(prevent_norm)
 
     found_reduced = np.sum(found_mask * wt) / np.sum(wt)
     fake_reduced = np.sum(fake_mask * wp) / np.sum(wp)
@@ -48,7 +52,6 @@ def compute_precision_and_recall_analytic(energy_truth, energy_matched_to_truth,
     precision = found_reduced / (found_reduced + fake_reduced)
     recall = found_reduced / (found_reduced + missed_reduced)
     f_score = (1+beta**2)  * precision * recall / ((beta**2 * precision)+recall)
-
 
     found_energy_reduced = np.sum(found_mask * (energy_truth - np.maximum(energy_truth - energy_matched_to_truth_fixed, 0)) * wt)
 
@@ -61,7 +64,6 @@ def compute_precision_and_recall_analytic(energy_truth, energy_matched_to_truth,
 
     # missed is underpredicted and unmatched truth
     missed_energy_reduced = np.sum(found_mask * wt * np.maximum(energy_truth - energy_matched_to_truth_fixed, 0) + missed_mask * wt * energy_truth)
-
 
     precision_energy = found_energy_reduced / (found_energy_reduced + fake_energy_reduced)
     recall_energy = found_energy_reduced / (found_energy_reduced + missed_energy_reduced)
@@ -195,12 +197,11 @@ def check(result, use_energy_f_score=True, alpha=0, beta=1):
     return f_score_energy if use_energy_f_score else f_score
 
 
-
-def compute_scalar_metrics(result, alpha=0, beta=1):
+def compute_scalar_metrics(result, alpha=0, beta=1, prevent_norm=False):
 
     precision, recall, f_score, precision_energy, recall_energy, f_score_energy =  compute_precision_and_recall_analytic(result['truth_shower_energy'], result['truth_shower_matched_energy_regressed'],
                                  result['pred_shower_regressed_energy'],
-                                 result['pred_shower_matched_energy'], alpha=alpha, beta=beta, return_all_dict=True)
+                                 result['pred_shower_matched_energy'], alpha=alpha, beta=beta, return_all_dict=True, prevent_norm=prevent_norm)
 
     f_score_energy = float(f_score_energy)
     f_score = float(f_score)
@@ -231,6 +232,79 @@ def compute_scalar_metrics(result, alpha=0, beta=1):
 
     return precision, recall, f_score, precision_energy, recall_energy, f_score_energy
 
+
+
+
+
+def compute_scalar_metrics_graph(result, beta=1):
+
+    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+
+    precision, recall, f_score, precision_energy, recall_energy, f_score_energy =  \
+        compute_precision_and_recall_analytic(truth_shower_energy, truth_shower_matched, pred_shower_energy,
+                                              pred_shower_matched, alpha=0, beta=beta, return_all_dict=True, prevent_norm=True)
+
+    f_score_energy = float(f_score_energy)
+    f_score = float(f_score)
+
+    precision = float(precision)
+    recall = float(recall)
+
+    precision_energy = float(precision_energy)
+    recall_energy = float(recall_energy)
+
+    import math
+    if not math.isfinite(f_score):
+        f_score = 0.0
+    if not math.isfinite(f_score_energy):
+        f_score_energy = 0.0
+
+    if not math.isfinite(precision):
+        precision = 0.0
+
+    if not math.isfinite(recall):
+        recall = 0.0
+
+    if not math.isfinite(precision_energy):
+        precision_energy = 0.0
+
+    if not math.isfinite(recall_energy):
+        recall_energy = 0.0
+
+    return precision, recall, f_score, precision_energy, recall_energy, f_score_energy
+
+
+
+
+
+def compute_scalar_metrics_graph_eff_fake_rate_response(result):
+    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+    efficiency = float(np.mean(np.not_equal(truth_shower_matched, -1)).item())
+    filter = np.not_equal(truth_shower_matched, -1)
+    response_mean = float(np.mean(truth_shower_matched[filter] / truth_shower_energy[filter]).item())
+    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+    fake_rate = float(np.mean(np.equal(pred_shower_matched, -1)).item())
+    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'dep_energy', numpy=True, not_found_value=-1)
+    filter = np.not_equal(truth_shower_matched, -1)
+    response_sum_mean = float(np.mean(truth_shower_matched[filter] / truth_shower_energy[filter]).item())
+
+    efficiency = efficiency if np.isfinite(efficiency) else 0.
+    fake_rate = efficiency if np.isfinite(fake_rate) else 0.
+    response_mean = efficiency if np.isfinite(response_mean) else 0.
+    response_sum_mean = efficiency if np.isfinite(response_sum_mean) else 0.
+
+    return efficiency, fake_rate, response_mean, response_sum_mean
+
+
+
+
+def compute_num_showers(result):
+    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+
+
+    return len(truth_shower_energy), len(pred_shower_energy)
 
 
 
