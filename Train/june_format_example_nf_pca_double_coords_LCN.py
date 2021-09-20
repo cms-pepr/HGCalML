@@ -259,6 +259,7 @@ def gravnet_model(Inputs,
 
 import training_base_hgcal
 train = training_base_hgcal.HGCalTraining(testrun=False, resumeSilently=True, renewtokens=False)
+train.val_data.writeToFile(train.outputDir + 'valsamples.djcdc')
 
 if not train.modelSet():
     train.setModel(gravnet_model)
@@ -312,8 +313,8 @@ analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another anal
                                                               # on beta and distance threshold which might mess up settings
 optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=10)
 os.system('mkdir %s/full_validation_plots' % (train.outputDir))
-cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=2,
-                             after_n_batches=5000,min_batch=10, predictor=predictor, optimizer=optimizer,
+cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=5,
+                             after_n_batches=5000,min_batch=8, predictor=predictor, optimizer=optimizer,
                              database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
                                                                                        'full_validation_plots'))]
 

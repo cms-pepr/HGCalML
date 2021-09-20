@@ -259,6 +259,7 @@ def gravnet_model(Inputs,
 
 import training_base_hgcal
 train = training_base_hgcal.HGCalTraining(testrun=False, resumeSilently=True, renewtokens=False)
+train.val_data.writeToFile(train.outputDir + 'valsamples.djcdc')
 
 if not train.modelSet():
     train.setModel(gravnet_model)
@@ -304,14 +305,14 @@ cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manag
 predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
                            os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
                            model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
-                           inputdir=os.path.split(train.inputData)[0], max_files=10)
+                           inputdir=os.path.split(train.inputData)[0], max_files=4)
 
 analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another analyzer here to be safe since it will run scan on
                                                               # on beta and distance threshold which might mess up settings
 optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=10)
 os.system('mkdir %s/full_validation_plots' % (train.outputDir))
-cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=2,
-                             after_n_batches=5000,min_batch=10, predictor=predictor, optimizer=optimizer,
+cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=5,
+                             after_n_batches=5000,min_batch=8, predictor=predictor, optimizer=optimizer,
                              database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
                                                                                        'full_validation_plots'))]
 
