@@ -9,13 +9,17 @@ from argparse import ArgumentParser
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
-from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
+from GravNetLayersRagged import ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing, \
+    EyeInitializer
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
-
+import matching_and_analysis
 from experiment_database_reading_manager import ExperimentDatabaseReadingManager
+from hgcal_predictor import HGCalPredictor
+from hyperparam_optimzer import OCHyperParamOptimizer
+from running_full_validation import RunningFullValidation
 from tensorboard_manager import TensorBoardManager
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
 import tensorflow.keras as keras
@@ -116,7 +120,7 @@ def gravnet_model(Inputs,
         if i:
             ccoords = Add()([
                 ccoords,Dense(n_reshape_dimensions,name='newcoords'+str(i),
-                                         kernel_initializer='zeros'
+                                         kernel_initializer=EyeInitializer(mean=0, stddev=0.01)
                                          )(x)
                 ])
             nidx, cdist = KNN(K=5*cluster_neighbours,radius=-1.0)([ccoords,rs])
@@ -287,16 +291,29 @@ else:
     with open(unique_id_path, 'w') as f:
         f.write(unique_id+'\n')
 
+nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 
-# This will both to server and a local file
-database_manager = ExperimentDatabaseManager(sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
+database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
 database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
-#For writing to to file
-#database_manager = ExperimentDatabaseManager(file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
 database_manager.set_experiment(unique_id)
-cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, dist_threshold=0.5, beta_threshold=0.5, database_manager=database_manager)]
-cb += [RunningMetricsPlotterCallback(after_n_batches=100, database_reading_manager=database_reading_manager,output_html_location=os.path.join(train.outputDir,"training_metrics.html"))]
+metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
+analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
+cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, database_manager=database_manager, analyzer=analyzer)]
+cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manager=database_reading_manager,output_html_location=os.path.join(train.outputDir,"training_metrics.html"), publish=None)]
+predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
+                           os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
+                           model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
+                           inputdir=os.path.split(train.inputData)[0], max_files=10)
+
+analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another analyzer here to be safe since it will run scan on
+                                                              # on beta and distance threshold which might mess up settings
+optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=10)
+os.system('mkdir %s/full_validation_plots' % (train.outputDir))
+cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=2,
+                             after_n_batches=5000,min_batch=10, predictor=predictor, optimizer=optimizer,
+                             database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
+                                                                                       'full_validation_plots'))]
 
 cb += [plotClusteringDuringTraining(
     use_backgather_idx=8 + i,
