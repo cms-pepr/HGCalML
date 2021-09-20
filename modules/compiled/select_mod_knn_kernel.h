@@ -1,6 +1,6 @@
 
-#ifndef SELECT_KNN_KERNEL_H
-#define SELECT_KNN_KERNEL_H
+#ifndef SELECT_MOD_KNN_KERNEL_H
+#define SELECT_MOD_KNN_KERNEL_H
 
 namespace tensorflow {
 namespace functor {

@@ -19,18 +19,22 @@ namespace gpu{
 __device__
 static float calculateDistance(size_t i_v, size_t j_v, const float * d_coord,
         const float * d_coord_mod,
-        size_t n_coords){
+        size_t n_coords,
+        float maxrad){
     float distsq=0;
     if(i_v == j_v)
         return 0;
     for(size_t i=0;i<n_coords;i++){
         float modi = 0;
         float modj = 0;
+        float coorddist = 0;
         for(size_t j=0;j<n_coords;j++){ //contract over axis 1
-            modi += d_coord_mod[I3D(i_v, j, i, n_coords, n_coords)] * d_coord[I2D(i_v,j,n_coords)];
-            modj += d_coord_mod[I3D(i_v, j, i, n_coords, n_coords)] * d_coord[I2D(j_v,j,n_coords)];
+            float Rivji = d_coord_mod[I3D(i_v, j, i, n_coords, n_coords)];
+            coorddist += Rivji * (d_coord[I2D(i_v,j,n_coords)]-d_coord[I2D(j_v,j,n_coords)]);
+            if(maxrad && coorddist > maxrad)
+                return 10.*maxrad;//early stop
         }
-        float dist = modi-modj;
+        float dist = coorddist;//modi-modj;
         distsq += dist*dist;
     }
     return distsq;
@@ -155,7 +159,7 @@ static void select_knn_kernel(
             }
         }
         //fill up
-        float distsq = calculateDistance(i_v,j_v,d_coord,d_coord_mod,n_coords);
+        float distsq = calculateDistance(i_v,j_v,d_coord,d_coord_mod,n_coords, maxdistsq);
         if(nfilled<max_neighbours && (max_radius<=0 || max_radius>=distsq)){
             d_indices[I2D(i_v,nfilled,n_neigh)] = j_v;
             d_dist[I2D(i_v,nfilled,n_neigh)] = distsq;
