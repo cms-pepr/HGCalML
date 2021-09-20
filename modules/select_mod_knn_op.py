@@ -8,7 +8,7 @@ Wrap the module
 
 _sknn_op = tf.load_op_library('select_mod_knn.so')
 
-def SelectKnn(K : int, coords,  
+def SelectModKnn(K : int, coords,  
               coord_mod,
               row_splits, masking_values=None, threshold=0.5, tf_compatible=True, max_radius=-1.,
               mask_mode='none', mask_logic='xor'):
@@ -71,18 +71,22 @@ def SelectKnn(K : int, coords,
 
 
 
-_sknn_grad_op = tf.load_op_library('select_knn_grad.so')
+_sknn_grad_op = tf.load_op_library('select_mod_knn_grad.so')
 
-@ops.RegisterGradient("SelectKnn")
-def _SelectKnnGrad(op, gradidx, dstgrad):
+@ops.RegisterGradient("SelectModKnn")
+def _SelectModKnnGrad(op, gradidx, dstgrad):
     
     coords = op.inputs[0]
     indices = op.outputs[0]
     distances = op.outputs[1]
+    coord_mod = op.inputs[1]
     
-    coord_grad = _sknn_grad_op.SelectKnnGrad(grad_distances=dstgrad, indices=indices, distances=distances, coordinates=coords)
+    coord_grad,coord_mod_grad = _sknn_grad_op.SelectModKnnGrad(grad_distances=dstgrad, 
+                                             indices=indices, distances=distances, 
+                                             coordinates=coords,
+                                             coord_mod=coord_mod)
     
-    return coord_grad, None, None #no grad for row splits and masking values
+    return coord_grad, coord_mod_grad, None, None #no grad for row splits and masking values
     
     
     
