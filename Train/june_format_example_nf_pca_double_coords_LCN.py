@@ -115,35 +115,46 @@ def gravnet_model(Inputs,
     for i in range(total_iterations):
 
         #derive new coordinates for clustering
-        doclustering = False
-        
-        if doclustering:
-            ccoords = Dense(n_reshape_dimensions,name='newcoords'+str(i),
-                                         kernel_initializer=tf.keras.initializers.identity(),
-                                          use_bias=False
-                                         )(Concatenate()([ccoords,x]))
+        doclustering = True
+        redo_space = False
+        if doclustering and (redo_space or (not redo_space and i)):
+            distance_loss_scale = 1.
+            if redo_space:
+                ccoords = Dense(n_reshape_dimensions,name='newcoords'+str(i),
+                                             kernel_initializer=tf.keras.initializers.identity(),
+                                              use_bias=False
+                                             )(Concatenate()([ccoords,x]))
+                    
+                nidx, cdist = KNN(K=7,radius=-1.0)([ccoords,rs])
+                n_reshape_dimensions += 1
+            else:
+                ccoords = coords
+                nidx, cdist = nidx, dist
+                cdist, nidx = SortAndSelectNeighbours(K=7)([cdist,nidx])
+                distance_loss_scale = 1e-3
                 
-            nidx, cdist = KNN(K=7,radius=-1.0)([ccoords,rs])
-            n_reshape_dimensions += 1
             #here we use more neighbours to improve learning of the cluster space
             #this can be adjusted in the final trained model to be equal to 'cluster_neighbours'
             
             
             #check if it's same object
-            hier = Concatenate()([x,MessagePassing([64,32,16,8])([x,nidx])])
-            hier = Dense(1)(hier)
-            
-            x_c, rs, bidxs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist = LNC(
-                     threshold = 0.9,
+            x = Concatenate()([x,MessagePassing([64,32,16,8])([x,nidx])])
+            hier = Dense(1)(x)
+            #make sure to have enough capacity before merging
+            x = Dense(192, activation='elu',name='dense_precl_a'+str(i))(x)
+            x_c, rs, bidxs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist,hier = LNC(
+                     threshold = 0.95,
                      loss_scale = .1,#more emphasis on first iterations
                      print_reduction=True,
                      loss_enabled=True,
+                     distance_loss_scale=distance_loss_scale,
                      print_loss=True,
                      name='LNC_'+str(i)
-                     )([x, hier, cdist, nidx, rs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist, t_idx])
+                     )([x, hier, cdist, nidx, rs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist, hier,t_idx])
             
             gatherids.append(bidxs)
-            x = Concatenate()([x,x_c])
+            hier = StopGradient()(hier)
+            x = Concatenate()([x,x_c,hier])
             
             #explicit
         else:
@@ -165,13 +176,16 @@ def gravnet_model(Inputs,
                                               n_dimensions=n_dimensions,
                                               n_filters=nfilt,
                                               n_propagate=nprop)([x, rs])
-
-        x = Concatenate()([x,x_gn])
+                                              
+        x_mp = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,nidx,dist])
+        #x_ndmp = MessagePassing([64,64,32,32,16,16])([x,nidx])
+        
+        x = Concatenate()([x,x_gn,x_mp])
         #check and compress it all
         x = Dense(128, activation='elu',name='dense_a_'+str(i))(x)
         x = Dense(128, activation='elu',name='dense_b_'+str(i))(x)
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
-        x = Dense(32+16*i, activation='elu',name='dense_c_'+str(i))(x)
+        x = Dense(nfilt, activation='elu',name='dense_c_'+str(i))(x)
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
 
 
@@ -197,7 +211,8 @@ def gravnet_model(Inputs,
     x = Dense(64, activation='elu')(x)
     x = Dense(64, activation='elu')(x)
 
-    pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat,add_distance_scale=True)
+    pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat,
+                                                                                                   add_distance_scale=False)
 
     #loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
@@ -208,11 +223,14 @@ def gravnet_model(Inputs,
                                          #repulsion_scaling=5.,
                                          #repulsion_q_min=1.,
                                          super_repulsion=False,
+                                         super_attraction=False,
                                          q_min=1.0,
                                          #use_average_cc_pos=0.5,
                                          prob_repulsion=True,
+                                         div_repulsion=True,
                                          # phase_transition=1,
                                          huber_energy_scale = 3,
+                                         use_average_cc_pos=0,
                                          alt_potential_norm=True,
                                          beta_gradient_damping=0.,
                                          payload_beta_gradient_damping_strength=0.,
@@ -338,8 +356,8 @@ cb += [
 ]
 
 
-learningrate = 1e-3
-nbatch = 30000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+learningrate = 1e-4
+nbatch = 70000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
@@ -361,13 +379,13 @@ model, history = train.trainModel(nepochs=1,
 
 print("freeze BN 2")
 # Note the submodel here its not just train.keras_model
-for l in train.keras_model.model.layers:
-    if 'gooey_batch_norm' in l.name:
-        l.max_viscosity = 0.95
-        l.fluidity_decay= 5e-5 #
-    if 'FullOCLoss' in l.name:
-        l.use_average_cc_pos = 0.
-        l.q_min = 1.0
+#for l in train.keras_model.model.layers:
+#    if 'gooey_batch_norm' in l.name:
+#        l.max_viscosity = 0.95
+#        l.fluidity_decay= 5e-5 #
+#    if 'FullOCLoss' in l.name:
+#        l.use_average_cc_pos = 0.
+#        l.q_min = 1.0
 
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=3.
