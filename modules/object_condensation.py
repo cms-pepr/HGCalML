@@ -90,7 +90,9 @@ def oc_per_batch_element(
         soft_q_scaling=True,
         weight_by_q=False, 
         repulsion_q_min=-1.,
-        super_repulsion=False
+        super_repulsion=False,
+        super_attraction=False,
+        div_repulsion=False,
         ):
     '''
     all inputs
@@ -102,8 +104,6 @@ def oc_per_batch_element(
         raise ValueError("not alt_potential_norm not implemented")
     if not prob_repulsion:
         raise ValueError("not prob_repulsion not implemented")
-    if not phase_transition:
-        raise ValueError("not phase_transition not implemented")
     if phase_transition_double_weight:
         raise ValueError("phase_transition_double_weight not implemented")
     if cont_beta_loss:
@@ -170,7 +170,11 @@ def oc_per_batch_element(
     distancesq_m = tf.reduce_sum( (tf.expand_dims(x_kalpha_m, axis=1) - x_m)**2, axis=-1, keepdims=True) #K x V-obj x 1
     distancesq_m *= distance_scale_kalpha_m_exp**2
     
-    huberdistsq = huber(tf.sqrt(distancesq_m + 1e-5), d=4) #acts at 4
+    absdist = tf.sqrt(distancesq_m + 1e-6)
+    huberdistsq = huber(absdist, d=4) #acts at 4
+    if super_attraction:
+        huberdistsq += 1. - tf.math.exp(-100.*absdist)
+        
     V_att = q_m * tf.expand_dims(q_kalpha_m,axis=1) * huberdistsq #K x V-obj x 1
     V_att = V_att * tf.expand_dims(object_weights_kalpha_m,axis=1) #K x V-obj x 1
     
@@ -191,17 +195,17 @@ def oc_per_batch_element(
     Mnot_distances = tf.expand_dims(x_kalpha_m, axis=1) #K x 1 x C
     Mnot_distances = Mnot_distances - tf.expand_dims(x, axis=0) #K x V x C
     
-    if super_repulsion:
-        sq_distance = tf.reduce_sum(Mnot_distances**2, axis=-1, keepdims=True)  #K x V x 1
-        l_distance =  tf.reduce_sum(tf.abs(Mnot_distances), axis=-1, keepdims=True)  #K x V x 1
-        V_rep = 0.5 * (sq_distance+l_distance)
-    
-    else:
-        V_rep = tf.reduce_sum(Mnot_distances**2, axis=-1, keepdims=True)  #K x V x 1
+    rep_distances = tf.reduce_sum(Mnot_distances**2, axis=-1, keepdims=True)  #K x V x 1
         
-    V_rep *= distance_scale_kalpha_m_exp**2  #K x V x 1 , same scaling as attractive potential
+    rep_distances *= distance_scale_kalpha_m_exp**2  #K x V x 1 , same scaling as attractive potential
     
-    V_rep =  tf.math.exp(-4.* V_rep) #1. / (V_rep + 0.1) #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
+    V_rep =  tf.math.exp(-4.* rep_distances) #1. / (V_rep + 0.1) #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
+    
+    if super_repulsion:
+        V_rep += 10.*tf.math.exp(-100.* tf.sqrt(rep_distances+1e-6))
+        
+    if div_repulsion:
+        V_rep = 1. / (rep_distances + 0.1)
     
     V_rep *= M_not * tf.expand_dims(q_rep, axis=0) #K x V x 1
     V_rep = tf.reduce_sum(V_rep, axis=1) #K x 1
@@ -216,17 +220,23 @@ def oc_per_batch_element(
                                   tf.expand_dims(tf.expand_dims(N,axis=0),axis=0) - N_per_obj+1e-9) # K x 1
     V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=0), K+1e-9) # 1
     
-    
+    B_pen = None
+    if phase_transition:
     ## beta terms
-    B_pen = - tf.reduce_sum(padmask_m * 1./(20.*distancesq_m + 1.),axis=1) # K x 1
-    B_pen += 1. #remove self-interaction term (just for offset)
-    B_pen *= object_weights_kalpha_m * beta_kalpha_m
-    B_pen = tf.math.divide_no_nan(B_pen, N_per_obj+1e-9) # K x 1
-    #now 'standard' 1-beta
-    B_pen -= 0.2*object_weights_kalpha_m * (tf.math.log(beta_kalpha_m+1e-9))#tf.math.sqrt(beta_kalpha_m+1e-6) 
-    #another "-> 1, but slower" per object
-    B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9) # 1
+        B_pen = - tf.reduce_sum(padmask_m * 1./(20.*distancesq_m + 1.),axis=1) # K x 1
+        B_pen += 1. #remove self-interaction term (just for offset)
+        B_pen *= object_weights_kalpha_m * beta_kalpha_m
+        B_pen = tf.math.divide_no_nan(B_pen, N_per_obj+1e-9) # K x 1
+        #now 'standard' 1-beta
+        B_pen -= 0.2*object_weights_kalpha_m * (tf.math.log(beta_kalpha_m+1e-9))#tf.math.sqrt(beta_kalpha_m+1e-6) 
+        #another "-> 1, but slower" per object
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9) # 1
     
+    else:
+        B_pen = object_weights_kalpha_m * (1. - beta_kalpha_m)
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9)
+        
+        
     
     too_much_B_pen = tf.constant([0.],dtype='float32')
     
@@ -293,7 +303,9 @@ def oc_loss(
         kalpha_damping_strength=0.,
         beta_gradient_damping=0.,
         repulsion_q_min=-1,
-        super_repulsion=False
+        super_repulsion=False,
+        super_attraction=False,
+        div_repulsion=False
         ):   
     
     if energyweights is None:
@@ -337,7 +349,9 @@ def oc_loss(
             kalpha_damping_strength=kalpha_damping_strength,
             beta_gradient_damping=beta_gradient_damping,
             repulsion_q_min=repulsion_q_min,
-            super_repulsion=super_repulsion
+            super_repulsion=super_repulsion,
+            super_attraction=super_attraction,
+            div_repulsion=div_repulsion
             )
         V_att += att
         V_rep += rep
