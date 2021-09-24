@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../DeepJetCore"
+		},
+		{
+			"path": "../pca-network"
+		}
+	],
+	"settings": {}
+}
