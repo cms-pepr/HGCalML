@@ -1,4 +1,6 @@
 import tensorflow as tf
+import yaml
+import os
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
@@ -239,8 +241,8 @@ class ManualCoordTransform(tf.keras.layers.Layer):
         coords = tf.concat([newx,newy,newz],axis=-1)
         coords /= tf.constant([[262.897095, 246.292236, 0.422947705]])
         return coords
-        
 
+        
     
 class NeighbourCovariance(tf.keras.layers.Layer):
     def __init__(self,**kwargs):
@@ -300,8 +302,13 @@ class NeighbourCovariance(tf.keras.layers.Layer):
         
         return tf.concat([cov,means],axis=-1)
         
+        
+        
 class NeighbourApproxPCA(tf.keras.layers.Layer):
-    def __init__(self,hidden_nodes=[32,32,32], **kwargs):
+    # TODO: Decide what to do with means!
+    def __init__(self, coord_dim=3, size='large', 
+                 base_path='/root/pca-networks/',
+                 **kwargs):
         """
         Inputs: 
           - coordinates (Vin x C)
@@ -309,67 +316,98 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
           - features (Vin x F)
           - neighbour indices (Vin x K)
           
-        Returns concatenated:
-          - feature weighted covariance matrices (lower triangle) (Vout x F*C**2)
-          - feature weighted means (Vout x F*C)
+        Returns:
+          - per feature: Approximated PCA of weighted coordinates' covariance matrices
+            (V, F, C**2)
+          - if enabled: feature weighted means (Vout x F*C)
           
         """
+        # TODO: hidden_nodes is only a dummy, remove!
         super(NeighbourApproxPCA, self).__init__(**kwargs)
+
+        assert size.lower() in ['small', 'medium', 'large']\
+            , "size must be 'small', 'medium', or 'large'!"
+        self.size = size.lower()
+        self.coord_dim = coord_dim
+
+        self.base_path = base_path
+        self.path = self.base_path + f"{str(self.coord_dim)}D/{self.size}/AngleNorm/"
+        assert os.path.exists(self.path), f"path: {self.path} not found!"
         
-        self.hidden_dense=[]
-        self.hidden_nodes = hidden_nodes
-        
-        for i in range(len(hidden_nodes)):
-            with tf.name_scope(self.name + "/1/" + str(i)):
-                self.hidden_dense.append( tf.keras.layers.Dense( hidden_nodes[i],activation='elu'))
-                
-        self.nF = None
-        self.nC = None
-        self.covshape = None
-        
-        
-        print('NeighbourApproxPCA: Warning. This layer is still very sensitive to the input normalisations and the learning rates.')
+        print("The PCA layer is still somewhat experimental!")
+        print("Please make sure that you have access to the pretrained models that perform the pca!")
         
         
     def get_config(self):
-        config = {'hidden_nodes': self.hidden_nodes}
+        # Called when saving the model
+        with open(self.path + 'config.yaml', 'r') as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
         base_config = super(NeighbourApproxPCA, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        init_config = {'base_path': self.base_path, 'size': self.size, 'coord_dim': self.coord_dim}
+        config = dict(list(base_config.items()) + list(init_config.items()) + list(config.items()))
+        return config
+
     
     def build(self, input_shapes): #pure python
-        nF, nC, covshape = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        from tensorflow.keras.models import Model
+        from tensorflow.keras.layers import Input, Dense
+        # TODO: Possibly duplicated code, see get_config
+        with open(self.path + 'config.yaml', 'r') as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
+        nF, nC, _ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
         self.nF = nF
         self.nC = nC
-        self.covshape = covshape
+        self.covshape = nF * nC * nC
+        assert self.nC == self.coord_dim, "Initialize with correct coordinate dimension!"
+        # TODO: Catch the error and fix it
+        # self.model = tf.keras.models.load_model(self.path)
+
+        inputs = Input(shape=(self.nC**2,))
+        x = inputs
+        nodes = config['nodes']
+        for node in nodes:
+            x = Dense(node, activation='elu')(x)
+        outputs = Dense(self.nC**2)(x)
+        self.model = Model(inputs=inputs, outputs=outputs)
+        self.model.load_weights(self.path)
         
-        #build is actually called for this layer
-        dshape=(None, None, nC**2)
-        for i in range(len(self.hidden_dense)):
-            with tf.name_scope(self.name + "/1/" + str(i)):
-                self.hidden_dense[i].build(dshape)
-                dshape = (None, None, self.hidden_dense[i].units)
-                
-                
         super(NeighbourApproxPCA, self).build(input_shapes)  
         
-    def compute_output_shape(self, input_shapes):
-        nF, _,_ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
-        return (None, nF * self.hidden_dense[-1].units)
+        
+    def compute_output_shape(self):
+        out_shape = (None, self.nF, self.nC * self.nC)
+        return out_shape
+
 
     def call(self, inputs):
         coordinates, distsq, features, n_idxs = inputs
         
         cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
-                                           distsq=10. * distsq,#same as gravnet scaling
-                                         features=features, 
-                                         n_idxs=n_idxs)
-        for d in self.hidden_dense:
-            cov = d(cov)
+                                           distsq=10. * distsq, #same as gravnet scaling
+                                           features=features, 
+                                           n_idxs=n_idxs)
         
-        cov = tf.reshape(cov, [-1, self.nF * self.hidden_dense[-1].units ])
+        cov = tf.reshape(cov, [-1, self.covshape])
         means = tf.reshape(means, [-1, self.nF*self.nC])
+        print("nF: ", self.nF)
+        print("nC: ", self.nC)
+        print("COV: ", cov.shape)
+        print("MEAN: ", means.shape)
+        # Loop over features
+        # Reshape instead of loop: [V, F, C^2] -> [V*F, C^2]
+        # TODO: Remove loop and use reshaping
+        cov = tf.reshape(cov, shape=(-1, self.nC**2))
+        approxPCA = self.model(cov)
+        approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
+        # for f in range(self.nF):
+        #     if f == 0:
+        #         approxPCA = tf.expand_dims(self.model(cov[:,f,:]), axis=1)
+        #     else:
+        #         approxPCA = tf.concat([approxPCA,
+        #                                tf.expand_dims(self.model(cov[:,f,:]), axis=1)],
+        #                                axis=1)
         
-        return tf.concat([cov,means],axis=-1)
+        return approxPCA
     
     
     
