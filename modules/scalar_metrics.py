@@ -275,6 +275,98 @@ def compute_scalar_metrics_graph(result, beta=1):
     return precision, recall, f_score, precision_energy, recall_energy, f_score_energy
 
 
+def calculate_overall_precision(M, c):
+    num = 0.
+    den = 0.
+    for x, y in M:
+        if x is None and y is not None:
+            pass # Truth shower unmatched
+        elif x is not None and y is None:
+            # pred shower unmatched, zero precision
+            num += 0
+            den += max(x['energy'], 0)
+        elif x is not None and y is not None:
+            # pred shower unmatched, zero precision
+            e1 = max(x['energy'], 0)
+            e2 = y['energy']
+            thisp = min (e1/e2, e2/e1) * e1 if e1 != 0. else 0
+            thisp = thisp * (matching_and_analysis.angle(x,y) <= c)
+            num += thisp
+            den += e1
+    precision_value = num / den if den !=0 else 0
+    return precision_value
+
+
+def calculate_overall_absorption(M, c):
+    num = 0.
+    den = 0.
+    for x, y in M:
+        if x is None and y is not None:
+            pass # Truth shower unmatched
+            den += y['energy']
+        elif x is not None and y is None:
+            # pred shower unmatched, zero precision
+            pass
+        elif x is not None and y is not None:
+            # pred shower unmatched, zero precision
+            e1 = max(x['energy'], 0)
+            e2 = y['energy']
+            den += e2
+            num += min(e1, e2) * (matching_and_analysis.angle(x,y) <= c)
+
+
+    ab_value = num / den
+    return ab_value
+
+def compute_precision_and_absorption_graph(graphs, metadata, beta=1):
+    M = list()
+
+    truth_count = 0
+    for g in graphs:
+        truth_count += len(g.nodes)
+
+    for g in graphs:
+        # Iterate through truth showers
+        for n, att in g.nodes(data=True):
+            if att['type'] == 0:
+                matched = [x for x in g.neighbors(n)]
+                if len(matched) == 0:
+                    # Unmatched truth shower
+                    M.append((None, att))
+                elif len(matched) == 1:
+                    M.append((g.nodes(data=True)[matched[0]], att))
+                else:
+                    raise RuntimeError("Truth shower matched to multiple pred showers?")
+
+        # Iterate through pred showers
+        for n, att in g.nodes(data=True):
+            if att['type'] == 1:
+                matched = [x for x in g.neighbors(n)]
+                if len(matched) == 0:
+                    # Unmatched pred shower
+                    M.append((att, None))
+                elif len(matched) == 1:
+                    # Matched pred shower-- can skip?
+                    pass
+                else:
+                    raise RuntimeError("Truth shower matched to multiple pred showers?")
+
+    nm = 0
+    for x, y in M:
+        nm += 1 if x is None and y is not None else 0
+        nm += 1 if x is not None and y is None else 0
+        nm += 2 if x is not None and y is not None else 0
+    assert nm == truth_count
+
+    precision_value = calculate_overall_precision(M, metadata['angle_threshold'])
+    ab_value = calculate_overall_absorption(M, metadata['angle_threshold'])
+
+    precision_value = float(precision_value)
+    ab_value = float(ab_value)
+
+    return precision_value, ab_value
+
+
 
 
 

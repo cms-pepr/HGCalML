@@ -10,7 +10,27 @@ import scalar_metrics
 
 MATCHING_TYPE_IOU_MAX = 0
 MATCHING_TYPE_MAX_FOUND = 1
+MATCHING_TYPE_MAX_FOUND_ANGLE_THRESHOLD = 2
+MATCHING_TYPE_MAX_PRECISION_ANGLE_THRESHOLD = 3
+MATCHING_TYPE_MAX_FOUND_ANGLE_THRESHOLD_PRECISION_THRESHOLD = 4
 
+def angle(p, t):
+    t = np.array([t['x'], t['y'], t['z']])
+    p = np.array([p['dep_x'], p['dep_y'], p['dep_z']])
+
+    angle = np.arccos(np.sum(t*p) / (np.sqrt(np.sum(t*t))*np.sqrt(np.sum(p*p))))
+
+    return angle
+
+
+
+def precision_function(x, y, angle_threshold):
+    e1 = max(x['energy'], 0)
+    e2 = y['energy']
+    thisp = min(e1 / e2, e2 / e1) if e1 != 0. else 0
+    thisp = thisp * (angle(x, y) <= angle_threshold)
+
+    return thisp
 
 def get_truth_matched_attribute(graphs_list, attribute_name_truth, attribute_name_pred, numpy=False, not_found_value=-1):
     truth_data = []
@@ -60,7 +80,7 @@ def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name
 
 
 def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=MATCHING_TYPE_MAX_FOUND,
-                        with_local_distance_scaling=False, beta_weighting_param=1):
+                        with_local_distance_scaling=False, beta_weighting_param=1, angle_threshold=0.08, precision_threshold=0.2):
     metadata = dict()
     metadata['beta_threshold'] = beta_threshold
     metadata['distance_threshold'] = distance_threshold
@@ -71,6 +91,8 @@ def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshol
     metadata['reco_score'] = -1
     metadata['pred_energy_matched'] = -1
     metadata['truth_energy_matched'] = -1
+    metadata['angle_threshold'] = angle_threshold
+    metadata['precision_threshold'] = precision_threshold
 
 
     metadata['beta_weighting_param'] = beta_weighting_param # This is not beta threshold
@@ -80,7 +102,10 @@ def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshol
 
 def matching_type_to_str(matching_type):
     data = {MATCHING_TYPE_IOU_MAX:'IOU max',
-            MATCHING_TYPE_MAX_FOUND:'Found energy max'}
+            MATCHING_TYPE_MAX_FOUND:'Found energy max, iou threshold',
+            MATCHING_TYPE_MAX_FOUND_ANGLE_THRESHOLD:'Found energy max, angle threshold',
+            MATCHING_TYPE_MAX_PRECISION_ANGLE_THRESHOLD:'Precision max, angle threshold',
+            MATCHING_TYPE_MAX_FOUND_ANGLE_THRESHOLD_PRECISION_THRESHOLD:'Found energy max, angle threshold, precision threshold'}
     return data[matching_type]
 
 
@@ -88,13 +113,7 @@ def matching_type_to_str(matching_type):
 
 class OCRecoGraphAnalyzer:
     def __init__(self, metadata):
-
-        self.metadata = metadata
-        self.with_local_distance_scaling = self.metadata['with_local_distance_scaling']
-        self.beta_threshold = self.metadata['beta_threshold']
-        self.distance_threshold = self.metadata['distance_threshold']
-        self.iou_threshold = self.metadata['iou_threshold']
-        self.matching_type = self.metadata['matching_type']
+        self.change_metadata(metadata)
 
     def change_metadata(self, metadata):
         self.metadata = metadata
@@ -103,6 +122,9 @@ class OCRecoGraphAnalyzer:
         self.distance_threshold = self.metadata['distance_threshold']
         self.iou_threshold = self.metadata['iou_threshold']
         self.matching_type = self.metadata['matching_type']
+        self.angle_threshold = self.metadata['angle_threshold']
+        self.precision_threshold = self.metadata['precision_threshold']
+
 
     def build_truth_graph(self, truth_dict):
         # A disconnected graph with all the nodes with truth information
@@ -167,7 +189,7 @@ class OCRecoGraphAnalyzer:
             node_attributes = dict()
 
             node_attributes['id']  = sid
-            node_attributes['energy']  = pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item()
+            node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)
             node_attributes['x']  = pred_dict['pred_pos'][pred_shower_alpha_idx[i]][0].item()
             node_attributes['y']  = pred_dict['pred_pos'][pred_shower_alpha_idx[i]][1].item()
             node_attributes['time']  = pred_dict['pred_time'][pred_shower_alpha_idx[i]][0].item()
@@ -193,9 +215,7 @@ class OCRecoGraphAnalyzer:
 
         return pred_graph, pred_sid
 
-    def match(self):
-        truth_shower_sid = [x for x in self.truth_graph.nodes()]
-        pred_shower_sid = [x for x in self.pred_graph.nodes()]
+    def cost_matrix_intersection_based(self, truth_shower_sid, pred_shower_sid):
 
         iou_matrix = calculate_iou_tf(self.truth_sid,
                                       self.pred_sid,
@@ -218,8 +238,39 @@ class OCRecoGraphAnalyzer:
                     overlap = iou_matrix[i, j]
                     if overlap >= self.iou_threshold:
                         C[i, j] = min(self.truth_graph.nodes[truth_shower_sid[j]]['energy'], self.pred_graph.nodes[pred_shower_sid[i]]['energy'])
-        row_id, col_id = linear_sum_assignment(C, maximize=True)
+        return C
 
+
+
+
+    def cost_matrix_angle_based(self, truth_shower_sid, pred_shower_sid):
+        n = max(len(truth_shower_sid), len(pred_shower_sid))
+        C = np.zeros((n, n))
+
+        for a, j in enumerate(pred_shower_sid):
+            x = self.pred_graph.nodes(data=True)[j]
+            for b, i in enumerate(truth_shower_sid):
+                y = self.truth_graph.nodes(data=True)[i]
+                if angle(x,y) < self.angle_threshold:
+                    if self.matching_type == MATCHING_TYPE_MAX_FOUND_ANGLE_THRESHOLD:
+                        C[a, b] = min(x['energy'],
+                                      y['energy'])
+                    elif self.matching_type == MATCHING_TYPE_MAX_PRECISION_ANGLE_THRESHOLD:
+                        C[a, b] = precision_function(x, y, self.angle_threshold) * x['energy']
+                    elif self.matching_type == MATCHING_TYPE_MAX_FOUND_ANGLE_THRESHOLD_PRECISION_THRESHOLD:
+                        C[a, b] = min(x['energy'],
+                                      y['energy']) * (precision_function(x, y, self.angle_threshold) > self.precision_threshold)
+        return C
+
+    def match(self):
+        truth_shower_sid = [x for x in self.truth_graph.nodes()]
+        pred_shower_sid = [x for x in self.pred_graph.nodes()]
+        if self.matching_type == MATCHING_TYPE_MAX_FOUND or self.matching_type == MATCHING_TYPE_IOU_MAX:
+            C = self.cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
+        elif self.matching_type == MATCHING_TYPE_MAX_FOUND_ANGLE_THRESHOLD or self.matching_type == MATCHING_TYPE_MAX_PRECISION_ANGLE_THRESHOLD or self.matching_type==MATCHING_TYPE_MAX_FOUND_ANGLE_THRESHOLD_PRECISION_THRESHOLD:
+            C = self.cost_matrix_angle_based(truth_shower_sid, pred_shower_sid)
+
+        row_id, col_id = linear_sum_assignment(C, maximize=True)
 
         matched_full_graph = nx.Graph()
         matched_full_graph.add_nodes_from(self.truth_graph.nodes(data=True))
@@ -228,6 +279,7 @@ class OCRecoGraphAnalyzer:
         for p, t in zip(row_id, col_id):
             if C[p, t] > 0:
                 matched_full_graph.add_edge(truth_shower_sid[t], pred_shower_sid[p])
+
 
         return matched_full_graph
 
@@ -254,11 +306,22 @@ class OCAnlayzerWrapper():
 
     def _add_metadata(self, analysed_graphs):
         metadata = self.metadata.copy()
-        precision, recall, f_score, precision_energy, recall_energy, f_score_energy = scalar_metrics.compute_scalar_metrics_graph(analysed_graphs, beta=metadata['beta_weighting_param'])
-        metadata['reco_score'] = f_score_energy
-        metadata['pred_energy_percentage_matched'] = precision_energy
-        metadata['truth_energy_percentage_matched'] = recall_energy
+        _, _, _, percentage_pred_matched, percentage_truth_matched, _ = scalar_metrics.compute_scalar_metrics_graph(analysed_graphs, beta=metadata['beta_weighting_param'])
+
+        precision_value, absroption_value = scalar_metrics.compute_precision_and_absorption_graph(analysed_graphs, metadata)
+
+        if precision_value ==0 or absroption_value ==0:
+            reco_score = 0
+        else:
+            reco_score = 2 * precision_value * absroption_value / (precision_value + absroption_value)
+
+        metadata['reco_score'] = reco_score
+        metadata['pred_energy_percentage_matched'] = percentage_pred_matched
+        metadata['truth_energy_percentage_matched'] = percentage_truth_matched
+        metadata['precision_value'] = precision_value
+        metadata['absorption_value'] = absroption_value
         metadata['matching_type_str'] = matching_type_to_str(metadata['matching_type'])
+        metadata['angle_threshold'] = metadata['angle_threshold']
 
         efficiency, fake_rate, response_mean, response_sum_mean = scalar_metrics.compute_scalar_metrics_graph_eff_fake_rate_response(analysed_graphs)
 

@@ -18,7 +18,7 @@ from tensorflow.keras import Model
 
 from experiment_database_reading_manager import ExperimentDatabaseReadingManager
 from hgcal_predictor import HGCalPredictor
-from hyperparam_optimzer import OCHyperParamOptimizer
+from hyperparam_optimizer import OCHyperParamOptimizer
 from running_full_validation import RunningFullValidation
 from tensorboard_manager import TensorBoardManager
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback

@@ -18,7 +18,7 @@ from tensorflow.keras import Model
 import matching_and_analysis
 from experiment_database_reading_manager import ExperimentDatabaseReadingManager
 from hgcal_predictor import HGCalPredictor
-from hyperparam_optimzer import OCHyperParamOptimizer
+from hyperparam_optimizer import OCHyperParamOptimizer
 from running_full_validation import RunningFullValidation
 from tensorboard_manager import TensorBoardManager
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
@@ -219,11 +219,11 @@ def gravnet_model(Inputs,
 
     #loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=1e-4,
+                                         energy_loss_weight=2,
                                          position_loss_weight=1e-3,
                                          timing_loss_weight=1e-3,
                                          beta_loss_scale=1.,
-                                         repulsion_scaling=5.,
+                                         repulsion_scaling=3.,
                                          repulsion_q_min=1.,
                                          super_repulsion=False,
                                          q_min=0.5,
