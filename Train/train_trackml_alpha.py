@@ -2,7 +2,6 @@
 This is one of the really good models and configurations.
 Keep this in mind
 '''
-import matching_and_analysis
 from experiment_database_manager import ExperimentDatabaseManager
 import tensorflow as tf
 from argparse import ArgumentParser
@@ -10,12 +9,13 @@ from argparse import ArgumentParser
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
-from GravNetLayersRagged import LNC,ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
+from GravNetLayersRagged import ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing, \
+    EyeInitializer
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
-
+import matching_and_analysis
 from experiment_database_reading_manager import ExperimentDatabaseReadingManager
 from hgcal_predictor import HGCalPredictor
 from hyperparam_optimizer import OCHyperParamOptimizer
@@ -23,7 +23,7 @@ from running_full_validation import RunningFullValidation
 from tensorboard_manager import TensorBoardManager
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
 import tensorflow.keras as keras
-from datastructures import TrainData_NanoML
+from datastructures import TrainData_TrackML
 import uuid
 
 from DeepJetCore.modeltools import fixLayersContaining
@@ -47,7 +47,7 @@ import sql_credentials
 from datetime import datetime
 
 
-td=TrainData_NanoML()
+td=TrainData_TrackML()
 '''
 
 '''
@@ -88,7 +88,8 @@ def gravnet_model(Inputs,
 
     #really simple real coordinates
     coords = ManualCoordTransform()(orig_coords)
-    coords = Dense(n_reshape_dimensions, use_bias=False )(coords)#just rotation and scaling
+    coords = Concatenate()([coords, time])
+    coords = Dense(n_reshape_dimensions, use_bias=False, kernel_initializer=tf.keras.initializers.Identity()  )(coords)#just rotation and scaling
 
 
     #see whats there
@@ -108,67 +109,53 @@ def gravnet_model(Inputs,
     cdist = dist
     ccoords = coords
 
-    total_iterations=6
+    total_iterations=5
 
     fwdbgccoords=None
 
     for i in range(total_iterations):
 
+        cluster_neighbours = 5
         #derive new coordinates for clustering
-        doclustering = True
-        redo_space = False
-        if doclustering and (redo_space or (not redo_space and i)):
-            distance_loss_scale = 1.
-            if redo_space:
-                ccoords = Dense(n_reshape_dimensions,name='newcoords'+str(i),
-                                             kernel_initializer=tf.keras.initializers.identity(),
-                                              use_bias=False
-                                             )(Concatenate()([ccoords,x]))
-                    
-                nidx, cdist = KNN(K=7,radius=-1.0)([ccoords,rs])
-                n_reshape_dimensions += 1
-            else:
-                ccoords = coords
-                nidx, cdist = nidx, dist
-                cdist, nidx = SortAndSelectNeighbours(K=7)([cdist,nidx])
-                distance_loss_scale = 1e-3
-                
+        if i:
+            ccoords = Add()([
+                ccoords,Dense(n_reshape_dimensions,name='newcoords'+str(i),
+                                         kernel_initializer=EyeInitializer(mean=0, stddev=0.01)
+                                         )(x)
+                ])
+            nidx, cdist = KNN(K=5*cluster_neighbours,radius=-1.0)([ccoords,rs])
             #here we use more neighbours to improve learning of the cluster space
             #this can be adjusted in the final trained model to be equal to 'cluster_neighbours'
-            
-            
-            #check if it's same object
-            x = Concatenate()([x,MessagePassing([64,32,16,8])([x,nidx])])
-            hier = Dense(1)(x)
-            #make sure to have enough capacity before merging
-            x = Dense(192, activation='elu',name='dense_precl_a'+str(i))(x)
-            x_c, rs, bidxs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist,hier = LNC(
-                     threshold = 0.95,
-                     loss_scale = .1,#more emphasis on first iterations
-                     print_reduction=True,
-                     loss_enabled=True,
-                     distance_loss_scale=distance_loss_scale,
-                     print_loss=True,
-                     name='LNC_'+str(i)
-                     )([x, hier, cdist, nidx, rs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist, hier,t_idx])
-            
-            gatherids.append(bidxs)
-            hier = StopGradient()(hier)
-            x = Concatenate()([x,x_c,hier])
-            
-            #explicit
-        else:
-            gatherids.append(gidx_orig)
-            
-        energy = ReduceSumEntirely()(energy)#sums up all contained energy per cluster, if no clustering does nothing
+        cdist = LocalDistanceScaling(max_scale=10.)([cdist, Dense(1,kernel_initializer='zeros')(Concatenate()([x,cdist]))])
+
+        x, rs, bidxs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist = LocalClusterReshapeFromNeighbours2(
+                 K=cluster_neighbours,
+                 radius=0.1,
+                 print_reduction=True,
+                 loss_enabled=True,
+                 loss_scale = 3.,
+                 loss_repulsion=0.8, # it's important to get this right here
+                 hier_transforms=[64,32,16],
+                 print_loss=False,
+                 name='clustering_'+str(i)
+                 )([x, cdist, nidx, rs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist, t_idx])
+
+        gatherids.append(bidxs)
+
+        #explicit
+        energy = ReduceSumEntirely()(energy)#sums up all contained energy per cluster
 
         x = Dense(128, activation='elu',name='dense_clc_a'+str(i))(x)
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
-        
+        x = Dense(128, activation='elu',name='dense_clc_b'+str(i))(x)
+        x = Dense(64, activation='elu')(x)
+        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
+
+
         n_dimensions = 3+i #make it plottable
         nneigh = 64+32*i #this will be almost fully connected for last clustering step
-        nfilt = 64+16*i
-        nprop = 64+16*i
+        nfilt = 64
+        nprop = 64
 
         x = Concatenate()([coords,x])
 
@@ -176,16 +163,20 @@ def gravnet_model(Inputs,
                                               n_dimensions=n_dimensions,
                                               n_filters=nfilt,
                                               n_propagate=nprop)([x, rs])
-                                              
-        x_mp = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,nidx,dist])
-        #x_ndmp = MessagePassing([64,64,32,32,16,16])([x,nidx])
-        
-        x = Concatenate()([x,x_gn,x_mp])
+
+
+        x_pca = Dense(2+4*i)(x)
+        x_pca = NeighbourApproxPCA()([coords,dist,x_pca,nidx])
+        x_pca = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x_pca)
+
+        x_mp = DistanceWeightedMessagePassing([64,64,32,32])([x,nidx,dist])
+        x_mp = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x_mp)
+
+        x = Concatenate()([x,x_pca,x_mp,x_gn])
         #check and compress it all
         x = Dense(128, activation='elu',name='dense_a_'+str(i))(x)
-        x = Dense(128, activation='elu',name='dense_b_'+str(i))(x)
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
-        x = Dense(nfilt, activation='elu',name='dense_c_'+str(i))(x)
+        x = Dense(32+16*i, activation='elu',name='dense_c_'+str(i))(x)
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
 
 
@@ -205,32 +196,41 @@ def gravnet_model(Inputs,
     x = Concatenate(name='allconcat')(allfeat)
     x = Dense(128, activation='elu', name='alldense')(x)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
+
+    #this is going to be resource intense, give a good starting point with the last ccoords
+    coords = Dense(3,use_bias=False,
+                   kernel_initializer=tf.keras.initializers.Identity()
+                   )(Concatenate()([ fwdbgccoords ,x]))
+
+    nidx, dist = KNN(K=32,radius=1.0)([coords,row_splits])
+    x_mp = DistanceWeightedMessagePassing(8*[8])([x,nidx,dist])#only some but a lot of hops
+    x = Concatenate()([x,x_mp])
+    #
+    backgathered_coords.append(coords)
+
+    x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
     x = Dense(128, activation='elu')(x)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
     x = Concatenate()([x]+energysums)
     x = Dense(64, activation='elu')(x)
     x = Dense(64, activation='elu')(x)
 
-    pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat,
-                                                                                                   add_distance_scale=False)
+    pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat,add_distance_scale=True)
 
     #loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=1e-2,
-                                         position_loss_weight=1e-2,
-                                         timing_loss_weight=1e-2,
+                                         energy_loss_weight=2,
+                                         position_loss_weight=1e-3,
+                                         timing_loss_weight=1e-3,
                                          beta_loss_scale=1.,
-                                         #repulsion_scaling=5.,
-                                         #repulsion_q_min=1.,
+                                         repulsion_scaling=3.,
+                                         repulsion_q_min=1.,
                                          super_repulsion=False,
-                                         super_attraction=False,
-                                         q_min=1.0,
-                                         #use_average_cc_pos=0.5,
+                                         q_min=0.5,
+                                         use_average_cc_pos=0.5,
                                          prob_repulsion=True,
-                                         div_repulsion=True,
-                                         # phase_transition=1,
+                                         phase_transition=1,
                                          huber_energy_scale = 3,
-                                         use_average_cc_pos=0,
                                          alt_potential_norm=True,
                                          beta_gradient_damping=0.,
                                          payload_beta_gradient_damping_strength=0.,
@@ -292,14 +292,12 @@ else:
     with open(unique_id_path, 'w') as f:
         f.write(unique_id+'\n')
 
-nbatch = 30000
+nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 
-# This will both to server and a local file
-database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
+database_manager = ExperimentDatabaseManager(file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
 database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
 database_manager.set_experiment(unique_id)
-
 metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
 analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
 cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, database_manager=database_manager, analyzer=analyzer)]
@@ -307,7 +305,7 @@ cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manag
 predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
                            os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
                            model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
-                           inputdir=os.path.split(train.inputData)[0], max_files=10)
+                           inputdir=os.path.split(train.inputData)[0], max_files=4)
 
 analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another analyzer here to be safe since it will run scan on
                                                               # on beta and distance threshold which might mess up settings
@@ -318,24 +316,22 @@ cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, opti
                              database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
                                                                                        'full_validation_plots'))]
 
-
-
 cb += [plotClusteringDuringTraining(
     use_backgather_idx=8 + i,
     outputfile=train.outputDir + "/plts/sn" + str(i) + '_',
     samplefile=samplepath,
-    after_n_batches=500,
+    after_n_batches=20,
     on_epoch_end=False,
     publish=None,
     use_event=0)
-    for i in [0, 2, 4, 5]]
+    for i in [0, 2]]
 
 cb += [
     plotEventDuringTraining(
         outputfile=train.outputDir + "/plts2/sn0",
         samplefile=samplepath,
-        after_n_batches=500,
-        batchsize=30000,
+        after_n_batches=20,
+        batchsize=200000,
         on_epoch_end=False,
         publish=None,
         use_event=0)
@@ -346,8 +342,8 @@ cb += [
     plotGravNetCoordsDuringTraining(
         outputfile=train.outputDir + "/coords_" + str(i) + "/coord_" + str(i),
         samplefile=samplepath,
-        after_n_batches=500,
-        batchsize=30000,
+        after_n_batches=20,
+        batchsize=200000,
         on_epoch_end=False,
         publish=None,
         use_event=0,
@@ -357,8 +353,8 @@ cb += [
 ]
 
 
-learningrate = 1e-4
-nbatch = 70000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+learningrate = 1e-3
+nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
@@ -372,25 +368,25 @@ model, history = train.trainModel(nepochs=1,
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
-                                  backup_after_batches=100,
+                                  backup_after_batches=38,
                                   additional_callbacks=
-                                  [CyclicLR (base_lr = learningrate/5,
+                                  [CyclicLR (base_lr = learningrate/3,
                                   max_lr = learningrate,
-                                  step_size = 150)]+cb)
+                                  step_size = 50)]+cb)
 
-print("freeze BN 2")
+print("freeze BN")
 # Note the submodel here its not just train.keras_model
-#for l in train.keras_model.model.layers:
-#    if 'gooey_batch_norm' in l.name:
-#        l.max_viscosity = 0.95
-#        l.fluidity_decay= 5e-5 #
-#    if 'FullOCLoss' in l.name:
-#        l.use_average_cc_pos = 0.
-#        l.q_min = 1.0
+for l in train.keras_model.model.layers:
+    if 'gooey_batch_norm' in l.name:
+        l.max_viscosity = 1.
+        l.fluidity_decay= 5e-4 #reaches constant 1 after about one epoch
+    if 'FullOCLoss' in l.name:
+        l.use_average_cc_pos = 0.1
+        l.q_min = 0.1
 
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=3.
-nbatch = 90000
+nbatch = 150000
 
 train.compileModel(learningrate=learningrate,
                           loss=None,

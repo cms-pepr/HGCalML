@@ -411,7 +411,8 @@ class TrainData_NanoML(TrainData):
         print("Done")
 
     def writeOutPredictionDict(self, dumping_data, outfilename):
-        outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
+        if not str(outfilename).endswith('.bin.gz'):
+            outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
 
         with mgzip.open(outfilename, 'wb', thread=8, blocksize=2*10**7) as f2:
             pickle.dump(dumping_data, f2)

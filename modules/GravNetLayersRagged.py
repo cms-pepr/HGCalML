@@ -10,6 +10,7 @@ import numpy as np
 #just for the moment
 #### helper###
 from datastructures import TrainData_OC,TrainData_NanoML
+from initializers import EyeInitializer
 
 from oc_helper_ops import SelectWithDefault
 
@@ -1669,7 +1670,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,
-                                                                 kernel_initializer=tf.keras.initializers.identity(),
+                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=0.01),
                                                                  use_bias=False)
 
         with tf.name_scope(self.name + "/3/"):
@@ -2070,7 +2071,7 @@ class EdgeConvStatic(tf.keras.layers.Layer):
         
         
         
-        
+
         
         
         

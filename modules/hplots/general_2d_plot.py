@@ -38,7 +38,9 @@ class General2dBinningPlot():
             filter = np.argwhere(np.logical_and(x_values >= l, x_values < h))
             filtered_y_values = y_values[filter].astype(float)
 
+
             m = np.mean(filtered_y_values)
+            print(l,h, m)
             mean.append(m)
             # print(np.sum(filtered_found), len(filtered_found), m, l, h)
             lows.append(l)
@@ -72,7 +74,7 @@ class General2dBinningPlot():
     def add_processed_data(self, processed_data):
         self.models_data.append(processed_data)
 
-    def draw(self, name_tag_formatter=None):
+    def draw(self, name_tag_formatter=None, return_fig=False):
         """
 
         :param name_tag_formatter: a function to which tags dict is given and it returns the name
@@ -128,6 +130,8 @@ class General2dBinningPlot():
 
         # ax1.set_ylim(0, 1.04)
         # ax2.set_ylim(0, max_of_hist_values * 1.3)
+        if return_fig:
+            return fig
 
     @classmethod
     def draw_static(cls, x_values, y_values):
@@ -162,8 +166,8 @@ class General2dBinningPlot():
     def get_tags(self):
         return [x['tags'] for x in self.models_data]
 
-    def read_from_database(self, database_reading_manager, table_name, experiment_name=None):
-        results_dict = database_reading_manager.get_data(table_name, experiment_name)
+    def read_from_database(self, database_reading_manager, table_name, experiment_name=None, condition=None):
+        results_dict = database_reading_manager.get_data(table_name, experiment_name, condition_string=condition)
         num_rows = len(results_dict['experiment_name'])
 
         results_dict_copy = results_dict.copy()

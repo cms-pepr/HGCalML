@@ -486,11 +486,14 @@ class RobustModel(tf.keras.Model):
 
         return outputs
 
-    def call_with_dict_as_output(self, inputs):
+    def call_with_dict_as_output(self, inputs, numpy=False):
         outputs = self.call(inputs)
         output_keyed = {}
         for i in range(len(self.outputs_keys)):
-            output_keyed[self.outputs_keys[i]] = outputs[i]
+            if numpy:
+                output_keyed[self.outputs_keys[i]] = outputs[i].numpy()
+            else:
+                output_keyed[self.outputs_keys[i]] = outputs[i]
 
         return output_keyed
 
@@ -554,8 +557,6 @@ class RobustModel(tf.keras.Model):
         gradients = tape.gradient(loss, trainable_vars)
         is_valid = is_valid and not bool(tf.reduce_any([_grad is None for _grad in gradients]))
 
-
-
         if is_valid:
             num_non_finite_tensors = float(tf.reduce_sum(tf.cast([tf.reduce_any(tf.math.logical_not(tf.math.is_finite(_grad))) for _grad in gradients], tf.float32)))
             is_valid = is_valid and num_non_finite_tensors == 0.0
@@ -586,7 +587,6 @@ class RobustModel(tf.keras.Model):
         return ret_dict
 
 
-
-
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel
 global_layers_list['RobustModel']=RobustModel
+# global_layers_list['EyeInitializer']=EyeInitializer

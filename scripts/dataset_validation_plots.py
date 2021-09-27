@@ -74,9 +74,6 @@ def get_event_and_make_dict(reset_after=False):
     feat,  truth_sid, truth_energy, truth_pos, truth_time, truth_particle_id,truth_spectator, truth_fully_contained, row_splits = td.interpretAllModelInputs(feat)
     all_dict = td.createFeatureDict(feat)
     all_dict.update( td.createTruthDict(truth, truth_sid) )
-
-    print(truth_energy.shape)
-    0/0
     return all_dict
 
 
