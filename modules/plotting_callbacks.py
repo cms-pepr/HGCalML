@@ -4,7 +4,7 @@ print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL","move implem
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 from multiprocessing import Process
 import numpy as np
-from datastructures import TrainData_OC
+from datastructures import TrainData_OC,TrainData_NanoML
 import matplotlib.gridspec as gridspec
 import os
 
@@ -46,12 +46,15 @@ def publish(file_to_publish, publish_to_path):
     os.system(cpstring + file_to_publish + ' ' + publish_to_path +'_'+basefilename+ ' 2>&1 > /dev/null') 
 
 def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx"):
+    return df
+    #the implementation below is broken
     ta = df[qualifier]
     unta = np.unique(ta)
     np.random.shuffle(unta)
     unta = unta[unta>-0.1]
     for i in range(len(unta)):
         df[qualifier][df[qualifier] ==unta[i]]=i
+        
         
 class plotDuringTrainingBase(PredictCallback):
     def __init__(self,
@@ -100,7 +103,7 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
      
     def _make_plot(self, counter, feat, predicted, truth):#all these are lists and also include row splits
         try:
-            td = TrainData_OC()#contains all dicts
+            td = TrainData_NanoML()#contains all dicts
             #row splits not needed
             feats = td.createFeatureDict(feat[0],addxycomb=False)
             backgather = predicted[self.use_backgather_idx]
@@ -122,7 +125,7 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
             
             fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", 
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
-                                template='plotly_dark',
+                                #template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
             fig.write_html(self.outputfile + str(self.keep_counter) + "_truth.html")
@@ -133,7 +136,7 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
             shuffle_truth_colors(df,"hitBackGatherIdx")
             
             fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", color="hitBackGatherIdx", size="recHitLogEnergy",
-                                template='plotly_dark',
+                                #template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
             fig.write_html(bgfile)

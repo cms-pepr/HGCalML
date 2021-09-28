@@ -27,8 +27,6 @@ from datastructures import TrainData_NanoML
 import uuid
 
 from DeepJetCore.modeltools import fixLayersContaining
-# from tensorflow.keras.models import load_model
-from DeepJetCore.training.training_base import custom_objects_list
 
 # from tensorflow.keras.optimizer_v2 import Adam
 
@@ -40,9 +38,8 @@ from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs
 
-from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
+from Layers import CreateTruthSpectatorWeights,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
 from Layers import GooeyBatchNorm #make a new line
-from datastructures import TrainData_OC
 import sql_credentials
 from datetime import datetime
 
@@ -60,12 +57,18 @@ def gravnet_model(Inputs,
                   max_viscosity=0.9 # to start with
                   ):
 
-    feature_dropout=-1.
-    addBackGatherInfo=True,
+    
+    #Input preprocessing below. Not much to change here
 
     feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator, t_fully_contained, row_splits = td.interpretAllModelInputs(Inputs)
     orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid, orig_row_splits = t_idx, t_energy, t_pos, t_time, t_pid, row_splits
     gidx_orig = CreateGlobalIndices()(feat)
+    
+    t_spectator_weight = CreateTruthSpectatorWeights(threshold = 1.21, 
+                                                minimum=1e-2,
+                                                active = True
+                                                )([t_spectator,t_idx])
+    orig_t_spectator_weight = t_spectator_weight
 
     _, row_splits = RaggedConstructTensor()([feat, row_splits])
     rs = row_splits
@@ -84,6 +87,8 @@ def gravnet_model(Inputs,
     backgathered_coords = []
     energysums = []
 
+    #here the actual network starts
+
     n_reshape_dimensions=3
 
     #really simple real coordinates
@@ -91,7 +96,7 @@ def gravnet_model(Inputs,
     coords = Dense(n_reshape_dimensions, use_bias=False )(coords)#just rotation and scaling
 
 
-    #see whats there
+    #see whats there, strict distance weighted so radius=1 is fine (and fast)
     nidx, dist = KNN(K=24,radius=1.0)([coords,rs])
 
     x_mp = DistanceWeightedMessagePassing([32,16,16,8])([x,nidx,dist])
@@ -142,15 +147,25 @@ def gravnet_model(Inputs,
             hier = Dense(1)(x)
             #make sure to have enough capacity before merging
             x = Dense(192, activation='elu',name='dense_precl_a'+str(i))(x)
-            x_c, rs, bidxs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist,hier = LNC(
+            dist_scale = Dense(1)(x)
+            cdist = LocalDistanceScaling()([cdist,dist_scale])
+            
+            x_c, rs, bidxs, sel_gidx, energy, x, t_idx, coords,\
+             ccoords, cdist,hier,t_spectator_weight = LNC(
                      threshold = 0.95,
-                     loss_scale = .1,#more emphasis on first iterations
+                     loss_scale = .1,#more emphasis on the final OC loss
                      print_reduction=True,
                      loss_enabled=True,
+                     use_spectators=True,
                      distance_loss_scale=distance_loss_scale,
                      print_loss=True,
                      name='LNC_'+str(i)
-                     )([x, hier, cdist, nidx, rs, sel_gidx, energy, x, t_idx, coords, ccoords, cdist, hier,t_idx])
+                     )( #this is needed by the layer
+                        [x, hier, cdist, nidx, rs]+
+                        #these ones are selected accoring to the layer selection
+                        [sel_gidx, energy, x, t_idx, coords, ccoords, cdist, hier, t_spectator_weight]+
+                        #truth information passed to the layer to build loss
+                        [t_spectator_weight,t_idx])
             
             gatherids.append(bidxs)
             hier = StopGradient()(hier)
@@ -178,9 +193,9 @@ def gravnet_model(Inputs,
                                               n_propagate=nprop)([x, rs])
                                               
         x_mp = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,nidx,dist])
-        #x_ndmp = MessagePassing([64,64,32,32,16,16])([x,nidx])
         
-        x = Concatenate()([x,x_gn,x_mp])
+        
+        x = Concatenate()([x_gn,x_mp])
         #check and compress it all
         x = Dense(128, activation='elu',name='dense_a_'+str(i))(x)
         x = Dense(128, activation='elu',name='dense_b_'+str(i))(x)
@@ -204,6 +219,7 @@ def gravnet_model(Inputs,
 
     x = Concatenate(name='allconcat')(allfeat)
     x = Dense(128, activation='elu', name='alldense')(x)
+    x = RaggedGlobalExchange()([x,row_splits])
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
     x = Dense(128, activation='elu')(x)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
@@ -211,8 +227,8 @@ def gravnet_model(Inputs,
     x = Dense(64, activation='elu')(x)
     x = Dense(64, activation='elu')(x)
 
-    pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id = create_outputs(x,feat,
-                                                                                                   add_distance_scale=False)
+    pred_beta, pred_ccoords, pred_dist, pred_energy,\
+       pred_pos, pred_time, pred_id = create_outputs(x,feat,fix_distance_scale=False)
 
     #loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
@@ -220,29 +236,20 @@ def gravnet_model(Inputs,
                                          position_loss_weight=1e-2,
                                          timing_loss_weight=1e-2,
                                          beta_loss_scale=1.,
-                                         #repulsion_scaling=5.,
-                                         #repulsion_q_min=1.,
-                                         super_repulsion=False,
-                                         super_attraction=False,
-                                         q_min=1.0,
-                                         #use_average_cc_pos=0.5,
-                                         prob_repulsion=True,
+                                         q_min=2.0,
                                          div_repulsion=True,
                                          # phase_transition=1,
                                          huber_energy_scale = 3,
-                                         use_average_cc_pos=0,
-                                         alt_potential_norm=True,
-                                         beta_gradient_damping=0.,
-                                         payload_beta_gradient_damping_strength=0.,
-                                         kalpha_damping_strength=0.,#1.,
-                                         use_local_distances=True,
+                                         use_average_cc_pos=0.2,#smoothen it out a bit
                                          name="FullOCLoss"
-                                         )([pred_beta, pred_ccoords,
-                                            pred_dist,
-                                            pred_energy,
-                                            pred_pos, pred_time, pred_id,
-                                            orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid,
-                                            row_splits])
+                                         )(  #oc output and payload
+                                            [pred_beta, pred_ccoords,pred_dist,
+                                            pred_energy,pred_pos, pred_time, pred_id]+
+                                             #truth information
+                                            [orig_t_idx, orig_t_energy, 
+                                             orig_t_pos, orig_t_time, orig_t_pid,
+                                             orig_t_spectator_weight,
+                                             row_splits])
 
     model_outputs = [('pred_beta', pred_beta), ('pred_ccoords',pred_ccoords),
        ('pred_energy',pred_energy),
@@ -322,7 +329,7 @@ cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, opti
 
 cb += [plotClusteringDuringTraining(
     use_backgather_idx=8 + i,
-    outputfile=train.outputDir + "/plts/sn" + str(i) + '_',
+    outputfile=train.outputDir + "/neighbour_clusters/p" + str(i) + '_',
     samplefile=samplepath,
     after_n_batches=500,
     on_epoch_end=False,
@@ -332,29 +339,15 @@ cb += [plotClusteringDuringTraining(
 
 cb += [
     plotEventDuringTraining(
-        outputfile=train.outputDir + "/plts2/sn0",
+        outputfile=train.outputDir + "/cluster_space/p",
         samplefile=samplepath,
         after_n_batches=500,
         batchsize=30000,
         on_epoch_end=False,
         publish=None,
-        use_event=0)
-
+        use_event=i) for i in range(4) #first 4 events
 ]
 
-cb += [
-    plotGravNetCoordsDuringTraining(
-        outputfile=train.outputDir + "/coords_" + str(i) + "/coord_" + str(i),
-        samplefile=samplepath,
-        after_n_batches=500,
-        batchsize=30000,
-        on_epoch_end=False,
-        publish=None,
-        use_event=0,
-        use_prediction_idx=i,
-    )
-    for i in range(12, 18)  # between 16 and 21
-]
 
 
 learningrate = 1e-4

@@ -107,7 +107,14 @@ static void select_knn_kernel(
         selknn::mask_mode_en mask_mode,
         selknn::mask_logic_en mask_logic) {
 
-    //really no buffering at all here
+    /*
+     *
+     * Likely this can be improved a lot by using  registers per i_v for R.
+     * But requires different compiled functions for each dimension choice up to a reasonable number
+     * -> TBI
+     *
+     */
+
 
     const size_t start_vert = d_row_splits[j_rs];
     const size_t end_vert = d_row_splits[j_rs+1];

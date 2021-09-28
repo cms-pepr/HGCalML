@@ -4,8 +4,8 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import LNC,PrintMeanAndStd,GooeyBatchNorm,LocalClusterReshapeFromNeighbours2,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,LocalClusterReshapeFromNeighbours,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
-from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
+from GravNetLayersRagged import EdgeCreator,EdgeSelector,NoiseFilter,LNC,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from lossLayers import CreateTruthSpectatorWeights,LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
@@ -17,6 +17,14 @@ global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
 global_layers_list['Condensate']=Condensate
 global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
 
+
+
+global_layers_list['EdgeCreator']=EdgeCreator
+global_layers_list['EdgeSelector']=EdgeSelector
+
+global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
+
+global_layers_list['NoiseFilter']=NoiseFilter
 
 global_layers_list['GridMaxPoolReduction']=GridMaxPoolReduction
 global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
@@ -64,9 +72,6 @@ global_layers_list['SoftPixelCNN']=SoftPixelCNN
 
 global_layers_list['SortAndSelectNeighbours']=SortAndSelectNeighbours
 global_layers_list['GraphClusterReshape']=GraphClusterReshape
-
-global_layers_list['LocalClusterReshapeFromNeighbours']=LocalClusterReshapeFromNeighbours
-global_layers_list['LocalClusterReshapeFromNeighbours2']=LocalClusterReshapeFromNeighbours2
 
 
 

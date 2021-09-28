@@ -102,8 +102,8 @@ def oc_per_batch_element(
     
     if not alt_potential_norm:
         raise ValueError("not alt_potential_norm not implemented")
-    if not prob_repulsion:
-        raise ValueError("not prob_repulsion not implemented")
+    if prob_repulsion:
+        raise ValueError("prob_repulsion not implemented")
     if phase_transition_double_weight:
         raise ValueError("phase_transition_double_weight not implemented")
     if cont_beta_loss:

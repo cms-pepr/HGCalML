@@ -216,9 +216,9 @@ def create_output_layers(x, x_row_splits, n_ccoords=2,
         return Concatenate(name="predicted_final")([beta, energy, xyt, ccoords])
 
 
-from datastructures import TrainData_OC
+from datastructures import TrainData_OC,TrainData_NanoML
 #new format!
-def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_OC(), add_features=True, add_distance_scale=False):
+def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_NanoML(), add_features=True, fix_distance_scale=False):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
@@ -244,7 +244,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
     pred_id = Dense(n_classes, activation="softmax")(x)
     
     pred_dist = OnesLike()(pred_time)
-    if add_distance_scale:
+    if not fix_distance_scale:
         pred_dist = Dense(1, activation='sigmoid')(x) 
         #this needs to be bound otherwise fully anti-correlated with coordates scale
     return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id

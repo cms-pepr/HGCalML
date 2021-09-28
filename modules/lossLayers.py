@@ -67,6 +67,47 @@ class LossLayerBase(tf.keras.layers.Layer):
             return input_shapes[0]
 
 
+
+class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
+    def __init__(self, 
+                 threshold, 
+                 minimum, 
+                 active,
+                 **kwargs):
+        '''
+        active: does not enable a loss, but acts similar to other layers using truth information
+                      as a switch to not require truth information at all anymore (for inference)
+                      
+        Inputs: spectator score, truth indices
+        Outputs: spectator weights (1-minimum above threshold, 0 else)
+        
+        '''
+        super(CreateTruthSpectatorWeights, self).__init__(**kwargs)
+        self.threshold = threshold
+        self.minimum = minimum
+        self.active = active
+        
+    def get_config(self):
+        config = {'threshold': self.threshold,
+                  'minimum': self.minimum,
+                  'active': self.active,
+                  }
+        base_config = super(CreateTruthSpectatorWeights, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes   
+    
+    def call(self, inputs):
+        if not self.active:
+            return inputs[0]
+        
+        abovethresh = inputs[0] > self.threshold
+        notnoise = inputs[1] >= 0
+        #noise can never be spectator
+        return tf.where(tf.logical_and(abovethresh, notnoise), tf.ones_like(inputs[0])-self.minimum, 0.)
+    
+
 #naming scheme: LL<what the layer is supposed to do>
 class LLClusterCoordinates(LossLayerBase):
     '''
@@ -191,7 +232,11 @@ class LLLocalClusterCoordinates(LossLayerBase):
         return lossval
         
     def loss(self, inputs):
-        distances, hierarchy, neighbour_indices, truth_indices = inputs
+        if len(inputs) == 4:
+            distances, hierarchy, neighbour_indices, truth_indices = inputs
+        else:
+            distances, neighbour_indices, truth_indices = inputs
+            hierarchy = tf.ones_like(distances[:,0:1])
         return LLLocalClusterCoordinates.raw_loss(distances, hierarchy, neighbour_indices, 
                                                   truth_indices, 
                                                   self.add_self_reference, 
@@ -240,18 +285,18 @@ class LLFullObjectCondensation(LossLayerBase):
                  prob_repulsion=False,
                  phase_transition=0.,
                  phase_transition_double_weight=False,
-                 alt_potential_norm=False,
+                 alt_potential_norm=True,
                  print_time=True,
                  payload_beta_gradient_damping_strength=0.,
                  payload_beta_clip=0.,
                  kalpha_damping_strength=0.,
-                 cc_damping_strength=0.001,
+                 cc_damping_strength=0.,
                  standard_configuration=None,
                  beta_gradient_damping=0.,
                  alt_energy_loss=True,
                  repulsion_q_min=-1.,
                  super_repulsion=False,
-                 use_local_distances=False,
+                 use_local_distances=True,
                  energy_weighted_qmin=False,
                  super_attraction=False,
                  div_repulsion=False,
@@ -297,6 +342,8 @@ class LLFullObjectCondensation(LossLayerBase):
             super(LLFullObjectCondensation, self).__init__(**kwargs)
         else:
             super(LLFullObjectCondensation, self).__init__(dynamic=True,**kwargs)
+            
+        assert use_local_distances #fixed now, if they should not be used, pass 1s
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights
@@ -343,6 +390,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.div_repulsion=div_repulsion
         
         self.loc_time=time.time()
+        self.call_count=0
         
         assert kalpha_damping_strength >= 0. and kalpha_damping_strength <= 1.
 
@@ -418,23 +466,31 @@ class LLFullObjectCondensation(LossLayerBase):
         
         pred_distscale=None
         rechit_energy=None
+        t_spectator_weights=None
         if self.use_local_distances:
             if self.energy_weighted_qmin:
-                pred_beta, pred_ccoords, pred_distscale, \
-                rechit_energy, \
-                pred_energy, pred_pos, pred_time, pred_id,\
-                t_idx, t_energy, t_pos, t_time, t_pid,\
-                rowsplits = inputs
+                raise ValueError("energy_weighted_qmin not implemented")
 
             else:
-                pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
-                t_idx, t_energy, t_pos, t_time, t_pid,\
-                rowsplits = inputs
+                #check for sepctator weights
+                if len(inputs) == 14:
+                    pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
+                    t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
+                    rowsplits = inputs
+                elif len(inputs) == 13:
+                    pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
+                    t_idx, t_energy, t_pos, t_time, t_pid,\
+                    rowsplits = inputs
                 
         else:
-            pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
-            t_idx, t_energy, t_pos, t_time, t_pid,\
-            rowsplits = inputs
+            if len(inputs) == 13:
+                pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
+                t_idx, t_energy, t_pos, t_time, t_pid,t_spectator_weights,\
+                rowsplits = inputs
+            elif len(inputs) == 12:
+                pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
+                t_idx, t_energy, t_pos, t_time, t_pid,\
+                rowsplits = inputs
 
 
         if rowsplits.shape[0] is None:
@@ -460,7 +516,9 @@ class LLFullObjectCondensation(LossLayerBase):
             full_payload = tf.where(pred_beta<self.payload_beta_clip, 0., full_payload)
             #clip not weight, so there is no gradient to push below threshold!
         
-        is_spectator = tf.zeros_like(pred_beta) #not used right now, and likely never again (if the truth remains ok)
+        is_spectator = t_spectator_weights #not used right now, and likely never again (if the truth remains ok)
+        if is_spectator is None:
+            is_spectator = tf.zeros_like(pred_beta)
         
         att, rep, noise, min_b, payload, exceed_beta = oc_loss(
                                            x=pred_ccoords,
@@ -521,10 +579,11 @@ class LLFullObjectCondensation(LossLayerBase):
         
         
         if self.print_time:
-            print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms')
+            print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms',' call ',self.call_count)
             print('loss layer info:',self.name,'batch took',int((time.time()-self.loc_time)*100000.)/100.,'ms',
-                  'for',len(rowsplits.numpy())-1,'batch elements')
+                  'for',len(rowsplits.numpy())-1,'batch element(s), and total ', pred_beta.shape[0], 'points')
             self.loc_time = time.time()
+            self.call_count+=1
             
         if self.print_loss:
             minbtext = 'min_beta_loss'
