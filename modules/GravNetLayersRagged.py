@@ -639,7 +639,9 @@ class SelectFromIndices(tf.keras.layers.Layer):
         self.outshapes = [[-1,] + list(s[1:]) for s in outshapes] 
           
     @staticmethod  
-    def raw_call(indices, inputs, outshapes):
+    def raw_call(indices, inputs, outshapes=None):
+        if outshapes is None:
+            outshapes =  [[-1,] + list(s.shape[1:]) for s in inputs] 
         outs=[]
         for i in range(0,len(inputs)):
             g = tf.gather_nd( inputs[i], indices)
@@ -1148,6 +1150,8 @@ class EdgeSelector(tf.keras.layers.Layer):
 class LNC(tf.keras.layers.Layer):
     def __init__(self, 
                  threshold = 0.9, 
+                 sum_other=[],
+                 
                  loss_scale = 1., 
                  distance_loss_scale = 1., 
                  
@@ -1162,6 +1166,12 @@ class LNC(tf.keras.layers.Layer):
         This should be an improvement over LocalClusterReshapeFromNeighbours2 with fewer hyperparameters
         and actually per-point exclusive clustering (not per group)
         
+        Options:
+        - threshold: minimum group-classifier threshold to cluster (larger means fewer higher purity clusters)
+        - sum_other (list of ints): list of indices for the 'other' tensors (see inputs) that should be summed by feature instead of just selected
+        - loss_scale: loss scale
+        - ... should be self explanatory
+        
         Inputs:
          - features
          - neighbourhood classifier (linear activation applied only)
@@ -1169,9 +1179,9 @@ class LNC(tf.keras.layers.Layer):
          - neighbour indices  <- must contain "self"
          - row splits
          
-         - +[] of other tensors to be selected according to clustering
+         - +[] of other tensors to be selected or feature-summed (see options) according to clustering
          
-         - spectator weights (only if use_spectators=True)
+         - spectator weights (only if options: use_spectators=True)
          - truth idx (can be dummy if loss is disabled)
          
         
@@ -1191,6 +1201,7 @@ class LNC(tf.keras.layers.Layer):
         self.print_loss = print_loss
         self.noise_loss_scale = noise_loss_scale
         self.use_spectators = use_spectators
+        self.sum_other = sum_other
         
         assert self.noise_loss_scale >= 0
         
@@ -1208,7 +1219,8 @@ class LNC(tf.keras.layers.Layer):
                   'distance_loss_scale': self.distance_loss_scale,
                   'print_loss': self.print_loss,
                   'noise_loss_scale': self.noise_loss_scale,
-                  'use_spectators': self.use_spectators}
+                  'use_spectators': self.use_spectators,
+                  'sum_other': self.sum_other}
         
         base_config = super(LNC, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -1349,7 +1361,12 @@ class LNC(tf.keras.layers.Layer):
         #be explicit because of keras
         #backgather = tf.cast(backgather, tf.int32)
         seloutshapes =  [[-1,] + list(s.shape[1:]) for s in other] 
-        other = SelectFromIndices.raw_call(sel[:,0], other, seloutshapes)
+        otherout = SelectFromIndices.raw_call(sel[:,0], other, seloutshapes)
+        #change those that should be summed
+        for i in self.sum_other:
+            otherout[i] = SelectWithDefault(sel[:,:,0], other[i], 0.)
+            otherout[i] = tf.reduce_sum(otherout[i],axis=1)#sum over neighbours
+        
         
         #expanding is done within SelectWithDefault
         #the latter could also be done with AccumulateKnn if it got generalised from V to V'
@@ -1365,7 +1382,7 @@ class LNC(tf.keras.layers.Layer):
         if self.print_reduction:
             tf.print(self.name,'reduction',tf.cast(tf.shape(sel)[0],dtype='float')/tf.cast(tf.shape(nidxs)[0],dtype='float'),'to',tf.shape(sel)[0])
         
-        return [out, rs, backgather] + other
+        return [out, rs, backgather] + otherout
         
         
 

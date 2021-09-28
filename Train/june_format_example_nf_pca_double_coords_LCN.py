@@ -51,10 +51,10 @@ td=TrainData_NanoML()
 
 
 def gravnet_model(Inputs,
-                  viscosity=0.2,
+                  viscosity=0.1,
                   print_viscosity=False,
-                  fluidity_decay=1e-3,
-                  max_viscosity=0.9 # to start with
+                  fluidity_decay=1e-3, #reaches after about 7k batches
+                  max_viscosity=0.95 
                   ):
 
     
@@ -74,7 +74,7 @@ def gravnet_model(Inputs,
     rs = row_splits
 
     feat_norm = ProcessFeatures()(feat)
-    energy = SelectFeatures(0,1)(feat)
+    energy = SelectFeatures(0,1,name="energy_selector")(feat)
     time = SelectFeatures(8,9)(feat_norm)
     orig_coords = SelectFeatures(5,8)(feat)
 
@@ -150,20 +150,21 @@ def gravnet_model(Inputs,
             dist_scale = Dense(1)(x)
             cdist = LocalDistanceScaling()([cdist,dist_scale])
             
-            x_c, rs, bidxs, sel_gidx, energy, x, t_idx, coords,\
-             ccoords, cdist,hier,t_spectator_weight = LNC(
-                     threshold = 0.95,
+            x_c, rs, bidxs,\
+            sel_gidx, energy, x, t_idx, coords,ccoords,hier,t_spectator_weight = LNC(
+                     threshold = 0.8,
                      loss_scale = .1,#more emphasis on the final OC loss
                      print_reduction=True,
                      loss_enabled=True,
                      use_spectators=True,
+                     sum_other=[1,6], #explicitly sum the energy and hier score
                      distance_loss_scale=distance_loss_scale,
                      print_loss=True,
                      name='LNC_'+str(i)
                      )( #this is needed by the layer
                         [x, hier, cdist, nidx, rs]+
                         #these ones are selected accoring to the layer selection
-                        [sel_gidx, energy, x, t_idx, coords, ccoords, cdist, hier, t_spectator_weight]+
+                        [sel_gidx, energy, x, t_idx, coords, ccoords, hier, t_spectator_weight]+
                         #truth information passed to the layer to build loss
                         [t_spectator_weight,t_idx])
             
@@ -175,8 +176,7 @@ def gravnet_model(Inputs,
         else:
             gatherids.append(gidx_orig)
             
-        energy = ReduceSumEntirely()(energy)#sums up all contained energy per cluster, if no clustering does nothing
-
+        
         x = Dense(128, activation='elu',name='dense_clc_a'+str(i))(x)
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
         
@@ -314,7 +314,7 @@ cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manag
 predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
                            os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
                            model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
-                           inputdir=os.path.split(train.inputData)[0], max_files=10)
+                           inputdir=os.path.split(train.inputData)[0], max_files=1)
 
 analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another analyzer here to be safe since it will run scan on
                                                               # on beta and distance threshold which might mess up settings
@@ -351,7 +351,7 @@ cb += [
 
 
 learningrate = 1e-4
-nbatch = 70000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
