@@ -29,4 +29,6 @@ while( tvisc < epsilonvisc):
     count+=1
     
 plt.plot(counts,ovisc)
+plt.xlabel('# of batches')
+plt.ylabel('viscosity')
 plt.show()
