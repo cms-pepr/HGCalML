@@ -22,7 +22,8 @@ args = parser.parse_args()
 batchsize = int(args.b)
 
 
-HGCalPredictor(args.inputSourceFileList, args.trainingDataCollection, args.outputDir, batchsize, unbuffered=False).predict(args.inputModel)
+
+HGCalPredictor(args.inputSourceFileList, args.trainingDataCollection, args.outputDir, batchsize, unbuffered=False).predict(model_path=args.inputModel)
 
 
 
