@@ -10,7 +10,7 @@ from argparse import ArgumentParser
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
-from GravNetLayersRagged import LNC,ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
+from GravNetLayersRagged import EdgeCreator, EdgeSelector, GroupScoreFromEdgeScores,NoiseFilter,LNC,ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -36,13 +36,15 @@ from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, R
 from clr_callback import CyclicLR
 from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
-from model_blocks import create_outputs
+from model_blocks import create_outputs, noise_pre_filter
 
 from Layers import CreateTruthSpectatorWeights,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
 from Layers import GooeyBatchNorm #make a new line
 import sql_credentials
 from datetime import datetime
 
+from Regularizers import OffDiagonalRegularizer
+from initializers import EyeInitializer
 
 td=TrainData_NanoML()
 '''
@@ -76,9 +78,10 @@ def gravnet_model(Inputs,
     feat_norm = ProcessFeatures()(feat)
     energy = SelectFeatures(0,1,name="energy_selector")(feat)
     time = SelectFeatures(8,9)(feat_norm)
-    orig_coords = SelectFeatures(5,8)(feat)
+    orig_coords = SelectFeatures(5,8)(feat_norm)
 
     x = feat_norm
+    sel_gidx = gidx_orig
 
     allfeat=[x]
     backgatheredids=[]
@@ -89,31 +92,35 @@ def gravnet_model(Inputs,
 
     #here the actual network starts
 
+
+    ############## Keep this part to reload the noise filter with pre-trained weights for other trainings
     n_reshape_dimensions=3
 
     #really simple real coordinates
-    coords = ManualCoordTransform()(orig_coords)
-    coords = Dense(n_reshape_dimensions, use_bias=False )(coords)#just rotation and scaling
-
-
-    #see whats there, strict distance weighted so radius=1 is fine (and fast)
-    nidx, dist = KNN(K=24,radius=1.0)([coords,rs])
-
-    x_mp = DistanceWeightedMessagePassing([32,16,16,8])([x,nidx,dist])
-    x = Concatenate()([x,x_mp])
+    coords = orig_coords
+    other = [x, coords, energy, sel_gidx, t_spectator_weight, t_idx]
+    coords, nidx, dist, noise_score, rs, bg, other = noise_pre_filter(
+        x, coords, rs, 
+        other,  t_idx, threshold=0.025)
+    x, coords, energy, sel_gidx, t_spectator_weight, t_idx = other
+    
+    noise_score = StopGradient()(noise_score)#just a pass through to the end
+    
+    gatherids.append(bg)
+    backgathered_coords.append(MultiBackGather()([coords, gatherids]))
+    
+    ###>>> Noise filter part done
+    
     #this is going to be among the most expensive operations:
     x = Dense(64, activation='elu',name='pre_dense_a')(x)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
 
-    allfeat.append(x)
-    backgathered_coords.append(coords)
 
-    sel_gidx = gidx_orig
 
     cdist = dist
     ccoords = coords
 
-    total_iterations=6
+    total_iterations=5
 
     fwdbgccoords=None
 
@@ -121,48 +128,57 @@ def gravnet_model(Inputs,
 
         #derive new coordinates for clustering
         doclustering = True
-        redo_space = False
+        redo_space = True
         if doclustering and (redo_space or (not redo_space and i)):
             distance_loss_scale = 1.
             if redo_space:
-                ccoords = Dense(n_reshape_dimensions,name='newcoords'+str(i),
-                                             kernel_initializer=tf.keras.initializers.identity(),
+                ccoords = Dense(3,name='newcoords'+str(i),
+                                             kernel_initializer=EyeInitializer(stddev=0.01),
                                               use_bias=False
                                              )(Concatenate()([ccoords,x]))
                     
-                nidx, cdist = KNN(K=7,radius=-1.0)([ccoords,rs])
-                n_reshape_dimensions += 1
+                nidx, cdist = KNN(K=10,radius=-1.0)([ccoords,rs])
+                #n_reshape_dimensions += 1
             else:
                 ccoords = coords
                 nidx, cdist = nidx, dist
-                cdist, nidx = SortAndSelectNeighbours(K=7)([cdist,nidx])
-                distance_loss_scale = 1e-3
+                cdist, nidx = SortAndSelectNeighbours(K=10)([cdist,nidx])
+                distance_loss_scale = 1e-1
                 
             #here we use more neighbours to improve learning of the cluster space
             #this can be adjusted in the final trained model to be equal to 'cluster_neighbours'
             
+            #create edge selection
+            x_e = Dense(16,activation='elu')(x)
+            edges = EdgeCreator()([nidx,x_e])
+            edges = Dense(16,activation='elu')(edges)
+            edges = Dense(8,activation='elu')(edges)
+            edge_score = Dense(1,activation='sigmoid')(edges)
+            nidx = EdgeSelector(threshold=0.6, 
+                                loss_scale=.2, 
+                                loss_enabled=True, 
+                                print_loss=True)(
+                                    [nidx, edge_score]+
+                                    [t_spectator_weight, t_idx])
             
-            #check if it's same object
-            x = Concatenate()([x,MessagePassing([64,32,16,8])([x,nidx])])
-            hier = Dense(1)(x)
-            #make sure to have enough capacity before merging
-            x = Dense(192, activation='elu',name='dense_precl_a'+str(i))(x)
-            dist_scale = Dense(1)(x)
-            cdist = LocalDistanceScaling()([cdist,dist_scale])
+            
+            hier = GroupScoreFromEdgeScores()([edge_score, nidx])
+            
+            x = Dense(128, activation='elu',name='dense_precl_a'+str(i))(x)
             
             x_c, rs, bidxs,\
             sel_gidx, energy, x, t_idx, coords,ccoords,hier,t_spectator_weight = LNC(
-                     threshold = 0.8,
+                     threshold = 0.001,#low because selection already done by edges
                      loss_scale = .1,#more emphasis on the final OC loss
                      print_reduction=True,
-                     loss_enabled=True,
+                     loss_enabled=True, #loss still needed because of coordinate space
                      use_spectators=True,
                      sum_other=[1,6], #explicitly sum the energy and hier score
                      distance_loss_scale=distance_loss_scale,
                      print_loss=True,
                      name='LNC_'+str(i)
                      )( #this is needed by the layer
-                        [x, hier, cdist, nidx, rs]+
+                        [x, hier, ccoords, nidx, rs]+
                         #these ones are selected accoring to the layer selection
                         [sel_gidx, energy, x, t_idx, coords, ccoords, hier, t_spectator_weight]+
                         #truth information passed to the layer to build loss
@@ -200,13 +216,12 @@ def gravnet_model(Inputs,
         x = Dense(128, activation='elu',name='dense_a_'+str(i))(x)
         x = Dense(128, activation='elu',name='dense_b_'+str(i))(x)
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
-        x = Dense(nfilt, activation='elu',name='dense_c_'+str(i))(x)
-        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
-
-
+        
+        x_append = Dense(nfilt//2, activation='elu',name='dense_c_'+str(i))(x)
+        
         energysums.append( MultiBackGather()([energy, gatherids]) )#assign energy sum to all cluster components
 
-        allfeat.append(MultiBackGather()([x, gatherids]))
+        allfeat.append(MultiBackGather()([x_append, gatherids]))
 
         backgatheredids.append(MultiBackGather()([sel_gidx, gatherids]))
         bgccoords = MultiBackGather()([ccoords, gatherids])
@@ -215,6 +230,7 @@ def gravnet_model(Inputs,
         backgathered_coords.append(bgccoords)
 
 
+    rs = row_splits #important! here we are in non-reduced full graph mode again
 
 
     x = Concatenate(name='allconcat')(allfeat)
@@ -225,7 +241,8 @@ def gravnet_model(Inputs,
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
     x = Concatenate()([x]+energysums)
     x = Dense(64, activation='elu')(x)
-    x = Dense(64, activation='elu')(x)
+    x = Dense(48, activation='elu')(x)
+    x = Concatenate()([orig_coords,x,noise_score])#we have it anyway
 
     pred_beta, pred_ccoords, pred_dist, pred_energy,\
        pred_pos, pred_time, pred_id = create_outputs(x,feat,fix_distance_scale=False)
@@ -257,7 +274,7 @@ def gravnet_model(Inputs,
        ('pred_time',pred_time),
        ('pred_id',pred_id),
        ('pred_dist',pred_dist),
-       ('row_splits',rs)]
+       ('row_splits',row_splits)]
 
     for i, (x, y) in enumerate(zip(backgatheredids, backgathered_coords)):
         model_outputs.append(('backgatheredids_'+str(i), x))
@@ -271,12 +288,13 @@ train.val_data.writeToFile(train.outputDir + 'valsamples.djcdc')
 if not train.modelSet():
     train.setModel(gravnet_model)
     train.setCustomOptimizer(tf.keras.optimizers.Nadam(
-        clipnorm=0.001
+        #clipnorm=0.001
         ))
 
     train.compileModel(learningrate=1e-4,
                        loss=None)
 
+    #print(train.keras_model.summary())
 
 verbosity = 2
 import os
@@ -326,20 +344,34 @@ cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, opti
                                                                                        'full_validation_plots'))]
 
 
-
+cb=[]
 cb += [plotClusteringDuringTraining(
-    use_backgather_idx=8 + i,
+    use_backgather_idx=8 + 2*i,
     outputfile=train.outputDir + "/neighbour_clusters/p" + str(i) + '_',
     samplefile=samplepath,
     after_n_batches=500,
     on_epoch_end=False,
     publish=None,
     use_event=0)
-    for i in [0, 2, 4, 5]]
+    for i in range(5)]
+
+cb += [
+    plotGravNetCoordsDuringTraining(
+        outputfile=train.outputDir + "/coords/coord_" + str(i),
+        samplefile=samplepath,
+        after_n_batches=500,
+        batchsize=30000,
+        on_epoch_end=False,
+        publish=None,
+        use_event=0,
+        use_prediction_idx=9 + 2*i,
+    )
+    for i in range(5)  # between 16 and 21
+]
 
 cb += [
     plotEventDuringTraining(
-        outputfile=train.outputDir + "/cluster_space/p",
+        outputfile=train.outputDir + "/cluster_space/e" + str(i) + '_',
         samplefile=samplepath,
         after_n_batches=500,
         batchsize=30000,
@@ -350,8 +382,8 @@ cb += [
 
 
 
-learningrate = 1e-4
-nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+learningrate = 1e-3
+nbatch = 70000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
@@ -382,8 +414,7 @@ print("freeze BN 2")
 #        l.q_min = 1.0
 
 #also stop GravNetLLLocalClusterLoss* from being evaluated
-learningrate/=3.
-nbatch = 90000
+learningrate/=10.
 
 train.compileModel(learningrate=learningrate,
                           loss=None,
