@@ -46,15 +46,16 @@ def publish(file_to_publish, publish_to_path):
     os.system(cpstring + file_to_publish + ' ' + publish_to_path +'_'+basefilename+ ' 2>&1 > /dev/null') 
 
 def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx"):
-    return df
-    #the implementation below is broken
     ta = df[qualifier]
     unta = np.unique(ta)
-    np.random.shuffle(unta)
     unta = unta[unta>-0.1]
+    np.random.shuffle(unta)
+    out = ta.copy()
+    print(unta)
     for i in range(len(unta)):
-        df[qualifier][df[qualifier] ==unta[i]]=i
-        
+        out[ta ==unta[i]]=i
+    df[qualifier] = out
+       
         
 class plotDuringTrainingBase(PredictCallback):
     def __init__(self,
@@ -170,7 +171,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
              pred_time, 
              pred_id
             '''
-            td = TrainData_OC()#contains all dicts
+            td = TrainData_NanoML()#contains all dicts
             #row splits not needed
             feats = td.createFeatureDict(feat[0],addxycomb=False)
             truths = td.createTruthDict(truth[0])

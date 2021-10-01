@@ -122,15 +122,16 @@ class LLClusterCoordinates(LossLayerBase):
         else:
             super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
 
-    def loss(self, inputs):
+    @staticmethod
+    def raw_loss(inputs, repulsion_contrib, print_loss, name):
         
-        use_avg_cc=True
+        use_avg_cc=1.
         coords, truth_indices, row_splits, beta_like = None, None, None, None
         if len(inputs) == 3:
             coords, truth_indices, row_splits = inputs
         elif len(inputs) == 4:
             coords, truth_indices, beta_like, row_splits = inputs
-            use_avg_cc = False
+            use_avg_cc = 0.
         else:
             raise ValueError("LLClusterCoordinates requires 3 or 4 inputs")
 
@@ -146,15 +147,18 @@ class LLClusterCoordinates(LossLayerBase):
         V_att, V_rep,_,_,_,_=oc_loss(coords, beta_like, #beta constant
                 truth_indices, row_splits, 
                 zeros, zeros,Q_MIN=1.0, S_B=0.,energyweights=None,
-                use_average_cc_pos=use_avg_cc,payload_rel_threshold=0.01)
+                use_average_cc_pos=use_avg_cc)
         
-        att = (1.-self.repulsion_contrib)*V_att
-        rep = self.repulsion_contrib*V_rep
+        att = (1.-repulsion_contrib)*V_att
+        rep = repulsion_contrib*V_rep
         lossval = att + rep
-        if self.print_loss:
-            print(self.name, lossval.numpy(), 'att loss:', att.numpy(), 'rep loss:',rep.numpy())
+        if print_loss:
+            print(name, lossval.numpy(), 'att loss:', att.numpy(), 'rep loss:',rep.numpy())
         return lossval
 
+    def loss(self, inputs):
+        return LLClusterCoordinates.raw_loss(inputs, self.repulsion_contrib, self.print_loss, self.name)
+        
     def get_config(self):
         config = { 'repulsion_contrib': self.repulsion_contrib }
         base_config = super(LLClusterCoordinates, self).get_config()
@@ -537,7 +541,8 @@ class LLFullObjectCondensation(LossLayerBase):
                                            prob_repulsion=self.prob_repulsion,
                                            phase_transition=self.phase_transition>0. ,
                                            phase_transition_double_weight = self.phase_transition_double_weight,
-                                           alt_potential_norm=self.alt_potential_norm,
+                                           #removed
+                                           #alt_potential_norm=self.alt_potential_norm,
                                            payload_beta_gradient_damping_strength=self.payload_beta_gradient_damping_strength,
                                            kalpha_damping_strength = self.kalpha_damping_strength,
                                            beta_gradient_damping=self.beta_gradient_damping,

@@ -83,7 +83,6 @@ def oc_per_batch_element(
         prob_repulsion=False,
         phase_transition=False,
         phase_transition_double_weight=False,
-        alt_potential_norm=False,
         payload_beta_gradient_damping_strength=0.,
         kalpha_damping_strength=0.,
         beta_gradient_damping=0.,
@@ -100,8 +99,6 @@ def oc_per_batch_element(
     '''
     
     
-    if not alt_potential_norm:
-        raise ValueError("not alt_potential_norm not implemented")
     if prob_repulsion:
         raise ValueError("prob_repulsion not implemented")
     if phase_transition_double_weight:
@@ -298,7 +295,6 @@ def oc_loss(
         prob_repulsion=False,
         phase_transition=False,
         phase_transition_double_weight=False,
-        alt_potential_norm=False,
         payload_beta_gradient_damping_strength=0.,
         kalpha_damping_strength=0.,
         beta_gradient_damping=0.,
@@ -344,7 +340,7 @@ def oc_loss(
             prob_repulsion=prob_repulsion,
             phase_transition=phase_transition,
             phase_transition_double_weight=phase_transition_double_weight,
-            alt_potential_norm=alt_potential_norm,
+            #alt_potential_norm=alt_potential_norm,
             payload_beta_gradient_damping_strength=payload_beta_gradient_damping_strength,
             kalpha_damping_strength=kalpha_damping_strength,
             beta_gradient_damping=beta_gradient_damping,

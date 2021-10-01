@@ -4,7 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import EdgeCreator,EdgeSelector,NoiseFilter,LNC,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import ElementScaling,AddIdentity2D,WarpedSpaceKNN,GroupScoreFromEdgeScores,EdgeCreator,EdgeSelector,NoiseFilter,LNC,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import CreateTruthSpectatorWeights,LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
 from tensorflow.python.framework import ops
@@ -17,6 +17,10 @@ global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
 global_layers_list['Condensate']=Condensate
 global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
 
+
+global_layers_list['ElementScaling']=ElementScaling
+
+global_layers_list['GroupScoreFromEdgeScores']=GroupScoreFromEdgeScores
 
 
 global_layers_list['EdgeCreator']=EdgeCreator
@@ -67,6 +71,11 @@ global_layers_list['CreateGlobalIndices']=CreateGlobalIndices
 global_layers_list['SelectFromIndices']=SelectFromIndices
 global_layers_list['MultiBackGather']=MultiBackGather
 global_layers_list['KNN']=KNN
+
+global_layers_list['WarpedSpaceKNN']=WarpedSpaceKNN
+global_layers_list['AddIdentity2D']=AddIdentity2D
+
+
 global_layers_list['CollectNeighbourAverageAndMax']=CollectNeighbourAverageAndMax
 global_layers_list['SoftPixelCNN']=SoftPixelCNN
 
@@ -94,6 +103,13 @@ global_layers_list['PrintMeanAndStd']=PrintMeanAndStd
 
 global_layers_list['LNC']=LNC
 
+####### other stuff goes here
+from Regularizers import OffDiagonalRegularizer
+
+global_layers_list['OffDiagonalRegularizer']=OffDiagonalRegularizer
+
+
+####### some implementations
 
 
 from tensorflow.keras.layers import Layer
@@ -510,9 +526,9 @@ class RobustModel(tf.keras.Model):
 
         return output_keyed
 
-    # def build(self, input_shape):
-    #     super().build(input_shape)
-    #     self.model.build(input_shape)
+    #def build(self, input_shape):
+    #    super().build(input_shape)
+    #    self.model.build(input_shape)
 
     def compile(self,
               *args,
@@ -545,6 +561,7 @@ class RobustModel(tf.keras.Model):
 
 
         is_valid = True
+        loss = None
         with tf.GradientTape() as tape:
             y_pred = self(x, training=True)  # Forward pass
             # Compute the loss value
@@ -559,8 +576,9 @@ class RobustModel(tf.keras.Model):
         trainable_vars = self.trainable_variables
 
         is_valid = is_valid and bool(tf.math.is_finite(loss))
-        gradients = tape.gradient(loss, trainable_vars)
-        is_valid = is_valid and not bool(tf.reduce_any([_grad is None for _grad in gradients]))
+        if is_valid:
+            gradients = tape.gradient(loss, trainable_vars)
+            is_valid = is_valid and not bool(tf.reduce_any([_grad is None for _grad in gradients]))
 
         if is_valid:
             num_non_finite_tensors = float(tf.reduce_sum(tf.cast([tf.reduce_any(tf.math.logical_not(tf.math.is_finite(_grad))) for _grad in gradients], tf.float32)))
@@ -572,9 +590,9 @@ class RobustModel(tf.keras.Model):
             self.optimizer.apply_gradients(zip(gradients, trainable_vars))
         else:
             if self.non_finite_count < self.skip_non_finite:
-                print("\n\nWARNING: loss or gradient is not finite or error in loss. Got loss = %f\nSkipping optimizer step %d/%d\n\n" % (float(loss), self.non_finite_count+1, self.skip_non_finite))
+                print("\n\nWARNING: loss or gradient is not finite or error in loss. \nSkipping optimizer step %d/%d\n\n" % (self.non_finite_count+1, self.skip_non_finite))
             else:
-                print("\n\nERROR: loss or gradient is not finite or error in loss. Got loss = %f\nThrowing exception.\n\n" % float(loss))
+                print("\n\nERROR: loss or gradient is not finite or error in loss. \nThrowing exception.\n\n")
                 raise RuntimeError("Loss or gradient is not finite")
 
             self.non_finite_count += 1
