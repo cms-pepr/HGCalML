@@ -5,7 +5,7 @@ from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
 from local_group_op import LocalGroup
 from local_distance_op import LocalDistance
-from lossLayers import LLLocalClusterCoordinates
+from lossLayers import LLClusterCoordinates
 from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
@@ -97,6 +97,30 @@ class PrintMeanAndStd(tf.keras.layers.Layer):
         tf.print(self.name,'std',tf.math.reduce_std(inputs,axis=0),summarize=100)
         return inputs
 
+
+class ElementScaling(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(ElementScaling, self).__init__(**kwargs)
+
+    def get_config(self):
+        return super(ElementScaling, self).get_config()
+    
+    def compute_output_shape(self, input_shapes):
+        #return input_shapes[0]
+        return input_shapes
+    
+    def build(self, input_shape):
+        shape = [1 for _ in range(len(input_shape)-1)]+[input_shape[-1]]
+        self.scales = self.add_weight(name = 'scales',shape = shape, 
+                                    initializer = 'ones', trainable = True) 
+        
+        super(ElementScaling, self).build(input_shape)
+        
+    def call(self, inputs, training=None):
+        
+        return inputs * self.scales
+        
+    
 class GooeyBatchNorm(tf.keras.layers.Layer):
     def __init__(self,
                  viscosity=0.2,
@@ -1000,6 +1024,8 @@ class NoiseFilter(tf.keras.layers.Layer):
         
         threshold: note, noise will have low score values.
         
+        The loss corrects for non-equal class balance
+        
         Inputs:
          - noise score (linear activation), high means not noise
          - row splits
@@ -1048,11 +1074,21 @@ class NoiseFilter(tf.keras.layers.Layer):
         #score loss
         if self.loss_enabled:
             notnoise = tf.where(tidxs>=0, tf.ones_like(score), 0.)
+            
+            Nnotnoise = tf.cast(tf.math.count_nonzero(notnoise,axis=0),dtype='float32')
+            Nnoise = tf.cast(tf.math.count_nonzero(1.-notnoise,axis=0),dtype='float32')
+            
             classloss = tf.keras.losses.binary_crossentropy(notnoise, score)
-            classloss = tf.reduce_mean(classloss)
+            
+            notnoiseloss = tf.math.divide_no_nan(tf.reduce_sum(classloss*notnoise[:,0]),tf.squeeze(Nnotnoise))
+            noiseloss = tf.math.divide_no_nan(tf.reduce_sum(classloss*(1.-notnoise[:,0])),tf.squeeze(Nnoise))
+            
+            classloss = notnoiseloss+noiseloss
             self.add_loss(classloss)
             if self.print_loss:
-                print(self.name, ' loss ', classloss, ' reduction ')
+                accuracy = tf.where(score>0.5, notnoise, 0.)
+                accuracy = tf.reduce_sum(accuracy) / tf.squeeze(Nnotnoise)
+                print(self.name, ' loss ', classloss, ' ; accuracy', accuracy)
         
         
         sel, allbackgather, newrs = select_threshold_with_backgather(score, self.threshold, row_splits)
@@ -1146,6 +1182,37 @@ class EdgeSelector(tf.keras.layers.Layer):
         
         return tf.where(score[:,:,0] < self.threshold, -1, nidx)
         
+class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        '''
+        Input: 
+        - edge scores (V x K x 1)
+        - neighbour indices
+        
+        Output:
+        - group score (V x 1)
+        
+        '''
+        
+        if 'dynamic' in kwargs:
+            super(GroupScoreFromEdgeScores, self).__init__(**kwargs)
+        else:
+            super(GroupScoreFromEdgeScores, self).__init__(dynamic=False,**kwargs)
+    
+    def compute_output_shape(self, input_shapes): 
+        return (1,)
+            
+        #no config
+    def call(self, inputs): 
+        score, nidx = inputs
+        #take almost mean
+        n_neigh = tf.math.count_nonzero(nidx+1, axis=1, keepdims=True)# V x 1
+        n_neigh = 1. + (tf.cast(n_neigh,dtype='float32')-1.)*0.5 #give higher score to larger groups
+        groupscore = tf.reduce_sum(score, axis=1)*0.5 #make sure max is bound to one
+        groupscore /= n_neigh
+        return groupscore
+        
+        
                 
 class LNC(tf.keras.layers.Layer):
     def __init__(self, 
@@ -1175,7 +1242,7 @@ class LNC(tf.keras.layers.Layer):
         Inputs:
          - features
          - neighbourhood classifier (linear activation applied only)
-         - distances
+         - coordinates (V x C): only used for loss evaluation
          - neighbour indices  <- must contain "self"
          - row splits
          
@@ -1208,7 +1275,7 @@ class LNC(tf.keras.layers.Layer):
         if 'dynamic' in kwargs:
             super(LNC, self).__init__(**kwargs)
         else:
-            super(LNC, self).__init__(dynamic=False,**kwargs)
+            super(LNC, self).__init__(dynamic=False,**kwargs)#eager
         
     
     def get_config(self):
@@ -1265,12 +1332,12 @@ class LNC(tf.keras.layers.Layer):
     def call(self, inputs):
         
         
-        features, score, distances, nidxs, row_splits, other, specweight, tidxs = 8*[None]
+        features, score, coords, nidxs, row_splits, other, specweight, tidxs = 8*[None]
         
         if len(inputs) > 6:
-            features, score, distances, nidxs, row_splits, *other, tidxs = inputs
+            features, score, coords, nidxs, row_splits, *other, tidxs = inputs
         else:
-            features, score, distances, nidxs, row_splits, tidxs = inputs
+            features, score, coords, nidxs, row_splits, tidxs = inputs
             other=[]
         
         if self.use_spectators:
@@ -1284,18 +1351,19 @@ class LNC(tf.keras.layers.Layer):
                 specweight  = SelectWithDefault(nidxs, specweight, 0.)
                 tnidxs = tf.where(specweight[:,:,0]>0, -1 , nidxs) #remove spectators from loss
         #generate loss
-        if self.loss_enabled and self.distance_loss_scale > 0 :
+        if self.loss_enabled and self.distance_loss_scale > 0:
             
+            lossval = tf.zeros_like(score[0,0])
+            if row_splits.shape[0] is not None:
             #some headroom for radius
-            lossval = self.distance_loss_scale * self.loss_scale * LLLocalClusterCoordinates.raw_loss(
-                distances, 
-                tf.ones_like(score), 
-                tnidxs, 
-                tidxs, 
-                add_self_reference=False, repulsion_contrib=0.8,
-                print_loss=self.print_loss,name=self.name,
-                hierarchy_penalty=False)
-            self.add_loss(lossval)
+                lossval = self.distance_loss_scale * self.loss_scale * \
+                    LLClusterCoordinates.raw_loss([coords, tidxs, row_splits],
+                                          repulsion_contrib=0.5, 
+                                          print_loss=self.print_loss, 
+                                          name=self.name
+                                          )
+            
+            self.add_loss(tf.reduce_mean(lossval))
             
         if self.loss_enabled:
             
