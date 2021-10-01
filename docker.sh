@@ -1,3 +1,4 @@
+#!/bin/bash
 docker run -d -it --name ML4Reco \
 -v /home/philipp/Data/Hackathon:/root/Data \
 -v "$(pwd)":/root/HGCalML \

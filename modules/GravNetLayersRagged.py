@@ -306,9 +306,11 @@ class NeighbourCovariance(tf.keras.layers.Layer):
         
 class NeighbourApproxPCA(tf.keras.layers.Layer):
     # TODO: Decide what to do with means!
-    def __init__(self, coord_dim=3, size='large', 
+    def __init__(self, size='large', 
                  base_path='/root/pca-networks/',
                  **kwargs):
+        # TODO: Remove cood_dim
+        # TODO: This means getting the path only in the `build` function
         """
         Inputs: 
           - coordinates (Vin x C)
@@ -322,17 +324,15 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
           - if enabled: feature weighted means (Vout x F*C)
           
         """
-        # TODO: hidden_nodes is only a dummy, remove!
         super(NeighbourApproxPCA, self).__init__(**kwargs)
 
         assert size.lower() in ['small', 'medium', 'large']\
             , "size must be 'small', 'medium', or 'large'!"
         self.size = size.lower()
-        self.coord_dim = coord_dim
 
         self.base_path = base_path
-        self.path = self.base_path + f"{str(self.coord_dim)}D/{self.size}/AngleNorm/"
-        assert os.path.exists(self.path), f"path: {self.path} not found!"
+        # self.path = self.base_path + f"{str(self.coord_dim)}D/{self.size}/AngleNorm/"
+        # assert os.path.exists(self.path), f"path: {self.path} not found!"
         
         print("The PCA layer is still somewhat experimental!")
         print("Please make sure that you have access to the pretrained models that perform the pca!")
@@ -340,26 +340,29 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         
     def get_config(self):
         # Called when saving the model
-        with open(self.path + 'config.yaml', 'r') as f:
-            config = yaml.load(f, Loader=yaml.FullLoader)
         base_config = super(NeighbourApproxPCA, self).get_config()
         init_config = {'base_path': self.base_path, 'size': self.size, 'coord_dim': self.coord_dim}
-        config = dict(list(base_config.items()) + list(init_config.items()) + list(config.items()))
+        if not self.config:
+            self.config = {}
+        config = dict(list(base_config.items()) + list(init_config.items()) + list(self.config.items()))
         return config
 
     
     def build(self, input_shapes): #pure python
         from tensorflow.keras.models import Model
         from tensorflow.keras.layers import Input, Dense
-        # TODO: Possibly duplicated code, see get_config
-        with open(self.path + 'config.yaml', 'r') as f:
-            config = yaml.load(f, Loader=yaml.FullLoader)
         nF, nC, _ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
         self.nF = nF
         self.nC = nC
         self.covshape = nF * nC * nC
-        assert self.nC == self.coord_dim, "Initialize with correct coordinate dimension!"
-        # TODO: Catch the error and fix it
+
+        self.path = self.base_path + f"{str(self.nC)}D/{self.size}/AngleNorm/"
+        assert os.path.exists(self.path), f"path: {self.path} not found!"
+        # TODO: Possibly duplicated code, see get_config
+        with open(self.path + 'config.yaml', 'r') as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
+            self.config = config
+            
         # self.model = tf.keras.models.load_model(self.path)
 
         inputs = Input(shape=(self.nC**2,))
