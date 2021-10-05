@@ -1,4 +1,5 @@
 import tensorflow as tf
+import pdb
 import yaml
 import os
 from select_knn_op import SelectKnn
@@ -374,7 +375,12 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         outputs = Dense(self.nC**2)(x)
         # self.model = Model(inputs=inputs, outputs=outputs)
         # self.model.load_weights(self.path)
-        self.model = tf.keras.models.load_model(self.path, compile=False)
+        pdb.set_trace()
+	#TODO: Fix namespace here!
+	#TODO: Probably have to change the way this is created
+        with tf.name_scope(self.name + '/pca'):
+            self.model = tf.keras.models.load_model(self.path, compile=False)
+        pdb.set_trace()
         
         super(NeighbourApproxPCA, self).build(input_shapes)  
         
