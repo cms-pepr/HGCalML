@@ -307,7 +307,8 @@ class NeighbourCovariance(tf.keras.layers.Layer):
 class NeighbourApproxPCA(tf.keras.layers.Layer):
     # TODO: Decide what to do with means!
     def __init__(self, size='large', 
-                 base_path='/root/pca-networks/',
+                 base_path='/afs/cern.ch/work/p/phzehetn/public/pca-networks/',
+                 # base_path='/root/pca-networks/',
                  **kwargs):
         # TODO: Remove cood_dim
         # TODO: This means getting the path only in the `build` function
@@ -341,7 +342,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
     def get_config(self):
         # Called when saving the model
         base_config = super(NeighbourApproxPCA, self).get_config()
-        init_config = {'base_path': self.base_path, 'size': self.size, 'coord_dim': self.coord_dim}
+        init_config = {'base_path': self.base_path, 'size': self.size}
         if not self.config:
             self.config = {}
         config = dict(list(base_config.items()) + list(init_config.items()) + list(self.config.items()))
