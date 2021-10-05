@@ -10,6 +10,7 @@ import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
 from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
+from GravNetLayersRagged import NeighbourApproxPCA
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -106,7 +107,7 @@ def gravnet_model(Inputs,
     cdist = dist
     ccoords = coords
 
-    total_iterations=5
+    total_iterations=3 # Changed from 5 to 3
 
     fwdbgccoords=None
 
