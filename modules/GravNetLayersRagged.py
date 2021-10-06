@@ -395,6 +395,8 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
 
 
     def call(self, inputs):
+        PerLayer = True
+        ReturnMean = False
         coordinates, distsq, features, n_idxs = inputs
         
         cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
@@ -411,18 +413,21 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         # Loop over features
         # Reshape instead of loop: [V, F, C^2] -> [V*F, C^2]
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
-        x = cov
-        pdb.set_trace()
-        for layer in self.layers:
-            x = layer(x)
-        approxPCA = x
-        ''''
-        cov = tf.reshape(cov, shape=(-1, self.nC**2))
-        approxPCA = self.model(cov)
-        approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
-        '''
+
+        if PerLayer:
+            x = cov
+            pdb.set_trace()
+            for layer in self.layers:
+                x = layer(x)
+            approxPCA = x
+        else:
+            approxPCA = self.model(cov)
+            approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
         
-        return tf.concat([approxPCA, means], axis=-1)
+        if ReturnMean:
+            return tf.concat([approxPCA, means], axis=-1)
+        else:
+            return approxPCA
     
     
     
