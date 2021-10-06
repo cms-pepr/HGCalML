@@ -420,6 +420,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
             for layer in self.layers:
                 x = layer(x)
             approxPCA = x
+            approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
         else:
             approxPCA = self.model(cov)
             approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
