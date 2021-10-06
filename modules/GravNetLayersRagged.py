@@ -373,7 +373,8 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         for i, node in enumerate(nodes):
             x = tf.keras.layers.Dense(node, activation='elu')(x)
         outputs = Dense(self.nC**2)(x)
-        model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+        with tf.name_scope(self.name + '/pca/model'):
+            model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
         model.load_weights(self.path)
         self.model = model
 
@@ -395,6 +396,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
 
 
     def call(self, inputs):
+        Comparison = True
         PerLayer = True
         ReturnMean = False
         coordinates, distsq, features, n_idxs = inputs
@@ -404,16 +406,13 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
                                            features=features, 
                                            n_idxs=n_idxs)
         
-        cov = tf.reshape(cov, [-1, self.covshape])
         means = tf.reshape(means, [-1, self.nF*self.nC])
+        cov = tf.reshape(cov, shape=(-1, self.nC**2))
+
         print("nF: ", self.nF)
         print("nC: ", self.nC)
         print("COV: ", cov.shape)
         print("MEAN: ", means.shape)
-        # Loop over features
-        # Reshape instead of loop: [V, F, C^2] -> [V*F, C^2]
-        cov = tf.reshape(cov, shape=(-1, self.nC**2))
-        print("COV2: ", cov.shape)
 
         if PerLayer:
             x = cov
@@ -424,7 +423,10 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
             approxPCA = self.model(cov)
             approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
         
-        print(approxPCA.shape)
+        if Comparison:
+            comp = self.model(cov)
+        pdb.set_trace()
+
         if ReturnMean:
             return tf.concat([approxPCA, means], axis=-1)
         else:
