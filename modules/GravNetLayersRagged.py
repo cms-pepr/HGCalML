@@ -410,14 +410,12 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         print("MEAN: ", means.shape)
         # Loop over features
         # Reshape instead of loop: [V, F, C^2] -> [V*F, C^2]
-        # TODO: Remove loop and use reshaping
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
         x = cov
         pdb.set_trace()
-        # for layer in self.layers:
-        #     x = layer(x)
-        # approxPCA = x
-        approxPCA = self.model(cov)
+        for layer in self.layers:
+            x = layer(x)
+        approxPCA = x
         ''''
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
         approxPCA = self.model(cov)
