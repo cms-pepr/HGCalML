@@ -374,6 +374,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
             x = tf.keras.layers.Dense(node, activation='elu')(x)
         outputs = Dense(self.nC**2)(x)
         model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+        pdb.set_trace()
         model.load_weights(self.path)
         # self.model = Model(inputs=inputs, outputs=outputs)
         # self.model.load_weights(self.path)
