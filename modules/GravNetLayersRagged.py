@@ -413,6 +413,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         # Loop over features
         # Reshape instead of loop: [V, F, C^2] -> [V*F, C^2]
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
+        print("COV: ", cov.shape)
 
         if PerLayer:
             x = cov
