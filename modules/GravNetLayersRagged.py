@@ -366,15 +366,17 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
             
         # self.model = tf.keras.models.load_model(self.path)
 
-        inputs = Input(shape=(self.nC**2,))
+        inputs = tf.keras.layers.Input(shape=(self.nC**2,))
         x = inputs
         nodes = config['nodes']
         for node in nodes:
-            x = Dense(node, activation='elu')(x)
+            x = tf.keras.layers.Dense(node, activation='elu')(x)
         outputs = Dense(self.nC**2)(x)
+        model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+        model.load_weights(self.path)
         # self.model = Model(inputs=inputs, outputs=outputs)
         # self.model.load_weights(self.path)
-        self.model = tf.keras.models.load_model(self.path, compile=False)
+        # self.model = tf.keras.models.load_model(self.path, compile=False)
         
         super(NeighbourApproxPCA, self).build(input_shapes)  
         
