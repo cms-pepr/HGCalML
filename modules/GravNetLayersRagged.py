@@ -333,6 +333,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         self.size = size.lower()
 
         self.base_path = base_path
+        self.layers = []
         # self.path = self.base_path + f"{str(self.coord_dim)}D/{self.size}/AngleNorm/"
         # assert os.path.exists(self.path), f"path: {self.path} not found!"
         
@@ -365,21 +366,21 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
             config = yaml.load(f, Loader=yaml.FullLoader)
             self.config = config
             
-        # self.model = tf.keras.models.load_model(self.path)
-
-        with tf.name_scope(self.name + '/1/inputs'):
-            inputs = tf.keras.layers.Input(shape=(self.nC**2,))
+        # Build model and load weights
+        inputs = tf.keras.layers.Input(shape=(self.nC**2,))
         x = inputs
         nodes = config['nodes']
         for i, node in enumerate(nodes):
-            with tf.name_scope(self.name + f'/asdf1/{i}'):
-                x = tf.keras.layers.Dense(node, activation='elu')(x)
-        with tf.name_scope(self.name + '/asdf1/outputs'):
-            outputs = Dense(self.nC**2)(x)
-        with tf.name_scope(self.name + '/asdf1/model'):
-            model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+            x = tf.keras.layers.Dense(node, activation='elu')(x)
+        outputs = Dense(self.nC**2)(x)
+        model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
         model.load_weights(self.path)
-        self.model = model
+
+        for i in range(len(nodes) + 1):
+            with tf.name_scope(self.name + "/pca/" + str(i)):
+                layer = model.layers[i+1]
+                self.layers.append(layer)
+
         # self.model = Model(inputs=inputs, outputs=outputs)
         # self.model.load_weights(self.path)
         # self.model = tf.keras.models.load_model(self.path, compile=False)
@@ -410,15 +411,15 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         # Reshape instead of loop: [V, F, C^2] -> [V*F, C^2]
         # TODO: Remove loop and use reshaping
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
+        x = cov
+        for layer in self.layers:
+            x = layer(x)
+        approxPCA = x
+        ''''
+        cov = tf.reshape(cov, shape=(-1, self.nC**2))
         approxPCA = self.model(cov)
         approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
-        # for f in range(self.nF):
-        #     if f == 0:
-        #         approxPCA = tf.expand_dims(self.model(cov[:,f,:]), axis=1)
-        #     else:
-        #         approxPCA = tf.concat([approxPCA,
-        #                                tf.expand_dims(self.model(cov[:,f,:]), axis=1)],
-        #                                axis=1)
+        '''
         
         return approxPCA
     
