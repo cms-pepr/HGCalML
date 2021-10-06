@@ -292,7 +292,8 @@ else:
 
 
 # This will both to server and a local file
-database_manager = ExperimentDatabaseManager(sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
+# database_manager = ExperimentDatabaseManager(sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
+database_manager = ExperimentDatabaseManager(file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
 database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
 #For writing to to file
 #database_manager = ExperimentDatabaseManager(file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=40)
