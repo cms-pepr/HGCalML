@@ -376,6 +376,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
         pdb.set_trace()
         model.load_weights(self.path)
+        self.model = model
         # self.model = Model(inputs=inputs, outputs=outputs)
         # self.model.load_weights(self.path)
         # self.model = tf.keras.models.load_model(self.path, compile=False)
