@@ -1,5 +1,6 @@
 import tensorflow as tf
 import pdb
+from tensorflow.python.autograph.impl.conversion import convert_func_to_ast
 import yaml
 import os
 from select_knn_op import SelectKnn
@@ -396,9 +397,9 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
 
 
     def call(self, inputs):
-        Comparison = True
-        PerLayer = True
-        ReturnMean = False
+        Comparison = True   # Compare if the output when using the full model or the layers separatly are identical -> They are!
+        PerLayer = True     # Use the layers individually 
+        ReturnMean = False  
         coordinates, distsq, features, n_idxs = inputs
         
         cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
@@ -409,6 +410,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         means = tf.reshape(means, [-1, self.nF*self.nC])
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
 
+        #DEBUGGING output
         print("nF: ", self.nF)
         print("nC: ", self.nC)
         print("COV: ", cov.shape)
@@ -424,8 +426,15 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
             approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
         
         if Comparison:
-            comp = self.model(cov)
-        pdb.set_trace()
+            if PerLayer:
+                comp = self.model(cov)
+            else:
+                x = cov
+                for layer in self.layers:
+                    x = layer(x)
+                comp = x
+            assert(np.all(comp == approxPCA))
+            pdb.set_trace()
 
         if ReturnMean:
             return tf.concat([approxPCA, means], axis=-1)
