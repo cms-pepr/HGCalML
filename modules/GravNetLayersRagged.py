@@ -433,7 +433,6 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
                 for layer in self.layers:
                     x = layer(x)
                 comp = x
-            pdb.set_trace()
 
         if ReturnMean:
             return tf.concat([approxPCA, means], axis=-1)
