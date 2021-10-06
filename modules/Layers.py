@@ -104,12 +104,19 @@ global_layers_list['PrintMeanAndStd']=PrintMeanAndStd
 global_layers_list['LNC']=LNC
 
 ####### other stuff goes here
-from Regularizers import OffDiagonalRegularizer
+from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer
 
 global_layers_list['OffDiagonalRegularizer']=OffDiagonalRegularizer
+global_layers_list['WarpRegularizer']=WarpRegularizer
+global_layers_list['AverageDistanceRegularizer']=AverageDistanceRegularizer
 
+
+#also this one needs to be passed
+from initializers import EyeInitializer
+global_layers_list['EyeInitializer']=EyeInitializer
 
 ####### some implementations
+
 
 
 from tensorflow.keras.layers import Layer
@@ -612,4 +619,3 @@ class RobustModel(tf.keras.Model):
 
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel
 global_layers_list['RobustModel']=RobustModel
-# global_layers_list['EyeInitializer']=EyeInitializer

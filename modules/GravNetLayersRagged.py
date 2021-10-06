@@ -768,32 +768,7 @@ class KNN(tf.keras.layers.Layer):
         return KNN.raw_call(coordinates, row_splits, self.K, self.radius)
         
 
-
-class WarpRegularizer(tf.keras.layers.Layer):
-    def __init__(self, strength : float = 0.1, **kwargs):
-        super(WarpRegularizer, self).__init__(**kwargs) 
-        self.strength = strength
         
-    def get_config(self):
-        config = {'strength': self.strength}
-        base_config = super(WarpRegularizer, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))   
-     
-    def compute_output_shape(self, input_shapes):
-        return input_shapes
-    
-    def call(self, inputs):
-        warp = inputs
-        diag = tf.expand_dims(tf.eye(warp.shape[-1]), axis=0)
-        
-        loss = diag*warp - warp #penalise non-diag elements
-        loss *= loss
-        loss = self.strength * tf.reduce_mean(loss)
-        self.add_loss(loss)
-        
-        print(self.name, loss)
-        
-        return inputs
     
 class AddIdentity2D(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
@@ -1226,6 +1201,7 @@ class LNC(tf.keras.layers.Layer):
                  loss_enabled=False, 
                  print_loss=False,
                  use_spectators=False,
+                 return_neighbours=False,
                  noise_loss_scale : float = 0.1,
                  **kwargs):
         '''
@@ -1237,6 +1213,8 @@ class LNC(tf.keras.layers.Layer):
         - threshold: minimum group-classifier threshold to cluster (larger means fewer higher purity clusters)
         - sum_other (list of ints): list of indices for the 'other' tensors (see inputs) that should be summed by feature instead of just selected
         - loss_scale: loss scale
+        - return_neighbours: returns the collected neighbour features as zero-padded V x K x F' rather than mean and max
+                             If this is set to True, the network will also return the number of neighbours per vertex
         - ... should be self explanatory
         
         Inputs:
@@ -1253,7 +1231,8 @@ class LNC(tf.keras.layers.Layer):
          
         
         Outputs:
-         - reshaped features (not 'clustered' yet)
+         - output features (V x 2F) if return_neighbours False, (V x K x F) otherwise
+         - only if return_neighbours True: number of neighbours (cast to float32)
          - new row splits
          - backgather indices
          
@@ -1269,6 +1248,7 @@ class LNC(tf.keras.layers.Layer):
         self.noise_loss_scale = noise_loss_scale
         self.use_spectators = use_spectators
         self.sum_other = sum_other
+        self.return_neighbours = return_neighbours
         
         assert self.noise_loss_scale >= 0
         
@@ -1287,7 +1267,8 @@ class LNC(tf.keras.layers.Layer):
                   'print_loss': self.print_loss,
                   'noise_loss_scale': self.noise_loss_scale,
                   'use_spectators': self.use_spectators,
-                  'sum_other': self.sum_other}
+                  'sum_other': self.sum_other,
+                  'return_neighbours': self.return_neighbours}
         
         base_config = super(LNC, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -1297,12 +1278,16 @@ class LNC(tf.keras.layers.Layer):
         return [(None, s[1:]) for s in shapes]
 
     def compute_output_shape(self, input_shapes): #features, nidx = inputs
-        #K = input_shapes[3][-1]#neighbour indices
+        K = input_shapes[3][-1]#neighbour indices
+        
+        directoutshape = [(input_shapes[0][0], input_shapes[0][1]*2)]
+        if self.return_neighbours:
+            directoutshape = [(input_shapes[0][0], K, input_shapes[0][1]),(None,K)]
         
         if len(input_shapes) > 6:
-            return [(input_shapes[0][0], input_shapes[0][1]*2), (None, 1), (None, 1)] + self._sel_pass_shape(input_shapes)
+            return directoutshape+[(None, 1), (None, 1)] + self._sel_pass_shape(input_shapes)
         else:
-            return (input_shapes[0][0], input_shapes[0][1]*2), (None, 1), (None, 1)
+            return directoutshape+[(None, 1), (None, 1)]
 
     
     def __compute_output_signature(self, input_signature):
@@ -1436,19 +1421,24 @@ class LNC(tf.keras.layers.Layer):
             otherout[i] = tf.reduce_sum(otherout[i],axis=1)#sum over neighbours
         
         
+        if self.print_reduction:
+            tf.print(self.name,'reduction',tf.cast(tf.shape(sel)[0],dtype='float')/tf.cast(tf.shape(nidxs)[0],dtype='float'),'to',tf.shape(sel)[0])
+        
         #expanding is done within SelectWithDefault
         #the latter could also be done with AccumulateKnn if it got generalised from V to V'
-        out_mean = SelectWithDefault(sel[:,:,0], features, 0.)
-        out_max  = SelectWithDefault(sel[:,:,0], features, -1000.)
-        
+        out_padded = SelectWithDefault(sel[:,:,0], features, 0.)
         npg = tf.cast(npg,dtype='float32')
         
-        out = tf.concat([tf.reduce_sum(out_mean, axis=1)/(npg+1e-6),  
+        if self.return_neighbours:
+            return [out_padded, npg, rs, backgather] + otherout
+        
+        out_max  = SelectWithDefault(sel[:,:,0], features, -1000.)
+        
+        
+        out = tf.concat([tf.reduce_sum(out_padded, axis=1)/(npg+1e-6),  
                          tf.reduce_max(out_max, axis=1)],axis=-1) 
         
         
-        if self.print_reduction:
-            tf.print(self.name,'reduction',tf.cast(tf.shape(sel)[0],dtype='float')/tf.cast(tf.shape(nidxs)[0],dtype='float'),'to',tf.shape(sel)[0])
         
         return [out, rs, backgather] + otherout
         
@@ -1600,6 +1590,7 @@ class SoftPixelRadiusCNN(tf.keras.layers.Layer):
         :param subdivisions: number of subdivisions along radius
         
         """
+        raise ValueError("SoftPixelRadiusCNN: not implemented yet")
         super(SoftPixelRadiusCNN, self).__init__(**kwargs) 
         assert length_scale_momentum > 0
         assert subdivisions > 1
