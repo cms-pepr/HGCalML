@@ -412,6 +412,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         # TODO: Remove loop and use reshaping
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
         x = cov
+        pdb.set_trace()
         for layer in self.layers:
             x = layer(x)
         approxPCA = x
