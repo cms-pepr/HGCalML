@@ -1,6 +1,5 @@
 import tensorflow as tf
 import pdb
-from tensorflow.python.autograph.impl.conversion import convert_func_to_ast
 import yaml
 import os
 from select_knn_op import SelectKnn
