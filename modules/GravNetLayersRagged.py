@@ -422,7 +422,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
         '''
         
-        return approxPCA
+        return tf.concat([approxPCA, means], axis=-1)
     
     
     
