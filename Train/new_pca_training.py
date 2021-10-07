@@ -329,11 +329,6 @@ database_manager.set_experiment(unique_id)
 
 metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
 analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
-predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
-                           os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
-                           model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
-                           inputdir=os.path.split(train.inputData)[0], max_files=1)
-
 analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another analyzer here to be safe since it will run scan on
                                                               # on beta and distance threshold which might mess up settings
 optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=10)
