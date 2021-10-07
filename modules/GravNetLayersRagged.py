@@ -352,8 +352,6 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
 
     
     def build(self, input_shapes): #pure python
-        from tensorflow.keras.models import Model
-        from tensorflow.keras.layers import Input, Dense
         nF, nC, _ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
         self.nF = nF
         self.nC = nC
@@ -361,22 +359,19 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
 
         self.path = self.base_path + f"{str(self.nC)}D/{self.size}/AngleNorm/"
         assert os.path.exists(self.path), f"path: {self.path} not found!"
-        # TODO: Possibly duplicated code, see get_config
         with open(self.path + 'config.yaml', 'r') as f:
-            config = yaml.load(f, Loader=yaml.FullLoader)
-            self.config = config
+            self.config = yaml.load(f, Loader=yaml.FullLoader)
             
         # Build model and load weights
         inputs = tf.keras.layers.Input(shape=(self.nC**2,))
         x = inputs
-        nodes = config['nodes']
+        nodes = self.config['nodes']
         for i, node in enumerate(nodes):
             x = tf.keras.layers.Dense(node, activation='elu')(x)
-        outputs = Dense(self.nC**2)(x)
+        outputs = tf.keras.layers.Dense(self.nC**2)(x)
         with tf.name_scope(self.name + '/pca/model'):
-            model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
-        model.load_weights(self.path)
-        self.model = model
+            self.model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+        self.model.load_weights(self.path)
         self.model.trainable = False
 
         for i in range(len(nodes) + 1):
@@ -388,21 +383,16 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
                 else:
                     input_dim = [None, nodes[i-1]]
                 if i == len(nodes):
-                    # Last entry, output layer
-                    # Last layer doesn't have an activation!
+                    # Last entry, output layer, no activation
                     output_dim = self.nC**2
                     layer = tf.keras.layers.Dense(units=output_dim, trainable=False)
                 else:
                     output_dim = nodes[i]
                     layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=False)
                 layer.build(input_dim)
-                layer.set_weights(model.layers[i+1].get_weights())
+                layer.set_weights(self.model.layers[i+1].get_weights())
                 self.layers.append(layer)
 
-        # self.model = Model(inputs=inputs, outputs=outputs)
-        # self.model.load_weights(self.path)
-        # self.model = tf.keras.models.load_model(self.path, compile=False)
-        
         super(NeighbourApproxPCA, self).build(input_shapes)  
         
         
@@ -412,8 +402,6 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
 
 
     def call(self, inputs):
-        Comparison = False   # Set trace to compare the layer version and the model version
-        PerLayer = True     # Use the layers individually 
         ReturnMean = False  
         coordinates, distsq, features, n_idxs = inputs
         
@@ -425,25 +413,10 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         means = tf.reshape(means, [-1, self.nF*self.nC])
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
 
-        #DEBUGGING output
-        print("nF: ", self.nF)
-        print("nC: ", self.nC)
-        print("COV: ", cov.shape)
-        print("MEAN: ", means.shape)
-
         x = cov
         for layer in self.layers:
             x = layer(x)
-        layer_version = x
-        model_version = self.model(cov)
-        
-        if PerLayer:
-            approxPCA = tf.reshape(layer_version, shape=(-1, self.nF * self.nC**2))
-        else:
-            approxPCA = tf.reshape(model_version, shape=(-1, self.nF * self.nC**2))
-        
-        if Comparison:
-            pdb.set_trace()
+        approxPCA = tf.reshape(x, shape=(-1, self.nF * self.nC**2))
 
         if ReturnMean:
             return tf.concat([approxPCA, means], axis=-1)
