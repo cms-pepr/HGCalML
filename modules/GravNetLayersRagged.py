@@ -382,10 +382,12 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
             with tf.name_scope(self.name + "/1/" + str(i)):
                 # layer = model.layers[i+1]
                 if i == 0:
+                    # first entry, input layer
                     input_dim = [None, self.nC**2]  # Not sure if I need the batch dimension
                 else:
                     input_dim = [None, nodes[i-1]]
-                if i == (len(nodes) + 1):
+                if i == len(nodes):
+                    # Last entry, output layer
                     output_dim = self.nC**2
                 else:
                     output_dim = nodes[i]
