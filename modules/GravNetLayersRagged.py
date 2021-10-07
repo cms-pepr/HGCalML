@@ -441,6 +441,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         if Comparison:
             if PerLayer:
                 comp = self.model(cov)
+                comp = tf.reshape(comp, shape=(-1, self.nF * self.nC**2))
             else:
                 x = cov
                 for layer in self.layers:
