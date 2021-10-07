@@ -5,8 +5,6 @@ Keep this in mind
 import matching_and_analysis
 from experiment_database_manager import ExperimentDatabaseManager
 import tensorflow as tf
-from argparse import ArgumentParser
-# from K import Layer
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
@@ -26,10 +24,6 @@ import tensorflow.keras as keras
 from datastructures import TrainData_NanoML
 import uuid
 
-from DeepJetCore.modeltools import fixLayersContaining
-
-# from tensorflow.keras.optimizer_v2 import Adam
-
 from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining
 from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
 
@@ -38,18 +32,15 @@ from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs, noise_pre_filter
 
-from Layers import CreateTruthSpectatorWeights,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
-from Layers import GooeyBatchNorm #make a new line
+from Layers import CreateTruthSpectatorWeights, RaggedGlobalExchange, ApproxPCA 
+from Layers import SortAndSelectNeighbours, DistanceWeightedMessagePassing 
+from Layers import MultiBackGather, KNN, RobustModel, CreateGlobalIndices 
+from Layers import GooeyBatchNorm
 import sql_credentials
-from datetime import datetime
 
-from Regularizers import OffDiagonalRegularizer
 from initializers import EyeInitializer
 
 td=TrainData_NanoML()
-'''
-
-'''
 
 
 def gravnet_model(Inputs,
@@ -58,8 +49,6 @@ def gravnet_model(Inputs,
                   fluidity_decay=1e-3, #reaches after about 7k batches
                   max_viscosity=0.95 
                   ):
-
-    
     #Input preprocessing below. Not much to change here
 
     feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator, t_fully_contained, row_splits = td.interpretAllModelInputs(Inputs)
@@ -120,7 +109,7 @@ def gravnet_model(Inputs,
     cdist = dist
     ccoords = coords
 
-    total_iterations=5
+    total_iterations=3
 
     fwdbgccoords=None
 
@@ -209,9 +198,11 @@ def gravnet_model(Inputs,
                                               n_propagate=nprop)([x, rs])
                                               
         x_mp = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,nidx,dist])
+
+        x_pca = ApproxPCA()([coords,dist, x, nidx])
+        x_pca = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x_pca)
         
-        
-        x = Concatenate()([x_gn,x_mp])
+        x = Concatenate()([x_pca, x_gn, x_mp])
         #check and compress it all
         x = Dense(128, activation='elu',name='dense_a_'+str(i))(x)
         x = Dense(128, activation='elu',name='dense_b_'+str(i))(x)
@@ -303,7 +294,6 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 
-cb = []
 os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
 tensorboard_manager = TensorBoardManager(train.outputDir + "/summary/")
 
@@ -317,7 +307,7 @@ else:
     with open(unique_id_path, 'w') as f:
         f.write(unique_id+'\n')
 
-nbatch = 10000
+nbatch = 30000
 
 
 # This will both to server and a local file
@@ -327,6 +317,7 @@ database_manager.set_experiment(unique_id)
 
 metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
 analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
+cb = []
 cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, database_manager=database_manager, analyzer=analyzer)]
 cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manager=database_reading_manager,output_html_location=os.path.join(train.outputDir,"training_metrics.html"), publish=None)]
 predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
@@ -379,8 +370,6 @@ cb += [
         publish=None,
         use_event=i) for i in range(4) #first 4 events
 ]
-
-
 
 learningrate = 1e-3
 nbatch = 10000 #this is rather low, and can be set to a higher values e.g. when training on V100s

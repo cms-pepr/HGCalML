@@ -465,8 +465,7 @@ class ApproxPCA(tf.keras.layers.Layer):
     # New implementation of NeighbourApproxPCA 
     # Old version is kept to not cause unexpected behaviour
     def __init__(self, size='large', 
-                 base_path='/afs/cern.ch/work/p/phzehetn/public/pca-networks/',
-                 # base_path='/root/pca-networks/',
+                 base_path='/../pca/pretrained/',
                  **kwargs):
         """
         Inputs: 
