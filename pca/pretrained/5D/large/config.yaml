@@ -1,0 +1,11 @@
+MSE: false
+ORTHO: false
+ANGLE: true
+NORM: true
+COS: false
+nodes: [256, 128, 128, 64, 32, 64, 128, 128, 256]
+D: 5
+epochs: 10000
+batch_size: 100000
+n: 1000000
+slim: false
