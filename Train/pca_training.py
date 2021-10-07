@@ -10,7 +10,7 @@ import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
 from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
-from GravNetLayersRagged import NeighbourApproxPCA
+from GravNetLayersRagged import ApproxPCA
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -164,7 +164,7 @@ def gravnet_model(Inputs,
 
 
         x_pca = Dense(2+4*i)(x)
-        x_pca = NeighbourApproxPCA()([coords,dist,x_pca,nidx])
+        x_pca = ApproxPCA()([coords,dist,x_pca,nidx])
         x_pca = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x_pca)
 
         x_mp = DistanceWeightedMessagePassing([64,64,32,32])([x,nidx,dist])

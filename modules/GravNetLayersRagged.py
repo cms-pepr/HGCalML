@@ -303,16 +303,85 @@ class NeighbourCovariance(tf.keras.layers.Layer):
         
         return tf.concat([cov,means],axis=-1)
         
-        
-        
 class NeighbourApproxPCA(tf.keras.layers.Layer):
-    # TODO: Decide what to do with means!
+    def __init__(self,hidden_nodes=[32,32,32], **kwargs):
+        """
+        Inputs: 
+          - coordinates (Vin x C)
+          - distsq (Vin x K)
+          - features (Vin x F)
+          - neighbour indices (Vin x K)
+          
+        Returns concatenated:
+          - feature weighted covariance matrices (lower triangle) (Vout x F*C**2)
+          - feature weighted means (Vout x F*C)
+          
+        """
+        super(NeighbourApproxPCA, self).__init__(**kwargs)
+        
+        self.hidden_dense=[]
+        self.hidden_nodes = hidden_nodes
+        
+        for i in range(len(hidden_nodes)):
+            with tf.name_scope(self.name + "/1/" + str(i)):
+                self.hidden_dense.append( tf.keras.layers.Dense( hidden_nodes[i],activation='elu'))
+                
+        self.nF = None
+        self.nC = None
+        self.covshape = None
+        
+        
+        print('NeighbourApproxPCA: Warning. This layer is still very sensitive to the input normalisations and the learning rates.')
+        
+        
+    def get_config(self):
+        config = {'hidden_nodes': self.hidden_nodes}
+        base_config = super(NeighbourApproxPCA, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def build(self, input_shapes): #pure python
+        nF, nC, covshape = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        self.nF = nF
+        self.nC = nC
+        self.covshape = covshape
+        
+        #build is actually called for this layer
+        dshape=(None, None, nC**2)
+        for i in range(len(self.hidden_dense)):
+            with tf.name_scope(self.name + "/1/" + str(i)):
+                self.hidden_dense[i].build(dshape)
+                dshape = (None, None, self.hidden_dense[i].units)
+                
+                
+        super(NeighbourApproxPCA, self).build(input_shapes)  
+        
+    def compute_output_shape(self, input_shapes):
+        nF, _,_ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        return (None, nF * self.hidden_dense[-1].units)
+
+    def call(self, inputs):
+        coordinates, distsq, features, n_idxs = inputs
+        
+        cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
+                                           distsq=10. * distsq,#same as gravnet scaling
+                                         features=features, 
+                                         n_idxs=n_idxs)
+        for d in self.hidden_dense:
+            cov = d(cov)
+        
+        cov = tf.reshape(cov, [-1, self.nF * self.hidden_dense[-1].units ])
+        means = tf.reshape(means, [-1, self.nF*self.nC])
+        
+        return tf.concat([cov,means],axis=-1)
+            
+        
+class ApproxPCA(tf.keras.layers.Layer):
+    # New implementation of NeighbourApproxPCA 
+    # Old version is kept to not cause unexpected behaviour
     def __init__(self, size='large', 
                  base_path='/afs/cern.ch/work/p/phzehetn/public/pca-networks/',
                  # base_path='/root/pca-networks/',
                  **kwargs):
-        # TODO: Remove cood_dim
-        # TODO: This means getting the path only in the `build` function
         """
         Inputs: 
           - coordinates (Vin x C)
@@ -326,24 +395,19 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
           - if enabled: feature weighted means (Vout x F*C)
           
         """
-        super(NeighbourApproxPCA, self).__init__(**kwargs)
-
+        super(ApproxPCA, self).__init__(**kwargs)
         assert size.lower() in ['small', 'medium', 'large']\
             , "size must be 'small', 'medium', or 'large'!"
         self.size = size.lower()
-
         self.base_path = base_path
         self.layers = []
-        # self.path = self.base_path + f"{str(self.coord_dim)}D/{self.size}/AngleNorm/"
-        # assert os.path.exists(self.path), f"path: {self.path} not found!"
         
-        print("The PCA layer is still somewhat experimental!")
-        print("Please make sure that you have access to the pretrained models that perform the pca!")
+        print("This layer uses the pretrained PCA approximation layers found in `pca/pretrained`")
+        print("It is still somewhat experimental and subject to change!")
         
         
     def get_config(self):
-        # Called when saving the model
-        base_config = super(NeighbourApproxPCA, self).get_config()
+        base_config = super(ApproxPCA, self).get_config()
         init_config = {'base_path': self.base_path, 'size': self.size}
         if not self.config:
             self.config = {}
@@ -393,7 +457,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
                 layer.set_weights(self.model.layers[i+1].get_weights())
                 self.layers.append(layer)
 
-        super(NeighbourApproxPCA, self).build(input_shapes)  
+        super(ApproxPCA, self).build(input_shapes)  
         
         
     def compute_output_shape(self):
