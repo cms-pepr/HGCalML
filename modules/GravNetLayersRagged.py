@@ -388,10 +388,12 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
                     input_dim = [None, nodes[i-1]]
                 if i == len(nodes):
                     # Last entry, output layer
+                    # Last layer doesn't have an activation!
                     output_dim = self.nC**2
+                    layer = tf.keras.layers.Dense(units=output_dim, trainable=False)
                 else:
                     output_dim = nodes[i]
-                layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=False)
+                    layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=False)
                 layer.build(input_dim)
                 layer.set_weights(model.layers[i+1].get_weights())
                 self.layers.append(layer)
