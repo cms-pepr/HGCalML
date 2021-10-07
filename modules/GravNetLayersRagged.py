@@ -430,26 +430,18 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         print("COV: ", cov.shape)
         print("MEAN: ", means.shape)
 
+        x = cov
+        for layer in self.layers:
+            x = layer(x)
+        layer_version = x
+        model_version = self.model(cov)
+        
         if PerLayer:
-            x = cov
-            for layer in self.layers:
-                x = layer(x)
-            approxPCA = x
-            approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
+            approxPCA = tf.reshape(layer_version, shape=(-1, self.nF * self.nC**2))
         else:
-            approxPCA = self.model(cov)
-            approxPCA = tf.reshape(approxPCA, shape=(-1, self.nF * self.nC**2))
+            approxPCA = tf.reshape(model_version, shape=(-1, self.nF * self.nC**2))
         
         if Comparison:
-            if PerLayer:
-                comp = self.model(cov)
-                comp = tf.reshape(comp, shape=(-1, self.nF * self.nC**2))
-            else:
-                x = cov
-                for layer in self.layers:
-                    x = layer(x)
-                comp = x
-                comp = tf.reshape(comp, shape=(-1, self.nF * self.nC**2))
             pdb.set_trace()
 
         if ReturnMean:
