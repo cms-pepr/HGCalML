@@ -39,7 +39,7 @@ from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
 from model_blocks import create_outputs, noise_pre_filter
 
 from Layers import CreateTruthSpectatorWeights,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
-from Layers import GooeyBatchNorm #make a new line
+from Layers import GooeyBatchNorm, ApproxPCA #make a new line
 import sql_credentials
 from datetime import datetime
 
@@ -120,7 +120,7 @@ def gravnet_model(Inputs,
     cdist = dist
     ccoords = coords
 
-    total_iterations=5
+    total_iterations=3
 
     fwdbgccoords=None
 
@@ -210,8 +210,10 @@ def gravnet_model(Inputs,
                                               
         x_mp = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,nidx,dist])
         
+        x_pca = ApproxPCA()([coords,dist,x,nidx])
+        x_pca = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x_pca)
         
-        x = Concatenate()([x_gn,x_mp])
+        x = Concatenate()([x_pca,x_gn,x_mp])
         #check and compress it all
         x = Dense(128, activation='elu',name='dense_a_'+str(i))(x)
         x = Dense(128, activation='elu',name='dense_b_'+str(i))(x)
@@ -317,7 +319,7 @@ else:
     with open(unique_id_path, 'w') as f:
         f.write(unique_id+'\n')
 
-nbatch = 10000
+nbatch = 30000
 
 
 # This will both to server and a local file
@@ -381,9 +383,9 @@ cb += [
 ]
 
 
-cb = []
+
 learningrate = 1e-3
-nbatch = 10000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+nbatch = 70000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
