@@ -372,6 +372,7 @@ cb += [
 ]
 
 
+cb = [] # Try to remove potential error sources
 
 learningrate = 1e-3
 nbatch = 10000 #this is rather low, and can be set to a higher values e.g. when training on V100s
