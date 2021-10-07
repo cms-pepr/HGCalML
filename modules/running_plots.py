@@ -12,21 +12,56 @@ from importlib import reload
 from training_metrics_plots import TrainingMetricPlots
 
 graph_functions = reload(graph_functions)
-from tensorflow.keras import backend as K
-import tensorflow.keras.callbacks.experimental
-from matching_and_analysis import analyse_hgcal_endcap
-from scalar_metrics import compute_scalar_metrics
+
+import matching_and_analysis
 
 
 class Worker(threading.Thread):
-    def __init__(self, q, tensorboard_manager, beta_threshold=0.5, dist_threshold=0.5, database_manager=None, with_local_distance_scaling=False, *args, **kwargs):
+    def __init__(self, q, tensorboard_manager, analyzer, database_manager=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.q = q
         self.tensorboard_manager = tensorboard_manager
-        self.beta_threshold = beta_threshold
-        self.dist_threshold = dist_threshold
+        self.analyzer=analyzer
         self.database_manager = database_manager
-        self.with_local_distance_scaling = with_local_distance_scaling
+
+
+    def _run(self, data):
+        with tf.device('/cpu:0'):
+            step, feat_dict, pred_dict, truth_dict, loss_value = data
+            analysed_graphs, metadata = self.analyzer.analyse_single_endcap(feat_dict, truth_dict, pred_dict)
+
+        dic = dict()
+        dic['efficiency'] = metadata['efficiency']
+        dic['fake_rate'] = metadata['fake_rate']
+        dic['response'] = metadata['response_mean']
+        dic['sum_response'] = metadata['response_sum_mean']
+        dic['beta_threshold'] = metadata['beta_threshold']
+        dic['distance_threshold'] = metadata['distance_threshold']
+        dic['iteration'] = step
+
+        dic['loss'] = loss_value
+
+        dic['f_score_energy'] = metadata['reco_score']
+
+        if self.database_manager is not None:
+            self.database_manager.insert_experiment_data('training_performance_metrics', dic)
+
+        dic = dic.copy()
+        dic['precision_without_energy'] = 0
+        dic['recall_without_energy'] = 0
+        dic['f_score_without_energy'] = 0
+        dic['precision_energy'] = metadata['pred_energy_percentage_matched']
+        dic['recall_energy'] = metadata['truth_energy_percentage_matched']
+
+        dic['num_truth_showers'] = metadata['num_truth_showers']
+        dic['num_pred_showers'] = metadata['num_pred_showers']
+
+
+        if self.database_manager is not None:
+            self.database_manager.insert_experiment_data('training_performance_metrics_extended', dic)
+
+        if self.tensorboard_manager is not None:
+            self.tensorboard_manager.step(step, dic)
 
     def run(self):
         while True:
@@ -36,87 +71,27 @@ class Worker(threading.Thread):
             except queue.Empty:
                 continue
 
-            with tf.device('/cpu:0'):
-                step, feat_dict, pred_dict, truth_dict, loss_value = data
-
-                endcap_analysis_result = analyse_hgcal_endcap(feat_dict, truth_dict, pred_dict, self.beta_threshold, self.dist_threshold, iou_threshold=0.1, endcap_id=10, with_local_distance_scaling=False) # endcap id is not needed, so its just some bogus value
-
-            try:
-                eff = endcap_analysis_result['endcap_num_found_showers'] / float(endcap_analysis_result['endcap_num_truth_showers'])
-            except ZeroDivisionError:
-                eff = 0
-            try:
-                fake_rate = endcap_analysis_result['endcap_num_fake_showers'] / float(endcap_analysis_result['endcap_num_pred_showers'])
-            except ZeroDivisionError:
-                fake_rate = 0
-            dic = dict()
-            dic['efficiency'] = eff
-            dic['fake_rate'] = fake_rate
-
-            filter = np.array(endcap_analysis_result['truth_shower_found_or_not'])
-
-
-            if len(filter) != 0:
-                response_2 = np.array(endcap_analysis_result['truth_shower_matched_energy_regressed'])[filter] / np.array(endcap_analysis_result['truth_shower_energy'])[filter]
-                sum_response_2 = np.array(endcap_analysis_result['truth_shower_matched_energy_sum'])[filter] / np.array(endcap_analysis_result['truth_shower_energy'])[filter]
-                response_2 = np.mean(response_2).item()
-                sum_response_2 = np.mean(sum_response_2).item()
-            else:
-                response_2 = 0
-                sum_response_2 = 0
-
-
-            dic['response'] = response_2
-            dic['sum_response'] = sum_response_2
-
-
-            dic['beta_threshold'] = self.beta_threshold
-            dic['distance_threshold'] = self.dist_threshold
-            dic['iteration'] = step
-
-            precision, recall, f_score, precision_energy, recall_energy, f_score_energy = compute_scalar_metrics(result=endcap_analysis_result)
-            dic['loss'] = loss_value
-
-            dic['f_score_energy'] = f_score_energy
-
-            if self.database_manager is not None:
-                print("Adding new values to database ne")
-                print(dic.keys())
-                self.database_manager.insert_experiment_data('training_performance_metrics', dic)
-
-            dic = dic.copy()
-            dic['precision_without_energy'] = precision
-            dic['recall_without_energy'] = recall
-            dic['f_score_without_energy'] = f_score
-            dic['precision_energy'] = precision_energy
-            dic['recall_energy'] = recall_energy
-            dic['num_truth_showers'] = endcap_analysis_result['endcap_num_truth_showers']
-            dic['num_pred_showers'] = endcap_analysis_result['endcap_num_pred_showers']
-
-            if self.database_manager is not None:
-                print("Adding new values to database e")
-                print(dic.keys())
-                self.database_manager.insert_experiment_data('training_performance_metrics_extended', dic)
-
-            if self.tensorboard_manager is not None:
-                self.tensorboard_manager.step(step, dic)
-
+            self._run(data)
             self.q.task_done()
 
 
 
 class RunningMetricsDatabaseAdditionCallback(tf.keras.callbacks.Callback):
-    def __init__(self, td, tensorboard_manager=None, beta_threshold=0.5, dist_threshold=0.5, with_local_distance_scaling=False, database_manager=None):
+    def __init__(self, td, tensorboard_manager=None, analyzer=None, database_manager=None):
         """Initialize intermediate variables for batches and lists."""
         super().__init__()
         self.td = td
         q = queue.Queue()
         self.q = q
 
+        if analyzer is None:
+            raise RuntimeError("Please pass an analyzer, can't run without it")
+
         if tensorboard_manager is None and database_manager is None:
             raise RuntimeError("Both tensorboard manager and database managers are None. No where to write to.")
 
-        self.thread = Worker(self.q, tensorboard_manager, beta_threshold=beta_threshold, dist_threshold=dist_threshold, database_manager=database_manager, with_local_distance_scaling=with_local_distance_scaling).start()
+        self. worker = Worker(self.q, tensorboard_manager, database_manager=database_manager, analyzer=analyzer)
+        self.thread = self.worker.start()
 
 
     def add(self, data):
@@ -153,14 +128,14 @@ class RunningMetricsDatabaseAdditionCallback(tf.keras.callbacks.Callback):
         truth_dict['truthHitAssignedDepEnergies'] = t_energy*0
         truth_dict['truthHitAssignedEta'] = t_pos[:, 0:1]
         truth_dict['truthHitAssignedPhi'] = t_pos[:, 1:2]
+        truth_dict['truthHitAssignedX'] = t_energy*0
+        truth_dict['truthHitAssignedY'] = t_energy*0
+        truth_dict['truthHitAssignedZ'] = t_energy*0
 
         feat_dict = self.td.createFeatureDict(feat)
 
 
         loss_value = logs['loss']
-        print('\n\nBeginning x test')
-
-        print("Loss value", loss_value, self.model.num_train_step, batch)
 
 
         feat_dict_numpy = dict()
@@ -187,9 +162,8 @@ class RunningMetricsDatabaseAdditionCallback(tf.keras.callbacks.Callback):
 
         data = self.model.num_train_step, feat_dict_numpy, pred_dict_numpy, truth_dict_numpy, loss_value
 
-        # data_2  = self.model.num_train_step, cc.numpy(), beta[:, 0].numpy(), t_idx[:, 0].numpy(), feat_dict['recHitEnergy'][:, 0].numpy(), t_energy[:, 0].numpy(), pred_energy[:, 0].numpy(), row_splits[:, 0].numpy()
-
         self.add(data)
+        # self.worker._run(data)
 
 
 

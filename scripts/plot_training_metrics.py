@@ -2,11 +2,7 @@
 import sql_credentials
 import experiment_database_reading_manager
 import argparse
-
 from training_metrics_plots import TrainingMetricPlots
-
-
-
 
 parser = argparse.ArgumentParser(
     'Produce running metrics plot (loss, efficiency and more)')
@@ -22,6 +18,9 @@ parser.add_argument('output',
 parser.add_argument('--ignore_cache',
                     help='''Normally this script caches data so it doesn't have to pull everything
                     again and again but this option will ignore the cache''',action='store_true')
+parser.add_argument('--trackml',
+                    help='''For trackml problem, will plot different metrics''',action='store_true')
+
 
 args = parser.parse_args()
 
@@ -31,5 +30,14 @@ if not args.is_database_file:
 else:
     manager = experiment_database_reading_manager.ExperimentDatabaseReadingManager(file=args.experiment_name)
 
-plotter = TrainingMetricPlots(manager, args.experiment_name, ignore_cache=args.ignore_cache)
+
+if args.trackml:
+    plotter = TrainingMetricPlots(manager, args.experiment_name, ignore_cache=args.ignore_cache, cache_path='training_metrics_plotter_trackml.cache',
+                                  metrics=['beta_threshold', 'distance_threshold', 'loss', 'trackml_score', 'num_truth_particles', 'num_reco_tracks'],
+                                  titles=['Beta threshold', 'Distance threshold', 'loss', 'trackml score', 'Num truth particles', 'Num reco tracks'],
+                                  database_table_name='training_performance_metrics_trackml'
+                                  )
+else:
+    plotter = TrainingMetricPlots(manager, args.experiment_name, ignore_cache=args.ignore_cache)
+
 plotter.do_plot_to_html(args.output, average_over=int(args.running_average))
