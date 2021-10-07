@@ -294,7 +294,6 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 
-cb = []
 os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
 tensorboard_manager = TensorBoardManager(train.outputDir + "/summary/")
 
