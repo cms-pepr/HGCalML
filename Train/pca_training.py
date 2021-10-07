@@ -107,7 +107,7 @@ def gravnet_model(Inputs,
     cdist = dist
     ccoords = coords
 
-    total_iterations=3 # Changed from 5 to 3
+    total_iterations=1 # Changed from 5 to 1
 
     fwdbgccoords=None
 
