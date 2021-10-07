@@ -319,7 +319,7 @@ else:
     with open(unique_id_path, 'w') as f:
         f.write(unique_id+'\n')
 
-nbatch = 3000
+nbatch = 30000
 
 
 # This will both to server and a local file
@@ -385,7 +385,7 @@ cb += [
 
 
 learningrate = 1e-3
-nbatch = 7000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
