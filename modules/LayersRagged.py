@@ -748,6 +748,15 @@ class FusedRaggedGravNetGarNetLike(FusedRaggedGravNet):
 
 class RaggedGlobalExchange(keras.layers.Layer):
     def __init__(self, **kwargs):
+        '''
+        Inputs:
+        - data
+        - row splits
+        
+        Outputs:
+        - (means,min,max,data)
+        
+        '''
         super(RaggedGlobalExchange, self).__init__(**kwargs)
         self.num_features = -1
 
