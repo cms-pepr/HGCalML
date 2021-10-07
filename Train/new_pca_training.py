@@ -312,7 +312,7 @@ nbatch = 30000
 
 
 # This will both to server and a local file
-database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
+database_manager = ExperimentDatabaseManager(file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
 database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
 database_manager.set_experiment(unique_id)
 
