@@ -377,6 +377,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
             model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
         model.load_weights(self.path)
         self.model = model
+        self.model.trainable = False
 
         for i in range(len(nodes) + 1):
             with tf.name_scope(self.name + "/1/" + str(i)):
