@@ -296,7 +296,8 @@ if not train.modelSet():
     train.compileModel(learningrate=1e-4,
                        loss=None)
 
-    #print(train.keras_model.summary())
+    #print(train.keras_model.summary
+    
 
 verbosity = 2
 import os
@@ -305,7 +306,6 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 
-cb = []
 os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
 tensorboard_manager = TensorBoardManager(train.outputDir + "/summary/")
 
@@ -329,8 +329,6 @@ database_manager.set_experiment(unique_id)
 
 metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
 analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
-cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, database_manager=database_manager, analyzer=analyzer)]
-cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manager=database_reading_manager,output_html_location=os.path.join(train.outputDir,"training_metrics.html"), publish=None)]
 predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
                            os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
                            model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
@@ -340,58 +338,17 @@ analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another anal
                                                               # on beta and distance threshold which might mess up settings
 optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=10)
 os.system('mkdir %s/full_validation_plots' % (train.outputDir))
-cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=5,
-                             after_n_batches=5000,min_batch=8, predictor=predictor, optimizer=optimizer,
-                             database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
-                                                                                       'full_validation_plots'))]
-
-
-cb=[]
-cb += [plotClusteringDuringTraining(
-    use_backgather_idx=8 + 2*i,
-    outputfile=train.outputDir + "/neighbour_clusters/p" + str(i) + '_',
-    samplefile=samplepath,
-    after_n_batches=500,
-    on_epoch_end=False,
-    publish=None,
-    use_event=0)
-    for i in range(5)]
-
-cb += [
-    plotGravNetCoordsDuringTraining(
-        outputfile=train.outputDir + "/coords/coord_" + str(i),
-        samplefile=samplepath,
-        after_n_batches=500,
-        batchsize=30000,
-        on_epoch_end=False,
-        publish=None,
-        use_event=0,
-        use_prediction_idx=9 + 2*i,
-    )
-    for i in range(5)  # between 16 and 21
-]
-
-cb += [
-    plotEventDuringTraining(
-        outputfile=train.outputDir + "/cluster_space/e" + str(i) + '_',
-        samplefile=samplepath,
-        after_n_batches=500,
-        batchsize=30000,
-        on_epoch_end=False,
-        publish=None,
-        use_event=i) for i in range(4) #first 4 events
-]
-
 
 
 learningrate = 1e-3
-nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+nbatch = 30000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
                           metrics=None,
                           )
 
+cb = []
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
@@ -404,36 +361,3 @@ model, history = train.trainModel(nepochs=1,
                                   [CyclicLR (base_lr = learningrate/5,
                                   max_lr = learningrate,
                                   step_size = 150)]+cb)
-
-print("freeze BN 2")
-# Note the submodel here its not just train.keras_model
-#for l in train.keras_model.model.layers:
-#    if 'gooey_batch_norm' in l.name:
-#        l.max_viscosity = 0.95
-#        l.fluidity_decay= 5e-5 #
-#    if 'FullOCLoss' in l.name:
-#        l.use_average_cc_pos = 0.
-#        l.q_min = 1.0
-
-#also stop GravNetLLLocalClusterLoss* from being evaluated
-learningrate/=10.
-
-train.compileModel(learningrate=learningrate,
-                          loss=None,
-                          metrics=None)
-
-model, history = train.trainModel(nepochs=121,
-                                  run_eagerly=True,
-                                  batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys)-2, #just adapt truth list to avoid keras error (no effect on model)
-                                  batchsize_use_sum_of_squares=False,
-                                  checkperiod=1,  # saves a checkpoint model every N epochs
-                                  verbose=verbosity,
-                                  backup_after_batches=100,
-                                  additional_callbacks=
-                                  [CyclicLR (base_lr = learningrate/10.,
-                                  max_lr = learningrate,
-                                  step_size = 100)]+cb)
-#
-
-
