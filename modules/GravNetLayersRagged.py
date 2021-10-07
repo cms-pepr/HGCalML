@@ -412,8 +412,8 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
 
 
     def call(self, inputs):
-        Comparison = True   # Compare if the output when using the full model or the layers separatly are identical -> They are!
-        PerLayer = False     # Use the layers individually 
+        Comparison = False   # Set trace to compare the layer version and the model version
+        PerLayer = True     # Use the layers individually 
         ReturnMean = False  
         coordinates, distsq, features, n_idxs = inputs
         
