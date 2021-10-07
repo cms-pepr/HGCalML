@@ -379,8 +379,19 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         self.model = model
 
         for i in range(len(nodes) + 1):
-            with tf.name_scope(self.name + "/pca/" + str(i)):
-                layer = model.layers[i+1]
+            with tf.name_scope(self.name + "/1/" + str(i)):
+                # layer = model.layers[i+1]
+                if i == 0:
+                    input_dim = [None, self.nC**2]  # Not sure if I need the batch dimension
+                else:
+                    input_dim = [None, nodes[i-1]]
+                if i == (len(nodes) + 1):
+                    output_dim = self.nC**2
+                else:
+                    output_dim = nodes[i]
+                layer = tf.keras.layers.Dense(units=output_dim, activation='elu')
+                layer.build(input_dim)
+                layer.set_weights(model.layers[i+1].get_weights())
                 self.layers.append(layer)
 
         # self.model = Model(inputs=inputs, outputs=outputs)
