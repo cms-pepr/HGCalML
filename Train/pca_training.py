@@ -4,14 +4,12 @@ which should additionally include a test of the approximatePCA layer
 '''
 from experiment_database_manager import ExperimentDatabaseManager
 import tensorflow as tf
-from argparse import ArgumentParser
-# from K import Layer
 import numpy as np
-from tensorflow.keras.layers import BatchNormalization, Dropout, Add
+from tensorflow.keras.layers import Add
 from LayersRagged  import RaggedConstructTensor
 from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
 from GravNetLayersRagged import ApproxPCA
-from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
+from tensorflow.keras.layers import Dense, Concatenate
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
 from tensorflow.keras import Model
@@ -19,26 +17,19 @@ from tensorflow.keras import Model
 from experiment_database_reading_manager import ExperimentDatabaseReadingManager
 from tensorboard_manager import TensorBoardManager
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
-import tensorflow.keras as keras
 from datastructures import TrainData_NanoML
 import uuid
 
-from DeepJetCore.modeltools import fixLayersContaining
-# from tensorflow.keras.models import load_model
-from DeepJetCore.training.training_base import custom_objects_list
-
-# from tensorflow.keras.optimizer_v2 import Adam
-
 from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining
-from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
+from DeepJetCore.DJCLayers import SelectFeatures, ReduceSumEntirely
 
 from clr_callback import CyclicLR
-from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
+from lossLayers import LLFullObjectCondensation
 
 from model_blocks import create_outputs
 
-from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
-from Layers import GooeyBatchNorm #make a new line
+from Layers import LocalClusterReshapeFromNeighbours2, ManualCoordTransform, LocalDistanceScaling, NeighbourApproxPCA, DistanceWeightedMessagePassing, CreateGlobalIndices, MultiBackGather, KNN, RobustModel
+from Layers import GooeyBatchNorm 
 from datastructures import TrainData_OC
 import sql_credentials
 from datetime import datetime
