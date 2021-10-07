@@ -507,7 +507,7 @@ class ApproxPCA(tf.keras.layers.Layer):
         self.nC = nC
         self.covshape = nF * nC * nC
 
-        self.path = self.base_path + f"{str(self.nC)}D/{self.size}/AngleNorm/"
+        self.path = self.base_path + f"{str(self.nC)}D/{self.size}/"
         assert os.path.exists(self.path), f"path: {self.path} not found!"
         with open(self.path + 'config.yaml', 'r') as f:
             self.config = yaml.load(f, Loader=yaml.FullLoader)
