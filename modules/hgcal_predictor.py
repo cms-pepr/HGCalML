@@ -22,7 +22,7 @@ from datastructures.TrainData_TrackML import TrainData_TrackML
 
 
 class HGCalPredictor():
-    def __init__(self, input_source_files_list, training_data_collection, predict_dir, batch_size, unbuffered=False, model_path=None, max_files=4, inputdir=None):
+    def __init__(self, input_source_files_list, training_data_collection, predict_dir, batch_size=1, unbuffered=False, model_path=None, max_files=4, inputdir=None):
         self.input_data_files = []
         self.inputdir = None
         self.predict_dir = predict_dir

@@ -2,6 +2,7 @@
 This is one of the really good models and configurations.
 Keep this in mind
 '''
+from callback_wrappers import build_callbacks
 from experiment_database_manager import ExperimentDatabaseManager
 import tensorflow as tf
 from argparse import ArgumentParser
@@ -12,25 +13,7 @@ from LayersRagged  import RaggedConstructTensor
 from GravNetLayersRagged import ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
 from initializers import EyeInitializer
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
-from DeepJetCore.modeltools import DJCKerasModel
-from DeepJetCore.training.training_base import training_base
-from tensorflow.keras import Model
-import matching_and_analysis
-from experiment_database_reading_manager import ExperimentDatabaseReadingManager
-from hgcal_predictor import HGCalPredictor
-from hyperparam_optimizer import OCHyperParamOptimizer
-from running_full_validation import RunningFullValidation
-from tensorboard_manager import TensorBoardManager
-from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
-import tensorflow.keras as keras
 from datastructures import TrainData_NanoML
-import uuid
-
-from DeepJetCore.modeltools import fixLayersContaining
-# from tensorflow.keras.models import load_model
-from DeepJetCore.training.training_base import custom_objects_list
-
-# from tensorflow.keras.optimizer_v2 import Adam
 
 from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining
 from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
@@ -42,17 +25,14 @@ from model_blocks import create_outputs
 
 from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
 from Layers import GooeyBatchNorm #make a new line
-from datastructures import TrainData_OC
-import sql_credentials
-from datetime import datetime
 
 
-td=TrainData_NanoML()
 '''
 
 '''
 
 
+td = TrainData_NanoML()
 def gravnet_model(Inputs,
                   viscosity=0.2,
                   print_viscosity=False,
@@ -259,7 +239,6 @@ def gravnet_model(Inputs,
 
 import training_base_hgcal
 train = training_base_hgcal.HGCalTraining(testrun=False, resumeSilently=True, renewtokens=False)
-train.val_data.writeToFile(train.outputDir + 'valsamples.djcdc')
 
 if not train.modelSet():
     train.setModel(gravnet_model)
@@ -279,42 +258,10 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 
 
 cb = []
-os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
-tensorboard_manager = TensorBoardManager(train.outputDir + "/summary/")
 
-unique_id_path = os.path.join(train.outputDir,'unique_id.txt')
-if os.path.exists(unique_id_path):
-        with open(unique_id_path, 'r') as f:
-            unique_id = f.readlines()[0].strip()
-
-else:
-    unique_id = str(uuid.uuid4())[:8]
-    with open(unique_id_path, 'w') as f:
-        f.write(unique_id+'\n')
 
 nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
-
-database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
-database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
-database_manager.set_experiment(unique_id)
-metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
-analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
-cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, database_manager=database_manager, analyzer=analyzer)]
-cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manager=database_reading_manager,output_html_location=os.path.join(train.outputDir,"training_metrics.html"), publish=None)]
-predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
-                           os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
-                           model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
-                           inputdir=os.path.split(train.inputData)[0], max_files=4)
-
-analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another analyzer here to be safe since it will run scan on
-                                                              # on beta and distance threshold which might mess up settings
-optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=10)
-os.system('mkdir %s/full_validation_plots' % (train.outputDir))
-cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=5,
-                             after_n_batches=5000,min_batch=8, predictor=predictor, optimizer=optimizer,
-                             database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
-                                                                                       'full_validation_plots'))]
 
 cb += [plotClusteringDuringTraining(
     use_backgather_idx=8 + i,
@@ -351,6 +298,8 @@ cb += [
     )
     for i in range(12, 18)  # between 16 and 21
 ]
+
+cb += build_callbacks(train, td)
 
 
 learningrate = 1e-3

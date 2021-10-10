@@ -7,7 +7,7 @@ def calculate_iou_tf(truth_sid,
                      pred_sid,
                      truth_shower_sid,
                      pred_shower_sid,
-                     hit_weight):
+                     hit_weight, return_all=False):
 
     with tf.device('/cpu:0'):
         # print("1")
@@ -55,7 +55,10 @@ def calculate_iou_tf(truth_sid,
 
         overlap_matrix = (intersection_sum_matrix / union_sum_matrix).numpy()
 
-        return overlap_matrix
+        if return_all:
+            return overlap_matrix, pred_sum_matrix, truth_sum_matrix, intersection_sum_matrix
+        else:
+            return overlap_matrix
 
 
 def calculate_eiou(truth_sid,
