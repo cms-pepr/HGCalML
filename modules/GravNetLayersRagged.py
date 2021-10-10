@@ -1,10 +1,11 @@
 import tensorflow as tf
 from select_knn_op import SelectKnn
+from select_mod_knn_op import SelectModKnn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
 from local_group_op import LocalGroup
 from local_distance_op import LocalDistance
-from lossLayers import LLLocalClusterCoordinates
+from lossLayers import LLClusterCoordinates
 from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
@@ -19,6 +20,66 @@ def check_type_return_shape(s):
         raise TypeError('Only TensorSpec signature types are supported, '
                       'but saw signature entry: {}.'.format(s))
     return s.shape
+
+
+
+def select_threshold_with_backgather(score, threshold, row_splits):
+    '''
+    Selects all above threshold plus the lowest score vertex as representation of all below threshold.
+    The backgather indices are constructed such that all below threshold will be assigned to the
+    representative point below threshold.
+    
+    returns:
+    - selection indices
+    - backgather indices
+    - new row splits
+    '''
+    glidxs = tf.range(tf.shape(score)[0]) #for backgather
+    allbackgather = []
+    allkeepidxs = []
+    newrs = [0]
+    row_splits = tf.squeeze(row_splits) #can never have dim 0
+    score= tf.squeeze(score, axis=1)#remove additional 1 dim
+    for i in tf.range(tf.shape(row_splits)[0]-1):
+        rs_glidxs = glidxs[row_splits[i]:row_splits[i+1]]
+        rs_score = score[row_splits[i]:row_splits[i+1]]
+        
+        above_threshold = rs_score > threshold
+        argminscore = tf.argmin(rs_score)
+        isminscore = rs_score == rs_score[argminscore]
+        
+        keep = tf.logical_or(above_threshold, isminscore)
+        
+
+        keepindxs = rs_glidxs[keep]
+        rs_keepindxs = tf.range(tf.shape(rs_glidxs)[0])[keep]
+        
+        keeprange = tf.range(keepindxs.shape[0])
+        
+        minidxlocal_rs = rs_score[argminscore] == rs_score[keep]
+        minidx = keeprange[minidxlocal_rs][0]#just in the very very inlikley case the above gives>1 results
+
+        scatidxs = tf.expand_dims(rs_keepindxs, axis=-1)
+        
+        n_previous_rs = newrs[-1]
+        scatupds = keeprange + 1 + n_previous_rs
+        
+        scatshape = tf.shape(rs_glidxs)
+        
+        back = tf.scatter_nd(scatidxs, scatupds, scatshape)
+        back = tf.where(back == 0, minidx + n_previous_rs, back -1)
+        
+        allbackgather.append(back)
+        allkeepidxs.append(keepindxs)
+        
+        newrs.append(keepindxs.shape[0]+n_previous_rs)
+        
+    allbackgather = tf.expand_dims(tf.concat(allbackgather,axis=0),axis=1)
+    sel = tf.expand_dims(tf.concat(allkeepidxs,axis=0),axis=1)#standard tf index format
+    newrs = tf.concat(newrs,axis=0)
+    
+    return sel, allbackgather, newrs
+
 
 
 ############# Some layers for convenience ############
@@ -36,10 +97,34 @@ class PrintMeanAndStd(tf.keras.layers.Layer):
         tf.print(self.name,'std',tf.math.reduce_std(inputs,axis=0),summarize=100)
         return inputs
 
+
+class ElementScaling(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(ElementScaling, self).__init__(**kwargs)
+
+    def get_config(self):
+        return super(ElementScaling, self).get_config()
+    
+    def compute_output_shape(self, input_shapes):
+        #return input_shapes[0]
+        return input_shapes
+    
+    def build(self, input_shape):
+        shape = [1 for _ in range(len(input_shape)-1)]+[input_shape[-1]]
+        self.scales = self.add_weight(name = 'scales',shape = shape, 
+                                    initializer = 'ones', trainable = True) 
+        
+        super(ElementScaling, self).build(input_shape)
+        
+    def call(self, inputs, training=None):
+        
+        return inputs * self.scales
+        
+    
 class GooeyBatchNorm(tf.keras.layers.Layer):
     def __init__(self,
-                 viscosity=0.8,
-                 fluidity_decay=5e-4,
+                 viscosity=0.2,
+                 fluidity_decay=1e-4,
                  max_viscosity=1.,
                  epsilon=1e-4,
                  print_viscosity=False,
@@ -578,7 +663,9 @@ class SelectFromIndices(tf.keras.layers.Layer):
         self.outshapes = [[-1,] + list(s[1:]) for s in outshapes] 
           
     @staticmethod  
-    def raw_call(indices, inputs, outshapes):
+    def raw_call(indices, inputs, outshapes=None):
+        if outshapes is None:
+            outshapes =  [[-1,] + list(s.shape[1:]) for s in inputs] 
         outs=[]
         for i in range(0,len(inputs)):
             g = tf.gather_nd( inputs[i], indices)
@@ -680,6 +767,63 @@ class KNN(tf.keras.layers.Layer):
         coordinates, row_splits = inputs
         return KNN.raw_call(coordinates, row_splits, self.K, self.radius)
         
+
+        
+    
+class AddIdentity2D(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(AddIdentity2D, self).__init__(**kwargs) 
+        
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, inputs):
+        diag = tf.expand_dims(tf.eye(inputs.shape[-1]), axis=0)
+        return inputs + diag
+        
+class WarpedSpaceKNN(tf.keras.layers.Layer):
+    def __init__(self,K: int, radius: float=-1., **kwargs):
+        """
+        
+        Select K nearest neighbours, with possible radius constraint in warped space
+        Warning: the time consumption increases with space_dim**2
+        About factor 2 slower than standard kNN for 3 dimensions, then increasing
+        
+        Call will return 
+         - self + K neighbour indices of K neighbours within max radius
+         - distances to self+K neighbours
+        
+        Inputs: coordinates, warp tensor, row_splits
+        
+        :param K: number of nearest neighbours
+        :param radius: maximum distance of nearest neighbours
+        """
+        super(WarpedSpaceKNN, self).__init__(**kwargs) 
+        self.K = K
+        self.radius = radius
+        
+        
+    def get_config(self):
+        config = {'K': self.K,
+                  'radius': self.radius}
+        base_config = super(WarpedSpaceKNN, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def compute_output_shape(self, input_shapes):
+        return (None, self.K+1),(None, self.K+1)
+
+    @staticmethod 
+    def raw_call(coordinates, row_splits, warp, K, radius):
+        idx,dist = SelectModKnn(K+1, coordinates,  warp, row_splits,
+                             max_radius= radius, tf_compatible=False)
+
+        idx = tf.reshape(idx, [-1,K+1])
+        dist = tf.reshape(dist, [-1,K+1])
+        return idx,dist
+
+    def call(self, inputs):
+        coordinates, warp, row_splits = inputs
+        return WarpedSpaceKNN.raw_call(coordinates, row_splits, warp, self.K, self.radius)
 
 
 class SortAndSelectNeighbours(tf.keras.layers.Layer):
@@ -824,149 +968,8 @@ class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
                  loss_repulsion=0.5,
                  print_loss=False,
                  **kwargs):
-        '''
         
-        This layer is a simple, but handy combination of: 
-        - SortAndSelectNeighbours
-        - LocalClustering
-        - SelectFromIndices
-        - GraphClusterReshape
-        
-        and comes with it's own loss layer (LLLocalClusterCoordinates) to implement
-        a gradient on all operations and inputs.
-        
-        Inputs:
-         - features
-         - distances
-         - hierarchy feature
-         - neighbour indices
-         - row splits
-         - +[] of other tensors to be selected according to clustering
-         
-         - truth idx (can be dummy if loss is disabled
-         
-        
-        When applied, the layer graph reshapes a max. selected number of neighbours (K),
-        within a maximum radius. At the same time, other features of the new found cluster
-        centres can be selected in one go.
-        
-        The included loss function implements a gradient on the input distances, and the hierarchy feature
-        following a similar approach as object condensation (but applied only locally to selected neighbours).
-        Those vertices within the same neighbourhood (given by neighbour indices) that have the same truth
-        index are pulled together while others are being pushed away. The corresponding loss per vertex is scaled
-        by the hierarchy index (which receives a penalty to be >0 at the same time) such that it can be interpreted
-        as a confidence measure that the corresponding grouping is valid.
-        
-        As a consequence, this layer will aim to reshape the graph in a way that vertices from the same object form
-        groups.
-         
-        Outputs:
-         - reshaped features
-         - new row splits
-         - backgather indices
-         - +[] other tensors with selection applied
-        
-        '''
-        self.K = K
-        self.radius = radius
-        self.print_reduction = print_reduction
-        self.loss_enabled = loss_enabled
-        self.loss_scale = loss_scale
-        self.loss_repulsion = loss_repulsion
-        self.print_loss = print_loss
-        
-        if 'dynamic' in kwargs:
-            super(LocalClusterReshapeFromNeighbours, self).__init__(**kwargs)
-        else:
-            super(LocalClusterReshapeFromNeighbours, self).__init__(dynamic=False,**kwargs)
-        
-    
-    def get_config(self):
-        config = {'K': self.K,
-                  'radius': self.radius,
-                  'print_reduction': self.print_reduction,
-                  'loss_enabled': self.loss_enabled,
-                  'loss_scale': self.loss_scale,
-                  'loss_repulsion': self.loss_repulsion,
-                  'print_loss': self.print_loss}
-        
-        base_config = super(LocalClusterReshapeFromNeighbours, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    def _sel_pass_shape(self, input_shape):
-        shapes =  input_shape[5:-1] 
-        return [(None, s[1:]) for s in shapes]
-
-    def compute_output_shape(self, input_shapes): #features, nidx = inputs
-        K = self.K
-        if K < 0:
-            K = input_shapes[3][-1]#no neighbour selection
-        
-        
-        if len(input_shapes) > 6:
-            return [(input_shapes[0][0], input_shapes[0][1]*K), (None, 1), (None, 1)] + self._sel_pass_shape(input_shapes)
-        else:
-            return (input_shapes[0][0], input_shapes[0][1]*K), (None, 1), (None, 1)
-
-    
-    def compute_output_signature(self, input_signature):
-        
-        input_shapes = [x.shape for x in input_signature]
-        input_dtypes = [x.dtype for x in input_signature]
-        output_shapes = self.compute_output_shape(input_shapes)
-
-        lenin = len(input_signature)
-        # out, rs, backgather
-        if lenin > 6:
-            return  [tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])] + \
-                    [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i-2]) for i in range(5,lenin)]
-        else:
-            return  tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])
-            
-    
-
-    def build(self, input_shape):
-        super(LocalClusterReshapeFromNeighbours, self).build(input_shape)
-
-
-    def call(self, inputs):
-        features, distances, hierarchy, nidxs, row_splits, other, tidxs = 7*[None]
-        
-        if len(inputs) > 6:
-            features, distances, hierarchy, nidxs, row_splits, *other, tidxs = inputs
-        else:
-            features, distances, hierarchy, nidxs, row_splits, tidxs = inputs
-            other=[]
-            
-        sdist, snidx = distances,nidxs #  
-        sdist, snidx = SortAndSelectNeighbours.raw_call(sdist, snidx,K=self.K, radius=self.radius)
-        #generate loss
-        if self.loss_enabled:
-            #some headroom for radius
-            lossval = self.loss_scale * LLLocalClusterCoordinates.raw_loss(
-                sdist/(self.radius**2), hierarchy, snidx, tidxs,  #or distances/(1.5*self.radius)**2
-                add_self_reference=False, repulsion_contrib=self.loss_repulsion,
-                print_loss=self.print_loss,name=self.name)
-            self.add_loss(lossval)
-        # do the reshaping
-        
-        sel, rs, backgather = LocalClustering.raw_call(snidx,hierarchy,row_splits,
-                                                       print_reduction=self.print_reduction,name=self.name)
-        
-        rs = tf.cast(rs, tf.int32)#just so keras knows
-        #be explicit because of keras
-        #backgather = tf.cast(backgather, tf.int32)
-        seloutshapes =  [[-1,] + list(s.shape[1:]) for s in [snidx, sdist]+other] 
-        snidx, sdist, *other = SelectFromIndices.raw_call(sel, [snidx, sdist]+other, seloutshapes)
-        
-        out = GraphClusterReshape()([features,snidx])
-        
-        return [out, rs, backgather] + other
-        
+        raise ValueError("DEPRECATED, use LNC instead")
         
 class LocalClusterReshapeFromNeighbours2(tf.keras.layers.Layer):
     def __init__(self, K=-1, 
@@ -978,199 +981,30 @@ class LocalClusterReshapeFromNeighbours2(tf.keras.layers.Layer):
                  loss_repulsion=0.5,
                  print_loss=False,
                  **kwargs):
-        '''
         
-        This layer is a simple, but handy combination of: 
-        - SortAndSelectNeighbours
-        - LocalClustering
-        - SelectFromIndices
-        - GraphClusterReshape
-        
-        and comes with it's own loss layer (LLLocalClusterCoordinates) to implement
-        a gradient on all operations and inputs.
-        
-        Inputs:
-         - features
-         - distances
-         - neighbour indices
-         - row splits
-         - +[] of other tensors to be selected according to clustering
-         
-         - truth idx (can be dummy if loss is disabled
-         
-        
-        When applied, the layer graph reshapes a max. selected number of neighbours (K),
-        within a maximum radius. At the same time, other features of the new found cluster
-        centres can be selected in one go.
-        
-        The included loss function implements a gradient on the input distances, and the hierarchy feature
-        following a similar approach as object condensation (but applied only locally to selected neighbours).
-        Those vertices within the same neighbourhood (given by neighbour indices) that have the same truth
-        index are pulled together while others are being pushed away. The corresponding loss per vertex is scaled
-        by the hierarchy index (which receives a penalty to be >0 at the same time) such that it can be interpreted
-        as a confidence measure that the corresponding grouping is valid.
-        
-        As a consequence, this layer will aim to reshape the graph in a way that vertices from the same object form
-        groups.
-         
-        Outputs:
-         - reshaped features
-         - new row splits
-         - backgather indices
-         - +[] other tensors with selection applied
-        
-        '''
-        self.K = K
-        self.radius = radius
-        self.print_reduction = print_reduction
-        self.loss_enabled = loss_enabled
-        self.loss_scale = loss_scale
-        self.loss_repulsion = loss_repulsion
-        self.print_loss = print_loss
-        
-        if 'dynamic' in kwargs:
-            super(LocalClusterReshapeFromNeighbours2, self).__init__(**kwargs)
-        else:
-            super(LocalClusterReshapeFromNeighbours2, self).__init__(dynamic=False,**kwargs)
-        
-        self.hier_transforms = hier_transforms
-        self.hier_tdense = []
-        for i in range(len(hier_transforms)):
-            with tf.name_scope(self.name + "/1/"+str(i)):
-                self.hier_tdense.append(tf.keras.layers.Dense(hier_transforms[i],activation='elu'))
-        
-        with tf.name_scope(self.name + "/2/"):
-            self.hier_dense = tf.keras.layers.Dense(1)
-    
-    def get_config(self):
-        config = {'K': self.K,
-                  'radius': self.radius,
-                  'print_reduction': self.print_reduction,
-                  'loss_enabled': self.loss_enabled,
-                  'loss_scale': self.loss_scale,
-                  'hier_transforms': self.hier_transforms,
-                  'loss_repulsion': self.loss_repulsion,
-                  'print_loss': self.print_loss}
-        
-        base_config = super(LocalClusterReshapeFromNeighbours2, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    def _sel_pass_shape(self, input_shape):
-        shapes =  input_shape[5:-1] 
-        return [(None, s[1:]) for s in shapes]
-
-    def compute_output_shape(self, input_shapes): #features, nidx = inputs
-        K = self.K
-        if K < 0:
-            K = input_shapes[3][-1]#no neighbour selection
-        
-        
-        if len(input_shapes) > 5:
-            return [(input_shapes[0][0], input_shapes[0][1]*K), (None, 1), (None, 1)] + self._sel_pass_shape(input_shapes)
-        else:
-            return (input_shapes[0][0], input_shapes[0][1]*K), (None, 1), (None, 1)
-
-    
-    def compute_output_signature(self, input_signature):
-        
-        input_shapes = [x.shape for x in input_signature]
-        input_dtypes = [x.dtype for x in input_signature]
-        output_shapes = self.compute_output_shape(input_shapes)
-
-        lenin = len(input_signature)
-        # out, rs, backgather
-        if lenin > 5:
-            return  [tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])] + \
-                    [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i-2]) for i in range(5,lenin)]
-        else:
-            return  tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])
-            
-    
-
-    def build(self, input_shape):
-        
-        shapelast = input_shape[0][-1]*self.K + self.K
-        
-        for i in range(len(self.hier_tdense)):
-            with tf.name_scope(self.name + "/1/"+str(i)):
-                self.hier_tdense[i].build((None, shapelast))
-            shapelast = self.hier_tdense[i].units
-        
-        
-        with tf.name_scope(self.name + "/2/"):
-            self.hier_dense.build((None, shapelast))
-        
-        super(LocalClusterReshapeFromNeighbours2, self).build(input_shape)
-
-
-    def call(self, inputs):
-        features, distances, nidxs, row_splits, other, tidxs = 6*[None]
-        
-        if len(inputs) > 5:
-            features, distances, nidxs, row_splits, *other, tidxs = inputs
-        else:
-            features, distances, nidxs, row_splits, tidxs = inputs
-            other=[]
-            
-        sdist, snidx = distances, nidxs #  
-        lossdist,lossnidx = distances,nidxs
-        sdist, snidx = SortAndSelectNeighbours.raw_call(sdist, snidx,K=self.K, radius=self.radius)
-        
-        #determine hierarchy from full features
-        fullfeat = SelectWithDefault(snidx, features, 0.)
-        fullfeat = tf.reshape(fullfeat, [-1, fullfeat.shape[-1]*self.K])
-        fullfeat = tf.concat([fullfeat,sdist],axis=-1)
-        for t in self.hier_tdense:
-            fullfeat = t(fullfeat)
-        
-        hierarchy = self.hier_dense(fullfeat)
-        
-        #generate loss
-        if self.loss_enabled:
-            #some headroom for radius
-            lossval = self.loss_scale * LLLocalClusterCoordinates.raw_loss(
-                lossdist/(self.radius**2), 
-                hierarchy, 
-                lossnidx, tidxs,  #or distances/(1.5*self.radius)**2
-                add_self_reference=False, repulsion_contrib=self.loss_repulsion,
-                print_loss=self.print_loss,name=self.name)
-            self.add_loss(lossval)
-        # do the reshaping
-        
-        sel, rs, backgather = LocalClustering.raw_call(snidx,hierarchy,row_splits,
-                                                       print_reduction=self.print_reduction,name=self.name)
-        
-        rs = tf.cast(rs, tf.int32)#just so keras knows
-        #be explicit because of keras
-        #backgather = tf.cast(backgather, tf.int32)
-        seloutshapes =  [[-1,] + list(s.shape[1:]) for s in [snidx, sdist]+other] 
-        snidx, sdist, *other = SelectFromIndices.raw_call(sel, [snidx, sdist]+other, seloutshapes)
-        
-        out = GraphClusterReshape()([features,snidx])
-        
-        return [out, rs, backgather] + other
-        
-
+        raise ValueError("DEPRECATED, use LNC instead")
 
 
 class NoiseFilter(tf.keras.layers.Layer):
     def __init__(self, 
-                 threshold = 0.95, 
+                 threshold = 0.1, 
                  loss_scale = 1., 
                  loss_enabled=False,
+                 print_loss=False,
+                 print_reduction=False,
                  **kwargs):
         
         '''
         This layer will leave at least one noise hit per row split intact
         
+        threshold: note, noise will have low score values.
+        
+        The loss corrects for non-equal class balance
+        
         Inputs:
-         - noise score (linear activation), high means noise
+         - noise score (linear activation), high means not noise
          - row splits
-         - [] a list of all tensors to be filtered accordingly
+         - [] a list of all tensors to be filtered accordingly (at least one)
          - truth index
          
         Outputs:
@@ -1178,8 +1012,7 @@ class NoiseFilter(tf.keras.layers.Layer):
          - backgather indices
          - [] the list of all other tensors to be filtered
         '''
-        
-        assert False #not fully implemented yet
+
         
         if 'dynamic' in kwargs:
             super(NoiseFilter, self).__init__(**kwargs)
@@ -1189,11 +1022,15 @@ class NoiseFilter(tf.keras.layers.Layer):
         self.threshold = threshold
         self.loss_scale = loss_scale
         self.loss_enabled = loss_enabled
+        self.print_loss = print_loss
+        self.print_reduction = print_reduction
         
     def get_config(self):
         config = {'threshold': self.threshold,
                   'loss_scale': self.loss_scale,
-                  'loss_enabled': self.loss_enabled}
+                  'loss_enabled': self.loss_enabled,
+                  'print_loss': self.print_loss,
+                  'print_reduction': self.print_reduction}
         
         base_config = super(NoiseFilter, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -1203,36 +1040,168 @@ class NoiseFilter(tf.keras.layers.Layer):
     
     
     def call(self, inputs):
-        score, row_splits, other, tidxs = 4*[None]
         
-        if len(inputs) > 3:
-            score, row_splits, *other, tidxs = inputs
-        else:
-            score, row_splits, tidxs = inputs
+        score, row_splits, *other, tidxs = inputs
         
         if row_splits.shape[0] is None: #dummy execution
-            return row_splits, row_splits, other
+            return [row_splits, tf.range(tf.shape(score)[0])] + other
             
         #score loss
         if self.loss_enabled:
-            isnoise = tf.where(tidxs<0, tf.ones_like(score), 0.)
-            classloss = tf.keras.losses.binary_crossentropy(isnoise, score)
+            notnoise = tf.where(tidxs>=0, tf.ones_like(score), 0.)
+            
+            Nnotnoise = tf.cast(tf.math.count_nonzero(notnoise,axis=0),dtype='float32')
+            Nnoise = tf.cast(tf.math.count_nonzero(1.-notnoise,axis=0),dtype='float32')
+            
+            classloss = tf.keras.losses.binary_crossentropy(notnoise, score)
+            
+            notnoiseloss = tf.math.divide_no_nan(tf.reduce_sum(classloss*notnoise[:,0]),tf.squeeze(Nnotnoise))
+            noiseloss = tf.math.divide_no_nan(tf.reduce_sum(classloss*(1.-notnoise[:,0])),tf.squeeze(Nnoise))
+            
+            classloss = notnoiseloss+noiseloss
             self.add_loss(classloss)
+            if self.print_loss:
+                accuracy = tf.where(score>0.5, notnoise, 0.)
+                accuracy = tf.reduce_sum(accuracy) / tf.squeeze(Nnotnoise)
+                print(self.name, ' loss ', classloss, ' ; accuracy', accuracy)
         
-        #the backgather thing is going to be tough without c++ kernel
+        
+        sel, allbackgather, newrs = select_threshold_with_backgather(score, self.threshold, row_splits)
+        
+        seloutshapes =  [[-1,] + list(s.shape[1:]) for s in other] 
+        other = SelectFromIndices.raw_call(sel, other, seloutshapes)
+        
+        if self.print_reduction:
+            print(self.name,' reduction from ', int(row_splits[-1]), ' to ', int(newrs[-1]), ': ', float(row_splits[-1])/float(newrs[-1]))
+        
+        return [newrs, allbackgather] + other
         
         
+
+class EdgeCreator(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        '''
+        Be careful! this blows up the space to V x K-1 x F !
+        
+        Inputs:
+        - neighbour indices (assumes V x 0 index is probe vertex index)
+        - features
+        
+        returns:
+        - edges (V x K -1 x F) (difference to K=0)
+        '''
+        if 'dynamic' in kwargs:
+            super(EdgeCreator, self).__init__(**kwargs)
+        else:
+            super(EdgeCreator, self).__init__(dynamic=False,**kwargs)
+    
+    def compute_output_shape(self, input_shapes): 
+        return (input_shapes[0][-1], input_shapes[1][-1]) # K x F
+    
+    def call(self, inputs):
+        selffeat = tf.expand_dims(inputs[1],axis=1)
+        return selffeat - SelectWithDefault(inputs[0][:,1:], inputs[1], 0.)
+    
+
+class EdgeSelector(tf.keras.layers.Layer):
+    def __init__(self, 
+                 threshold = 0.9, 
+                 loss_scale = 1., 
+                 loss_enabled = False,
+                 print_loss=False,
+                 **kwargs):
+        '''
+        Inputs: neighbour indices (V x K ) , edge score (V x K-1) , spectator weights, truth index
+        Outputs: selected neighbour indices ('-1 masked')
+        
+        '''
+        assert threshold<1 and threshold>=0
+        self.threshold = threshold
+        self.loss_scale = loss_scale
+        self.loss_enabled = loss_enabled
+        self.print_loss = print_loss
+        
+        if 'dynamic' in kwargs:
+            super(EdgeSelector, self).__init__(**kwargs)
+        else:
+            super(EdgeSelector, self).__init__(dynamic=False,**kwargs)
+    
+    def get_config(self):
+        config = {'threshold': self.threshold,
+                  'loss_enabled': self.loss_enabled,
+                  'loss_scale': self.loss_scale}
+        
+        base_config = super(EdgeSelector, self).get_config()
+        return dict(list(base_config.items()) + list(config.items())) 
+       
+    def call(self, inputs):   
+        
+        nidx, score, specweights, tidxs = inputs
+        #loss part
+        if self.loss_enabled:
+            sel_tidxs = SelectWithDefault(nidx, tidxs, tf.expand_dims(tidxs,axis=1))
+            sel_spec = SelectWithDefault(nidx, specweights, 1.)[:,1:] #don't count -1 entries anyway
+            specmask = tf.where(sel_spec[:,:,0]>0, 0., tf.ones_like(score[:,:,0]))
+            #mask spectators
+            sameasprobe = tf.cast(sel_tidxs[:,0:1] == sel_tidxs,dtype='float32')[:,1:] #remove self ref
+            
+            edgeloss = specmask * tf.keras.losses.binary_crossentropy(sameasprobe, score)
+            edgeloss = self.loss_scale * tf.reduce_mean(edgeloss)
+            if self.print_loss:
+                print(self.name,'loss ', edgeloss)
+            
+            self.add_loss( edgeloss )
+            
+        
+        score = tf.concat([tf.ones_like(score[:,0:1,:]),score],axis=1)#add self score always 1
+        
+        return tf.where(score[:,:,0] < self.threshold, -1, nidx)
+        
+class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        '''
+        Input: 
+        - edge scores (V x K x 1)
+        - neighbour indices
+        
+        Output:
+        - group score (V x 1)
+        
+        '''
+        
+        if 'dynamic' in kwargs:
+            super(GroupScoreFromEdgeScores, self).__init__(**kwargs)
+        else:
+            super(GroupScoreFromEdgeScores, self).__init__(dynamic=False,**kwargs)
+    
+    def compute_output_shape(self, input_shapes): 
+        return (1,)
+            
+        #no config
+    def call(self, inputs): 
+        score, nidx = inputs
+        #take almost mean
+        n_neigh = tf.math.count_nonzero(nidx+1, axis=1, keepdims=True)# V x 1
+        n_neigh = 1. + (tf.cast(n_neigh,dtype='float32')-1.)*0.5 #give higher score to larger groups
+        groupscore = tf.reduce_sum(score, axis=1)*0.5 #make sure max is bound to one
+        groupscore /= n_neigh
+        return groupscore
         
         
+                
 class LNC(tf.keras.layers.Layer):
     def __init__(self, 
                  threshold = 0.9, 
+                 sum_other=[],
+                 
                  loss_scale = 1., 
                  distance_loss_scale = 1., 
                  
                  print_reduction=False, 
                  loss_enabled=False, 
                  print_loss=False,
+                 use_spectators=False,
+                 return_neighbours=False,
                  noise_loss_scale : float = 0.1,
                  **kwargs):
         '''
@@ -1240,21 +1209,33 @@ class LNC(tf.keras.layers.Layer):
         This should be an improvement over LocalClusterReshapeFromNeighbours2 with fewer hyperparameters
         and actually per-point exclusive clustering (not per group)
         
+        Options:
+        - threshold: minimum group-classifier threshold to cluster (larger means fewer higher purity clusters)
+        - sum_other (list of ints): list of indices for the 'other' tensors (see inputs) that should be summed by feature instead of just selected
+        - loss_scale: loss scale
+        - return_neighbours: returns the collected neighbour features as zero-padded V x K x F' rather than mean and max
+                             If this is set to True, the network will also return the number of neighbours per vertex
+        - ... should be self explanatory
+        
         Inputs:
          - features
          - neighbourhood classifier (linear activation applied only)
-         - distances
+         - coordinates (V x C): only used for loss evaluation
          - neighbour indices  <- must contain "self"
          - row splits
-         - +[] of other tensors to be selected according to clustering
          
+         - +[] of other tensors to be selected or feature-summed (see options) according to clustering
+         
+         - spectator weights (only if options: use_spectators=True)
          - truth idx (can be dummy if loss is disabled)
          
         
         Outputs:
-         - reshaped features (not 'clustered' yet)
+         - output features (V x 2F) if return_neighbours False, (V x K x F) otherwise
+         - only if return_neighbours True: number of neighbours (cast to float32)
          - new row splits
          - backgather indices
+         
          - +[] other tensors with selection applied
         
         '''
@@ -1265,13 +1246,16 @@ class LNC(tf.keras.layers.Layer):
         self.distance_loss_scale = distance_loss_scale
         self.print_loss = print_loss
         self.noise_loss_scale = noise_loss_scale
+        self.use_spectators = use_spectators
+        self.sum_other = sum_other
+        self.return_neighbours = return_neighbours
         
         assert self.noise_loss_scale >= 0
         
         if 'dynamic' in kwargs:
             super(LNC, self).__init__(**kwargs)
         else:
-            super(LNC, self).__init__(dynamic=False,**kwargs)
+            super(LNC, self).__init__(dynamic=False,**kwargs)#eager
         
     
     def get_config(self):
@@ -1281,7 +1265,10 @@ class LNC(tf.keras.layers.Layer):
                   'loss_scale': self.loss_scale,
                   'distance_loss_scale': self.distance_loss_scale,
                   'print_loss': self.print_loss,
-                  'noise_loss_scale': self.noise_loss_scale}
+                  'noise_loss_scale': self.noise_loss_scale,
+                  'use_spectators': self.use_spectators,
+                  'sum_other': self.sum_other,
+                  'return_neighbours': self.return_neighbours}
         
         base_config = super(LNC, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -1291,12 +1278,16 @@ class LNC(tf.keras.layers.Layer):
         return [(None, s[1:]) for s in shapes]
 
     def compute_output_shape(self, input_shapes): #features, nidx = inputs
-        #K = input_shapes[3][-1]#neighbour indices
+        K = input_shapes[3][-1]#neighbour indices
+        
+        directoutshape = [(input_shapes[0][0], input_shapes[0][1]*2)]
+        if self.return_neighbours:
+            directoutshape = [(input_shapes[0][0], K, input_shapes[0][1]),(None,K)]
         
         if len(input_shapes) > 6:
-            return [(input_shapes[0][0], input_shapes[0][1]*2), (None, 1), (None, 1)] + self._sel_pass_shape(input_shapes)
+            return directoutshape+[(None, 1), (None, 1)] + self._sel_pass_shape(input_shapes)
         else:
-            return (input_shapes[0][0], input_shapes[0][1]*2), (None, 1), (None, 1)
+            return directoutshape+[(None, 1), (None, 1)]
 
     
     def __compute_output_signature(self, input_signature):
@@ -1324,31 +1315,44 @@ class LNC(tf.keras.layers.Layer):
 
 
     def call(self, inputs):
-        features, score, distances, nidxs, row_splits, other, tidxs = 7*[None]
+        
+        
+        features, score, coords, nidxs, row_splits, other, specweight, tidxs = 8*[None]
         
         if len(inputs) > 6:
-            features, score, distances, nidxs, row_splits, *other, tidxs = inputs
+            features, score, coords, nidxs, row_splits, *other, tidxs = inputs
         else:
-            features, score, distances, nidxs, row_splits, tidxs = inputs
+            features, score, coords, nidxs, row_splits, tidxs = inputs
             other=[]
+        
+        if self.use_spectators:
+            specweight = other[-1]
+            other = other[0:-1]
             
         score = tf.nn.sigmoid(score)
+        tnidxs = nidxs #used for truth
+        if self.loss_enabled:
+            if specweight is not None:
+                specweight  = SelectWithDefault(nidxs, specweight, 0.)
+                tnidxs = tf.where(specweight[:,:,0]>0, -1 , nidxs) #remove spectators from loss
         #generate loss
-        if self.loss_enabled and self.distance_loss_scale > 0 :
+        if self.loss_enabled and self.distance_loss_scale > 0:
+            
+            lossval = tf.zeros_like(score[0,0])
+            if row_splits.shape[0] is not None:
             #some headroom for radius
-            lossval = self.distance_loss_scale * self.loss_scale * LLLocalClusterCoordinates.raw_loss(
-                distances, 
-                tf.ones_like(score), 
-                nidxs, 
-                tidxs, 
-                add_self_reference=False, repulsion_contrib=0.5,
-                print_loss=self.print_loss,name=self.name,
-                hierarchy_penalty=False)
-            self.add_loss(lossval)
+                lossval = self.distance_loss_scale * self.loss_scale * \
+                    LLClusterCoordinates.raw_loss([coords, tidxs, row_splits],
+                                          repulsion_contrib=0.5, 
+                                          print_loss=self.print_loss, 
+                                          name=self.name
+                                          )
+            
+            self.add_loss(tf.reduce_mean(lossval))
             
         if self.loss_enabled:
             
-            sel_tidxs = SelectWithDefault(nidxs, tidxs, tf.expand_dims(tidxs,axis=1))
+            sel_tidxs = SelectWithDefault(tnidxs, tidxs, tf.expand_dims(tidxs,axis=1))
             
             #just in case no "self" index
             same = tf.reduce_min(sel_tidxs,axis=1) == tf.reduce_max(sel_tidxs,axis=1)
@@ -1410,22 +1414,33 @@ class LNC(tf.keras.layers.Layer):
         #be explicit because of keras
         #backgather = tf.cast(backgather, tf.int32)
         seloutshapes =  [[-1,] + list(s.shape[1:]) for s in other] 
-        other = SelectFromIndices.raw_call(sel[:,0], other, seloutshapes)
-        
-        #expanding is done within SelectWithDefault
-        out_mean = SelectWithDefault(sel[:,:,0], features, 0.)
-        out_max  = SelectWithDefault(sel[:,:,0], features, -1000.)
-        
-        npg = tf.cast(npg,dtype='float32')
-        
-        out = tf.concat([tf.reduce_sum(out_mean, axis=1)/(npg+1e-6),  
-                         tf.reduce_max(out_max, axis=1)],axis=-1) 
+        otherout = SelectFromIndices.raw_call(sel[:,0], other, seloutshapes)
+        #change those that should be summed
+        for i in self.sum_other:
+            otherout[i] = SelectWithDefault(sel[:,:,0], other[i], 0.)
+            otherout[i] = tf.reduce_sum(otherout[i],axis=1)#sum over neighbours
         
         
         if self.print_reduction:
             tf.print(self.name,'reduction',tf.cast(tf.shape(sel)[0],dtype='float')/tf.cast(tf.shape(nidxs)[0],dtype='float'),'to',tf.shape(sel)[0])
         
-        return [out, rs, backgather] + other
+        #expanding is done within SelectWithDefault
+        #the latter could also be done with AccumulateKnn if it got generalised from V to V'
+        out_padded = SelectWithDefault(sel[:,:,0], features, 0.)
+        npg = tf.cast(npg,dtype='float32')
+        
+        if self.return_neighbours:
+            return [out_padded, npg, rs, backgather] + otherout
+        
+        out_max  = SelectWithDefault(sel[:,:,0], features, -1000.)
+        
+        
+        out = tf.concat([tf.reduce_sum(out_padded, axis=1)/(npg+1e-6),  
+                         tf.reduce_max(out_max, axis=1)],axis=-1) 
+        
+        
+        
+        return [out, rs, backgather] + otherout
         
         
 
@@ -1575,6 +1590,7 @@ class SoftPixelRadiusCNN(tf.keras.layers.Layer):
         :param subdivisions: number of subdivisions along radius
         
         """
+        raise ValueError("SoftPixelRadiusCNN: not implemented yet")
         super(SoftPixelRadiusCNN, self).__init__(**kwargs) 
         assert length_scale_momentum > 0
         assert subdivisions > 1

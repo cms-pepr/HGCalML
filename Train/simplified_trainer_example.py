@@ -355,4 +355,3 @@ model, history = train.trainModel(nepochs=121,
                                   step_size = 100)]+cb)
 #
 
-
