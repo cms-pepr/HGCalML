@@ -18,10 +18,11 @@ from keras import backend as K
 from DeepJetCore.customObjects import get_custom_objects
 from DeepJetCore.training.gpuTools import DJCSetGPUs
 from DeepJetCore.training.training_base import custom_objects_list
+from datastructures.TrainData_TrackML import TrainData_TrackML
 
 
 class HGCalPredictor():
-    def __init__(self, input_source_files_list, training_data_collection, predict_dir, batch_size, unbuffered=False, model_path=None, max_files=4, inputdir=None):
+    def __init__(self, input_source_files_list, training_data_collection, predict_dir, batch_size=1, unbuffered=False, model_path=None, max_files=4, inputdir=None):
         self.input_data_files = []
         self.inputdir = None
         self.predict_dir = predict_dir
@@ -94,7 +95,7 @@ class HGCalPredictor():
 
             td = self.dc.dataclass()
 
-            if type(td) is not TrainData_NanoML:
+            if type(td) is not TrainData_NanoML and type(td) is not TrainData_TrackML:
                 raise RuntimeError("TODO: make sure this works for other traindata formats")
 
             if inputfile[-5:] == 'djctd':

@@ -238,8 +238,8 @@ def compute_scalar_metrics(result, alpha=0, beta=1, prevent_norm=False):
 
 def compute_scalar_metrics_graph(result, beta=1):
 
-    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
-    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
 
     precision, recall, f_score, precision_energy, recall_energy, f_score_energy =  \
         compute_precision_and_recall_analytic(truth_shower_energy, truth_shower_matched, pred_shower_energy,
@@ -335,6 +335,8 @@ def compute_precision_and_absorption_graph(graphs, metadata, beta=1):
                     M.append((None, att))
                 elif len(matched) == 1:
                     M.append((g.nodes(data=True)[matched[0]], att))
+                elif len(matched) == 2:
+                    return -1, -1
                 else:
                     raise RuntimeError("Truth shower matched to multiple pred showers?")
 
@@ -348,6 +350,8 @@ def compute_precision_and_absorption_graph(graphs, metadata, beta=1):
                 elif len(matched) == 1:
                     # Matched pred shower-- can skip?
                     pass
+                elif len(matched) == 2:
+                    return -1, -1
                 else:
                     raise RuntimeError("Truth shower matched to multiple pred showers?")
 
@@ -369,22 +373,27 @@ def compute_precision_and_absorption_graph(graphs, metadata, beta=1):
 
 
 
-
 def compute_scalar_metrics_graph_eff_fake_rate_response(result):
-    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
     efficiency = float(np.mean(np.not_equal(truth_shower_matched, -1)).item())
     filter = np.not_equal(truth_shower_matched, -1)
-    response_mean = float(np.mean(truth_shower_matched[filter] / truth_shower_energy[filter]).item())
-    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+
+    filtered_truth_energy = np.sum(truth_shower_energy[filter])
+    response_mean = float(np.sum(truth_shower_energy[filter] * (truth_shower_matched[filter] / truth_shower_energy[filter])).item() / filtered_truth_energy)
+
+    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
     fake_rate = float(np.mean(np.equal(pred_shower_matched, -1)).item())
-    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'dep_energy', numpy=True, not_found_value=-1)
+
+    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'dep_energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
     filter = np.not_equal(truth_shower_matched, -1)
-    response_sum_mean = float(np.mean(truth_shower_matched[filter] / truth_shower_energy[filter]).item())
+
+    response_sum_mean = float(np.sum(truth_shower_energy[filter] * (truth_shower_matched[filter] / truth_shower_energy[filter])).item() / filtered_truth_energy)
+
 
     efficiency = efficiency if np.isfinite(efficiency) else 0.
-    fake_rate = efficiency if np.isfinite(fake_rate) else 0.
-    response_mean = efficiency if np.isfinite(response_mean) else 0.
-    response_sum_mean = efficiency if np.isfinite(response_sum_mean) else 0.
+    fake_rate = fake_rate if np.isfinite(fake_rate) else 0.
+    response_mean = response_mean if np.isfinite(response_mean) else 0.
+    response_sum_mean = response_sum_mean if np.isfinite(response_sum_mean) else 0.
 
     return efficiency, fake_rate, response_mean, response_sum_mean
 
@@ -392,8 +401,8 @@ def compute_scalar_metrics_graph_eff_fake_rate_response(result):
 
 
 def compute_num_showers(result):
-    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
-    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1)
+    truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+    pred_shower_energy, pred_shower_matched = matching_and_analysis.get_pred_matched_attribute(result, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
 
 
     return len(truth_shower_energy), len(pred_shower_energy)

@@ -2,6 +2,9 @@
 import os
 import gzip
 import pickle
+
+import mgzip
+
 import matching_and_analysis
 import argparse
 import hplots.hgcal_analysis_plotter as hp
@@ -40,7 +43,6 @@ if __name__ == '__main__':
     database_table_prefix = args.database_table_prefix
 
     matching_type = int(args.m)
-    assert matching_type==0 or matching_type==1
     matching_type = matching_and_analysis.MATCHING_TYPE_IOU_MAX if matching_type==0 else matching_and_analysis.MATCHING_TYPE_MAX_FOUND
 
     metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=beta_threshold,
@@ -71,7 +73,18 @@ if __name__ == '__main__':
     if len(args.p) != 0:
         pdfpath = args.p
 
-    analysed_graphs, metadata = matching_and_analysis.OCAnlayzerWrapper(metadata).analyse_from_files(files_to_be_tested)
+
+    if False:
+        all_data = []
+        for file in files_to_be_tested:
+            print("Reading", file)
+            with mgzip.open(file, 'rb') as f:
+                data_loaded = pickle.load(f)
+                all_data.append(data_loaded)
+        analysed_graphs, metadata = matching_and_analysis.OCAnlayzerWrapper(metadata).analyse_from_data(
+            all_data)
+    else:
+        analysed_graphs, metadata = matching_and_analysis.OCAnlayzerWrapper(metadata).analyse_from_files(files_to_be_tested)
     plotter = hp.HGCalAnalysisPlotter()
     plotter.add_data_from_analysed_graph_list(analysed_graphs, metadata)
     plotter.write_to_pdf(pdfpath=pdfpath)

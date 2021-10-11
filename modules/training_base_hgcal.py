@@ -3,6 +3,7 @@ from DeepJetCore.training.training_base import *
 class HGCalTraining(training_base):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.val_data.writeToFile(self.outputDir + 'valsamples.djcdc')
 
     
     def loadModel(self,filename):
