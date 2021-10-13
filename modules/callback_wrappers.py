@@ -82,7 +82,7 @@ def build_callbacks(train, td, running_plots_beta_threshold=0.5, running_plots_d
     analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
     cb += [RunningMetricsDatabaseAdditionCallback(td, database_manager=database_manager,
                                                   analyzer=analyzer)]
-    cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manager=database_reading_manager,
+    cb += [RunningMetricsPlotterCallback(after_n_batches=running_plots_write_after_iterations, database_reading_manager=database_reading_manager,
                                          output_html_location=os.path.join(train.outputDir, "training_metrics.html"),
                                          publish=None)]
 
