@@ -3,6 +3,7 @@ from DeepJetCore import SimpleArray
 import uproot3 as uproot
 from uproot3_methods import TLorentzVectorArray
 import awkward0 as ak
+import awkward as ak1
 import pickle
 import gzip
 import numpy as np
@@ -12,6 +13,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import cdist
 from sklearn.preprocessing import StandardScaler
+import tensorflow as tf
 #from IPython import embed
 import os
 
@@ -34,69 +36,239 @@ def calc_eta(x, y, z):
     rsq = np.sqrt(x ** 2 + y ** 2)
     return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.)
     
-class TrainData_NanoML(TrainData):
-    def __init__(self):
-        self.splitIdx = None
-        TrainData.__init__(self)
-
-    def setSplitIdx(self, idx):
-        self.splitIdx = idx
+def calc_phi(x, y, z):
+    return np.arctan2(x, y)
     
-    def isValid(self):
-        return True #needs to be filled
 
-    def splitJaggedArray(self, jagged):
+######## helper classes ###########
+
+class CollectionBase(object):
+    def __init__(self, tree):
+        '''
+        Always use _readArray, not direct uproot to avoid compatibility issues
+        
+        define the following in a derived class:
+        - _readTree(self,tree)
+          - needs to include call to _readSplits(self,tree,splitlabel)
+        - _assignTruth(self,tree)
+        
+        '''
+
+        self.splitIdx=None
+        self.features=None
+        self.truth={}
+        self.featurenames=[]
+        
+        self._readTree(tree)
+        self._assignTruth(tree)
+
+    def _readTree(self, tree):
+        pass
+    
+    def _assignTruth(self, tree):
+        pass
+    
+    def _readSplits(self, tree, splitlabel):
+        split = ak1.from_awkward0(tree[splitlabel].array())
+        self.splitIdx= split < 0
+    
+    def _splitJaggedArray(self, jagged):
+        if self.splitIdx is None:
+            raise ValueError("First determine split indices by running _readSplits")
         split1 = jagged[self.splitIdx]
         split2 = jagged[~self.splitIdx]
         pairEvents = []
         for x in zip(split1, split2):
             pairEvents.extend(x)
-        return ak.JaggedArray.fromiter(pairEvents)
-
-    def hitObservable(self, tree, hitType, label, flatten=True, split=True):
-        obs = tree["_".join([hitType, label])].array()
-        if split:
-            obs = self.splitJaggedArray(obs)
-
-        return np.expand_dims(obs.content, axis=1) if flatten else obs
-
-    def truthObjects(self, sc, indices, null, split=True, flatten=True):
+        return ak1.from_awkward0(ak.JaggedArray.fromiter(pairEvents))
+    
+    def _assignTruthByIndexAndSplit(self, tree, label, indices, null=0):
+        sc = label
+        if type(label) is str:
+            sc = ak1.from_awkward0(tree[label].array())
         vals = sc[indices]
-        offsets = vals.offsets
-        vals[indices < 0] = null
-        if split:
-            vals = self.splitJaggedArray(vals)
-        if not flatten:
-            return vals
-        return np.expand_dims(vals.content.astype(np.float32), axis=1)
-        
-    def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
-        return self.base_convertFromSourceFile(filename, weighterobjects, istraining, treename=treename)
+        vals = ak1.where(indices<0, ak1.zeros_like(vals)+null, vals)
+        ja = self._splitJaggedArray(vals)
+        return self._expand(ja)
+    
+    def _expand(self, ja):
+        nplist=[]
+        for a in ja:
+            npexp = np.expand_dims(a.to_numpy(),axis=1)
+            nplist.append(npexp)
+        return ak1.from_iter(nplist)
+    
+    def _readSplitAndExpand(self, tree, label):
+        obs = self._readArray(tree, label)
+        ja = self._splitJaggedArray(obs)
+        return self._expand(ja)
+    
+    def _readAndSplit(self, tree, label):
+        obs = self._readArray(tree, label)
+        return self._splitJaggedArray(obs)
 
-    def base_convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events",
-                                   removeTracks=True):
+    def _readArray(self, tree, label):#for uproot3/4 ak0 to ak1 transition period
+        return ak1.from_awkward0(tree[label].array())
+    
+    def _checkshapes(self, a, b):
+        assert len(a) == len(b)
+        for c,d in zip(a,b):
+            ok = c.to_numpy().shape[-1] == d.to_numpy().shape[-1] 
+            ok = ok or c.to_numpy().shape[-1]==0 # one of the collections
+            ok = ok or d.to_numpy().shape[-1]==0 # can be empty. awkward seems to be ok with that
+            if not ok:
+                print(c.to_numpy().shape[-1], d.to_numpy().shape[-1])
+                raise RuntimeError("shape mismatch")
+    
+    def _checkConsistency(self):
         
-        fileTimeOut(filename, 10)#10 seconds for eos to recover 
-        tree = uproot.open(filename)[treename]
-
-        hits = "RecHitHGC"
-        front_face_z = 323 #this needs to be more precise
+        fhitspevent = [a.to_numpy().shape[0] for a in self.features]
         
-        recHitZUnsplit = self.hitObservable(tree, hits, "z", split=False, flatten=False)
-        self.setSplitIdx(recHitZUnsplit < 0)
-        recHitZ = self.splitJaggedArray(recHitZUnsplit)
-        offsets = recHitZ.offsets
+        #now check if truth checks out
+        for k in self.truth.keys():
+            t=self.truth[k]
+            if len(t) != len(fhitspevent):
+                raise RuntimeError("Truth array ",k, "does not match feature length (",len(t),'vs',len(fhitspevent))
+            for fah,ta in zip(fhitspevent,t):
+                tah = ta.to_numpy().shape[0]
+                if fah != tah:
+                    raise RuntimeError("Truth subarray for",k,"has",tah,"hits, but expected",fah)
+    
+    
+    def append(self, rhs):
+        '''
+        like concatenate, axis=1
+        so that the track collection can be appended to the rechit collection
+        '''
+        self.splitIdx= ak1.concatenate([self.splitIdx,rhs.splitIdx],axis=1) 
+        self._checkshapes(self.features,rhs.features)
+        self.features = ak1.concatenate([self.features, rhs.features],axis=1)
+        newtruth={}
+        for k in self.truth.keys():
+            self._checkshapes(self.truth[k],rhs.truth[k])
+            newtruth[k] = ak1.concatenate([self.truth[k], rhs.truth[k]],axis=1)
+        self.truth = newtruth
         
-        recHitX = self.hitObservable(tree, hits, "x", split=True, flatten=False)
-        recHitY = self.hitObservable(tree, hits, "y", split=True, flatten=False)
-        recHitSimClusIdx = self.hitObservable(tree, hits, "BestMergedSimClusterIdx", split=True, flatten=False)
-
+    def akToNumpyAndRs(self,awkarr):
+        rs = np.array([0]+[len(a) for a in awkarr],dtype='int64')
+        rs = np.cumsum(rs,axis=0)
+        a = np.concatenate([a.to_numpy() for a in awkarr], axis=0)
+        if 'float' in str(a.dtype):
+            a = np.array(a, dtype='float32')
+        elif 'int' in str(a.dtype):
+            a = np.array(a, dtype='int32')
+        else:
+            raise ValueError(a.dtype, "is an unrecognised array format")
+        return a, rs
+    
+    def getFinalFeaturesNumpy(self):
+        '''
+        returns features and row splits
+        '''
+        self._checkConsistency()
+        return self.akToNumpyAndRs(self.features)#self.features.offsets()
+    
+    def getFinalFeaturesSA(self):
+        a,rs = self.getFinalFeaturesNumpy()
+        sa = SimpleArray(a,rs,name="recHitFeatures")
+        #sa.setFeatureNames(self.featurenames) #not yet
+        return sa
+    
+    def getFinalTruthDictNumpy(self):
+        '''
+        returns truth and row splits
+        '''
+        self._checkConsistency()
+        out={}
+        for k in self.truth.keys():
+            out[k] = self.akToNumpyAndRs(self.truth[k])
+        return out
+    
+    def getFinalTruthDictSA(self):
+        truthdict = self.getFinalTruthDictNumpy()
+        out={}
+        for k in truthdict.keys():
+            a,rs = truthdict[k]
+            out[k] = SimpleArray(a,rs,name=k)
+        return out
+    
+    def filter(self,mask):
+        assert len(self.truth) and len(self.features)
+        self.features = self.features[mask]
+        for k in self.truth.keys():
+            self.truth[k] = self.truth[k][mask]
+    
+    
+class RecHitCollection(CollectionBase):
+    def __init__(self, use_true_muon_momentum=False, **kwargs):
+        '''
+        Guideline: this is more about clarity than performance. 
+        If it improves clarity read stuff twice or more!
+        '''
+        self.use_true_muon_momentum = use_true_muon_momentum
+        
+        #call this last!
+        super(RecHitCollection, self).__init__(**kwargs)
+                                       
+    def _readTree(self, tree):
+        
+        # no truth here! Only features
+        
+        self._readSplits(tree, splitlabel='RecHitHGC_z')
+        
+        
+        recHitEnergy = self._readSplitAndExpand(tree,"RecHitHGC_energy")
+        recHitTime   = self._readSplitAndExpand(tree,"RecHitHGC_time")
+        recHitX = self._readSplitAndExpand(tree,"RecHitHGC_x")
+        recHitY = self._readSplitAndExpand(tree,"RecHitHGC_y")
+        recHitZ = self._readSplitAndExpand(tree,"RecHitHGC_z")
+        
+        recHitR = np.sqrt(recHitX*recHitX+recHitY*recHitY+recHitZ*recHitZ)
+        recHitTheta = np.arccos(recHitZ/recHitR)
+        recHitEta = -np.log(np.tan(recHitTheta/2))
+        
+        zeros = ak1.from_iter([np.zeros_like(a.to_numpy()) for a in recHitEta])
+        
+        self.features = ak1.concatenate([
+            recHitEnergy,
+            recHitEta,
+            zeros, #indicator if it is track or not
+            recHitTheta,
+            recHitR,
+            recHitX,
+            recHitY,
+            recHitZ,
+            recHitTime,
+            ], axis=-1)
+        
+        #this is just for bookkeeping
+        self.featurenames = [
+            'recHitEnergy',
+            'recHitEta',
+            'isTrack',
+            'recHitTheta',
+            'recHitR',
+            'recHitX',
+            'recHitY',
+            'recHitZ',
+            'recHitTime',
+            ]
+        #done
+    
+    def _createSpectators(self, tree):
+        
+        recHitX = self._readAndSplit(tree,"RecHitHGC_x")
+        recHitY = self._readAndSplit(tree,"RecHitHGC_y")
+        recHitZ = self._readAndSplit(tree,"RecHitHGC_z")
+        recHitSimClusIdx = self._readAndSplit(tree,"RecHitHGC_BestMergedSimClusterIdx")
+        
         #Define spectators 
         recHit_df_events = [pd.DataFrame({"recHitX":recHitX[i],
                                   "recHitY":recHitY[i],
                                   "recHitZ":recHitZ[i],
                                   "recHitSimClusIdx":recHitSimClusIdx[i]
-                                  }) for i in range(recHitX.shape[0])]  
+                                  }) for i in range(len(recHitX))] 
+         
         for ievent in range(len(recHit_df_events)):
             df_event = recHit_df_events[ievent]
             unique_shower_idx = np.unique(df_event['recHitSimClusIdx'])
@@ -111,190 +283,218 @@ class TrainData_NanoML(TrainData):
                     df_event.loc[spectators_idx,'spectator_distance'] = spectators_shower_dist
                 del df_shower
             del df_event
+            
+        recHitSpectatorFlag = ak1.from_iter([np.expand_dims(recHit_df_events[i]['spectator_distance'].to_numpy(),axis=1)
+                                                       for i in range(len(recHit_df_events))])
+        return recHitSpectatorFlag   
+    
+    def _maskNoiseSC(self, tree,noSplitRecHitSimClusIdx):
+        goodSimClus = self._readArray(tree, "MergedSimCluster_isTrainable")
+        goodSimClus = goodSimClus[noSplitRecHitSimClusIdx]
+        return ak1.where(goodSimClus, noSplitRecHitSimClusIdx, -1)
+    
+    def _createTruthAssociation(self, tree):
+        noSplitRecHitSimClusIdx = self._readArray(tree,"RecHitHGC_BestMergedSimClusterIdx")
+        return self._maskNoiseSC(tree,noSplitRecHitSimClusIdx)
+    
+    
+    def _assignTruth(self, tree):
+        
+        assert self.splitIdx is not None
+        
+        nonSplitRecHitSimClusIdx = self._createTruthAssociation(tree)
+        
+        if self.use_true_muon_momentum:
+            recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitRecHitSimClusIdx)
+        else:
+            recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergyNoMu",nonSplitRecHitSimClusIdx)
+            
+        recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_pdgId",nonSplitRecHitSimClusIdx)
+        recHitTruthX      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_x",nonSplitRecHitSimClusIdx)
+        recHitTruthY      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_y",nonSplitRecHitSimClusIdx)
+        recHitTruthZ      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_z",nonSplitRecHitSimClusIdx)
+        recHitTruthTime   = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_t",nonSplitRecHitSimClusIdx)
+        
+        fullyContained = ak1.where(np.abs(recHitTruthZ)<323.,ak1.ones_like(recHitTruthZ),ak1.zeros_like(recHitTruthZ))
+        
+        recHitEnergy = self._readSplitAndExpand(tree,"RecHitHGC_energy")
+        recHitTime   = self._readSplitAndExpand(tree,"RecHitHGC_time")
+        recHitX = self._readSplitAndExpand(tree,"RecHitHGC_x")
+        recHitY = self._readSplitAndExpand(tree,"RecHitHGC_y")
+        recHitZ = self._readSplitAndExpand(tree,"RecHitHGC_z")
+        
+        # should not expand here to allow indexing as done below
+        recHitSimClusIdx = self._splitJaggedArray(nonSplitRecHitSimClusIdx)
+        
+        # set noise to rec features
+        recHitTruthEnergy = ak1.where(recHitSimClusIdx<0, recHitEnergy, recHitTruthEnergy)
+        recHitTruthX = ak1.where(recHitSimClusIdx<0, recHitX, recHitTruthX)
+        recHitTruthY = ak1.where(recHitSimClusIdx<0, recHitY, recHitTruthY)
+        recHitTruthZ = ak1.where(recHitSimClusIdx<0, recHitZ, recHitTruthZ)
+        recHitTruthTime = ak1.where(recHitSimClusIdx<0, recHitTime, recHitTruthTime)
 
-        #Expand back
-        recHitX = np.expand_dims(recHitX.content, axis=1)
-        recHitY = np.expand_dims(recHitY.content, axis=1)
-        recHitZ = np.expand_dims(recHitZ.content, axis=1)
-        recHitSpectatorFlag = np.concatenate(np.array([recHit_df_events[i]['spectator_distance'].to_numpy() 
-                                                       for i in range(len(recHit_df_events))],dtype=object)).reshape(-1,1)
-        recHitSimClusterNumHits = np.concatenate(np.array([recHit_df_events[i]['recHitSimClus_nHits'].to_numpy() 
-                                                       for i in range(len(recHit_df_events))],dtype=object)).reshape(-1,1)#number of rec hits
-        del recHit_df_events
-                                                                                                              
-        recHitEnergy = self.hitObservable(tree, hits, "energy")
-        recHitDetaId = self.hitObservable(tree, hits, "detId")
-        recHitTime = self.hitObservable(tree, hits, "time")
-        recHitR = np.sqrt(recHitX*recHitX+recHitY*recHitY+recHitZ*recHitZ)
-        recHitTheta = np.arccos(recHitZ/recHitR)
-        recHitEta = -np.log(np.tan(recHitTheta/2))
-
-        # Don't split this until the end, so it can be used to index the truth arrays
-        recHitSimClusIdx = self.hitObservable(tree, hits, "BestMergedSimClusterIdx", split=False, flatten=False)
-
-        simClusterDepEnergy = tree["MergedSimCluster_recEnergy"].array()
-        simClusterEnergy = tree["MergedSimCluster_boundaryEnergy"].array()
-        simClusterEnergyNoMu = tree["MergedSimCluster_boundaryEnergyNoMu"].array()
-        simClusterNumHits = tree["MergedSimCluster_nHits"].array() #numebr of sim hits
-
-        # Remove muon energy, add back muon deposited energy
-        unmergedId = tree["SimCluster_pdgId"].array()
-        unmergedDepE = tree["SimCluster_recEnergy"].array()
-        unmergedMatchIdx = tree["MergedSimCluster_SimCluster_MatchIdx"].array()
-        unmergedMatches = tree["MergedSimCluster_SimClusterNumMatch"].array()
-        unmergedDepEMuOnly = unmergedDepE
-        unmergedDepEMuOnly[np.abs(unmergedId) != 13] = 0
-        # Add another layer of nesting, then sum over all unmerged associated to merged
-        unmergedDepEMuOnly = ak.JaggedArray.fromcounts(unmergedMatches.counts, 
-            ak.JaggedArray.fromcounts(unmergedMatches.content, unmergedDepEMuOnly[unmergedMatchIdx].flatten()))
-        depEMuOnly = unmergedDepEMuOnly.sum()
-        #why wasn't it possible to just do instead of all of the above : simClusterEnergy[simClusterPdgId == 13] = simClusterDepEnergy ?
+        recHitSpectatorFlag = self._createSpectators(tree)
+        #remove spectator flag for noise
+        recHitSpectatorFlag = ak1.where(recHitSimClusIdx<0 , ak1.zeros_like(recHitSpectatorFlag), recHitSpectatorFlag)#this doesn't work for some reason!
+        
+        self.truth={}
+        self.truth['t_idx'] = self._expand(recHitSimClusIdx)# now expand to a trailing dimension
+        self.truth['t_energy'] = recHitTruthEnergy
+        self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
+        self.truth['t_time'] = recHitTruthTime
+        self.truth['t_pid'] = recHitTruthPID
+        self.truth['t_spectator'] = recHitSpectatorFlag
+        self.truth['t_fully_contained'] = fullyContained
+        
         
 
-        simClusterEnergyMuCorr = simClusterEnergyNoMu + depEMuOnly
+############
 
-        simClusterX = tree["MergedSimCluster_impactPoint_x"].array()
-        simClusterY = tree["MergedSimCluster_impactPoint_y"].array()
-        simClusterZ = tree["MergedSimCluster_impactPoint_z"].array()
-        simClusterTime = tree["MergedSimCluster_impactPoint_t"].array()
-        simClusterEta = tree["MergedSimCluster_impactPoint_eta"].array()
-        simClusterPhi = tree["MergedSimCluster_impactPoint_phi"].array()
-        simClusterPdgId = tree["MergedSimCluster_pdgId"].array()
+ 
+class TrackCollection(CollectionBase):
+    def __init__(self, **kwargs):
+        '''
+        Guideline: this is more about clarity than performance. 
+        If it improves clarity read stuff twice or more!
+        '''
+        super(TrackCollection, self).__init__(**kwargs)
+                                       
+    def _readTree(self, tree):
+        
+        self._readSplits(tree, splitlabel='Track_HGCFront_z')
+        
+        trackPt = self._readSplitAndExpand(tree,"Track_pt")
+        trackEta = self._readSplitAndExpand(tree,"Track_HGCFront_eta")
+        trackVertEta = self._readSplitAndExpand(tree,"Track_eta")
+        trackMom = trackPt * np.cosh(trackVertEta)
+        impactX = self._readSplitAndExpand(tree,"Track_HGCFront_x")
+        impactY = self._readSplitAndExpand(tree,"Track_HGCFront_y")
+        impactZ = self._readSplitAndExpand(tree,"Track_HGCFront_z")
+        
+        impactR = np.sqrt(impactX**2+impactY**2+impactZ**2)
+        impactTheta = np.arccos(impactZ/impactR)
+        impactEta = -np.log(np.tan(impactTheta/2))
+        
+        self.features = ak1.concatenate([
+            trackMom,
+            trackEta,
+            ak1.ones_like(trackMom), #indicator if it is track or not
+            impactTheta,
+            impactR,
+            impactX,
+            impactY,
+            impactZ,
+            ak1.zeros_like(trackMom),#no time info (yet,could be from MTD here)
+            ], axis=-1)
+        
+        #this is just for bookkeeping, keep them the same as for hits
+        self.featurenames = [
+            'recHitEnergy',
+            'recHitEta',
+            'isTrack',
+            'recHitTheta',
+            'recHitR',
+            'recHitX',
+            'recHitY',
+            'recHitZ',
+            'recHitTime',
+            ]
+    
+    
+    def _getMatchIdxs(self, tree):
+        
+        
+        #no split here
+        truthMom    = self._readArray(tree,"MergedSimCluster_boundaryEnergy")
+        truthX      = self._readArray(tree,"MergedSimCluster_impactPoint_x")
+        truthY      = self._readArray(tree,"MergedSimCluster_impactPoint_y")
+        truthpos = ak1.concatenate([self._expand(truthX),self._expand(truthY)],axis=-1)
+        
+        impactX = self._readArray(tree,"Track_HGCFront_x")
+        impactY = self._readArray(tree,"Track_HGCFront_y")
+        impactpos = ak1.concatenate([self._expand(impactX),self._expand(impactY)],axis=-1)
+        
+        trackPt = self._readArray(tree,"Track_pt")
+        trackVertEta = self._readArray(tree,"Track_eta")
+        trackMom = trackPt * np.cosh(trackVertEta)
+        
+        #match by x,y, and momentum
+        finalidxs = []
+        for tpos, ipos, tmom, imom in zip(truthpos, impactpos, truthMom, trackMom):
+            # create default
+            tpos, ipos, tmom, imom = tpos.to_numpy(), ipos.to_numpy(), tmom.to_numpy(), imom.to_numpy()
+            
+            tpos = np.expand_dims(tpos, axis=1) #zero is truth
+            ipos = np.expand_dims(ipos, axis=0)
+            
+            #print('tpos',tpos.shape)
+            #print('ipos',ipos.shape)
+            posdiff = np.sum( (tpos-ipos)**2, axis=-1) # K x Trk
+            closestSC = np.argmin(posdiff, axis=0) # Trk
+            #print('closestSC',closestSC.shape)
+            momdiff = np.abs(tmom[closestSC] - imom)/imom #rel diff
+            #print(momdiff,closestSC)
+            
+            #more than 2 percent difference
+            closestSC[momdiff > 0.05] = -1
+            
+            finalidxs.append(closestSC)
+            
+        return ak1.from_iter(finalidxs)
+        
+    
+    def _assignTruth(self, tree):
+        
+        nonSplitTrackSimClusIdx = self._getMatchIdxs(tree)
+        
+        truthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitTrackSimClusIdx)
+        
+        truthPID    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_pdgId",nonSplitTrackSimClusIdx)
+        truthX      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_x",nonSplitTrackSimClusIdx)
+        truthY      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_y",nonSplitTrackSimClusIdx)
+        truthZ      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_z",nonSplitTrackSimClusIdx)
+        truthTime   = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_t",nonSplitTrackSimClusIdx)
+        
+        
+        zeros = ak1.zeros_like(truthEnergy)
+        
+        truthidx = self._expand(self._splitJaggedArray(nonSplitTrackSimClusIdx))
+        self.truth={}
+        self.truth['t_idx'] = truthidx# for now
+        self.truth['t_energy'] = truthEnergy
+        self.truth['t_pos'] = ak1.concatenate([truthX,truthY,truthZ],axis=-1)
+        self.truth['t_time'] = truthTime
+        self.truth['t_pid'] = truthPID
+        self.truth['t_spectator'] = ak1.where(truthidx<0, zeros+10., zeros)
+        self.truth['t_fully_contained'] = zeros+1
+        
+    
+####################### end helpers        
+    
+class TrainData_NanoML(TrainData):
+    def __init__(self):
+        TrainData.__init__(self)
+        self.include_tracks = False
 
-        # Mark simclusters outside of volume or with very few hits as noise
-        # Maybe not a good idea if the merged SC pdgId is screwed up
-        # Probably removing neutrons is a good idea though
-        #noNeutrons = simClusterPdgId[recHitSimClusIdx] == 2112
+    
+    def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
         
-        #filter non-boundary positions. Hopefully working?
-        goodSimClus = tree["MergedSimCluster_isTrainable"].array()
-        # Don't split by index here to keep same dimensions as SimClusIdx
-        markNoise = self.truthObjects(~goodSimClus, recHitSimClusIdx, False, split=False, flatten=False).astype(np.bool_)
+        fileTimeOut(filename, 10)#10 seconds for eos to recover 
+        tree = uproot.open(filename)[treename]
         
         
-        nbefore = (recHitSimClusIdx < 0).sum().sum()
-        recHitSimClusIdx[markNoise] = -1
-        nafter = (recHitSimClusIdx < 0).sum().sum()
-
-        print("Number of noise hits before", nbefore, "after", nafter)
-        print('removed another factor of', nafter/nbefore, ' bad simclusters')
-
-        recHitTruthPID = self.truthObjects(simClusterPdgId, recHitSimClusIdx, 0.)
-        recHitTruthDepEnergy = self.truthObjects(simClusterDepEnergy, recHitSimClusIdx, 0)
-        recHitTruthEnergy = self.truthObjects(simClusterEnergy, recHitSimClusIdx, 0)
-        recHitTruthEnergyCorrMu = self.truthObjects(simClusterEnergyMuCorr, recHitSimClusIdx, 0)
-
-        low_energy_shower_cutoff = 3
-        # Uncorrected currently not used 
-        recHitTruthEnergy = np.where(recHitTruthEnergy>low_energy_shower_cutoff, recHitTruthEnergy,recHitTruthDepEnergy)
-        recHitTruthEnergy = np.where(recHitTruthEnergyCorrMu>low_energy_shower_cutoff, recHitTruthEnergyCorrMu,recHitTruthDepEnergy)
-
-        #very bad names because these quatities are associated to Merged Clusters and not hits
-        recHitTruthX = self.truthObjects(simClusterX, recHitSimClusIdx, 0)
-        recHitTruthY = self.truthObjects(simClusterY, recHitSimClusIdx, 0)
-        recHitTruthZ = self.truthObjects(simClusterZ, recHitSimClusIdx, 0)
-        recHitTruthTime = self.truthObjects(simClusterTime, recHitSimClusIdx, 0)
-        recHitTruthR = np.sqrt(recHitTruthX*recHitTruthX+recHitTruthY*recHitTruthY+recHitTruthZ*recHitTruthZ)
-        recHitTruthTheta = np.arccos(np.divide(recHitTruthZ, recHitTruthR, out=np.zeros_like(recHitTruthZ), where=recHitTruthR!=0))
-        recHitTruthPhi = self.truthObjects(simClusterPhi, recHitSimClusIdx, 0)
-        recHitTruthEta = self.truthObjects(simClusterEta, recHitSimClusIdx, 0)
-        #recHitAverageEnergy =  self.truthObjects(simClusterDepEnergy/simClusterNumHits, recHitSimClusIdx, 0) #this is not technically very good because simClusterNumHits is number of sim clusters, not reco
-        recHitAverageEnergy = recHitTruthDepEnergy/recHitSimClusterNumHits
+        rechitcoll = RecHitCollection(use_true_muon_momentum=self.include_tracks,tree=tree)
         
-        #print(recHitTruthPhi)
-        #print(np.max(recHitTruthPhi))
-        #print(np.min(recHitTruthPhi))
-
-        # Placeholder 
-        zeroFeature = np.zeros(shape=(len(recHitEnergy), 1), dtype='float32')
-
-        features = np.concatenate([
-            recHitEnergy,
-            recHitEta,
-            zeroFeature, #indicator if it is track or not
-            recHitTheta,
-            recHitR,
-            recHitX,
-            recHitY,
-            recHitZ,
-            recHitTime,
-            ], axis=1)
-
-        farr = SimpleArray(name="recHitFeatures")
-        farr.createFromNumpy(features, offsets)
-        del features  
-
-        recHitSimClusIdx = np.expand_dims(self.splitJaggedArray(recHitSimClusIdx).content.astype(np.int32), axis=1)
+        if self.include_tracks:
+            trackcoll = TrackCollection(tree=tree)
+            rechitcoll.append(trackcoll)
+            
+        farr = rechitcoll.getFinalFeaturesSA()
+        t = rechitcoll.getFinalTruthDictSA()
         
-        print('noise',(100*np.count_nonzero(recHitSimClusIdx<0))//recHitSimClusIdx.shape[0],'% of hits')
-        print('truth eta min max',np.min(np.abs(recHitTruthEta[recHitSimClusIdx>=0])),np.max(np.abs(recHitTruthEta[recHitSimClusIdx>=0])))
-        print('non-boundary truth positions', 
-              np.count_nonzero(np.abs(np.abs(recHitTruthZ[recHitSimClusIdx>=0])-320)>5)/recHitTruthZ[recHitSimClusIdx>=0].shape[0])
-        
-        
-        #now all numpy
-        #Why do we want noise (-1) sim hits to be equal rec?
-        recHitTruthX[recHitSimClusIdx<0] = recHitX[recHitSimClusIdx<0]
-        recHitTruthY[recHitSimClusIdx<0] = recHitY[recHitSimClusIdx<0]
-        recHitTruthZ[recHitSimClusIdx<0] = recHitZ[recHitSimClusIdx<0]
-        recHitTruthEnergyCorrMu[recHitSimClusIdx<0] = recHitEnergy[recHitSimClusIdx<0]
-        recHitTruthTime[recHitSimClusIdx<0] = recHitTime[recHitSimClusIdx<0]
-        
-        
-        #import matplotlib.pyplot as plt
-        #plt.hist(np.abs(recHitTruthEnergyCorrMu[recHitSimClusIdx>=0]/recHitTruthDepEnergy[recHitSimClusIdx>=0])) 
-        #plt.yscale('log')
-        #plt.savefig("scat.pdf")
-        
-        truth = np.concatenate([
-            np.array(recHitSimClusIdx,dtype='float32'), # 0
-            recHitTruthEnergyCorrMu,
-            recHitTruthX,
-            recHitTruthY,
-            recHitTruthZ,  #4
-            zeroFeature, #truthHitAssignedDirX,
-            zeroFeature, #6
-            zeroFeature,
-            recHitTruthEta     ,
-            recHitTruthPhi,
-            recHitTruthTime,  #10
-            zeroFeature,
-            zeroFeature,
-            recHitTruthDepEnergy, #13
-            zeroFeature, #14
-            zeroFeature, #15
-            recHitTruthPID, #16 - 16+n_classes #won't be used anymore
-            np.array(recHitSpectatorFlag,dtype='float32'),
-            np.where(recHitTruthZ<front_face_z,1.,0.).astype('float32')], axis=1)
-        
-        
-        
-        
-        t_idxarr = SimpleArray(recHitSimClusIdx, offsets, name="recHitTruthClusterIdx")
-        
-        t_energyarr = SimpleArray(name="recHitTruthEnergy")
-        t_energyarr.createFromNumpy(recHitTruthEnergyCorrMu, offsets)
-        
-        t_posarr = SimpleArray(name="recHitTruthPosition")
-        t_posarr.createFromNumpy(np.concatenate([recHitTruthX, recHitTruthY],axis=-1), offsets)
-        
-        t_time = SimpleArray(name="recHitTruthTime")
-        t_time.createFromNumpy(recHitTruthTime, offsets)
-        
-        t_pid = SimpleArray(name="recHitTruthID")
-        t_pid.createFromNumpy(recHitTruthPID, offsets)
-        
-        t_spectator = SimpleArray(name="recHitSpectatorFlag") #why do we have inconsistent namings, where is it needed? wrt. to truth array
-        t_spectator.createFromNumpy(recHitSpectatorFlag.astype('float32'), offsets)
-                
-        t_fully_contained = SimpleArray(name="recHitFullyContainedFlag")
-        t_fully_contained.createFromNumpy(np.where(recHitTruthZ<front_face_z,1.,0.).astype('float32'), offsets)
-        
-        #remaining truth is mostly for consistency in the plotting tools
-        t_rest = SimpleArray(name="recHitTruth")
-        t_rest.createFromNumpy(truth, offsets)
-        
-        return [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid, t_spectator, t_fully_contained],[t_rest], []
+        return [farr, 
+                t['t_idx'], t['t_energy'], t['t_pos'], t['t_time'], 
+                t['t_pid'], t['t_spectator'], t['t_fully_contained'] ],[], []
     
 
     def interpretAllModelInputs(self, ilist):
@@ -315,7 +515,16 @@ class TrainData_NanoML(TrainData):
         '''
         return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1] 
      
-    def createFeatureDict(self,feat,addxycomb=True):
+    def createFeatureDict(self,infeat,addxycomb=True):
+        '''
+        infeat is the full list of features, including truth
+        '''
+        
+        #small compatibility layer with old usage.
+        feat = infeat
+        if type(infeat) == list:
+            feat=infeat[0]
+        
         d = {
         'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
         'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
@@ -332,39 +541,28 @@ class TrainData_NanoML(TrainData):
             
         return d
     
-    def createTruthDict(self, truth, truthidx=None):
-        out = {}
-        keys = ['truthHitAssignementIdx',             #np.array(recHitSimClusIdx,dtype='float32'), # 0
-                'truthHitAssignedEnergies',           # recHitTruthEnergyCorrMu,
-                'truthHitAssignedX',                  # recHitTruthX,
-                'truthHitAssignedY',                  # recHitTruthY,
-                'truthHitAssignedZ',                  # recHitTruthZ,  #4
-                'truthHitAssignedDirX',               # zeroFeature, #truthHitAssignedDirX,
-                'truthHitAssignedDirY',               # zeroFeature, #6
-                'truthHitAssignedDirZ',               # zeroFeature,
-                'truthHitAssignedEta',                # recHitTruthEta     ,
-                'truthHitAssignedPhi',                # recHitTruthPhi,
-                'truthHitAssignedT',                  # recHitTruthTime,  #10
-                'truthHitAssignedDirEta',             # zeroFeature,
-                'truthHitAssignedDirR',               # zeroFeature,
-                'truthHitAssignedDepEnergies',        # recHitTruthDepEnergy, #13
-                'ticlHitAssignementIdx'  , #17        # zeroFeature, #14  
-                'ticlHitAssignedEnergies', #18        # zeroFeature, #15  
-                'truthHitAssignedPIDs',                # recHitTruthPID #16
-                'truthHitSpectatorFlag',
-                'truthHitFullyContainedFlag']
-                                                                  
-        for key, i in zip(keys, range(len(keys))):
-            out[key] = truth[:,i:i+1]
+    def createTruthDict(self, allfeat, truthidx=None):
+        _, _, t_idx, _, t_energy, _, t_pos, _, t_time, _, t_pid, _,\
+        t_spectator, _, t_fully_contained,_ = allfeat
         
-        if truthidx is not None:
-            out['truthHitAssignementIdx']=truthidx
+        
+        out={
+            'truthHitAssignementIdx': t_idx,
+            'truthHitAssignedEnergies': t_energy,
+            'truthHitAssignedX': t_pos[:,0:1],
+            'truthHitAssignedY': t_pos[:,1:2],
+            'truthHitAssignedZ': t_pos[:,2:3],
+            'truthHitAssignedEta': calc_eta(t_pos[:,0:1], t_pos[:,1:2], t_pos[:,2:3]),
+            'truthHitAssignedPhi': calc_phi(t_pos[:,0:1], t_pos[:,1:2], t_pos[:,2:3]),
+            'truthHitAssignedT': t_time,
+            'truthHitAssignedPIDs': t_pid,
+            'truthHitSpectatorFlag': t_spectator,
+            'truthHitFullyContainedFlag': t_fully_contained,
+            }
         return out
-    
     
     def createPandasDataFrame(self, eventno=-1):
         #since this is only needed occationally
-        import pandas as pd
         
         if self.nElements() <= eventno:
             raise IndexError("Event wrongly selected")
@@ -376,8 +574,7 @@ class TrainData_NanoML(TrainData):
         f = tdc.transferFeatureListToNumpy(False)
         featd = self.createFeatureDict(f[0])
         rs = f[1]
-        t = tdc.transferTruthListToNumpy(False)
-        truthd = self.createTruthDict(t[0])
+        truthd = self.createTruthDict(f)
         
         featd.update(truthd)
         
@@ -420,6 +617,13 @@ class TrainData_NanoML(TrainData):
     def readPredicted(self, predfile):
         with gzip.open(predfile) as mypicklefile:
             return pickle.load(mypicklefile)
+
+
+class TrainData_NanoMLTracks(TrainData_NanoML):
+    def __init__(self):
+        TrainData_NanoML.__init__(self)
+        self.include_tracks = True
+
 
 def main():
     data = TrainData_NanoML()

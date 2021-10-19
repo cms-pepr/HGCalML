@@ -10,7 +10,7 @@ from argparse import ArgumentParser
 import numpy as np
 from tensorflow.keras.layers import BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
-from GravNetLayersRagged import EdgeCreator, EdgeSelector, GroupScoreFromEdgeScores,NoiseFilter,LNC,ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
+from GravNetLayersRagged import ElementScaling,EdgeCreator, EdgeSelector, GroupScoreFromEdgeScores,NoiseFilter,LNC,ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from DeepJetCore.modeltools import DJCKerasModel
 from DeepJetCore.training.training_base import training_base
@@ -43,7 +43,7 @@ from Layers import GooeyBatchNorm #make a new line
 import sql_credentials
 from datetime import datetime
 
-from Regularizers import OffDiagonalRegularizer
+from Regularizers import OffDiagonalRegularizer,AverageDistanceRegularizer
 from initializers import EyeInitializer
 
 td=TrainData_NanoML()
@@ -201,12 +201,16 @@ def gravnet_model(Inputs,
         nfilt = 64+16*i
         nprop = 64+16*i
 
+        coords = ElementScaling()(coords) #just scaling made easy if needed
         x = Concatenate()([coords,x])
 
         x_gn, coords, nidx, dist = RaggedGravNet(n_neighbours=nneigh,
                                               n_dimensions=n_dimensions,
                                               n_filters=nfilt,
                                               n_propagate=nprop)([x, rs])
+        
+        dist = AverageDistanceRegularizer(strength=.1, printout=True
+                                          )(dist)
                                               
         x_mp = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,nidx,dist])
         
@@ -321,27 +325,27 @@ nbatch = 30000
 
 
 # This will both to server and a local file
-database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
-database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
-database_manager.set_experiment(unique_id)
-
-metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
-analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
-cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, database_manager=database_manager, analyzer=analyzer)]
-cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manager=database_reading_manager,output_html_location=os.path.join(train.outputDir,"training_metrics.html"), publish=None)]
-predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
-                           os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
-                           model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
-                           inputdir=os.path.split(train.inputData)[0], max_files=1)
-
-analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another analyzer here to be safe since it will run scan on
-                                                              # on beta and distance threshold which might mess up settings
-optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=10)
-os.system('mkdir %s/full_validation_plots' % (train.outputDir))
-cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=5,
-                             after_n_batches=5000,min_batch=8, predictor=predictor, optimizer=optimizer,
-                             database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
-                                                                                       'full_validation_plots'))]
+#database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
+#database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
+#database_manager.set_experiment(unique_id)
+#
+#metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
+#analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
+#cb += [RunningMetricsDatabaseAdditionCallback(td, tensorboard_manager, database_manager=database_manager, analyzer=analyzer)]
+#cb += [RunningMetricsPlotterCallback(after_n_batches=200, database_reading_manager=database_reading_manager,output_html_location=os.path.join(train.outputDir,"training_metrics.html"), publish=None)]
+#predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'), os.path.join(train.outputDir, 'valsamples.djcdc'),
+#                           os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=nbatch, unbuffered=False,
+#                           model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
+#                           inputdir=os.path.split(train.inputData)[0], max_files=1)
+#
+#analyzer2 = matching_and_analysis.OCAnlayzerWrapper(metadata) # Use another analyzer here to be safe since it will run scan on
+#                                                              # on beta and distance threshold which might mess up settings
+#optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=10)
+#os.system('mkdir %s/full_validation_plots' % (train.outputDir))
+#cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=100, optimization_loop_num_init_points=5,
+#                             after_n_batches=5000,min_batch=8, predictor=predictor, optimizer=optimizer,
+#                             database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
+#                                                                                       'full_validation_plots'))]
 
 
 cb=[]
@@ -383,7 +387,7 @@ cb += [
 
 
 learningrate = 1e-3
-nbatch = 70000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+nbatch = 40000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,

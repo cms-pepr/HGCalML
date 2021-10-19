@@ -26,7 +26,7 @@ from GravNetLayersRagged import EdgeCreator, EdgeSelector, GroupScoreFromEdgeSco
 from Layers import CreateTruthSpectatorWeights, ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
 from Layers import GooeyBatchNorm #make a new line
 from model_blocks import create_outputs, noise_pre_filter
-
+from Regularizers import AverageDistanceRegularizer
 
 '''
 
@@ -175,7 +175,7 @@ def gravnet_model(Inputs,
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
 
         n_dimensions = 3 + i  # make it plottable
-        nneigh = 64 + 32 * i  # this will be almost fully connected for last clustering step
+        nneigh = 8 + 64 * i  # this will be almost fully connected for last clustering step
         nfilt = 64 + 16 * i
         nprop = 64 + 16 * i
 
@@ -187,6 +187,10 @@ def gravnet_model(Inputs,
                                                  n_propagate=nprop)([x, rs])
 
         x_mp = DistanceWeightedMessagePassing([64, 64, 32, 32, 16, 16])([x, nidx, dist])
+        
+        dist = AverageDistanceRegularizer(strength=.02, printout=True
+                                          )(dist)
+
 
         x = Concatenate()([x_gn, x_mp])
         # check and compress it all
@@ -287,7 +291,7 @@ cb += [plotClusteringDuringTraining(
     use_backgather_idx=8 + i,
     outputfile=train.outputDir + "/plts/sn" + str(i) + '_',
     samplefile=samplepath,
-    after_n_batches=20,
+    after_n_batches=200,
     on_epoch_end=False,
     publish=None,
     use_event=0)
@@ -295,21 +299,21 @@ cb += [plotClusteringDuringTraining(
 
 cb += [
     plotEventDuringTraining(
-        outputfile=train.outputDir + "/plts2/sn0",
+        outputfile=train.outputDir + "/plts2/sn0"+str(i),
         samplefile=samplepath,
-        after_n_batches=20,
+        after_n_batches=200,
         batchsize=200000,
         on_epoch_end=False,
         publish=None,
-        use_event=0)
-
+        use_event=i)
+for i in range(5)
 ]
 
 cb += [
     plotGravNetCoordsDuringTraining(
         outputfile=train.outputDir + "/coords_" + str(i) + "/coord_" + str(i),
         samplefile=samplepath,
-        after_n_batches=20,
+        after_n_batches=200,
         batchsize=200000,
         on_epoch_end=False,
         publish=None,
@@ -333,7 +337,7 @@ train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback any
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys)-2, #just adapt truth list to avoid keras error (no effect on model)
+                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
@@ -364,7 +368,7 @@ train.compileModel(learningrate=learningrate,
 model, history = train.trainModel(nepochs=121,
                                   run_eagerly=True,
                                   batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys)-2, #just adapt truth list to avoid keras error (no effect on model)
+                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,

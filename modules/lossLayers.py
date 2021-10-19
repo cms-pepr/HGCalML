@@ -445,6 +445,8 @@ class LLFullObjectCondensation(LossLayerBase):
     def calc_position_loss(self, t_pos, pred_pos):
         if not self.position_loss_weight:
             t_pos = 0.
+        if tf.shape(t_pos)[-1] == 3:#also has z component, but don't use it here
+            t_pos = t_pos[:,0:2]
         #reduce risk of NaNs
         ploss = huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) + 1e-2), 10.) #is in cm
         return self.softclip(ploss, 3.) 

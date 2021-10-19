@@ -4,7 +4,7 @@ print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL","move implem
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 from multiprocessing import Process
 import numpy as np
-from datastructures import TrainData_OC,TrainData_NanoML
+from datastructures import TrainData_NanoML
 import matplotlib.gridspec as gridspec
 import os
 
@@ -51,7 +51,6 @@ def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx"):
     unta = unta[unta>-0.1]
     np.random.shuffle(unta)
     out = ta.copy()
-    print(unta)
     for i in range(len(unta)):
         out[ta ==unta[i]]=i
     df[qualifier] = out
@@ -106,9 +105,9 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
         try:
             td = TrainData_NanoML()#contains all dicts
             #row splits not needed
-            feats = td.createFeatureDict(feat[0],addxycomb=False)
+            feats = td.createFeatureDict(feat,addxycomb=False)
             backgather = predicted[self.use_backgather_idx]
-            truths = td.createTruthDict(truth[0])
+            truths = td.createTruthDict(feat)
             
             data = {}
             data.update(feats)
@@ -126,6 +125,7 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
             
             fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", 
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
+                                symbol = "recHitID",
                                 #template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
@@ -173,8 +173,8 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             '''
             td = TrainData_NanoML()#contains all dicts
             #row splits not needed
-            feats = td.createFeatureDict(feat[0],addxycomb=False)
-            truths = td.createTruthDict(truth[0])
+            feats = td.createFeatureDict(feat,addxycomb=False)
+            truths = td.createTruthDict(feat)
             
             predBeta = predicted[0]
             
@@ -227,6 +227,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             
             fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
+                                symbol = "recHitID",
                                 hover_data=hover_data,
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
@@ -241,6 +242,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
                                 color="truthHitAssignementIdx", size="(predBeta+0.05)**2",
                                 hover_data=hover_data,
+                                symbol = "recHitID",
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
@@ -252,14 +254,15 @@ class plotEventDuringTraining(plotDuringTrainingBase):
                 publish(ccfile, self.publish)
                 
             # thresholded
-            fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
-                                color="truthHitAssignementIdx", size="(thresh(predBeta)+0.05))**2",
+            fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY",
+                                color="truthHitAssignementIdx", size="recHitLogEnergy",
+                                symbol = "recHitID",
                                 hover_data=['predBeta','predEnergy', 'predX', 'predY', 'truthHitAssignementIdx', 
                                             'truthHitAssignedEnergies', 'truthHitAssignedX','truthHitAssignedY'],
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
-            ccfile = self.outputfile + str(self.keep_counter) + "_ccoords_betathresh.html"
+            ccfile = self.outputfile + str(self.keep_counter) + "_truth.html"
             fig.write_html(ccfile)
             
             
@@ -285,9 +288,9 @@ class plotGravNetCoordsDuringTraining(plotDuringTrainingBase):
      
     def _make_plot(self, counter, feat, predicted, truth):
         try:
-            td = TrainData_OC()#contains all dicts
-            truths = td.createTruthDict(truth[0])
-            feats = td.createFeatureDict(feat[0],addxycomb=False)
+            td = TrainData_NanoML()#contains all dicts
+            truths = td.createTruthDict(feat)
+            feats = td.createFeatureDict(feat,addxycomb=False)
                                         
             data = {}
             data.update(truths)
@@ -308,6 +311,7 @@ class plotGravNetCoordsDuringTraining(plotDuringTrainingBase):
             
             fig = px.scatter_3d(df, x="coord A", y="coord B", z="coord C", 
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
+                                symbol = "recHitID",
                                 #hover_data=[],
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)

@@ -827,7 +827,7 @@ class WarpedSpaceKNN(tf.keras.layers.Layer):
 
 
 class SortAndSelectNeighbours(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float=-1., **kwargs):
+    def __init__(self,K: int, radius: float=-1., sort=True, **kwargs):
         """
         
         This layer will sort neighbour indices by distance and possibly select neighbours
@@ -847,11 +847,13 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         super(SortAndSelectNeighbours, self).__init__(**kwargs) 
         self.K = K
         self.radius = radius
+        self.sort=sort
         
         
     def get_config(self):
         config = {'K': self.K,
-                  'radius': self.radius}
+                  'radius': self.radius,
+                  'sort': self.sort}
         base_config = super(SortAndSelectNeighbours, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -870,7 +872,10 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         return [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i]) for i in range(len(output_shapes))]
         
     @staticmethod 
-    def raw_call(distances, nidx, K, radius):
+    def raw_call(distances, nidx, K, radius, sort):
+        
+        if not sort:
+            distances[:,:K],nidx[:,:K]
         
         tfdist = tf.where(nidx<0, 1e9, distances) #make sure the -1 end up at the end
 
@@ -896,7 +901,7 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         
     def call(self, inputs):
         distances, nidx = inputs
-        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius)
+        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius,self.sort)
         #make TF compatible
         
         

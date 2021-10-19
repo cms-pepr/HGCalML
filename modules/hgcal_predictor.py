@@ -10,11 +10,9 @@ from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
 import tempfile
 import atexit
-from datastructures.TrainData_NanoML import TrainData_NanoML
+from datastructures import TrainData_NanoML, TrainData_NanoMLTracks
 
 import os
-from keras.models import load_model
-from keras import backend as K
 from DeepJetCore.customObjects import get_custom_objects
 from DeepJetCore.training.gpuTools import DJCSetGPUs
 from DeepJetCore.training.training_base import custom_objects_list
@@ -95,7 +93,7 @@ class HGCalPredictor():
 
             td = self.dc.dataclass()
 
-            if type(td) is not TrainData_NanoML and type(td) is not TrainData_TrackML:
+            if type(td) is not TrainData_NanoML and type(td) is not TrainData_NanoMLTracks and type(td) is not TrainData_TrackML:
                 raise RuntimeError("TODO: make sure this works for other traindata formats")
 
             if inputfile[-5:] == 'djctd':
@@ -126,8 +124,8 @@ class HGCalPredictor():
             for i in range(num_steps):
                 data_in = next(generator)
                 predictions_dict = model.call_with_dict_as_output(data_in[0], numpy=True)
-                features_dict = td.createFeatureDict(data_in[0][0])
-                truth_dict = td.createTruthDict(data_in[1][0])
+                features_dict = td.createFeatureDict(data_in[0])
+                truth_dict = td.createTruthDict(data_in[0])
 
                 print("Num rechits", len(features_dict['recHitX']), data_in[0][1])
 
