@@ -2,6 +2,7 @@
 This is one of the really good models and configurations.
 Keep this in mind
 '''
+import pdb
 import matching_and_analysis
 from experiment_database_manager import ExperimentDatabaseManager
 import tensorflow as tf
@@ -64,6 +65,7 @@ def gravnet_model(Inputs,
 
     feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator, t_fully_contained, row_splits = td.interpretAllModelInputs(Inputs)
     orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid, orig_row_splits = t_idx, t_energy, t_pos, t_time, t_pid, row_splits
+    pdb.set_trace()
     gidx_orig = CreateGlobalIndices()(feat)
     
     t_spectator_weight = CreateTruthSpectatorWeights(threshold = 1.21, 
