@@ -94,6 +94,8 @@ class ExperimentDatabaseManager():
                         if type(e) == mysql.connector.errors.InterfaceError or type(
                                 mysql.connector.errors.OperationalError):
                             print("Error connecting to server, will try again in a second")
+                            print(query)
+
                             time.sleep(1)
                             if con.is_connected():
                                 con.close()
@@ -414,12 +416,27 @@ class ExperimentDatabaseManager():
         con.close()
         return len_of_rows > 0
 
-    def _delete_experiment(self, con, cur, experiment_name):
+
+    def _delete_experiment(self, con, cur, experiment_name, ismysql=False):
         query = "SELECT data_table_name from data_tables"
         cur.execute(query)
         result = cur.fetchall()
-        for table_name in result:
-            table_name = table_name[0]
+        if ismysql:
+            query = "SELECT table_name from information_schema.tables"
+        else:
+            query = "SELECT name FROM sqlite_master WHERE type='table' AND name='experiments';"
+        cur.execute(query)
+        result2 = cur.fetchall()
+
+        table_names_1 = [x[0] for x in result]
+        table_names_2 = [x[0] for x in result2]
+
+        table_names = []
+        for t in table_names_1:
+            if t in table_names_2:
+                table_names.append(t)
+
+        for table_name in table_names:
             query = "DELETE FROM %s WHERE experiment_name='%s';" % (table_name, experiment_name)
             cur.execute(query)
 
@@ -441,9 +458,9 @@ class ExperimentDatabaseManager():
     def delete_experiment(self, experiment_name):
         if self.has_mysql:
             con, cur = self.connect_to_mysql()
-            self._delete_experiment(con, cur, experiment_name)
+            self._delete_experiment(con, cur, experiment_name, ismysql=True)
             con.close()
         if self.has_file:
             con, cur = self.connect_to_file()
-            self._delete_experiment(con, cur, experiment_name)
+            self._delete_experiment(con, cur, experiment_name, ismysql=False)
             con.close()

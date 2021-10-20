@@ -1,0 +1,20 @@
+ANGLE: true
+COS: false
+D: 4
+MSE: false
+NORM: true
+ORTHO: false
+batch_size: 100000
+dpath: /eos/home-p/phzehetn/Data/NewCov/
+epochs: 10000
+identifier: AngleNorm_medium4D
+n: 1000000
+nodes:
+- 128
+- 64
+- 32
+- 16
+- 32
+- 64
+- 128
+slim: false
