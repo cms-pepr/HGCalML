@@ -465,7 +465,7 @@ class ApproxPCA(tf.keras.layers.Layer):
     # New implementation of NeighbourApproxPCA 
     # Old version is kept to not cause unexpected behaviour
     def __init__(self, size='large', 
-                 base_path=os.environ.get('HGCALML') + 'HGCalML_data/pca/pretrained/', 
+                 base_path=os.environ.get('HGCALML') + '/HGCalML_data/pca/pretrained/', 
                  **kwargs):
         """
         Inputs: 
