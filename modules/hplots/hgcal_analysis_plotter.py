@@ -12,7 +12,6 @@ from hplots.general_hist_plot import GeneralHistogramPlot
 import matching_and_analysis
 
 
-
 class HGCalAnalysisPlotter:
     def __init__(self, plots = ['settings', 'efficiency_fo_truth', 'fake_rate_fo_pred', 'response_fo_truth',
                                 'response_fo_pred', 'response_sum_fo_truth', 'energy_resolution',
@@ -272,4 +271,6 @@ class HGCalAnalysisPlotter:
             EnergyFoundFoTruthEnergyPlot.draw_together_scalar_metrics(self.energy_found_fo_truth_plot, self.energy_found_fo_pred_plot)
             pdf.savefig()
 
+
         pdf.close()
+        plt.close('all')

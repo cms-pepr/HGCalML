@@ -10,7 +10,7 @@ from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
 import tempfile
 import atexit
-from datastructures import TrainData_NanoML, TrainData_NanoMLTracks
+from datastructures.TrainData_NanoML import TrainData_NanoMLTracks, TrainData_NanoML
 
 import os
 from DeepJetCore.customObjects import get_custom_objects
