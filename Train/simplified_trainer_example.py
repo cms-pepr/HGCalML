@@ -323,7 +323,7 @@ cb += [
     for i in range(12, 18)  # between 16 and 21
 ]
 
-cb += build_callbacks(train, td)
+cb += build_callbacks(train)
 
 
 learningrate = 1e-3

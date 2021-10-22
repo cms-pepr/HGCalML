@@ -606,6 +606,7 @@ class LLFullObjectCondensation(LossLayerBase):
                   'pos_loss', pos_loss.numpy(),
                   'time_loss', time_loss.numpy(),
                   'class_loss', class_loss.numpy(),
+                  'exceed_beta',exceed_beta.numpy(),
                   'ccdamp', ccdamp.numpy(),'\n')
 
         return lossval

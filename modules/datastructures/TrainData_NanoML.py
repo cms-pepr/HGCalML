@@ -222,6 +222,7 @@ class RecHitCollection(CollectionBase):
         recHitX = self._readSplitAndExpand(tree,"RecHitHGC_x")
         recHitY = self._readSplitAndExpand(tree,"RecHitHGC_y")
         recHitZ = self._readSplitAndExpand(tree,"RecHitHGC_z")
+        recHitHitR = self._readSplitAndExpand(tree,"RecHitHGC_hitr")
         
         recHitR = np.sqrt(recHitX*recHitX+recHitY*recHitY+recHitZ*recHitZ)
         recHitTheta = np.arccos(recHitZ/recHitR)
@@ -239,6 +240,7 @@ class RecHitCollection(CollectionBase):
             recHitY,
             recHitZ,
             recHitTime,
+            recHitHitR
             ], axis=-1)
         
         #this is just for bookkeeping
@@ -252,6 +254,7 @@ class RecHitCollection(CollectionBase):
             'recHitY',
             'recHitZ',
             'recHitTime',
+            'recHitHitR'
             ]
         #done
     
@@ -370,10 +373,10 @@ class TrackCollection(CollectionBase):
         impactX = self._readSplitAndExpand(tree,"Track_HGCFront_x")
         impactY = self._readSplitAndExpand(tree,"Track_HGCFront_y")
         impactZ = self._readSplitAndExpand(tree,"Track_HGCFront_z")
+        chi2 = self._readSplitAndExpand(tree,"Track_normChiSq")
         
         impactR = np.sqrt(impactX**2+impactY**2+impactZ**2)
         impactTheta = np.arccos(impactZ/impactR)
-        impactEta = -np.log(np.tan(impactTheta/2))
         
         self.features = ak1.concatenate([
             trackMom,
@@ -385,6 +388,7 @@ class TrackCollection(CollectionBase):
             impactY,
             impactZ,
             ak1.zeros_like(trackMom),#no time info (yet,could be from MTD here)
+            chi2 #this is radius for hits, here chi2 for tracks, since it's kinda realted to the impact points resolution...
             ], axis=-1)
         
         #this is just for bookkeeping, keep them the same as for hits
@@ -398,6 +402,7 @@ class TrackCollection(CollectionBase):
             'recHitY',
             'recHitZ',
             'recHitTime',
+            'recHitHitR'
             ]
     
     
@@ -485,6 +490,7 @@ class TrainData_NanoML(TrainData):
         
         rechitcoll = RecHitCollection(use_true_muon_momentum=self.include_tracks,tree=tree)
         
+        #in a similar manner, we can also add tracks from conversions etc here
         if self.include_tracks:
             trackcoll = TrackCollection(tree=tree)
             rechitcoll.append(trackcoll)
@@ -535,6 +541,7 @@ class TrainData_NanoML(TrainData):
         'recHitY'     : feat[:,6:7] ,          #recHitY     ,
         'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
         'recHitTime'  : feat[:,8:9] ,            #recHitTime  
+        'recHitHitR'  : feat[:,9:10] ,            #recHitTime  
         }
         if addxycomb:
             d['recHitXY']  = feat[:,5:7]    
