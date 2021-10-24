@@ -319,12 +319,13 @@ class RecHitCollection(CollectionBase):
         
         nonSplitRecHitSimClusIdx = self._createTruthAssociation(tree)
         
-        if self.use_true_muon_momentum:
-            recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitRecHitSimClusIdx)
-        else:
-            recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergyNoMu",nonSplitRecHitSimClusIdx)
-            
         recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_pdgId",nonSplitRecHitSimClusIdx)
+        recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitRecHitSimClusIdx)
+        
+        if not self.use_true_muon_momentum:
+            recHitDepEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_recEnergy",nonSplitRecHitSimClusIdx)
+            recHitTruthEnergy = ak1.where(np.abs(recHitTruthPID[:,:,0])==13, recHitDepEnergy, recHitTruthEnergy)
+            
         recHitTruthX      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_x",nonSplitRecHitSimClusIdx)
         recHitTruthY      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_y",nonSplitRecHitSimClusIdx)
         recHitTruthZ      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_z",nonSplitRecHitSimClusIdx)
