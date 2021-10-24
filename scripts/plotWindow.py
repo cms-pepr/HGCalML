@@ -76,7 +76,7 @@ def toDataFrame(thegen, thetd):
     dftruth = thetd.createTruthDict(data)
     df = popRSAndSqueeze(df)
     dftruth = popRSAndSqueeze(dftruth)
-    df['recHitLogEnergy'] = np.log(df['recHitEnergy']+1)
+    df['recHitLogEnergy'] = np.log(df['recHitEnergy']+1.+1e-6)
     dffeat = pd.DataFrame.from_dict(df)
     dftruth = pd.DataFrame.from_dict(dftruth)
     df.update(dftruth)
@@ -107,10 +107,13 @@ for i in tqdm.tqdm(range(nevents)):
     if i < 20:
         #makes a copy
         df3d = shuffle_truth_colors(df)
-        df3d['invTruthHitSpectatorFlag'] = np.where(df3d['truthHitAssignementIdx']<0,0.,
+        df3d['invTruthHitSpectatorFlag'] = np.where(df3d['truthHitAssignementIdx']<0,
+                                                    0.,
                                     np.ones_like(df3d['truthHitSpectatorFlag'])) * 1./(df3d['truthHitSpectatorFlag']+1e-1)
         
-        hover_data=['truthHitAssignedEnergies',
+        hover_data=['recHitEnergy',
+                    'recHitHitR',
+                    'truthHitAssignedEnergies',
                     'truthHitAssignedT',
                     'truthHitAssignedX',
                     'truthHitAssignedY',
@@ -126,6 +129,16 @@ for i in tqdm.tqdm(range(nevents)):
                         color_continuous_scale=px.colors.sequential.Rainbow)
         fig.update_traces(marker=dict(line=dict(width=0)))
         ccfile = outdir + str(i) + "_event.html"
+        fig.write_html(ccfile)
+        
+        fig = px.scatter_3d(df3d, x="recHitX", y="recHitZ", z="recHitY", 
+                                    color="truthHitAssignementIdx", size="recHitHitR",
+                                    symbol = "recHitID",
+                                    hover_data=hover_data,
+                                    template='plotly_dark',
+                        color_continuous_scale=px.colors.sequential.Rainbow)
+        fig.update_traces(marker=dict(line=dict(width=0)))
+        ccfile = outdir + str(i) + "_event_hitsize.html"
         fig.write_html(ccfile)
         
         fig = px.scatter_3d(df3d, x="recHitX", y="recHitZ", z="recHitY", 

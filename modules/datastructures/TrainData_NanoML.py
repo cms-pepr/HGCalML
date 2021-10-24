@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import cdist
 from sklearn.preprocessing import StandardScaler
-import tensorflow as tf
+import time
 #from IPython import embed
 import os
 
@@ -34,7 +34,7 @@ def find_pcas(x_to_fit,PCA_n=2,min_hits=10):
 
 def calc_eta(x, y, z):
     rsq = np.sqrt(x ** 2 + y ** 2)
-    return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.)
+    return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.+1e-3)
     
 def calc_phi(x, y, z):
     return np.arctan2(x, y)
@@ -77,11 +77,9 @@ class CollectionBase(object):
             raise ValueError("First determine split indices by running _readSplits")
         split1 = jagged[self.splitIdx]
         split2 = jagged[~self.splitIdx]
-        pairEvents = []
-        for x in zip(split1, split2):
-            pairEvents.extend(x)
-        return ak1.from_awkward0(ak.JaggedArray.fromiter(pairEvents))
-    
+        arr = ak1.concatenate([split1,split2],axis=0)
+        return arr
+        
     def _assignTruthByIndexAndSplit(self, tree, label, indices, null=0):
         sc = label
         if type(label) is str:
@@ -92,11 +90,18 @@ class CollectionBase(object):
         return self._expand(ja)
     
     def _expand(self, ja):
+        arr = ja[...,np.newaxis]
+        return arr
+    
+        #old: slow but working
+        starttime = time.time()
         nplist=[]
         for a in ja:
             npexp = np.expand_dims(a.to_numpy(),axis=1)
             nplist.append(npexp)
-        return ak1.from_iter(nplist)
+        arr = ak1.from_iter(nplist)
+        print('expand took',time.time()-starttime,'s')
+        return arr
     
     def _readSplitAndExpand(self, tree, label):
         obs = self._readArray(tree, label)
@@ -108,7 +113,8 @@ class CollectionBase(object):
         return self._splitJaggedArray(obs)
 
     def _readArray(self, tree, label):#for uproot3/4 ak0 to ak1 transition period
-        return ak1.from_awkward0(tree[label].array())
+        arr = ak1.from_awkward0(tree[label].array())
+        return arr
     
     def _checkshapes(self, a, b):
         assert len(a) == len(b)
@@ -259,7 +265,7 @@ class RecHitCollection(CollectionBase):
         #done
     
     def _createSpectators(self, tree):
-        
+        starttime = time.time()
         recHitX = self._readAndSplit(tree,"RecHitHGC_x")
         recHitY = self._readAndSplit(tree,"RecHitHGC_y")
         recHitZ = self._readAndSplit(tree,"RecHitHGC_z")
@@ -275,12 +281,16 @@ class RecHitCollection(CollectionBase):
         for ievent in range(len(recHit_df_events)):
             df_event = recHit_df_events[ievent]
             unique_shower_idx = np.unique(df_event['recHitSimClusIdx'])
-            df_event['spectator_distance'] = 0 #
+            df_event['spectator_distance'] = 0. #
             df_event['recHitSimClus_nHits'] =  df_event.groupby('recHitSimClusIdx').recHitX.transform(len) #adding number of rec hits that are associated to this truth cluster
             for idx in unique_shower_idx:
                 df_shower = df_event[df_event['recHitSimClusIdx']==idx]
                 x_to_fit = df_shower[['recHitX','recHitY','recHitZ']].to_numpy()
-                spectators_shower_dist = find_pcas(x_to_fit,PCA_n=2,min_hits=10)
+                spectators_shower_dist = None
+                try:
+                    spectators_shower_dist = find_pcas(x_to_fit,PCA_n=2,min_hits=10)
+                except:
+                    pass
                 if (spectators_shower_dist is not None) : 
                     spectators_idx = (df_shower.index.tolist())
                     df_event.loc[spectators_idx,'spectator_distance'] = spectators_shower_dist
@@ -289,6 +299,8 @@ class RecHitCollection(CollectionBase):
             
         recHitSpectatorFlag = ak1.from_iter([np.expand_dims(recHit_df_events[i]['spectator_distance'].to_numpy(),axis=1)
                                                        for i in range(len(recHit_df_events))])
+        
+        print('ended spectators after', time.time()-starttime,'s')
         return recHitSpectatorFlag   
     
     def _maskNoiseSC(self, tree,noSplitRecHitSimClusIdx):
@@ -318,7 +330,9 @@ class RecHitCollection(CollectionBase):
         recHitTruthZ      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_z",nonSplitRecHitSimClusIdx)
         recHitTruthTime   = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_t",nonSplitRecHitSimClusIdx)
         
-        fullyContained = ak1.where(np.abs(recHitTruthZ)<323.,ak1.ones_like(recHitTruthZ),ak1.zeros_like(recHitTruthZ))
+        fullyContained = ak1.where(np.abs(recHitTruthZ)[:,:,0]<323.,#somehow that seems necessary
+                                   ak1.ones_like(recHitTruthZ),
+                                   ak1.zeros_like(recHitTruthZ))
         
         recHitEnergy = self._readSplitAndExpand(tree,"RecHitHGC_energy")
         recHitTime   = self._readSplitAndExpand(tree,"RecHitHGC_time")
@@ -408,16 +422,20 @@ class TrackCollection(CollectionBase):
     
     def _getMatchIdxs(self, tree):
         
+        #match by eta phi
+        def deltaPhi(a,b):
+            d = np.abs(a-b)
+            return np.where(d>np.pi,d-np.pi,d)
         
         #no split here
         truthMom    = self._readArray(tree,"MergedSimCluster_boundaryEnergy")
-        truthX      = self._readArray(tree,"MergedSimCluster_impactPoint_x")
-        truthY      = self._readArray(tree,"MergedSimCluster_impactPoint_y")
-        truthpos = ak1.concatenate([self._expand(truthX),self._expand(truthY)],axis=-1)
+        truthEta      = self._readArray(tree,"MergedSimCluster_impactPoint_eta")
+        truthPhi      = self._readArray(tree,"MergedSimCluster_impactPoint_phi")
+        truthpos = ak1.concatenate([self._expand(truthEta),self._expand(truthPhi)],axis=-1)
         
-        impactX = self._readArray(tree,"Track_HGCFront_x")
-        impactY = self._readArray(tree,"Track_HGCFront_y")
-        impactpos = ak1.concatenate([self._expand(impactX),self._expand(impactY)],axis=-1)
+        impactEta = self._readArray(tree,"Track_HGCFront_eta")
+        impactPhi = self._readArray(tree,"Track_HGCFront_phi")
+        impactpos = ak1.concatenate([self._expand(impactEta),self._expand(impactPhi)],axis=-1)
         
         trackPt = self._readArray(tree,"Track_pt")
         trackVertEta = self._readArray(tree,"Track_eta")
@@ -425,23 +443,27 @@ class TrackCollection(CollectionBase):
         
         #match by x,y, and momentum
         finalidxs = []
-        for tpos, ipos, tmom, imom in zip(truthpos, impactpos, truthMom, trackMom):
+        for tpos, ipos, tmom, imom, ipt in zip(truthpos, impactpos, truthMom, trackMom, trackPt):
             # create default
-            tpos, ipos, tmom, imom = tpos.to_numpy(), ipos.to_numpy(), tmom.to_numpy(), imom.to_numpy()
+            tpos, ipos, tmom, imom,ipt = tpos.to_numpy(), ipos.to_numpy(), tmom.to_numpy(), imom.to_numpy(), ipt.to_numpy()
             
-            tpos = np.expand_dims(tpos, axis=1) #zero is truth
-            ipos = np.expand_dims(ipos, axis=0)
+            tpos = np.expand_dims(tpos, axis=0) #one is truth
+            tmom = np.expand_dims(tmom, axis=0) #one is truth
+            ipos = np.expand_dims(ipos, axis=1)
+            imom = np.expand_dims(imom, axis=1)
             
-            #print('tpos',tpos.shape)
-            #print('ipos',ipos.shape)
-            posdiff = np.sum( (tpos-ipos)**2, axis=-1) # K x Trk
-            closestSC = np.argmin(posdiff, axis=0) # Trk
-            #print('closestSC',closestSC.shape)
-            momdiff = np.abs(tmom[closestSC] - imom)/imom #rel diff
-            #print(momdiff,closestSC)
+            ipt = np.expand_dims(ipt,axis=1)
+            #this is in cm. 
+            posdiffsq = np.sum( (tpos[:,:,0:1]-ipos[:,:,0:1])**2 +deltaPhi(tpos[:,:,1:2],ipos[:,:,1:2])**2, axis=-1) # Trk x K
+            #this is in %
+            momdiff = 100.*np.abs(tmom - imom)/(imom+1e-3) #rel diff
+            #scale position by 100 (DeltaR)
+            totaldiff = np.sqrt(100.**2*posdiffsq + (momdiff*np.exp(-0.05*ipt))**2)#weight momentum difference less with higher momenta
             
-            #more than 2 percent difference
-            closestSC[momdiff > 0.05] = -1
+            closestSC = np.argmin(totaldiff, axis=1) # Trk
+            
+            #more than 5 percent/1cm total difference
+            closestSC[totaldiff[np.arange(len(closestSC)),closestSC] > 5] = -1
             
             finalidxs.append(closestSC)
             
@@ -454,6 +476,7 @@ class TrackCollection(CollectionBase):
         
         truthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitTrackSimClusIdx)
         
+        
         truthPID    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_pdgId",nonSplitTrackSimClusIdx)
         truthX      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_x",nonSplitTrackSimClusIdx)
         truthY      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_y",nonSplitTrackSimClusIdx)
@@ -461,16 +484,36 @@ class TrackCollection(CollectionBase):
         truthTime   = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_t",nonSplitTrackSimClusIdx)
         
         
-        zeros = ak1.zeros_like(truthEnergy)
+        #some manual sets
         
-        truthidx = self._expand(self._splitJaggedArray(nonSplitTrackSimClusIdx))
+        zeros = ak1.zeros_like(truthEnergy)
+        splittruthidx = self._splitJaggedArray(nonSplitTrackSimClusIdx)
+        
+        spectator = ak1.where(splittruthidx<0, zeros+10., zeros)
+        
+        trackPt = self._readSplitAndExpand(tree,"Track_pt")
+        trackVertEta = self._readSplitAndExpand(tree,"Track_eta")
+        trackMom = trackPt * np.cosh(trackVertEta)
+        
+        impactX = self._readSplitAndExpand(tree,"Track_HGCFront_x")
+        impactY = self._readSplitAndExpand(tree,"Track_HGCFront_y")
+        impactZ = self._readSplitAndExpand(tree,"Track_HGCFront_z")
+        
+        truthX = ak1.where(splittruthidx<0, impactX, truthX)
+        truthY = ak1.where(splittruthidx<0, impactY, truthY)
+        truthZ = ak1.where(splittruthidx<0, impactZ, truthZ)
+        
+        truthEnergy = ak1.where(splittruthidx<0, trackMom, truthEnergy)
+        
+        truthidx = self._expand(splittruthidx)
+        
         self.truth={}
         self.truth['t_idx'] = truthidx# for now
         self.truth['t_energy'] = truthEnergy
         self.truth['t_pos'] = ak1.concatenate([truthX,truthY,truthZ],axis=-1)
         self.truth['t_time'] = truthTime
         self.truth['t_pid'] = truthPID
-        self.truth['t_spectator'] = ak1.where(truthidx<0, zeros+10., zeros)
+        self.truth['t_spectator'] = spectator
         self.truth['t_fully_contained'] = zeros+1
         
     
@@ -481,6 +524,22 @@ class TrainData_NanoML(TrainData):
         TrainData.__init__(self)
         self.include_tracks = False
 
+    
+    def fileIsValid(self, filename):
+        #uproot does not raise exceptions early enough for testing
+        import ROOT
+        try:
+            fileTimeOut(filename, 2)
+            tree = uproot.open(filename)["Events"]
+            f=ROOT.TFile.Open(filename)
+            t=f.Get("Events")
+            if t.GetEntries() < 1:
+                raise ValueError("")
+        except Exception as e:
+            print('problem with file',filename)
+            print(e)
+            return False
+        return True
     
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
         
@@ -587,7 +646,7 @@ class TrainData_NanoML(TrainData):
         
         del featd['recHitXY'] #so that it's flat
         
-        featd['recHitLogEnergy'] = np.log(featd['recHitEnergy']+1)
+        featd['recHitLogEnergy'] = np.log(featd['recHitEnergy']+1.+1e-8)
         
         allarr = []
         for k in featd:
