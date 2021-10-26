@@ -183,7 +183,7 @@ class HGCalAnalysisPlotter:
 
 
         if 'efficiency_fo_truth' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1)
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y = np.not_equal(y, -1)
 
             self.efficiency_plot.add_raw_values(x, y, tags)
@@ -191,24 +191,24 @@ class HGCalAnalysisPlotter:
 
         if 'fake_rate_fo_pred' in self.plots:
 
-            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1)
+            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y = np.equal(y, -1)
             self.fake_rate_plot.add_raw_values(x,y, tags)
 
 
 
         if 'response_fo_truth' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1)
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             filter = y!=-1
             self.response_plot.add_raw_values(x[filter], y[filter] / x[filter], tags)
 
         if 'response_fo_pred' in self.plots:
-            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1)
+            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             filter = y!=-1
             self.response_fo_pred_plot.add_raw_values(x[filter], x[filter] / y[filter], tags)
 
         if 'response_sum_fo_truth' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1)
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
             filter = y!=-1
             self.response_sum_plot.add_raw_values(x[filter], y[filter] / x[filter], tags)
 
@@ -218,11 +218,11 @@ class HGCalAnalysisPlotter:
         #     self.resolution_histogram_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'][filter_truth_found], tags)
 
         if 'energy_found_fo_truth' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1)
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y[y==-1] = 0
             self.energy_found_fo_truth_plot.add_raw_values(x, np.minimum(x,y), tags=tags)
         if 'energy_found_fo_pred' in self.plots:
-            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1)
+            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y[y==-1] = 0
             self.energy_found_fo_pred_plot.add_raw_values(x, np.minimum(x,y), tags=tags)
 

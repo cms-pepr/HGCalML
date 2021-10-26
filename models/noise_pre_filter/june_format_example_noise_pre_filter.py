@@ -55,17 +55,17 @@ def gravnet_model(Inputs,
                   viscosity=0.1,
                   print_viscosity=False,
                   fluidity_decay=1e-3, #reaches after about 7k batches
-                  max_viscosity=0.95 
+                  max_viscosity=0.95
                   ):
 
-    
+
     #Input preprocessing below. Not much to change here
 
     feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator, t_fully_contained, row_splits = td.interpretAllModelInputs(Inputs)
     orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid, orig_row_splits = t_idx, t_energy, t_pos, t_time, t_pid, row_splits
     gidx_orig = CreateGlobalIndices()(feat)
-    
-    t_spectator_weight = CreateTruthSpectatorWeights(threshold = 1.21, 
+
+    t_spectator_weight = CreateTruthSpectatorWeights(threshold = 1.21,
                                                 minimum=1e-2,
                                                 active = True
                                                 )([t_spectator,t_idx])
@@ -93,25 +93,25 @@ def gravnet_model(Inputs,
 
 
     ############## Keep this part to reload the noise filter with pre-trained weights for other trainings
-    
+
     coords = orig_coords
-    
+
     other = [x, coords, energy, sel_gidx, t_spectator_weight, t_idx]
-    
+
     coords, nidx, dist, noise_score, rs, bg, other = noise_pre_filter(
-        x, coords, rs, 
+        x, coords, rs,
         other,  t_idx, threshold=0.025)
-    
+
     x_nn, coords, energy, sel_gidx, t_spectator_weight, t_idx = other
-    
-    
+
+
     ###>>> Noise filter part done
-    
+
     #this is going to be among the most expensive operations:
     x = Dense(64, activation='elu',name='noise_filter_nf_nf_nf_dummy')(x)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
 
-    
+
     pred_beta, pred_ccoords, pred_dist, pred_energy,\
        pred_pos, pred_time, pred_id = create_outputs(x,feat,fix_distance_scale=False,
                                                      name_prefix='noise_filter')
@@ -133,7 +133,7 @@ def gravnet_model(Inputs,
                                             [pred_beta, pred_ccoords,pred_dist,
                                             pred_energy,pred_pos, pred_time, pred_id]+
                                              #truth information
-                                            [orig_t_idx, orig_t_energy, 
+                                            [orig_t_idx, orig_t_energy,
                                              orig_t_pos, orig_t_time, orig_t_pid,
                                              orig_t_spectator_weight,
                                              row_splits])
@@ -304,5 +304,4 @@ model, history = train.trainModel(nepochs=121,
                                   max_lr = learningrate,
                                   step_size = 100)]+cb)
 #
-
 
