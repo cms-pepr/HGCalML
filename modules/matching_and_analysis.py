@@ -170,8 +170,9 @@ class OCRecoGraphAnalyzer:
             node_attributes['eta'] = truth_dict['truthHitAssignedEta'][truth_shower_idx[i], 0].item()
             node_attributes['phi'] = truth_dict['truthHitAssignedPhi'][truth_shower_idx[i], 0].item()
             node_attributes['t'] = truth_dict['truthHitAssignedT'][truth_shower_idx[i], 0].item()
-            node_attributes['dep_energy'] = truth_dict['truthHitAssignedDepEnergies'][
-                truth_shower_idx[i], 0].item()
+            node_attributes['dep_energy'] = 0. #FIXME
+            #node_attributes['dep_energy'] = truth_dict['truthHitAssignedDepEnergies'][
+            #    truth_shower_idx[i], 0].item()
             node_attributes['pid'] = truth_dict['truthHitAssignedPIDs'][truth_shower_idx[i], 0].item()
 
             node_attributes['type'] = NODE_TYPE_TRUTH_SHOWER

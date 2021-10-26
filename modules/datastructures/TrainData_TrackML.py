@@ -67,7 +67,7 @@ class TrainData_TrackML(TrainData):
 
     def truth2dict(self, truth):
 
-
+        raise ValueError("needs update after format change")
         d = {
             'particle_id': truth[:, 0:1],
             'hit_id': truth[:, 1:2],
@@ -78,50 +78,45 @@ class TrainData_TrackML(TrainData):
         }
         return d
 
-    def createFeatureDict(self, feat, addxycomb=True):
+    def createFeatureDict(self,infeat,addxycomb=True):
+        '''
+        infeat is the full list of features, including truth
+        '''
+        
+        #small compatibility layer with old usage.
+        feat = infeat
+        if type(infeat) == list:
+            feat=infeat[0]
+        
         d = {
-            'recHitEnergy': feat[:, 0:1],  # recHitEnergy,
-            'recHitEta': feat[:, 1:2],  # recHitEta   ,
-            'recHitID': feat[:, 2:3],  # recHitID, #indicator if it is track or not
-            'recHitTheta': feat[:, 3:4],  # recHitTheta ,
-            'recHitR': feat[:, 4:5],  # recHitR   ,
-            'recHitX': feat[:, 5:6],  # recHitX     ,
-            'recHitY': feat[:, 6:7],  # recHitY     ,
-            'recHitZ': feat[:, 7:8],  # recHitZ     ,
-            'recHitTime': feat[:, 8:9],  # recHitTime
+        'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
+        'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
+        'recHitID'    : feat[:,2:3] ,          #recHitID, #indicator if it is track or not
+        'recHitTheta' : feat[:,3:4] ,          #recHitTheta ,
+        'recHitR'     : feat[:,4:5] ,          #recHitR   ,
+        'recHitX'     : feat[:,5:6] ,          #recHitX     ,
+        'recHitY'     : feat[:,6:7] ,          #recHitY     ,
+        'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
+        'recHitTime'  : feat[:,8:9] ,            #recHitTime  
         }
         if addxycomb:
-            d['recHitXY'] = feat[:, 5:7]
-
+            d['recHitXY']  = feat[:,5:7]    
+            
         return d
 
-    def createTruthDict(self, truth, truthidx=None):
-        out = {}
-        keys = ['truthHitAssignementIdx',  # np.array(recHitSimClusIdx,dtype='float32'), # 0
-                'truthHitAssignedEnergies',  # recHitTruthEnergyCorrMu,
-                'truthHitAssignedX',  # recHitTruthX,
-                'truthHitAssignedY',  # recHitTruthY,
-                'truthHitAssignedZ',  # recHitTruthZ,  #4
-                'truthHitAssignedDirX',  # zeroFeature, #truthHitAssignedDirX,
-                'truthHitAssignedDirY',  # zeroFeature, #6
-                'truthHitAssignedDirZ',  # zeroFeature,
-                'truthHitAssignedEta',  # recHitTruthEta     ,
-                'truthHitAssignedPhi',  # recHitTruthPhi,
-                'truthHitAssignedT',  # recHitTruthTime,  #10
-                'truthHitAssignedDirEta',  # zeroFeature,
-                'truthHitAssignedDirR',  # zeroFeature,
-                'truthHitAssignedDepEnergies',  # recHitTruthDepEnergy, #13
-                'ticlHitAssignementIdx',  # 17        # zeroFeature, #14
-                'ticlHitAssignedEnergies',  # 18        # zeroFeature, #15
-                'truthHitAssignedPIDs',  # recHitTruthPID #16
-                'truthHitSpectatorFlag',
-                'truthHitFullyContainedFlag']
-
-        for key, i in zip(keys, range(len(keys))):
-            out[key] = truth[:, i:i + 1]
-
-        if truthidx is not None:
-            out['truthHitAssignementIdx'] = truthidx
+    def createTruthDict(self, allfeat, truthidx=None):
+        _, _, t_idx, _, t_energy, _, t_pos, _, t_time, _, t_pid, _,\
+        t_spectator, _, t_fully_contained,_ = allfeat
+        out={
+            'truthHitAssignementIdx': t_idx,
+            'truthHitAssignedEnergies': t_energy,
+            'truthHitAssignedX': t_pos[:,0:1],
+            'truthHitAssignedY': t_pos[:,1:2],
+            'truthHitAssignedT': t_time,
+            'truthHitAssignedPIDs': t_pid,
+            'truthHitSpectatorFlag': t_spectator,
+            'truthHitFullyContainedFlag': t_fully_contained,
+            }
         return out
 
     def interpretAllModelInputs(self, ilist):
