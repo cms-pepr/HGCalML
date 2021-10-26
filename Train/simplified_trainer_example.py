@@ -1,6 +1,15 @@
 '''
-This is one of the really good models and configurations.
-Keep this in mind
+
+Compatible with the dataset here:
+/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Oct2021_production/Gun20Part_CHEPDef_NoPropagate/NanoML
+and (soon)
+/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Oct2021_production/Gun20Part_CHEPDef_NoPropagate/NanoMLTracks
+
+On flatiron:
+/mnt/ceph/users/jkieseler/HGCalML_data/OctProd/NanoML
+
+not compatible with datasets before end of October 2021
+
 '''
 from callback_wrappers import build_callbacks
 from experiment_database_manager import ExperimentDatabaseManager
@@ -175,7 +184,7 @@ def gravnet_model(Inputs,
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
 
         n_dimensions = 3 + i  # make it plottable
-        nneigh = 8 + 64 * i  # this will be almost fully connected for last clustering step
+        nneigh = 32 + 48 * i  # this will be almost fully connected for last clustering step
         nfilt = 64 + 16 * i
         nprop = 64 + 16 * i
 
@@ -190,9 +199,14 @@ def gravnet_model(Inputs,
         
         dist = AverageDistanceRegularizer(strength=.02, printout=True
                                           )(dist)
+        
+        telescope=[]                                  
+        for nn in [32,8,4]:
+            dist, nidx = SortAndSelectNeighbours(K=nn)([dist, nidx])
+            telescope.append(MessagePassing([64])([x, nidx]))
 
 
-        x = Concatenate()([x_gn, x_mp])
+        x = Concatenate()([x_gn, x_mp]+telescope)
         # check and compress it all
         x = Dense(128, activation='elu', name='dense_a_' + str(i))(x)
         x = Dense(128, activation='elu', name='dense_b_' + str(i))(x)
@@ -228,11 +242,12 @@ def gravnet_model(Inputs,
 
     # loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=1e-2,
-                                         position_loss_weight=1e-2,
+                                         energy_loss_weight=1e-1,
+                                         position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
                                          beta_loss_scale=1.,
-                                         q_min=2.0,
+                                         too_much_beta_scale=.5,
+                                         q_min=2.5,
                                          div_repulsion=True,
                                          # phase_transition=1,
                                          huber_energy_scale=3,

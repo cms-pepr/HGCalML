@@ -103,9 +103,9 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
             return inputs[0]
         
         abovethresh = inputs[0] > self.threshold
-        notnoise = inputs[1] >= 0
+        #notnoise = inputs[1] >= 0
         #noise can never be spectator
-        return tf.where(tf.logical_and(abovethresh, notnoise), tf.ones_like(inputs[0])-self.minimum, 0.)
+        return tf.where(abovethresh, tf.ones_like(inputs[0])-self.minimum, 0.)
     
 
 #naming scheme: LL<what the layer is supposed to do>

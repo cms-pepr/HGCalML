@@ -387,7 +387,7 @@ cb += [
 
 
 learningrate = 1e-3
-nbatch = 40000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
@@ -397,7 +397,7 @@ train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback any
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys)-2, #just adapt truth list to avoid keras error (no effect on model)
+                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
@@ -409,13 +409,11 @@ model, history = train.trainModel(nepochs=1,
 
 print("freeze BN 2")
 # Note the submodel here its not just train.keras_model
-#for l in train.keras_model.model.layers:
-#    if 'gooey_batch_norm' in l.name:
-#        l.max_viscosity = 0.95
-#        l.fluidity_decay= 5e-5 #
-#    if 'FullOCLoss' in l.name:
-#        l.use_average_cc_pos = 0.
-#        l.q_min = 1.0
+for l in train.keras_model.model.layers:
+    if 'gooey_batch_norm' in l.name:
+        l.max_viscosity = 0.99
+        l.fluidity_decay= 1e-5 #
+    
 
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=10.
@@ -427,7 +425,7 @@ train.compileModel(learningrate=learningrate,
 model, history = train.trainModel(nepochs=121,
                                   run_eagerly=True,
                                   batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys)-2, #just adapt truth list to avoid keras error (no effect on model)
+                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,

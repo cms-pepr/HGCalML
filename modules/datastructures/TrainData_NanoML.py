@@ -234,7 +234,7 @@ class RecHitCollection(CollectionBase):
         recHitTheta = np.arccos(recHitZ/recHitR)
         recHitEta = -np.log(np.tan(recHitTheta/2))
         
-        zeros = ak1.from_iter([np.zeros_like(a.to_numpy()) for a in recHitEta])
+        zeros = ak1.zeros_like(recHitEta)
         
         self.features = ak1.concatenate([
             recHitEnergy,
@@ -297,7 +297,8 @@ class RecHitCollection(CollectionBase):
                 del df_shower
             del df_event
             
-        recHitSpectatorFlag = ak1.from_iter([np.expand_dims(recHit_df_events[i]['spectator_distance'].to_numpy(),axis=1)
+        print('spectators calculated after',time.time()-starttime,'s')
+        recHitSpectatorFlag = ak1.Array([np.expand_dims(recHit_df_events[i]['spectator_distance'].to_numpy(),axis=1)
                                                        for i in range(len(recHit_df_events))])
         
         print('ended spectators after', time.time()-starttime,'s')
@@ -390,7 +391,7 @@ class TrackCollection(CollectionBase):
         impactZ = self._readSplitAndExpand(tree,"Track_HGCFront_z")
         chi2 = self._readSplitAndExpand(tree,"Track_normChiSq")
         
-        impactR = np.sqrt(impactX**2+impactY**2+impactZ**2)
+        impactR = np.sqrt(impactX**2+impactY**2+impactZ**2)+1e-3
         impactTheta = np.arccos(impactZ/impactR)
         
         self.features = ak1.concatenate([
