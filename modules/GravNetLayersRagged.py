@@ -285,6 +285,12 @@ class ProcessFeatures(tf.keras.layers.Layer):
                              -0.00401970092, -0.515379727, 0.0874295086]])
         std =  tf.constant([[0.299679846, 0.382687777, 1., 0.0841238275, 0.250777304, 0.485394388, 
                              0.518072903,     0.240222782, 0.194716245]])
+        if feat.shape[-1] == 10:
+            mean = tf.constant([[0.0740814656, 2.46156192, 0., 0.207392946, 3.55599976, 0.0609507263, 
+                             -0.00401970092, -0.515379727, 0.0874295086, 0.]])
+            std =  tf.constant([[0.299679846, 0.382687777, 1., 0.0841238275, 0.250777304, 0.485394388, 
+                             0.518072903,     0.240222782, 0.194716245, 1.]])
+        
         
         feat -= mean
         feat /= std
@@ -942,7 +948,7 @@ class WarpedSpaceKNN(tf.keras.layers.Layer):
 
 
 class SortAndSelectNeighbours(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float=-1., **kwargs):
+    def __init__(self,K: int, radius: float=-1., sort=True, **kwargs):
         """
         
         This layer will sort neighbour indices by distance and possibly select neighbours
@@ -962,11 +968,13 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         super(SortAndSelectNeighbours, self).__init__(**kwargs) 
         self.K = K
         self.radius = radius
+        self.sort=sort
         
         
     def get_config(self):
         config = {'K': self.K,
-                  'radius': self.radius}
+                  'radius': self.radius,
+                  'sort': self.sort}
         base_config = super(SortAndSelectNeighbours, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -985,7 +993,10 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         return [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i]) for i in range(len(output_shapes))]
         
     @staticmethod 
-    def raw_call(distances, nidx, K, radius):
+    def raw_call(distances, nidx, K, radius, sort):
+        
+        if not sort:
+            distances[:,:K],nidx[:,:K]
         
         tfdist = tf.where(nidx<0, 1e9, distances) #make sure the -1 end up at the end
 
@@ -1011,7 +1022,7 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         
     def call(self, inputs):
         distances, nidx = inputs
-        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius)
+        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius,self.sort)
         #make TF compatible
         
         

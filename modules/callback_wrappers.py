@@ -11,7 +11,7 @@ from running_full_validation import RunningFullValidation
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
 
 
-def build_callbacks(train, td, running_plots_beta_threshold=0.5, running_plots_distance_threshold=0.5,
+def build_callbacks(train, running_plots_beta_threshold=0.5, running_plots_distance_threshold=0.5,
                     running_plots_iou_threshold=0.1,
                     running_plots_matching_type=matching_and_analysis.MATCHING_TYPE_IOU_MAX,
                     running_plots_write_after_iterations=200, full_analysis_num_hyperparam_optimization_iterations=100,
@@ -59,6 +59,8 @@ def build_callbacks(train, td, running_plots_beta_threshold=0.5, running_plots_d
 
     cb = []
     os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
+    
+    td = train.train_data.dataclass()
 
     unique_id_path = os.path.join(train.outputDir, 'unique_id.txt')
     if os.path.exists(unique_id_path):

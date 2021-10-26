@@ -103,9 +103,9 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
             return inputs[0]
         
         abovethresh = inputs[0] > self.threshold
-        notnoise = inputs[1] >= 0
+        #notnoise = inputs[1] >= 0
         #noise can never be spectator
-        return tf.where(tf.logical_and(abovethresh, notnoise), tf.ones_like(inputs[0])-self.minimum, 0.)
+        return tf.where(abovethresh, tf.ones_like(inputs[0])-self.minimum, 0.)
     
 
 #naming scheme: LL<what the layer is supposed to do>
@@ -445,6 +445,8 @@ class LLFullObjectCondensation(LossLayerBase):
     def calc_position_loss(self, t_pos, pred_pos):
         if not self.position_loss_weight:
             t_pos = 0.
+        if tf.shape(t_pos)[-1] == 3:#also has z component, but don't use it here
+            t_pos = t_pos[:,0:2]
         #reduce risk of NaNs
         ploss = huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) + 1e-2), 10.) #is in cm
         return self.softclip(ploss, 3.) 
@@ -604,6 +606,7 @@ class LLFullObjectCondensation(LossLayerBase):
                   'pos_loss', pos_loss.numpy(),
                   'time_loss', time_loss.numpy(),
                   'class_loss', class_loss.numpy(),
+                  'exceed_beta',exceed_beta.numpy(),
                   'ccdamp', ccdamp.numpy(),'\n')
 
         return lossval

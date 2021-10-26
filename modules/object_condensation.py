@@ -235,7 +235,9 @@ def oc_per_batch_element(
         
         
     
-    too_much_B_pen = tf.constant([0.],dtype='float32')
+    too_much_B_pen = tf.math.log((1. - tf.reduce_sum(beta_m, axis=1))**2+1.) #K x 1, don't make it steep
+    too_much_B_pen = tf.math.divide_no_nan(tf.reduce_sum(too_much_B_pen), K+1e-9)
+    
     
     Noise_pen = S_B*tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise))
     

@@ -1,6 +1,15 @@
 '''
-This is one of the really good models and configurations.
-Keep this in mind
+
+Compatible with the dataset here:
+/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Oct2021_production/Gun20Part_CHEPDef_NoPropagate/NanoML
+and (soon)
+/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Oct2021_production/Gun20Part_CHEPDef_NoPropagate/NanoMLTracks
+
+On flatiron:
+/mnt/ceph/users/jkieseler/HGCalML_data/OctProd/NanoML
+
+not compatible with datasets before end of October 2021
+
 '''
 from callback_wrappers import build_callbacks
 from experiment_database_manager import ExperimentDatabaseManager
@@ -26,7 +35,7 @@ from GravNetLayersRagged import EdgeCreator, EdgeSelector, GroupScoreFromEdgeSco
 from Layers import CreateTruthSpectatorWeights, ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
 from Layers import GooeyBatchNorm #make a new line
 from model_blocks import create_outputs, noise_pre_filter
-
+from Regularizers import AverageDistanceRegularizer
 
 '''
 
@@ -175,7 +184,7 @@ def gravnet_model(Inputs,
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
 
         n_dimensions = 3 + i  # make it plottable
-        nneigh = 64 + 32 * i  # this will be almost fully connected for last clustering step
+        nneigh = 32 + 48 * i  # this will be almost fully connected for last clustering step
         nfilt = 64 + 16 * i
         nprop = 64 + 16 * i
 
@@ -187,8 +196,17 @@ def gravnet_model(Inputs,
                                                  n_propagate=nprop)([x, rs])
 
         x_mp = DistanceWeightedMessagePassing([64, 64, 32, 32, 16, 16])([x, nidx, dist])
+        
+        dist = AverageDistanceRegularizer(strength=.02, printout=True
+                                          )(dist)
+        
+        telescope=[]                                  
+        for nn in [32,8,4]:
+            dist, nidx = SortAndSelectNeighbours(K=nn)([dist, nidx])
+            telescope.append(MessagePassing([64])([x, nidx]))
 
-        x = Concatenate()([x_gn, x_mp])
+
+        x = Concatenate()([x_gn, x_mp]+telescope)
         # check and compress it all
         x = Dense(128, activation='elu', name='dense_a_' + str(i))(x)
         x = Dense(128, activation='elu', name='dense_b_' + str(i))(x)
@@ -224,11 +242,12 @@ def gravnet_model(Inputs,
 
     # loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
-                                         energy_loss_weight=1e-2,
-                                         position_loss_weight=1e-2,
+                                         energy_loss_weight=1e-1,
+                                         position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
                                          beta_loss_scale=1.,
-                                         q_min=2.0,
+                                         too_much_beta_scale=.5,
+                                         q_min=2.5,
                                          div_repulsion=True,
                                          # phase_transition=1,
                                          huber_energy_scale=3,
@@ -287,7 +306,7 @@ cb += [plotClusteringDuringTraining(
     use_backgather_idx=8 + i,
     outputfile=train.outputDir + "/plts/sn" + str(i) + '_',
     samplefile=samplepath,
-    after_n_batches=20,
+    after_n_batches=200,
     on_epoch_end=False,
     publish=None,
     use_event=0)
@@ -295,21 +314,21 @@ cb += [plotClusteringDuringTraining(
 
 cb += [
     plotEventDuringTraining(
-        outputfile=train.outputDir + "/plts2/sn0",
+        outputfile=train.outputDir + "/plts2/sn0"+str(i),
         samplefile=samplepath,
-        after_n_batches=20,
+        after_n_batches=200,
         batchsize=200000,
         on_epoch_end=False,
         publish=None,
-        use_event=0)
-
+        use_event=i)
+for i in range(5)
 ]
 
 cb += [
     plotGravNetCoordsDuringTraining(
         outputfile=train.outputDir + "/coords_" + str(i) + "/coord_" + str(i),
         samplefile=samplepath,
-        after_n_batches=20,
+        after_n_batches=200,
         batchsize=200000,
         on_epoch_end=False,
         publish=None,
@@ -319,7 +338,7 @@ cb += [
     for i in range(12, 18)  # between 16 and 21
 ]
 
-cb += build_callbacks(train, td)
+cb += build_callbacks(train)
 
 
 learningrate = 1e-3
@@ -333,7 +352,7 @@ train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback any
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys)-2, #just adapt truth list to avoid keras error (no effect on model)
+                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
@@ -364,7 +383,7 @@ train.compileModel(learningrate=learningrate,
 model, history = train.trainModel(nepochs=121,
                                   run_eagerly=True,
                                   batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys)-2, #just adapt truth list to avoid keras error (no effect on model)
+                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
                                   batchsize_use_sum_of_squares=False,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,

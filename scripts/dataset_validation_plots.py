@@ -67,13 +67,12 @@ def get(reset_after=False):
 
 
 def get_event_and_make_dict(reset_after=False):
-    feat, truth, epoch = get(reset_after)
+    allfeat, _, epoch = get(reset_after)
     #print(len(feat), len(truth))
-    truth = truth[0]
     # truth = truth[:, 0, :]
-    feat,  truth_sid, truth_energy, truth_pos, truth_time, truth_particle_id,truth_spectator, truth_fully_contained, row_splits = td.interpretAllModelInputs(feat)
+    feat,  truth_sid, truth_energy, truth_pos, truth_time, truth_particle_id,truth_spectator, truth_fully_contained, row_splits = td.interpretAllModelInputs(allfeat)
     all_dict = td.createFeatureDict(feat)
-    all_dict.update( td.createTruthDict(truth, truth_sid) )
+    all_dict.update( td.createTruthDict(allfeat) )
     return all_dict
 
 
@@ -128,6 +127,7 @@ class plotter_class(object):
                    xlim=[],ylim=[],
                    **kwargs):
         pdf=self.pdf
+        
 
         if len(x)==0:
             x = np.zeros((1000))
@@ -157,6 +157,10 @@ class plotter_class(object):
                 kwargs['color'] = 'dodgerblue'
                 ax.hist(xnp,**kwargs,histtype='step',label='original')
                 kwargs['color'] = 'red'
+  
+                #FIXME
+                weightsnp = np.ones_like(xnp)
+
                 ax.hist(xnp,weights=weightsnp,**kwargs,histtype='step',label='weighted')
                 ax.legend(loc="upper right")
         else:
@@ -184,9 +188,7 @@ d = get_event_and_make_dict(True)#just to print the options
 print('accessible variables:','\n=================')
 
 #update plotting variables to only the relevant ones :
-remove_var ='truthHitAssignedDirX,truthHitAssignedDirY,truthHitAssignedDirZ,truthHitAssignedDirEta,truthHitAssignedDirR,ticlHitAssignementIdx,ticlHitAssignedEnergies'.split(',')
-for var in remove_var:
-   del d[var]
+
 
 plot_variables = d.keys()
 for k in d.keys():
@@ -206,8 +208,6 @@ override_settings['truthHitAssignedEta'] = (True, [], [], 200)
 
 additional = dict()
 additional['recHitZ-abs'] = ('recHitZ', True, [], [], True)
-additional['truthHitAssignedZ-abs'] = ('truthHitAssignedZ', True, [], [], True)
-additional['truthHitAssignedEta-abs'] = ('truthHitAssignedEta', False, [], [], True)
 
 
 def validate_event(event_dict):
@@ -240,17 +240,17 @@ else:
         front_face_z = 323
 
         noise_filter = (d['truthHitAssignementIdx'] > -1)
-        hgcal_front_face_filter = (abs(d['truthHitAssignedZ']) < front_face_z) # < - on front, > not on front
+        hgcal_front_face_filter = d['truthHitFullyContainedFlag'] # < - on front, > not on front
         #pid_filter = (abs(d['truthHitAssignedPIDs'])!=2112)
         #eta_filter = (abs(d['truthHitAssignedEta'])<1.5)
         #energy_true = (d['truthHitAssignedEnergies'] > 0)
         energy_true = (d['truthHitAssignedEnergies'] > 0.)
-        energy_depvstrue = d['truthHitAssignedDepEnergies']/ \
-                    (d['truthHitAssignedEnergies']+1e-6)
+        energy_depvstrue = 0. #d['truthHitAssignedDepEnergies']/ \
+                    #(d['truthHitAssignedEnergies']+1e-6)
         energy_depvstrue = np.where(d['truthHitAssignedEnergies']<=1e-6, -1, energy_depvstrue)
         energy_depvstrue_energy_filter = (energy_depvstrue > 0.) 
         
-        selection_filter = noise_filter & hgcal_front_face_filter &energy_true   & energy_depvstrue_energy_filter 
+        selection_filter = np.logical_and(np.logical_and(np.logical_and(noise_filter , hgcal_front_face_filter ), energy_true  ), energy_depvstrue_energy_filter )
         selection_filter = selection_filter.flatten()
 
         for key in d.keys():
@@ -263,8 +263,8 @@ else:
         plotter.add("Num rec hit counts", x=recHits_counts,
                     log=True, xlabel='# rec hit counts', ylabel='Events', color='dodgerblue') 
 
-        energy_depvstrue = d['truthHitAssignedDepEnergies']/ \
-                    (d['truthHitAssignedEnergies']+1e-6)
+        energy_depvstrue = 1.#d['truthHitAssignedDepEnergies']/ \
+                    #(d['truthHitAssignedEnergies']+1e-6)
         energy_depvstrue = np.where(d['truthHitAssignedEnergies']<=1e-6, -1, energy_depvstrue)
         energy_depvstrue = energy_depvstrue[simcluster_sel] #showers only 
 
@@ -289,16 +289,9 @@ else:
 
 
 
-        plotter.add("Deposted over true energy vs. eta", x = energy_depvstrue,
-                    y = np.abs(d['truthHitAssignedEta'][simcluster_sel]),
-                    xlabel='$E_{dep}/E_{true}$', ylabel='Truth |$\eta$|',
-                    xlim=[-0.2,2]
-                    )
+        
 
-        plotter.add("Deposited energy over z", x = d['truthHitAssignedZ'][simcluster_sel],
-                    y = d['truthHitAssignedEnergies'][simcluster_sel],
-                    xlabel='truthHitAssignedZ', ylabel='truthHitAssignedEnergies'
-                    )
+        
 
         plotter.add("Deposted over true energy", x = energy_depvstrue,
                     xlabel='$E_{dep}/E_{true}$', ylabel='Events',
