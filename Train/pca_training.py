@@ -32,6 +32,7 @@ from Layers import RaggedGlobalExchange, SortAndSelectNeighbours
 from Layers import DistanceWeightedMessagePassing, MultiBackGather, KNN
 from Layers import RobustModel, GooeyBatchNorm, ApproxPCA
 from initializers import EyeInitializer
+tf.executing_eagerly()
 td=TrainData_NanoML()
 
 
@@ -148,21 +149,21 @@ def gravnet_model(Inputs,
     nfilt = 64
     x = Concatenate()([coords,x])
     x_gn, coords, nidx, dist = RaggedGravNet(n_neighbours=64,
-                                            n_dimensions=3,
-                                            n_filters=nfilt,
-                                            n_propagate=64)([x, rs])
+                                             n_dimensions=3,
+                                             n_filters=nfilt,
+                                             n_propagate=64)([x, rs])
     x_mp = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,nidx,dist])
     x_pca = ApproxPCA()([coords,dist,x,nidx])
     x_pca = GooeyBatchNorm(viscosity=viscosity,
                            max_viscosity=max_viscosity,
                            fluidity_decay=fluidity_decay)(x_pca)
-    x = Concatenate()([x_pca,x_gn,x_mp])
+    x = Concatenate()([x_pca, x_gn, x_mp])
     
     ###########################################################################
     ### More layers ###########################################################
     ###########################################################################
     x = Dense(128, activation='elu',name='dense_a_')(x)
-    x = Dense(128, activation='elu',name='dense_b_')(x)
+    # x = Dense(128, activation='elu',name='dense_b_')(x)
     x = GooeyBatchNorm(viscosity=viscosity,
                        max_viscosity=max_viscosity,
                        fluidity_decay=fluidity_decay)(x)
@@ -176,20 +177,19 @@ def gravnet_model(Inputs,
     rs = row_splits #important! here we are in non-reduced full graph mode again
 
     x = Concatenate(name='allconcat')(allfeat)
-    x = Dense(128, activation='elu', name='alldense')(x)
-    x = RaggedGlobalExchange()([x,row_splits])
-    x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
-    x = Dense(128, activation='elu')(x)
-    x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
-    x = Concatenate()([x]+energysums)
-    x = Dense(64, activation='elu')(x)
+    # x = Dense(128, activation='elu', name='alldense')(x)
+    # x = RaggedGlobalExchange()([x,row_splits])
+    # x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
+    # x = Dense(128, activation='elu')(x)
+    # x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity,fluidity_decay=fluidity_decay)(x)
+    # x = Concatenate()([x]+energysums)
+    # x = Dense(64, activation='elu')(x)
     x = Dense(48, activation='elu')(x)
     x = Concatenate()([orig_coords,x,noise_score])#we have it anyway
 
     pred_beta, pred_ccoords, pred_dist, pred_energy,\
        pred_pos, pred_time, pred_id = create_outputs(x,feat,fix_distance_scale=False)
 
-    #loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
                                          energy_loss_weight=1e-2,
                                          position_loss_weight=1e-2,
@@ -256,29 +256,29 @@ if __name__ == '__main__':
         with open(unique_id_path, 'w') as f:
             f.write(unique_id+'\n')
 
-    nbatch = 30000
-
 
     # This will both to server and a local file
     database_manager = ExperimentDatabaseManager(file=os.path.join(train.outputDir,"training_metrics.db"), cache_size=100)
     database_reading_manager = ExperimentDatabaseReadingManager(file=os.path.join(train.outputDir,"training_metrics.db"))
     database_manager.set_experiment(unique_id)
 
-    metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
+    metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=0.5,
+                                                         distance_threshold=0.5,
+                                                         iou_threshold=0.0001,
+                                                         matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND)
     analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
     optimizer = OCHyperParamOptimizer(analyzer=analyzer, limit_n_endcaps=10)
     os.system('mkdir %s/full_validation_plots' % (train.outputDir))
 
 
     learningrate = 1e-3
-    nbatch = 30000 #this is rather low, and can be set to a higher values e.g. when training on V100s
+    nbatch = 20000 
 
     train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                             loss=None,
                             metrics=None,
                             )
 
-    cb = []
     model, history = train.trainModel(nepochs=1,
                                     run_eagerly=True,
                                     batchsize=nbatch,
@@ -290,4 +290,4 @@ if __name__ == '__main__':
                                     additional_callbacks=
                                     [CyclicLR (base_lr = learningrate/5,
                                     max_lr = learningrate,
-                                    step_size = 150)]+cb)
+                                    step_size = 150)])
