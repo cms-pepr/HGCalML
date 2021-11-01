@@ -333,6 +333,53 @@ class ManualCoordTransform(tf.keras.layers.Layer):
         return coords
         
 
+
+class DirectedGraphBuilder(tf.keras.layers.Layer):
+    def __init__(self,strength=1., cutoff=1., **kwargs):
+        '''
+        Builds a directed graph by increasing the distances to neighbouring vertices
+        locally, if they have smaller score.
+        
+        input is: distances, neighbour indices, score
+        Output is distances, neighbour indices
+        
+        score is strictly between 0 and 1
+        
+        strength and cut-off don't do anything yet
+        
+        '''
+        self.strength=strength
+        self.cutoff=cutoff
+        super(DirectedGraphBuilder, self).__init__(**kwargs)
+    
+    def get_config(self):
+        config = {'strength': self.strength,
+                  'cutoff': self.cutoff}
+        base_config = super(DirectedGraphBuilder, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))    
+        
+    def build(self, input_shapes): #pure python
+        super(DirectedGraphBuilder, self).build(input_shapes)
+        
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0],input_shapes[1]
+    
+    def call(self, inputs):
+        assert len(inputs) == 3
+        dist, nidx, score = inputs
+        neighscores = SelectWithDefault(nidx, score, -1e4)
+        
+        #between <=1
+        diff = score-(tf.reduce_max(neighscores,axis=-1,keep_dims=True)+1e-3)
+        
+        noneigh = tf.zeros_like(nidx[:,1:])-1
+        noneigh = tf.concat([nidx[:,0:1],noneigh],axis=-1)
+        #where diff<0
+        dist = tf.where(diff<0,0.,dist)
+        nidx = tf.where(diff<0,noneigh,nidx)
+        
+        return dist,nidx
+
     
 class NeighbourCovariance(tf.keras.layers.Layer):
     def __init__(self,**kwargs):

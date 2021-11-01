@@ -9,7 +9,7 @@ from hgcal_predictor import HGCalPredictor
 from hyperparam_optimizer import OCHyperParamOptimizer
 from running_full_validation import RunningFullValidation
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
-
+from plotting_callbacks import plotClusterSummary
 
 def build_callbacks(train, running_plots_beta_threshold=0.5, running_plots_distance_threshold=0.5,
                     running_plots_iou_threshold=0.1,
@@ -104,6 +104,14 @@ def build_callbacks(train, running_plots_beta_threshold=0.5, running_plots_dista
                                      after_n_batches=full_analysis_after_batches, min_batch=8, predictor=predictor, optimizer=optimizer,
                                      database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
                                                                                                'full_validation_plots'))]
+
+    cb += [
+    plotClusterSummary(
+        outputfile=train.outputDir + "clustering",
+        samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
+        after_n_batches=500
+        )
+    ]
 
     return cb
 

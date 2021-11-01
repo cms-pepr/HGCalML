@@ -103,8 +103,6 @@ def oc_per_batch_element(
         raise ValueError("prob_repulsion not implemented")
     if phase_transition_double_weight:
         raise ValueError("phase_transition_double_weight not implemented")
-    if cont_beta_loss:
-        raise ValueError("cont_beta_loss not implemented")
     if payload_weight_function is not None:
         raise ValueError("payload_weight_function not implemented")
         
@@ -218,6 +216,13 @@ def oc_per_batch_element(
     V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=0), K+1e-9) # 1
     
     B_pen = None
+    
+    def bpenhelp(b_m, exponent : int):
+        b_mes = tf.reduce_sum(b_m**exponent, axis=1)
+        if not exponent==1:
+            b_mes = (b_mes+1e-16)**(1./float(exponent))
+        return tf.math.log(tf.abs(1.-b_mes)+1.)
+    
     if phase_transition:
     ## beta terms
         B_pen = - tf.reduce_sum(padmask_m * 1./(20.*distancesq_m + 1.),axis=1) # K x 1
@@ -233,11 +238,12 @@ def oc_per_batch_element(
         B_pen = object_weights_kalpha_m * (1. - beta_kalpha_m)
         B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9)
         
-        
+    if cont_beta_loss:
+        B_pen =   bpenhelp(beta_m,2) + bpenhelp(beta_m,4)
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(object_weights_kalpha_m * B_pen,axis=0), K+1e-9)   
     
-    too_much_B_pen = tf.math.log((1. - tf.reduce_sum(beta_m, axis=1))**2+1.) #K x 1, don't make it steep
+    too_much_B_pen = object_weights_kalpha_m * bpenhelp(beta_m,1) #K x 1, don't make it steep
     too_much_B_pen = tf.math.divide_no_nan(tf.reduce_sum(too_much_B_pen), K+1e-9)
-    
     
     Noise_pen = S_B*tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise))
     
