@@ -387,7 +387,7 @@ def compute_scalar_metrics_graph_eff_fake_rate_response(result):
     truth_shower_energy, truth_shower_matched = matching_and_analysis.get_truth_matched_attribute(result, 'dep_energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
     filter = np.not_equal(truth_shower_matched, -1)
 
-    response_sum_mean = float(np.sum(truth_shower_energy[filter] * (truth_shower_matched[filter] / (truth_shower_energy[filter])).item()+1e-6) / (filtered_truth_energy+1e-6) )
+    response_sum_mean = float(np.sum(truth_shower_energy[filter] * (truth_shower_matched[filter] / truth_shower_energy[filter])).item() / filtered_truth_energy )
 
 
     efficiency = efficiency if np.isfinite(efficiency) else 0.

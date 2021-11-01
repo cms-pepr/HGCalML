@@ -328,6 +328,7 @@ class plotClusterSummary(PredictCallback):
     def __init__(self,
                  outputfile="",
                  nevents=20,
+                 publish=None,
                  **kwargs):
         self.outputfile = outputfile
         os.system('mkdir -p '+os.path.dirname(outputfile))
@@ -349,7 +350,7 @@ class plotClusterSummary(PredictCallback):
     
     def make_plot(self, counter, feat, predicted, truth):
         if self.plot_process is not None:
-            self.plot_process.join(60)
+            self.plot_process.join(60)#safety margin to not block training if plotting took too long
             try:
                 self.plot_process.terminate()#got enough time
             except:
@@ -367,7 +368,9 @@ class plotClusterSummary(PredictCallback):
         cdata['predBeta'] = preddict['pred_beta']
         cdata['predCCoords'] = preddict['pred_ccoords']
         cdata['predD'] = preddict['pred_dist']
-        rs = preddict['row_splits']
+        rs = feat[-1]#last one has to be row splits
+        # this will not work, since it will be adapted by batch, and not anymore the right tow splits
+        #rs = preddict['row_splits']
         
         eid=0
         eids=[]
@@ -377,36 +380,57 @@ class plotClusterSummary(PredictCallback):
             eid+=1
         cdata['eid'] = np.concatenate(eids, axis=0)
         
+        pids=[]
         vdtom=[]
         did=[]
         for i in range(eid):
-            a,b = self.run_per_event(self.subdict(cdata,i==cdata['eid']))
+            a,b,pid = self.run_per_event(self.subdict(cdata,i==cdata['eid']))
             vdtom.append(a)
             did.append(b)
+            pids.append(pid)
             
         vdtom = np.concatenate(vdtom, axis=0)
         did = np.concatenate(did,axis=0)
-
+        pids = np.concatenate(pids,axis=0)[:,0]
+        upids = np.unique(pids).tolist()
+        upids.append(0)
+        import matplotlib
+        matplotlib.use('Agg')
         import matplotlib.pyplot as plt
-        
-        plt.hist(vdtom,bins=31,color='tab:blue',alpha = 0.5,label='same')
-        plt.hist(did,bins=31,color='tab:orange',alpha = 0.5,label='other')
-        plt.yscale('log')
-        plt.xlabel('normalised distance')
-        plt.ylabel('A.U.')
-        plt.legend()
-        ccfile=self.outputfile+'_cluster.pdf'
-        plt.savefig(ccfile)
-        plt.close()
-        if self.publish is not None:
-            publish(ccfile, self.publish)
-        
+        print(upids)
+        for p in upids:
+            svdtom=vdtom
+            sdid=did
+            if p:
+                svdtom=vdtom[pids==p]
+                sdid=did[pids==p]
+
+            if not len(svdtom):
+                continue
+            
+            fig = plt.figure()
+            plt.hist(svdtom,bins=51,color='tab:blue',alpha = 0.5,label='same')
+            plt.hist(sdid,bins=51,color='tab:orange',alpha = 0.5,label='other')
+            plt.yscale('log')
+            plt.xlabel('normalised distance')
+            plt.ylabel('A.U.')
+            plt.legend()
+            ccfile=self.outputfile+str(p)+'_cluster.pdf'
+            plt.savefig(ccfile)
+            plt.cla()
+            plt.clf()
+            plt.close(fig)
+            if self.publish is not None:
+                publish(ccfile, self.publish)
      
     def run_per_event(self,data):
             
         tidx = data['truthHitAssignementIdx'][:,0]# V x 1
         utidx = np.unique(tidx)
         
+        overflowat=6
+        
+        vtpid=[]
         vdtom = []
         did = []
         for uidx in utidx:
@@ -416,22 +440,26 @@ class plotClusterSummary(PredictCallback):
             ak = np.argmax(thisbeta)
             coords_ak = thiscoords[ak]
             dist_ak = thisdist[ak]
-
+            
+            pid = np.abs(data['truthHitAssignedPIDs'][tidx==uidx])
+            
             dtom = np.sqrt(np.sum( (thiscoords-coords_ak)**2, axis=-1)) / (np.abs(dist_ak)+1e-3)
-            dtom[dtom>10.]=10.
+            dtom[dtom>overflowat]=overflowat
             #dtom = np.expand_dims(dtom,axis=1)
             dother =  np.sqrt(np.sum((data['predCCoords'][tidx!=uidx]-coords_ak )**2,axis=-1))/ (np.abs(dist_ak)+1e-3)
             
-            dother[dother>10.]=10.
+            dother[dother>overflowat]=overflowat
             #dother = np.expand_dims(dother,axis=1)
             dother = dother[np.random.choice(len(dother), size=int(min(len(dother), len(dtom))), replace=False)]#restrict
             
+            vtpid.append(pid)
             vdtom.append(dtom)
             did.append(dother)
         
+        vtpid = np.concatenate(vtpid,axis=0)
         vdtom = np.concatenate(vdtom,axis=0)
         did = np.concatenate(did,axis=0)
-        return vdtom,did
+        return vdtom,did,vtpid
         
 
 
