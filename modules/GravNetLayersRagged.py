@@ -470,7 +470,7 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
 class ApproxPCA(tf.keras.layers.Layer):
     # New implementation of NeighbourApproxPCA 
     # Old version is kept to not cause unexpected behaviour
-    def __init__(self, size='large', 
+    def __init__(self, size='small', 
                  base_path=os.environ.get('HGCALML') + '/HGCalML_data/pca/pretrained/', 
                  **kwargs):
         """
@@ -511,6 +511,7 @@ class ApproxPCA(tf.keras.layers.Layer):
         self.nF = nF
         self.nC = nC
         self.covshape = nF * nC * nC
+        self.counter = 0
 
         self.path = self.base_path + f"{str(self.nC)}D/{self.size}/"
         assert os.path.exists(self.path), f"path: {self.path} not found!"
@@ -528,6 +529,7 @@ class ApproxPCA(tf.keras.layers.Layer):
             self.model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
         self.model.load_weights(self.path)
         self.model.trainable = False
+        self.model.summary()
 
         for i in range(len(nodes) + 1):
             with tf.name_scope(self.name + "/1/" + str(i)):
@@ -557,6 +559,7 @@ class ApproxPCA(tf.keras.layers.Layer):
 
 
     def call(self, inputs):
+        self.counter += 1
         ReturnMean = False  
         coordinates, distsq, features, n_idxs = inputs
         
@@ -569,7 +572,7 @@ class ApproxPCA(tf.keras.layers.Layer):
         cov = tf.reshape(cov, shape=(-1, self.nC**2))
 
         x = cov
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             x = layer(x)
         approxPCA = tf.reshape(x, shape=(-1, self.nF * self.nC**2))
 
