@@ -1343,9 +1343,9 @@ class LNC(tf.keras.layers.Layer):
             directoutshape = [(input_shapes[0][0], K, input_shapes[0][1]),(None,K)]
         
         if len(input_shapes) > 6:
-            return directoutshape+[(None, 1), (None, 1)] + self._sel_pass_shape(input_shapes), (None,)
+            return directoutshape+[(None, 1), (None, 1)] + self._sel_pass_shape(input_shapes) + [(None,)]
         else:
-            return directoutshape+[(None, 1), (None, 1)], (None,)
+            return directoutshape+[(None, 1), (None, 1)] + [(None,)]
 
     
     #def __compute_output_signature(self, input_signature):
