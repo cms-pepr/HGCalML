@@ -155,7 +155,7 @@ def gravnet_model(Inputs,
             x = Dense(128, activation='elu', name='dense_precl_a' + str(i))(x)
 
             x_c, rs, bidxs, \
-            sel_gidx, energy, x, t_idx, coords, ccoords, hier, t_spectator_weight = LNC(
+            sel_gidx, energy, x, coords, ccoords, hier, t_spectator_weight, t_idx = LNC(
                 threshold=0.001,  # low because selection already done by edges
                 loss_scale=.01,  # more emphasis on the final OC loss
                 print_reduction=True,
@@ -168,7 +168,7 @@ def gravnet_model(Inputs,
             )(  # this is needed by the layer
                 [x, hier, ccoords, nidx, rs] +
                 # these ones are selected accoring to the layer selection
-                [sel_gidx, energy, x, t_idx, coords, ccoords, hier, t_spectator_weight] +
+                [sel_gidx, energy, x, coords, ccoords, hier, t_spectator_weight] +
                 # truth information passed to the layer to build loss
                 [t_spectator_weight, t_idx])
 
@@ -240,7 +240,7 @@ def gravnet_model(Inputs,
 
     pred_beta, pred_ccoords, pred_dist, pred_energy, \
     pred_pos, pred_time, pred_id = create_outputs(x, feat, fix_distance_scale=False,
-                                                  n_ccoords=5
+                                                  n_ccoords=3
                                                   )
 
     # loss
@@ -249,7 +249,7 @@ def gravnet_model(Inputs,
                                          position_loss_weight=1e-1,
                                          timing_loss_weight=1e-1,
                                          beta_loss_scale=1.,
-                                         too_much_beta_scale=.5,
+                                         too_much_beta_scale=.1,
                                          use_energy_weights=False,
                                          q_min=2.5,
                                          div_repulsion=True,
@@ -302,9 +302,6 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 
 
 cb = []
-
-
-nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 
 cb += [plotClusteringDuringTraining(
