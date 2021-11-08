@@ -163,17 +163,30 @@ class OCRecoGraphAnalyzer:
             node_attributes = dict()
 
             node_attributes['id'] = int(truth_dict['truthHitAssignementIdx'][truth_shower_idx[i], 0])
-            node_attributes['energy'] = truth_dict['truthHitAssignedEnergies'][truth_shower_idx[i], 0].item()
-            node_attributes['x'] = truth_dict['truthHitAssignedX'][truth_shower_idx[i], 0].item()
-            node_attributes['y'] = truth_dict['truthHitAssignedY'][truth_shower_idx[i], 0].item()
-            node_attributes['z'] = truth_dict['truthHitAssignedZ'][truth_shower_idx[i], 0].item()
-            node_attributes['eta'] = truth_dict['truthHitAssignedEta'][truth_shower_idx[i], 0].item()
-            node_attributes['phi'] = truth_dict['truthHitAssignedPhi'][truth_shower_idx[i], 0].item()
-            node_attributes['t'] = truth_dict['truthHitAssignedT'][truth_shower_idx[i], 0].item()
-            node_attributes['dep_energy'] = 0. #FIXME
+
+
+            node_attributes['x'] = truth_dict['truthHitAssignedX'][truth_shower_idx[i], 0].item()\
+                if 'truthHitAssignedX' in truth_dict  else 0.0
+
+            node_attributes['y'] = truth_dict['truthHitAssignedY'][truth_shower_idx[i], 0].item()\
+                if 'truthHitAssignedY' in truth_dict  else 0.0
+            node_attributes['z'] = truth_dict['truthHitAssignedZ'][truth_shower_idx[i], 0].item()\
+                if 'truthHitAssignedZ' in truth_dict  else 0.0
+            node_attributes['eta'] = truth_dict['truthHitAssignedEta'][truth_shower_idx[i], 0].item()\
+                if 'truthHitAssignedEta' in truth_dict  else 0.0
+            node_attributes['phi'] = truth_dict['truthHitAssignedPhi'][truth_shower_idx[i], 0].item()\
+                if 'truthHitAssignedPhi' in truth_dict  else 0.0
+            node_attributes['t'] = truth_dict['truthHitAssignedT'][truth_shower_idx[i], 0].item()\
+                if 'truthHitAssignedT' in truth_dict  else 0.0
+
+            node_attributes['dep_energy'] = np.sum(self.feat_dict['recHitEnergy'][truth_sid==truth_shower_sid[i]])
+            node_attributes['energy'] = truth_dict['truthHitAssignedEnergies'][truth_shower_idx[i], 0].item()\
+                if 'truthHitAssignedEnergies' in truth_dict else node_attributes['dep_energy']
+
             #node_attributes['dep_energy'] = truth_dict['truthHitAssignedDepEnergies'][
             #    truth_shower_idx[i], 0].item()
-            node_attributes['pid'] = truth_dict['truthHitAssignedPIDs'][truth_shower_idx[i], 0].item()
+            node_attributes['pid'] = truth_dict['truthHitAssignedPIDs'][truth_shower_idx[i], 0].item()\
+                if 'truthHitAssignedPIDs' in truth_dict  else 0
 
             node_attributes['type'] = NODE_TYPE_TRUTH_SHOWER
 
@@ -190,6 +203,10 @@ class OCRecoGraphAnalyzer:
         pred_graph = nx.Graph()
 
         start_indicing_from = np.max(self.truth_sid) + 1000
+
+        if 'pred_isnoise' in self.pred_dict:
+            # Set to something very large so it doesn't come into receptive field of any predicted showers
+            self.pred_dict['pred_ccoords'] = np.where(pred_dict['pred_isnoise']!=0, self.pred_dict['pred_ccoords'], self.pred_dict['pred_ccoords']*10000)
 
         if self.with_local_distance_scaling:
             # print("Doing with pred dist")
@@ -212,13 +229,18 @@ class OCRecoGraphAnalyzer:
             node_attributes = dict()
 
             node_attributes['id']  = sid
-            node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)
-            node_attributes['x']  = pred_dict['pred_pos'][pred_shower_alpha_idx[i]][0].item()
-            node_attributes['y']  = pred_dict['pred_pos'][pred_shower_alpha_idx[i]][1].item()
-            node_attributes['time']  = pred_dict['pred_time'][pred_shower_alpha_idx[i]][0].item()
-            node_attributes['pid']  = np.argmax(pred_dict['pred_id'][pred_shower_alpha_idx[i]]).item()
+            node_attributes['x']  = pred_dict['pred_pos'][pred_shower_alpha_idx[i]][0].item()\
+                if 'pred_pos' in pred_dict else 0
+            node_attributes['y']  = pred_dict['pred_pos'][pred_shower_alpha_idx[i]][1].item()\
+                if 'pred_pos' in pred_dict else 0
+            node_attributes['time']  = pred_dict['pred_time'][pred_shower_alpha_idx[i]][0].item()\
+                if 'pred_time' in pred_dict else 0
+            node_attributes['pid']  = np.argmax(pred_dict['pred_id'][pred_shower_alpha_idx[i]]).item()\
+                if 'pred_id' in pred_dict else 0
 
             node_attributes['dep_energy'] = np.sum(feat_dict['recHitEnergy'][pred_sid==sid]).item()
+            node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
+                if 'pred_energy' in pred_dict else node_attributes['dep_energy']
 
             rechit_energy = feat_dict['recHitEnergy'][pred_sid==sid]
             rechit_x = feat_dict['recHitX'][pred_sid==sid]

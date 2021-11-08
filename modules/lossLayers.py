@@ -297,7 +297,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  cc_damping_strength=0.,
                  standard_configuration=None,
                  beta_gradient_damping=0.,
-                 alt_energy_loss=True,
+                 alt_energy_loss=False,
                  repulsion_q_min=-1.,
                  super_repulsion=False,
                  use_local_distances=True,
@@ -348,6 +348,12 @@ class LLFullObjectCondensation(LossLayerBase):
             super(LLFullObjectCondensation, self).__init__(dynamic=True,**kwargs)
             
         assert use_local_distances #fixed now, if they should not be used, pass 1s
+        
+        if too_much_beta_scale==0 and cont_beta_loss:
+            raise ValueError("cont_beta_loss must be used with too_much_beta_scale>0")
+        
+        if huber_energy_scale>0 and alt_energy_loss:
+            raise ValueError("huber_energy_scale>0 and alt_energy_loss exclude each other")
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights
@@ -415,8 +421,6 @@ class LLFullObjectCondensation(LossLayerBase):
         
             
     def calc_energy_loss(self, t_energy, pred_energy): 
-        if not self.energy_loss_weight:
-            return pred_energy**2 #just learn 0
         
         #FIXME: this is just for debugging
         #return (t_energy-pred_energy)**2
@@ -428,8 +432,8 @@ class LLFullObjectCondensation(LossLayerBase):
             l = tf.math.divide_no_nan(l, tf.sqrt(t_energy+1e-3) + self.energy_den_offset)
             eloss = huber(l, sqrt_t_e*self.huber_energy_scale)
         elif self.alt_energy_loss:
-            ediff = tf.abs(t_energy-pred_energy)
-            l = 10. * tf.exp(-0.1 * ediff**2 ) + 0.01*ediff
+            ediff = (t_energy-pred_energy)
+            l = tf.math.log(ediff**2/(t_energy+1e-3) + 1.)
             eloss = l
         else:
             eloss = tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))

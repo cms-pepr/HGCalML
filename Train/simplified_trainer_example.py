@@ -24,7 +24,7 @@ from initializers import EyeInitializer
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from datastructures import TrainData_NanoML
 
-from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining
+from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining, plotClusterSummary
 from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
 
 from clr_callback import CyclicLR
@@ -155,9 +155,9 @@ def gravnet_model(Inputs,
             x = Dense(128, activation='elu', name='dense_precl_a' + str(i))(x)
 
             x_c, rs, bidxs, \
-            sel_gidx, energy, x, t_idx, coords, ccoords, hier, t_spectator_weight = LNC(
+            sel_gidx, energy, x, coords, ccoords, hier, t_spectator_weight, t_idx = LNC(
                 threshold=0.001,  # low because selection already done by edges
-                loss_scale=.1,  # more emphasis on the final OC loss
+                loss_scale=.01,  # more emphasis on the final OC loss
                 print_reduction=True,
                 loss_enabled=True,  # loss still needed because of coordinate space
                 use_spectators=True,
@@ -168,7 +168,7 @@ def gravnet_model(Inputs,
             )(  # this is needed by the layer
                 [x, hier, ccoords, nidx, rs] +
                 # these ones are selected accoring to the layer selection
-                [sel_gidx, energy, x, t_idx, coords, ccoords, hier, t_spectator_weight] +
+                [sel_gidx, energy, x, coords, ccoords, hier, t_spectator_weight] +
                 # truth information passed to the layer to build loss
                 [t_spectator_weight, t_idx])
 
@@ -236,17 +236,21 @@ def gravnet_model(Inputs,
     x = Dense(64, activation='elu')(x)
     x = Dense(48, activation='elu')(x)
     x = Concatenate()([orig_coords, x, noise_score])  # we have it anyway
+    x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
 
     pred_beta, pred_ccoords, pred_dist, pred_energy, \
-    pred_pos, pred_time, pred_id = create_outputs(x, feat, fix_distance_scale=False)
+    pred_pos, pred_time, pred_id = create_outputs(x, feat, fix_distance_scale=False,
+                                                  n_ccoords=3
+                                                  )
 
     # loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
                                          energy_loss_weight=1e-1,
                                          position_loss_weight=1e-1,
-                                         timing_loss_weight=1e-2,
+                                         timing_loss_weight=1e-1,
                                          beta_loss_scale=1.,
-                                         too_much_beta_scale=.5,
+                                         too_much_beta_scale=.1,
+                                         use_energy_weights=False,
                                          q_min=2.5,
                                          div_repulsion=True,
                                          # phase_transition=1,
@@ -262,7 +266,8 @@ def gravnet_model(Inputs,
          orig_t_spectator_weight,
          row_splits])
 
-    model_outputs = [('pred_beta', pred_beta), ('pred_ccoords', pred_ccoords),
+    model_outputs = [('pred_beta', pred_beta), 
+                     ('pred_ccoords', pred_ccoords),
                      ('pred_energy', pred_energy),
                      ('pred_pos', pred_pos),
                      ('pred_time', pred_time),
@@ -297,9 +302,6 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 
 
 cb = []
-
-
-nbatch = 50000 #this is rather low, and can be set to a higher values e.g. when training on V100s
 
 
 cb += [plotClusteringDuringTraining(
@@ -338,10 +340,11 @@ cb += [
     for i in range(12, 18)  # between 16 and 21
 ]
 
+
 cb += build_callbacks(train)
 
 
-learningrate = 1e-3
+learningrate = 3e-4
 nbatch = 30000
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
@@ -366,11 +369,11 @@ print("freeze BN")
 # Note the submodel here its not just train.keras_model
 for l in train.keras_model.model.layers:
     if 'gooey_batch_norm' in l.name:
-        l.max_viscosity = 1.
+        l.max_viscosity = 0.99
         l.fluidity_decay= 5e-4 #reaches constant 1 after about one epoch
     if 'FullOCLoss' in l.name:
         l.use_average_cc_pos = 0.1
-        l.q_min = 0.1
+        #l.q_min = 0.1
 
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=3.

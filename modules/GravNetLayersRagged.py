@@ -335,7 +335,53 @@ class ManualCoordTransform(tf.keras.layers.Layer):
         coords /= tf.constant([[262.897095, 246.292236, 0.422947705]])
         return coords
 
+
+class DirectedGraphBuilder(tf.keras.layers.Layer):
+    def __init__(self,strength=1., cutoff=1., **kwargs):
+        '''
+        Builds a directed graph by increasing the distances to neighbouring vertices
+        locally, if they have smaller score.
         
+        input is: distances, neighbour indices, score
+        Output is distances, neighbour indices
+        
+        score is strictly between 0 and 1
+        
+        strength and cut-off don't do anything yet
+        
+        '''
+        self.strength=strength
+        self.cutoff=cutoff
+        super(DirectedGraphBuilder, self).__init__(**kwargs)
+    
+    def get_config(self):
+        config = {'strength': self.strength,
+                  'cutoff': self.cutoff}
+        base_config = super(DirectedGraphBuilder, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))    
+        
+    def build(self, input_shapes): #pure python
+        super(DirectedGraphBuilder, self).build(input_shapes)
+        
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0],input_shapes[1]
+    
+    def call(self, inputs):
+        assert len(inputs) == 3
+        dist, nidx, score = inputs
+        neighscores = SelectWithDefault(nidx, score, -1e4)
+        
+        #between <=1
+        diff = score-(tf.reduce_max(neighscores,axis=-1,keep_dims=True)+1e-3)
+        
+        noneigh = tf.zeros_like(nidx[:,1:])-1
+        noneigh = tf.concat([nidx[:,0:1],noneigh],axis=-1)
+        #where diff<0
+        dist = tf.where(diff<0,0.,dist)
+        nidx = tf.where(diff<0,noneigh,nidx)
+        
+        return dist,nidx
+
     
 class NeighbourCovariance(tf.keras.layers.Layer):
     def __init__(self,**kwargs):
@@ -1364,8 +1410,8 @@ class LNC(tf.keras.layers.Layer):
          - only if return_neighbours True: number of neighbours (cast to float32)
          - new row splits
          - backgather indices
-         
          - +[] other tensors with selection applied
+         - selected truth index
         
         '''
         self.threshold = threshold
@@ -1414,28 +1460,28 @@ class LNC(tf.keras.layers.Layer):
             directoutshape = [(input_shapes[0][0], K, input_shapes[0][1]),(None,K)]
         
         if len(input_shapes) > 6:
-            return directoutshape+[(None, 1), (None, 1)] + self._sel_pass_shape(input_shapes)
+            return directoutshape+[(None, 1), (None, 1)] + self._sel_pass_shape(input_shapes), (None,)
         else:
-            return directoutshape+[(None, 1), (None, 1)]
+            return directoutshape+[(None, 1), (None, 1)], (None,)
 
     
-    def __compute_output_signature(self, input_signature):
-        
-        input_shapes = [x.shape for x in input_signature]
-        input_dtypes = [x.dtype for x in input_signature]
-        output_shapes = self.compute_output_shape(input_shapes)
-
-        lenin = len(input_signature)
-        # out, rs, backgather
-        if lenin > 6:
-            return  [tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])] + \
-                    [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i-2]) for i in range(5,lenin)]
-        else:
-            return  tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
-                    tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])
+    #def __compute_output_signature(self, input_signature):
+    #    
+    #    input_shapes = [x.shape for x in input_signature]
+    #    input_dtypes = [x.dtype for x in input_signature]
+    #    output_shapes = self.compute_output_shape(input_shapes)
+    #
+    #    lenin = len(input_signature)
+    #    # out, rs, backgather
+    #    if lenin > 6:
+    #        return  [tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
+    #                tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
+    #                tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])] + \
+    #                [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i-2]) for i in range(5,lenin)]
+    #    else:
+    #        return  tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
+    #                tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
+    #                tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])
             
     
 
@@ -1558,8 +1604,11 @@ class LNC(tf.keras.layers.Layer):
         out_padded = SelectWithDefault(sel[:,:,0], features, 0.)
         npg = tf.cast(npg,dtype='float32')
         
+        sel_tidxs = SelectWithDefault(sel[:,0], tidxs, -1)
+        sel_tidxs = tf.squeeze(sel_tidxs, axis=-1)
+        
         if self.return_neighbours:
-            return [out_padded, npg, rs, backgather] + otherout
+            return [out_padded, npg, rs, backgather] + otherout + [sel_tidxs]
         
         out_max  = SelectWithDefault(sel[:,:,0], features, -1000.)
         
@@ -1567,13 +1616,9 @@ class LNC(tf.keras.layers.Layer):
         out = tf.concat([tf.reduce_sum(out_padded, axis=1)/(npg+1e-6),  
                          tf.reduce_max(out_max, axis=1)],axis=-1) 
         
+        return [out, rs, backgather] + otherout + [sel_tidxs]
         
         
-        return [out, rs, backgather] + otherout
-        
-        
-
-
 
 ### soft pixel section
 

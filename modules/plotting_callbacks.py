@@ -157,7 +157,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
         self.beta_threshold=beta_threshold
         super(plotEventDuringTraining, self).__init__(**kwargs)
         
-        
+        self.datastorage=None #keep this small
 
 
     def _make_plot(self, counter, feat, predicted, truth):
@@ -181,33 +181,40 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             print('>>>> plotting cluster coordinates... average beta',np.mean(predBeta), ' lowest beta ', 
                   np.min(predBeta), 'highest beta', np.max(predBeta))
             
-            predCCoords = predicted[1]
-            if not predCCoords.shape[-1] == 3:
-                return #just for 3D ccoords
             
             #for later
             predEnergy = predicted[2]
             predX = predicted[3][:,0:1]
             predY = predicted[3][:,1:2]
             predT = predicted[4]
+            predD = predicted[6]
             
             data = {}
             data.update(feats)
             data.update(truths)
             
+            predCCoords = predicted[1]
+            
             
             data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
             data['predBeta'] = predBeta
             data['predBeta+0.05'] = predBeta+0.05 #so that the others don't disappear
-            data['predCCoordsX'] = predCCoords[:,0:1]
-            data['predCCoordsY'] = predCCoords[:,1:2]
-            data['predCCoordsZ'] = predCCoords[:,2:3]
             data['predEnergy'] = predEnergy
             data['predX']=predX
             data['predY']=predY
             data['predT']=predT
+            data['predD']=predD
             data['(predBeta+0.05)**2'] = data['predBeta+0.05']**2
             data['(thresh(predBeta)+0.05))**2'] = np.where(predBeta>self.beta_threshold ,data['(predBeta+0.05)**2'], 0.)
+            
+            if not predCCoords.shape[-1] == 3:
+                self.projection_plot(data, predCCoords)
+                return
+            
+            
+            data['predCCoordsX'] = predCCoords[:,0:1]
+            data['predCCoordsY'] = predCCoords[:,1:2]
+            data['predCCoordsZ'] = predCCoords[:,2:3]
             
             #for k in data:
             #    print(k, data[k].shape)
@@ -219,7 +226,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             shuffle_truth_colors(df)
             #now the cluster indices
             
-            hover_data=['predBeta','predEnergy','truthHitAssignedEnergies',
+            hover_data=['predBeta','predD','predEnergy','truthHitAssignedEnergies',
                         'predT','truthHitAssignedT',
                         'predX', 'truthHitAssignedX',
                         'predY', 'truthHitAssignedY',
@@ -275,6 +282,185 @@ class plotEventDuringTraining(plotDuringTrainingBase):
         except Exception as e:
             print(e)
             raise e
+        
+    def projection_plot(self, data, predCCoords):
+        
+        import time
+        thistime = time.time()
+        from sklearn.manifold import TSNE
+        tsne = TSNE(verbose=1,n_iter=250)#try with lowest default
+        coords2D = tsne.fit_transform(predCCoords)
+        
+        #coords2D = predCCoords[:,0:2]
+        
+        
+        data['predCCoordsX']=coords2D[:,0:1]
+        data['predCCoordsY']=coords2D[:,1:2]
+        
+        
+        df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
+        shuffle_truth_colors(df)
+        
+        
+        hover_data=['predBeta','predD','predEnergy','truthHitAssignedEnergies',
+                        'predT','truthHitAssignedT',
+                        'predX', 'truthHitAssignedX',
+                        'predY', 'truthHitAssignedY',
+                        'truthHitAssignementIdx']
+            
+        fig = px.scatter(df, x="predCCoordsX", y="predCCoordsY",
+                            color="truthHitAssignementIdx", size="(predBeta+0.05)**2",
+                            symbol = "recHitID",
+                            hover_data=hover_data,
+                            template='plotly_dark',
+                color_continuous_scale=px.colors.sequential.Rainbow)
+        fig.update_traces(marker=dict(line=dict(width=0)))
+        ccfile = self.outputfile + str(self.keep_counter) + "_proj_ccoords_betasize.html"
+        fig.write_html(ccfile)
+        
+        
+        if self.publish is not None:
+            publish(ccfile, self.publish)
+        
+        
+            
+class plotClusterSummary(PredictCallback):        
+    def __init__(self,
+                 outputfile="",
+                 nevents=20,
+                 publish=None,
+                 **kwargs):
+        self.outputfile = outputfile
+        os.system('mkdir -p '+os.path.dirname(outputfile))
+        self.publish = publish
+        self.plot_process=None
+        super(plotClusterSummary, self).__init__(function_to_apply=self.make_plot, 
+                                                 batchsize=1,
+                                                 use_event=-1, 
+                                                 **kwargs)
+        
+        self.td=self.td.getSlice(0,min(nevents,self.td.nElements()))
+
+
+    def subdict(self, d, sel):
+        o={}
+        for k in d.keys():
+            o[k] = d[k][sel]
+        return o
+    
+    def make_plot(self, counter, feat, predicted, truth):
+        if self.plot_process is not None:
+            self.plot_process.join(60)#safety margin to not block training if plotting took too long
+            try:
+                self.plot_process.terminate()#got enough time
+            except:
+                pass
+
+        self.plot_process = Process(target=self._make_plot, args=(counter, feat, predicted, truth))
+        self.plot_process.start()
+        
+    def _make_plot(self, counter, feat, predicted, truth):
+        
+        td = TrainData_NanoML()
+        preddict = self.model.convert_output_to_dict(predicted)
+        
+        cdata=td.createTruthDict(feat)
+        cdata['predBeta'] = preddict['pred_beta']
+        cdata['predCCoords'] = preddict['pred_ccoords']
+        cdata['predD'] = preddict['pred_dist']
+        rs = feat[-1]#last one has to be row splits
+        # this will not work, since it will be adapted by batch, and not anymore the right tow splits
+        #rs = preddict['row_splits']
+        
+        eid=0
+        eids=[]
+        #make event id
+        for i in range(len(rs)-1):
+            eids.append( np.zeros( (rs[i+1,0]-rs[i,0], ) ,dtype='int64') +eid )
+            eid+=1
+        cdata['eid'] = np.concatenate(eids, axis=0)
+        
+        pids=[]
+        vdtom=[]
+        did=[]
+        for i in range(eid):
+            a,b,pid = self.run_per_event(self.subdict(cdata,i==cdata['eid']))
+            vdtom.append(a)
+            did.append(b)
+            pids.append(pid)
+            
+        vdtom = np.concatenate(vdtom, axis=0)
+        did = np.concatenate(did,axis=0)
+        pids = np.concatenate(pids,axis=0)[:,0]
+        upids = np.unique(pids).tolist()
+        upids.append(0)
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        print(upids)
+        for p in upids:
+            svdtom=vdtom
+            sdid=did
+            if p:
+                svdtom=vdtom[pids==p]
+                sdid=did[pids==p]
+
+            if not len(svdtom):
+                continue
+            
+            fig = plt.figure()
+            plt.hist(svdtom,bins=51,color='tab:blue',alpha = 0.5,label='same')
+            plt.hist(sdid,bins=51,color='tab:orange',alpha = 0.5,label='other')
+            plt.yscale('log')
+            plt.xlabel('normalised distance')
+            plt.ylabel('A.U.')
+            plt.legend()
+            ccfile=self.outputfile+str(p)+'_cluster.pdf'
+            plt.savefig(ccfile)
+            plt.cla()
+            plt.clf()
+            plt.close(fig)
+            if self.publish is not None:
+                publish(ccfile, self.publish)
+     
+    def run_per_event(self,data):
+            
+        tidx = data['truthHitAssignementIdx'][:,0]# V x 1
+        utidx = np.unique(tidx)
+        
+        overflowat=6
+        
+        vtpid=[]
+        vdtom = []
+        did = []
+        for uidx in utidx:
+            if uidx < 0:
+                continue
+            thiscoords,thisbeta,thisdist = data['predCCoords'][tidx==uidx],data['predBeta'][tidx==uidx],data['predD'][tidx==uidx]
+            ak = np.argmax(thisbeta)
+            coords_ak = thiscoords[ak]
+            dist_ak = thisdist[ak]
+            
+            pid = np.abs(data['truthHitAssignedPIDs'][tidx==uidx])
+            
+            dtom = np.sqrt(np.sum( (thiscoords-coords_ak)**2, axis=-1)) / (np.abs(dist_ak)+1e-3)
+            dtom[dtom>overflowat]=overflowat
+            #dtom = np.expand_dims(dtom,axis=1)
+            dother =  np.sqrt(np.sum((data['predCCoords'][tidx!=uidx]-coords_ak )**2,axis=-1))/ (np.abs(dist_ak)+1e-3)
+            
+            dother[dother>overflowat]=overflowat
+            #dother = np.expand_dims(dother,axis=1)
+            dother = dother[np.random.choice(len(dother), size=int(min(len(dother), len(dtom))), replace=False)]#restrict
+            
+            vtpid.append(pid)
+            vdtom.append(dtom)
+            did.append(dother)
+        
+        vtpid = np.concatenate(vtpid,axis=0)
+        vdtom = np.concatenate(vdtom,axis=0)
+        did = np.concatenate(did,axis=0)
+        return vdtom,did,vtpid
+        
 
 
 class plotGravNetCoordsDuringTraining(plotDuringTrainingBase):
