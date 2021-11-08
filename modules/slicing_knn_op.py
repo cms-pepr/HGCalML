@@ -1,5 +1,6 @@
 
 import tensorflow as tf
+import numpy as np
 from tensorflow.python.framework import ops
 
 '''
@@ -67,10 +68,8 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
 
     # contains minimum and maximum coordinates of two first dimentions in coords tensor
     _phase_space_bin_boundary = []
-    if n_bins is None:
-        n_bins = [float('inf'),float('inf')]
 
-    for i_split in range(0,len(row_splits)-1):
+    for i_split in range(0,len(row_splits.numpy())-1):
         min_coords = r_min[i_split]
         max_coords = r_max[i_split]
 
@@ -88,10 +87,14 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
         if bin_width is not None:
             n_bins_1 = int((_phase_space_bin_boundary[-3] - _phase_space_bin_boundary[-4]) / bin_width[0]) + 1
             n_bins_2 = int((_phase_space_bin_boundary[-1] - _phase_space_bin_boundary[-2]) / bin_width[1]) + 1
-            if n_bins_1<n_bins[0]:
+            if n_bins is None:
                 n_bins[0] = n_bins_1
-            if n_bins_2<n_bins[1]:
                 n_bins[1] = n_bins_2
+            else:
+                if n_bins_1<n_bins[0]:
+                    n_bins[0] = n_bins_1
+                if n_bins_2<n_bins[1]:
+                    n_bins[1] = n_bins_2
 
     if type(n_bins) is list:
         n_bins = tuple(n_bins)

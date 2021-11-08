@@ -1,5 +1,6 @@
 import tensorflow as tf
 from select_knn_op import SelectKnn
+from slicing_knn_op import SlicingKnn
 from select_mod_knn_op import SelectModKnn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
@@ -1712,6 +1713,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  n_filters : int,
                  n_propagate : int,
                  return_self=False,
+                 use_approximate_knn=True,
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -1723,6 +1725,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         :param n_propagate: how much to propagate in feature tranformation, could be a list in case of multiple
         :param return_self: for the neighbour indices and distances, switch whether to return the 'self' index and distance (0)
+        :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
         :param kwargs:
         """
         super(RaggedGravNet, self).__init__(**kwargs)
@@ -1734,6 +1737,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.n_dimensions = n_dimensions
         self.n_filters = n_filters
         self.return_self = return_self
+        self.use_approximate_knn = use_approximate_knn
 
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
@@ -1809,8 +1813,12 @@ class RaggedGravNet(tf.keras.layers.Layer):
     
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
-                             max_radius= -1.0, tf_compatible=False)
+        if self.use_approximate_knn:
+            idx,dist = SlicingKnn(self.n_neighbours, coordinates,  row_splits,
+                                  features_to_bin_on = (0,1), bin_width=(1.0,1.0))
+        else:
+            idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                                 max_radius= -1.0, tf_compatible=False)
         idx = tf.reshape(idx, [-1, self.n_neighbours])
         dist = tf.reshape(dist, [-1, self.n_neighbours])
         if self.return_self:

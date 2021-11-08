@@ -4,7 +4,7 @@ import time
 import sys
 from compare_knn_outputs_op import CompareKnnOutputs
 from select_knn_op import SelectKnn
-from simple_slicing_knn_op import SimpleSlicingKnn
+from slicing_knn_op import SlicingKnn
 import unittest
 
 from DeepJetCore.training.gpuTools import DJCSetGPUs
@@ -44,7 +44,7 @@ def compareTensors(inTensor1, inTensor2):
         out = CompareKnnOutputs(inTensor1, inTensor2)
     return out, t_newop
 
-class TestSimpleKnn(unittest.TestCase):
+class TestKnn(unittest.TestCase):
 
     def setUp(self):
         self.N_VERTICIES = 100000
@@ -59,36 +59,36 @@ class TestSimpleKnn(unittest.TestCase):
 
     def test_first_coordinate_index_out_of_range(self):
         with self.assertRaises(Exception) as context:
-            ind_slice_knn, self.dist_slice_knn = SimpleSlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (self.N_DIMS,1), n_bins=(8,8))
+            ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (self.N_DIMS,1), n_bins=(8,8))
         self.assertTrue('Value error' in str(context.exception))
 
     def test_second_coordinate_index_out_of_range(self):
         with self.assertRaises(Exception) as context:
-            ind_slice_knn, self.dist_slice_knn = SimpleSlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,self.N_DIMS), n_bins=(8,8))
+            ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,self.N_DIMS), n_bins=(8,8))
         self.assertTrue('Value error' in str(context.exception))
 
     def test_identical_coordinate_indices(self):
         with self.assertRaises(Exception) as context:
-            ind_slice_knn, self.dist_slice_knn = SimpleSlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,0), n_bins=(8,8))
+            ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,0), n_bins=(8,8))
         self.assertTrue('Value error' in str(context.exception))
 
     def test_specify_n_bins_and_bin_width(self):
         with self.assertRaises(Exception) as context:
-            ind_slice_knn, self.dist_slice_knn = SimpleSlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), n_bins=(8,8), bin_width=(0.13,0.13))
+            ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), n_bins=(8,8), bin_width=(0.13,0.13))
         self.assertTrue('Specify either' in str(context.exception))
 
     def test_specify_no_n_bins_and_no_bin_width(self):
         with self.assertRaises(Exception) as context:
-            ind_slice_knn, self.dist_slice_knn = SimpleSlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1))
+            ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1))
         self.assertTrue('Specify either' in str(context.exception))
 
-    def test_compare_indices_old_cuda_vs_simple_knn(self):
-        ind_slice_knn, self.dist_slice_knn = SimpleSlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), n_bins=(8,8))
+    def test_compare_indices_old_cuda_vs_knn(self):
+        ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), n_bins=(8,8))
         outTensor=compareTensors(self.ind_old_cuda, ind_slice_knn)
         self.assertEqual(np.sum(outTensor[0].numpy()),0)
 
-    def test_compare_indices_old_cuda_vs_simple_knn_specify_bin_width(self):
-        ind_slice_knn, self.dist_slice_knn = SimpleSlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), bin_width=(0.13,0.13))
+    def test_compare_indices_old_cuda_vs_knn_specify_bin_width(self):
+        ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), bin_width=(0.13,0.13))
         outTensor=compareTensors(self.ind_old_cuda, ind_slice_knn)
         self.assertEqual(np.sum(outTensor[0].numpy()),0)
 
