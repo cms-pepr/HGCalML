@@ -11,7 +11,7 @@ from running_full_validation import RunningFullValidation
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
 from plotting_callbacks import plotClusterSummary
 
-def build_callbacks(train, running_plots_beta_threshold=0.5, running_plots_distance_threshold=0.5,
+def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_distance_threshold=0.5,
                     running_plots_iou_threshold=0.1,
                     running_plots_matching_type=matching_and_analysis.MATCHING_TYPE_IOU_MAX,
                     running_plots_write_after_iterations=200, full_analysis_num_hyperparam_optimization_iterations=100,
@@ -93,7 +93,7 @@ def build_callbacks(train, running_plots_beta_threshold=0.5, running_plots_dista
                                    os.path.join(train.outputDir, 'valsamples.djcdc'),
                                    os.path.join(train.outputDir, 'temp_val_outputs'), batch_size=1, unbuffered=False,
                                    model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
-                                   inputdir=os.path.split(train.inputData)[0], max_files=4)
+                                   inputdir=os.path.split(train.inputData)[0], max_files=1)
 
         analyzer2 = matching_and_analysis.OCAnlayzerWrapper(
             metadata)  # Use another analyzer here to be safe since it will run scan on

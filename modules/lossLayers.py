@@ -1,6 +1,7 @@
 import tensorflow as tf
 from object_condensation import oc_loss
 from betaLosses import obj_cond_loss
+from oc_helper_ops import SelectWithDefault
 import time
 
 
@@ -168,19 +169,11 @@ class LLClusterCoordinates(LossLayerBase):
 class LLLocalClusterCoordinates(LossLayerBase):
     '''
     Cluster using truth index and coordinates
-    Inputs: distances, hierarchy tensor, neighbour indices, truth_indices
+    Inputs: dist, nidxs, tidxs, specweight
     
-    The loss will be calculated w.r.t. the reference vertex at position [:,0] in the neighbour
-    indices unless add_self_reference is set to True. In this case, the vertex at position i will 
-    be used for all neighbours [i,:] as reference vertex
-    (for GravNet set add_self_reference=True, for local clustering set it to False because the 
-    reference vertex is already included in the indices)
     
     '''
-    def __init__(self, add_self_reference, repulsion_contrib=0.5, **kwargs):
-        self.repulsion_contrib=repulsion_contrib
-        self.add_self_reference=add_self_reference
-        assert repulsion_contrib <= 1. and repulsion_contrib>= 0.
+    def __init__(self, **kwargs):
         
         if 'dynamic' in kwargs:
             super(LLLocalClusterCoordinates, self).__init__(**kwargs)
@@ -188,71 +181,40 @@ class LLLocalClusterCoordinates(LossLayerBase):
             super(LLLocalClusterCoordinates, self).__init__(dynamic=kwargs['print_loss'],**kwargs)
 
     @staticmethod
-    def raw_loss(distances, hierarchy, neighbour_indices, truth_indices,
-                 add_self_reference, repulsion_contrib, print_loss, name,
-                 hierarchy_penalty=True):
+    def raw_loss(dist, nidxs, tidxs, specweight, print_loss, name):
         
+        sel_tidxs = SelectWithDefault(nidxs, tidxs, tf.expand_dims(tidxs,axis=1))[:,:,0]
+        sel_spec = SelectWithDefault(nidxs, specweight, 1.)[:,:,0]
+        active = tf.where(nidxs>=0, tf.ones_like(dist), 0.)
+        nneigh = tf.math.count_nonzero(active, axis=1)
+        notspecmask = (1. - sel_spec) #tf.where(sel_spec>0, 0., tf.ones_like(dist))
+        notnoisemask = tf.where(sel_tidxs<0, 0., tf.ones_like(dist))
+        #mask spectators
+        sameasprobe = tf.cast(sel_tidxs[:,0:1] == sel_tidxs,dtype='float32') 
+        sameasprobe *= notnoisemask #always push away noise, also from each other
         
-        hierarchy = (tf.nn.sigmoid(hierarchy)+1.)/2.
-        #make neighbour_indices TF compatible (replace -1 with own index)
-        own = tf.expand_dims(tf.range(tf.shape(truth_indices)[0],dtype='int32'),axis=1)
-        neighbour_indices = tf.where(neighbour_indices<0, own, neighbour_indices) #does broadcasting to the righ thing here?
+        attr = dist * sameasprobe * notspecmask * active
+        rep = tf.math.exp(-dist) * (1.-sameasprobe) * notspecmask * active
+        nneigh = tf.cast(nneigh,'float32')
         
-        #reference might already be there, but just to be sure
-        if add_self_reference:
-            neighbour_indices = tf.concat([own,neighbour_indices],axis=-1)
-        else: #remove self-distance
-            distances = distances[:,1:]
-            
-        neighbour_indices = tf.expand_dims(neighbour_indices,axis=2)#tf like
-        
-        firsttruth = truth_indices #[,tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,0:1]),axis=2)
-        neightruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,1:,:] ),axis=2)
-        
-        #distances are actually distances**2
-        expdist = tf.exp(- 3. * distances)
-        att_proto = (1.-repulsion_contrib)* (1.-expdist)  #+ 0.01*distances  #mild attractive to help learn
-        att_proto = tf.where(truth_indices<0, att_proto*0.01, att_proto) #milder term for noise
-        
-        rep_proto = repulsion_contrib * expdist #- 0.01 * distances
-        
-        
-        potential = tf.where(firsttruth==neightruth, att_proto, rep_proto)
-        potential = hierarchy**2 * tf.reduce_mean(potential, axis=1, keepdims=True)
-        potential = tf.reduce_mean(potential)
-        
-        penalty = 1. - hierarchy
-        penalty = tf.reduce_mean(penalty)
-        
-        lossval = potential
-        if hierarchy_penalty:
-            lossval += penalty 
+        lossval = tf.math.divide_no_nan(tf.reduce_sum(attr+rep,axis=1), nneigh-1.)
+        lossval = tf.reduce_mean(lossval)
         
         if print_loss:
             if hasattr(lossval, "numpy"):
-                print(name, lossval.numpy(), 'potential', potential.numpy(), 'penalty',penalty.numpy())
+                print(name, 'loss', lossval.numpy())
             else:
-                tf.print(name, lossval, 'potential',potential, 'penalty',penalty)
-        return lossval
-        
+                tf.print(name, 'loss', lossval)
+        return lossval            
+         
+         
     def loss(self, inputs):
-        if len(inputs) == 4:
-            distances, hierarchy, neighbour_indices, truth_indices = inputs
-        else:
-            distances, neighbour_indices, truth_indices = inputs
-            hierarchy = tf.ones_like(distances[:,0:1])
-        return LLLocalClusterCoordinates.raw_loss(distances, hierarchy, neighbour_indices, 
-                                                  truth_indices, 
-                                                  self.add_self_reference, 
-                                                  self.repulsion_contrib, 
+        dist, nidxs, tidxs, specweight = inputs
+
+        return LLLocalClusterCoordinates.raw_loss(dist, nidxs, tidxs, specweight,
                                                   self.print_loss, 
                                                   self.name)
 
-    def get_config(self):
-        config = {'add_self_reference': self.add_self_reference,
-                  'repulsion_contrib': self.repulsion_contrib }
-        base_config = super(LLLocalClusterCoordinates, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 
@@ -600,7 +562,7 @@ class LLFullObjectCondensation(LossLayerBase):
             minbtext = 'min_beta_loss'
             if self.phase_transition>0:
                 minbtext = 'phase transition loss'
-                print('avg beta', tf.reduce_mean(pred_beta))
+            print('avg beta', tf.reduce_mean(pred_beta))
             print('loss', lossval.numpy(),
                   'attractive_loss', att.numpy(),
                   'rep_loss', rep.numpy(),

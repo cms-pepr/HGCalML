@@ -4,7 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import ElementScaling,AddIdentity2D,WarpedSpaceKNN,GroupScoreFromEdgeScores,EdgeCreator,EdgeSelector,NoiseFilter,LNC,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import DownSample,CreateIndexFromMajority,LNC2,ElementScaling,AddIdentity2D,WarpedSpaceKNN,GroupScoreFromEdgeScores,EdgeCreator,EdgeSelector,NoiseFilter,LNC,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import CreateTruthSpectatorWeights,LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
 from tensorflow.python.framework import ops
@@ -18,6 +18,7 @@ global_layers_list['Condensate']=Condensate
 global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
 
 
+global_layers_list['DownSample']=DownSample
 global_layers_list['ElementScaling']=ElementScaling
 
 global_layers_list['GroupScoreFromEdgeScores']=GroupScoreFromEdgeScores
@@ -27,6 +28,8 @@ global_layers_list['EdgeCreator']=EdgeCreator
 global_layers_list['EdgeSelector']=EdgeSelector
 
 global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
+
+global_layers_list['CreateIndexFromMajority']=CreateIndexFromMajority
 
 global_layers_list['NoiseFilter']=NoiseFilter
 
@@ -102,6 +105,7 @@ global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
 global_layers_list['PrintMeanAndStd']=PrintMeanAndStd
 
 global_layers_list['LNC']=LNC
+global_layers_list['LNC2']=LNC2
 
 ####### other stuff goes here
 from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer
@@ -124,6 +128,16 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
 
+
+class GausActivation(Layer):
+    def __init__(self,**kwargs):
+        super(GausActivation, self).__init__(**kwargs)
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    def call(self, inputs):
+        return tf.exp(-inputs**2)
+
+global_layers_list['GausActivation']=GausActivation
 
 class OnesLike(Layer):
     def __init__(self,**kwargs):

@@ -5,7 +5,7 @@ from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
 from local_group_op import LocalGroup
 from local_distance_op import LocalDistance
-from lossLayers import LLClusterCoordinates
+from lossLayers import LLClusterCoordinates, LLLocalClusterCoordinates
 from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
@@ -40,6 +40,9 @@ def select_threshold_with_backgather(score, threshold, row_splits):
     newrs = [0]
     row_splits = tf.squeeze(row_splits) #can never have dim 0
     score= tf.squeeze(score, axis=1)#remove additional 1 dim
+    
+    #debug_indices = glidxs
+    
     for i in tf.range(tf.shape(row_splits)[0]-1):
         rs_glidxs = glidxs[row_splits[i]:row_splits[i+1]]
         rs_score = score[row_splits[i]:row_splits[i+1]]
@@ -77,11 +80,134 @@ def select_threshold_with_backgather(score, threshold, row_splits):
     allbackgather = tf.expand_dims(tf.concat(allbackgather,axis=0),axis=1)
     sel = tf.expand_dims(tf.concat(allkeepidxs,axis=0),axis=1)#standard tf index format
     newrs = tf.concat(newrs,axis=0)
+     
+    #sanity check
+    selglidxs = SelectWithDefault(sel, tf.expand_dims(glidxs,axis=1), 0)[:,:,0]
+    mess = "select_threshold_with_backgather: assert indices "+str(selglidxs.shape)+" vs "+str(sel.shape)
+    with tf.control_dependencies([tf.assert_equal(selglidxs, sel, message=mess)]):
+    #end sanity check 
+        return sel, allbackgather, newrs
+
+
+
+def countsame(idxs):
+    '''
+    idxs are supposed to have form V x K
+    returns number of sames (repeats) and ntotla
+    '''
+    ntotal = idxs.shape[1]
+    sqdiff = tf.expand_dims(idxs,axis=1)-tf.expand_dims(idxs,axis=2)
+    nsames = idxs.shape[1] - tf.math.count_nonzero(sqdiff,axis=2) 
+    nsames = tf.cast(nsames,dtype='int32')
+    ntotal = tf.cast(ntotal,dtype='int32')
+    return nsames,ntotal
     
-    return sel, allbackgather, newrs
+class CreateIndexFromMajority(tf.keras.layers.Layer):
+    
+    def __init__(self, min_threshold=0.6, ignore: int=-10, assign_else: int=-1, active=True, **kwargs):
+        '''
+        Takes as input (truth) indices and selects one from majority if majority is over threshold
+        If majority is not over threshold it assigns <assign_else>
+        It will ignore the index specified as <ignore> 
+        
+        If not active it will just return <assign_else> (no truth mode)
+        
+        Input:
+        - indices V x K
+        
+        Output:
+        - index V x 1
+        '''
+        super(CreateIndexFromMajority, self).__init__(**kwargs)
+        assert min_threshold>=0
+        self.min_threshold = min_threshold
+        self.ignore = ignore
+        self.active = active 
+        self.assign_else = assign_else
+    
+    def get_config(self):
+        config = {'min_threshold': self.min_threshold,
+                  'ignore': self.ignore,
+                  'active': self.active,
+                  'assign_else': self.assign_else,
+                  }
+        base_config = super(CreateIndexFromMajority, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    @staticmethod
+    def raw_call(inputs, min_threshold, ignore, assign_else):
+        idxs = inputs
+        nsames,ntot = countsame(idxs)
+        #mask ignore
+        nsames = tf.where(idxs == ignore, 0, nsames)
+        #get max
+        nmaxarg = tf.expand_dims(tf.argmax(nsames,axis=1),axis=1)
+        maxcount = tf.gather_nd(nsames,nmaxarg,batch_dims=1)
+        maxidx = tf.gather_nd(idxs,nmaxarg,batch_dims=1)
+        fracmax = tf.cast(maxcount,dtype='float32')/tf.cast(ntot,dtype='float32')
+        
+        ### for info purposes
 
-
-
+        ###
+        
+        out = tf.where(fracmax>=min_threshold, maxidx, assign_else)
+        out = tf.expand_dims(out,axis=1)#make it V x 1 again
+        return out
+    
+    def call(self, inputs):
+        if not self.active:
+            return tf.zeros_like(inputs) + self.assign_else
+        
+        return CreateIndexFromMajority.raw_call(inputs, self.min_threshold, self.ignore, self.assign_else)
+        
+    
+class DownSample(tf.keras.layers.Layer):
+    
+    def __init__(self, sample_to: int=1000, **kwargs):
+        '''
+        Takes as input (truth) indices and selects one from majority if majority is over threshold
+        If majority is not over threshold it assigns <assign_else>
+        It will ignore the index specified as <ignore> 
+        
+        If not active it will just return <assign_else> (no truth mode)
+        
+        Input:
+        - indices V x K
+        
+        Output:
+        - index V x 1
+        '''
+        super(DownSample, self).__init__(**kwargs)
+        assert sample_to>=0
+        self.sample_to = sample_to
+    
+    def get_config(self):
+        config = {'sample_to': self.sample_to,
+                  }
+        base_config = super(DownSample, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):
+        #return input_shapes[0]
+        if input_shapes[-1] > self.sample_to:
+            return input_shapes[:-1]+[self.sample_to]
+        else:
+            return input_shapes
+    
+    def call(self, inputs):
+        if inputs.shape[-1]<=self.sample_to:
+            return inputs
+        
+        idxs = tf.range(tf.shape(inputs)[-1])
+        ridxs = tf.random.shuffle(idxs)[:self.sample_to]
+        ridxs = tf.expand_dims(ridxs,axis=0)
+        ridxs = tf.tile(ridxs, (tf.shape(inputs)[0],1))
+        ridxs = tf.expand_dims(ridxs,axis=-1)
+        rinput = tf.gather_nd(inputs, ridxs,batch_dims=1)
+        rinput = tf.reshape(rinput, (-1,self.sample_to))
+        return rinput
+    
+    
 ############# Some layers for convenience ############
 
 class PrintMeanAndStd(tf.keras.layers.Layer):
@@ -234,6 +360,7 @@ class NormalizeInputShapes(tf.keras.layers.Layer):
 
 class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
+                 newformat=True,#compat can be restored but default is new format
                  **kwargs):
         """
         Inputs are: 
@@ -246,53 +373,87 @@ class ProcessFeatures(tf.keras.layers.Layer):
         
         """
         self.td=TrainData_NanoML()
+        self.newformat = newformat
         super(ProcessFeatures, self).__init__(**kwargs)
         
-        
+    
+    def get_config(self):
+        config = {'newformat': self.newformat}
+        base_config = super(ProcessFeatures, self).get_config()
+        return dict(list(base_config.items()) + list(config.items())) 
+    
     def compute_output_shape(self, input_shape):
         return input_shape
     
     def call(self, inputs):
         '''
-        'recHitEnergy'
-        'recHitEta'   
-        'recHitID'    
-        'recHitTheta' 
-        'recHitR'     
-        'recHitX'     
-        'recHitY'     
-        'recHitZ'     
-        'recHitTime'  
+        'recHitEnergy',
+            'recHitEta',
+            'isTrack',
+            'recHitTheta',
+            'recHitR',
+            'recHitX',
+            'recHitY',
+            'recHitZ',
+            'recHitTime',
+            'recHitHitR'  
         '''
+        feat = None
         fdict = self.td.createFeatureDict(inputs, False)
-        #please make sure in TrainData_OC that this is consistent
-        fdict['recHitR'] /= 100.
-        fdict['recHitX'] /= 100.
-        fdict['recHitY'] /= 100.
-        fdict['recHitZ'] = (tf.abs(fdict['recHitZ'])-400)/100.
-        fdict['recHitEta'] = tf.abs(fdict['recHitEta'])
-        fdict['recHitTheta'] = 2.*tf.math.atan(tf.exp(-fdict['recHitEta']))
-        fdict['recHitTime'] = tf.nn.relu(fdict['recHitTime'])/10. #remove -1 default
-        allf = []
-        for k in fdict:
-            allf.append(fdict[k])
-        feat = tf.concat(allf,axis=-1)
-        
-        mean = tf.constant([[0.0740814656, 2.46156192, 0., 0.207392946, 3.55599976, 0.0609507263, 
-                             -0.00401970092, -0.515379727, 0.0874295086]])
-        std =  tf.constant([[0.299679846, 0.382687777, 1., 0.0841238275, 0.250777304, 0.485394388, 
-                             0.518072903,     0.240222782, 0.194716245]])
-        if feat.shape[-1] == 10:
+        if not self.newformat:
+            #please make sure in TrainData_OC that this is consistent
+            fdict['recHitR'] /= 100.
+            fdict['recHitX'] /= 100.
+            fdict['recHitY'] /= 100.
+            fdict['recHitZ'] = (tf.abs(fdict['recHitZ'])-400)/100.
+            fdict['recHitEta'] = tf.abs(fdict['recHitEta'])
+            fdict['recHitTheta'] = 2.*tf.math.atan(tf.exp(-fdict['recHitEta']))
+            fdict['recHitTime'] = tf.nn.relu(fdict['recHitTime'])/10. #remove -1 default
+            allf = []
+            for k in fdict:
+                allf.append(fdict[k])
+            feat = tf.concat(allf,axis=-1)
+            
             mean = tf.constant([[0.0740814656, 2.46156192, 0., 0.207392946, 3.55599976, 0.0609507263, 
-                             -0.00401970092, -0.515379727, 0.0874295086, 0.]])
+                             -0.00401970092, -0.515379727, 0.0874295086]])
             std =  tf.constant([[0.299679846, 0.382687777, 1., 0.0841238275, 0.250777304, 0.485394388, 
-                             0.518072903,     0.240222782, 0.194716245, 1.]])
+                                 0.518072903,     0.240222782, 0.194716245]])
+            feat -= mean
+            feat /= std
+            
+            return feat
+            
+        else: #new std format
+            fdict['recHitEta'] = tf.abs(fdict['recHitEta'])
+            fdict['recHitZ'] =  tf.abs(fdict['recHitZ'])
+            allf = []
+            for k in fdict:
+                allf.append(fdict[k])
+            feat = tf.concat(allf,axis=-1)
+        
+            mean = tf.constant([[ 3.95022651e-02,  2.46088736e+00,  
+                                 0.00000000e+00,
+                                  1.56797723e+00,  3.54114793e+02, 
+                                 0.,#x
+                                 0.,#y  
+                                  3.47267313e+02, 
+                                 -3.73342582e-01,
+                                  7.61663214e-01]])
+            std =  tf.constant([[ 0.16587503,  0.36627547,  1.        ,  
+                                 1.39035478, 22.55941696,
+                                 50., 50., 
+                                 21.75297722,  
+                                 1.89301789,  
+                                 0.14808707]])
+            
+            feat -= mean
+            feat /= std
+            
+            return feat
+        
+        ##old format below
         
         
-        feat -= mean
-        feat /= std
-        
-        return feat
     
 
 
@@ -1123,11 +1284,11 @@ class NoiseFilter(tf.keras.layers.Layer):
                 accuracy = tf.reduce_sum(accuracy) / tf.squeeze(Nnotnoise)
                 print(self.name, ' loss ', classloss, ' ; accuracy', accuracy)
         
+        if self.threshold<=0: #does nothing
+            return [row_splits, tf.expand_dims(tf.range(tf.shape(score)[0]),axis=1)]+ other
         
         sel, allbackgather, newrs = select_threshold_with_backgather(score, self.threshold, row_splits)
-        
-        seloutshapes =  [[-1,] + list(s.shape[1:]) for s in other] 
-        other = SelectFromIndices.raw_call(sel, other, seloutshapes)
+        other = SelectFromIndices.raw_call(sel, other)
         
         if self.print_reduction:
             print(self.name,' reduction from ', int(row_splits[-1]), ' to ', int(newrs[-1]), ': ', float(row_splits[-1])/float(newrs[-1]))
@@ -1158,7 +1319,8 @@ class EdgeCreator(tf.keras.layers.Layer):
     
     def call(self, inputs):
         selffeat = tf.expand_dims(inputs[1],axis=1)
-        return selffeat - SelectWithDefault(inputs[0][:,1:], inputs[1], 0.)
+        edges = selffeat - SelectWithDefault(inputs[0][:,1:], inputs[1], -1.)
+        return edges
     
 
 class EdgeSelector(tf.keras.layers.Layer):
@@ -1196,24 +1358,62 @@ class EdgeSelector(tf.keras.layers.Layer):
         
         nidx, score, specweights, tidxs = inputs
         #loss part
-        if self.loss_enabled:
-            sel_tidxs = SelectWithDefault(nidx, tidxs, tf.expand_dims(tidxs,axis=1))
-            sel_spec = SelectWithDefault(nidx, specweights, 1.)[:,1:] #don't count -1 entries anyway
-            specmask = tf.where(sel_spec[:,:,0]>0, 0., tf.ones_like(score[:,:,0]))
-            #mask spectators
-            sameasprobe = tf.cast(sel_tidxs[:,0:1] == sel_tidxs,dtype='float32')[:,1:] #remove self ref
+        if self.loss_enabled: #revised Nov 2021
+            sel_tidxs = SelectWithDefault(nidx, tidxs, -1)
+            #sanity check
+            tf.assert_equal(tf.expand_dims(tidxs,axis=1),sel_tidxs[:,0:1])
+            #make sure noise disappears
+            sel_tidxs = tf.where(sel_tidxs<0,-2,sel_tidxs)
             
-            edgeloss = specmask * tf.keras.losses.binary_crossentropy(sameasprobe, score)
-            edgeloss = self.loss_scale * tf.reduce_mean(edgeloss)
-            if self.print_loss:
-                print(self.name,'loss ', edgeloss)
+            sel_spec  = SelectWithDefault(nidx, specweights, 1.)[:,1:] #don't count -1 entries anyway
+            
+            #just downweight spectators slightly (don't let them build bridges!
+            notspecmask = tf.where(sel_spec[:,:,0]>0, .9, tf.ones_like(score[:,:,0]))
+            
+            active = notspecmask*tf.where(nidx[:,1:]>=0, tf.ones_like(score[:,:,0]), 0.)
+            #Nactive = tf.reduce_sum(active,axis=1)
+            #mask spectators
+            sameasprobe = tf.cast(tf.expand_dims(tidxs,axis=1) == sel_tidxs,dtype='float32')[:,1:]
+            
+                    
+            edgeloss = tf.keras.losses.binary_crossentropy(sameasprobe, score)
+            
+            #print('>>>',sameasprobe[0], edgeloss[0], score[0])
+            
+            edgeloss *= active #includes spec 
+            
+            samesum = tf.reduce_sum(active*sameasprobe[:,:,0])
+            notsamesum = tf.reduce_sum(active*(1.-sameasprobe[:,:,0]))
+            
+            
+            abovethresh = tf.cast(score[:,:,0]>self.threshold,dtype='float32')
+            rightpred = abovethresh * active * sameasprobe[:,:,0]
+            efficiency = tf.reduce_sum(rightpred) / (tf.reduce_sum(active*sameasprobe[:,:,0])+1e-3)
+            purity = tf.reduce_sum(rightpred) / (tf.reduce_sum(active*abovethresh)+1e-3)
+            
+            
+            edgelosssame  = tf.math.divide_no_nan(tf.reduce_sum(sameasprobe[:,:,0]*edgeloss),samesum)
+            edgelossnotsame = tf.math.divide_no_nan(tf.reduce_sum((1.-sameasprobe[:,:,0])*edgeloss),notsamesum)
+            edgeloss = self.loss_scale * tf.reduce_mean(edgelosssame+edgelossnotsame)
+            
+            if hasattr(edgeloss, "numpy"):
+                print(self.name,
+                      'loss', edgeloss.numpy(), 
+                      'same', edgelosssame.numpy(), 
+                      'notsame', edgelossnotsame.numpy(), 
+                      'purity', purity.numpy(),
+                      'efficiency', efficiency.numpy(), 
+                      'avg score', tf.reduce_mean(tf.reduce_sum(score[:,:,0],axis=1)/tf.reduce_sum(active,axis=1)),
+                      'avg active', tf.reduce_mean(tf.reduce_sum(active,axis=1)).numpy(), 
+                      'avg truth', tf.reduce_mean(tidxs).numpy(),
+                      'max truth', tf.reduce_max(tidxs).numpy())
             
             self.add_loss( edgeloss )
             
-        
         score = tf.concat([tf.ones_like(score[:,0:1,:]),score],axis=1)#add self score always 1
         
         return tf.where(score[:,:,0] < self.threshold, -1, nidx)
+    
         
 class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
@@ -1238,12 +1438,13 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
         #no config
     def call(self, inputs): 
         score, nidx = inputs
-        #take almost mean
-        n_neigh = tf.math.count_nonzero(nidx+1, axis=1, keepdims=True)# V x 1
-        n_neigh = 1. + (tf.cast(n_neigh,dtype='float32')-1.)*0.5 #give higher score to larger groups
-        groupscore = tf.reduce_sum(score, axis=1)*0.5 #make sure max is bound to one
-        groupscore /= n_neigh
-        return groupscore
+        #take mean
+        active = tf.cast(nidx>-1, 'float32')
+        n_neigh = tf.math.count_nonzero(active, axis=1)# V 
+        n_neigh = tf.cast(n_neigh,dtype='float32') - 1.
+        groupscore = tf.reduce_sum(active[:,1:]*score[:,:,0], axis=1)
+        groupscore = tf.math.divide_no_nan(groupscore,n_neigh)
+        return tf.expand_dims(groupscore,axis=1)
         
         
                 
@@ -1251,7 +1452,7 @@ class LNC(tf.keras.layers.Layer):
     def __init__(self, 
                  threshold = 0.9, 
                  sum_other=[],
-                 
+                 select_other=[],
                  loss_scale = 1., 
                  distance_loss_scale = 1., 
                  
@@ -1306,6 +1507,7 @@ class LNC(tf.keras.layers.Layer):
         self.noise_loss_scale = noise_loss_scale
         self.use_spectators = use_spectators
         self.sum_other = sum_other
+        self.select_other = select_other
         self.return_neighbours = return_neighbours
         
         assert self.noise_loss_scale >= 0
@@ -1326,6 +1528,7 @@ class LNC(tf.keras.layers.Layer):
                   'noise_loss_scale': self.noise_loss_scale,
                   'use_spectators': self.use_spectators,
                   'sum_other': self.sum_other,
+                  'select_other': self.select_other,
                   'return_neighbours': self.return_neighbours}
         
         base_config = super(LNC, self).get_config()
@@ -1386,6 +1589,14 @@ class LNC(tf.keras.layers.Layer):
         if self.use_spectators:
             specweight = other[-1]
             other = other[0:-1]
+            
+        for i in self.sum_other:
+            if i >= len(other):
+                raise ValueError(self.name+" sum_other: indices don't match input")
+            
+        for i in self.select_other:
+            if i >= len(other):
+                raise ValueError(self.name+" select_other: indices don't match input")
             
         score = tf.nn.sigmoid(score)
         tnidxs = nidxs #used for truth
@@ -1474,10 +1685,13 @@ class LNC(tf.keras.layers.Layer):
         seloutshapes =  [[-1,] + list(s.shape[1:]) for s in other] 
         otherout = SelectFromIndices.raw_call(sel[:,0], other, seloutshapes)
         #change those that should be summed
+        
         for i in self.sum_other:
             otherout[i] = SelectWithDefault(sel[:,:,0], other[i], 0.)
             otherout[i] = tf.reduce_sum(otherout[i],axis=1)#sum over neighbours
         
+        for i in self.select_other:
+            otherout[i] = SelectWithDefault(sel[:,0,0], other[i], 0.)
         
         if self.print_reduction:
             tf.print(self.name,'reduction',tf.cast(tf.shape(sel)[0],dtype='float')/tf.cast(tf.shape(nidxs)[0],dtype='float'),'to',tf.shape(sel)[0])
@@ -1502,7 +1716,219 @@ class LNC(tf.keras.layers.Layer):
         return [out, rs, backgather] + otherout + [sel_tidxs]
         
         
+                
+class LNC2(tf.keras.layers.Layer):
+    def __init__(self, 
+                 threshold = 0.9, 
+                 
+                 loss_scale = 1., 
+                 distance_loss_scale = 1., 
+                 
+                 print_reduction=False, 
+                 loss_enabled=False, 
+                 print_loss=False,
+                 
+                 assign_empty: int=-10,
+                 
+                 noise_loss_scale : float = 0.1,
+                 **kwargs):
+        '''
+        Local Neighbour Clustering
+        This should be an improvement over LocalClusterReshapeFromNeighbours2 with fewer hyperparameters
+        and actually per-point exclusive clustering (not per group)
+        
+        Options:
+        - threshold: minimum group-classifier threshold to cluster (larger means fewer higher purity clusters)
+        - loss_scale: loss scale
+        - assign_empty: truth index to assign to empty spaces when flattening truth
 
+        
+        Inputs are lists themselves:
+         IA) A list of
+            - neighbourhood classifier (linear activation applied only)
+            - distances (V x K): only used for loss evaluation
+            - neighbour indices  (V x K) <- must contain "self"
+            - row splits
+            - spectator weights (ignored/can be None if loss disabled)
+            - truth index (ignored/can be None if loss disabled)
+            - a flat list of all previous truth indices
+            
+         IB) A list of all tensors that should be flattened+zero padded (in K) for selected neighbourhoods
+         IC) A list of all tensors that should be summed (in K) for selected neighbourhoods
+         ID) A list of all tensors that should be mean and maxed (in K) for selected neighbourhoods
+         IE) A list of all tensors where the first 'self' index should be selected for selected neighbourshoods
+         
+         
+        
+        Outputs are lists:
+         OA) A list of
+             - The number of neighbours merged
+             - new row splits
+             - backgather indices
+             - an extended flat list of all truth indices, empty space are replaced by <assign_empty>
+             
+         OB) everything that was in IB processed
+         OC) everything that was in IC processed
+         OD) everything that was in ID processed
+         OE) everything that was in IE processed
+         
+        
+        '''
+        self.threshold = threshold
+        self.print_reduction = print_reduction
+        self.loss_enabled = loss_enabled
+        self.loss_scale = loss_scale
+        self.distance_loss_scale = distance_loss_scale
+        self.print_loss = print_loss
+        self.noise_loss_scale = noise_loss_scale
+        self.assign_empty = assign_empty
+        
+        assert self.noise_loss_scale >= 0
+        
+        if 'dynamic' in kwargs:
+            super(LNC2, self).__init__(**kwargs)
+        else:
+            super(LNC2, self).__init__(dynamic=False,**kwargs)#eager
+        
+    
+    def get_config(self):
+        config = {'threshold': self.threshold,
+                  'print_reduction': self.print_reduction,
+                  'loss_enabled': self.loss_enabled,
+                  'loss_scale': self.loss_scale,
+                  'distance_loss_scale': self.distance_loss_scale,
+                  'print_loss': self.print_loss,
+                  'noise_loss_scale': self.noise_loss_scale}
+        
+        base_config = super(LNC2, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    
+
+    def build(self, input_shape):
+        super(LNC2, self).build(input_shape)
+
+
+    def call(self, inputs):
+        
+        IA, IB, IC, ID, IE = inputs
+        
+        score, dist, nidxs, row_splits, specweight, tidxs, flattidxs = IA
+        score = tf.nn.sigmoid(score)
+        
+        #build truth loss first
+        if self.loss_enabled:
+            #distance loss
+            if self.distance_loss_scale > 0:  #revised Nov 2021
+                lossval = tf.zeros_like(score[0,0])
+                nneigh = tf.zeros_like(score)
+                if row_splits.shape[0] is not None:
+                    lossval = LLLocalClusterCoordinates.raw_loss(dist, nidxs, tidxs, specweight, 
+                                                                 print_loss=False, name=self.name)
+                lossval = tf.reduce_mean(lossval)
+                if self.print_loss:
+                    print(self.name, "distance loss",lossval,'average neighbours',tf.reduce_mean(nneigh))
+                    
+                self.add_loss(self.distance_loss_scale*lossval)
+            
+            sel_tidxs = SelectWithDefault(nidxs, tidxs, tf.expand_dims(tidxs,axis=1))
+            
+            #just in case no "self" index
+            same = tf.reduce_min(sel_tidxs,axis=1) == tf.reduce_max(sel_tidxs,axis=1)
+            sameobject = tf.where(same, 1.,tf.zeros_like(same,dtype='float32'))
+            
+            classloss = tf.keras.losses.binary_crossentropy(sameobject, score)
+
+            #this should be kept independent on the relation of objects versus noise in the event
+
+            N_tot    = tf.cast(tf.shape(tidxs)[0],dtype='float32')
+            N_noise  = tf.cast(tf.math.count_nonzero(tidxs<0),dtype='float32')
+            N_assobj = N_tot-N_noise
+            
+            nweight = tf.where(tidxs<0, self.noise_loss_scale, tf.zeros_like(score))
+            nclassloss = classloss * nweight[:,0]#remove last "1" dimension
+            nclassloss = tf.math.divide_no_nan(tf.reduce_sum(nclassloss),N_noise)
+            
+            oweight = tf.where(tidxs>=0, (1.-specweight), tf.zeros_like(score))
+            oclassloss = classloss * oweight[:,0]
+            oclassloss = tf.math.divide_no_nan(tf.reduce_sum(oclassloss),N_assobj)
+            
+            classloss = self.loss_scale  * (nclassloss+oclassloss)
+            if self.print_loss:
+                print(self.name, "classifier loss",classloss,"mean score", tf.reduce_mean(score))
+            self.add_loss(classloss)
+            
+        ################## loss done    
+        
+        ######## create selectors
+        hierarchy_idxs=[]
+        if row_splits.shape[0] is None:
+            sel = tf.expand_dims(tf.zeros_like(nidxs, dtype='int32'),axis=2)
+            ggather = tf.zeros_like(score, dtype='int32')
+            npg = tf.zeros_like(score, dtype='int32') + 1
+            rs = row_splits
+        
+        else:
+            for i in range(tf.shape(row_splits)[0] - 1):
+                a = tf.argsort(score[row_splits[i]:row_splits[i+1]],axis=0, direction='DESCENDING')
+                hierarchy_idxs.append(a+row_splits[i])
+            hierarchy_idxs = tf.concat(hierarchy_idxs,axis=0)
+            rs,sel,ggather,npg = LocalGroup(nidxs, hierarchy_idxs, score, row_splits, 
+                                        score_threshold=self.threshold)
+
+        rs = tf.cast(rs, tf.int32) #just so keras knows
+        backgather = tf.reshape(ggather, [-1,1])
+        
+        if self.print_reduction:
+            tf.print(self.name,'reduction',tf.cast(tf.shape(sel)[0],dtype='float')/tf.cast(tf.shape(nidxs)[0],dtype='float'),'to',tf.shape(sel)[0])
+        
+        ftidx= SelectWithDefault(sel[:,:,0], flattidxs, self.assign_empty)
+        ftidx = tf.reshape(ftidx, [-1, sel[:,:,0].shape[-1] * flattidxs.shape[-1]])
+        
+        #now cut whatever is padded
+        ftidxshape = tf.shape(ftidx)
+        ftidx = tf.sort(ftidx,axis=1,direction='DESCENDING')#assign_empty < -1 will be last
+        ftidx = tf.reshape(ftidx, ftidxshape)
+        nnotassign_empty = tf.math.count_nonzero(ftidx-self.assign_empty,axis=1)+1 #to be sure there is at least one
+        nnotassign_empty = tf.cast(tf.reduce_max(nnotassign_empty),dtype='int32')
+        print(nnotassign_empty,nnotassign_empty.shape)
+        if hasattr(nnotassign_empty, 'numpy'):
+            ftidx = ftidx[:,0:nnotassign_empty.numpy()]
+            #ftidx = tf.reshape(ftidx, (tf.shape(ftidx)[0], nnotassign_empty))
+        
+        OA = [npg,rs,backgather,ftidx]
+        OB, OC, OD, OE = [], [], [], []
+        ######### now work with rs, sel, ggather and npg
+        
+        #IB, IC, ID, IE
+        '''
+         IB) A list of all tensors that should be flattened+zero padded (in K) for selected neighbourhoods
+         IC) A list of all tensors that should be summed (in K) for selected neighbourhoods
+         ID) A list of all tensors that should be mean and maxed (in K) for selected neighbourhoods
+         IE) A list of all tensors where the first 'self' index should be selected for selected neighbourshoods
+         
+        '''
+        for ip in IB: #flattened+zero padded
+            toflat = SelectWithDefault(sel[:,:,0], ip, tf.cast(0., ip.dtype))
+            OB.append(tf.reshape(toflat, [-1, sel.shape[1]*ip.shape[-1]]))
+        
+        for ip in IC: #summed
+            ocsel = SelectWithDefault(sel[:,:,0], ip, tf.cast(0., ip.dtype))
+            OC.append(tf.reduce_sum(ocsel, axis=1))
+        
+        for ip in ID:
+            odsel = SelectWithDefault(sel[:,:,0], ip, tf.cast(0., ip.dtype))
+            odselmax = SelectWithDefault(sel[:,:,0], ip, tf.cast(-1000., ip.dtype))
+            OD.append(tf.concat([tf.reduce_sum(odsel, axis=1)/(tf.cast(npg, ip.dtype)+1e-6),  
+                         tf.reduce_max(odselmax, axis=1)],axis=-1) )
+            
+        for ip in IE:
+            tosel = SelectWithDefault(sel[:,0:1,0], ip, tf.cast(0., ip.dtype))
+            OE.append(tf.squeeze(tosel, axis=1))
+        
+            
+        return OA, OB, OC, OD, OE
+             
 ### soft pixel section
 
 
