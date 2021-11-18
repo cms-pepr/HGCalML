@@ -4,7 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import ElementScaling,AddIdentity2D,WarpedSpaceKNN,GroupScoreFromEdgeScores,EdgeCreator,EdgeSelector,NoiseFilter,LNC,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from GravNetLayersRagged import ElementScaling,AddIdentity2D,GroupScoreFromEdgeScores,EdgeCreator,EdgeSelector,NoiseFilter,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
 from lossLayers import CreateTruthSpectatorWeights,LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
 from tensorflow.python.framework import ops
@@ -72,7 +72,7 @@ global_layers_list['SelectFromIndices']=SelectFromIndices
 global_layers_list['MultiBackGather']=MultiBackGather
 global_layers_list['KNN']=KNN
 
-global_layers_list['WarpedSpaceKNN']=WarpedSpaceKNN
+# global_layers_list['WarpedSpaceKNN']=WarpedSpaceKNN
 global_layers_list['AddIdentity2D']=AddIdentity2D
 
 
@@ -101,7 +101,7 @@ global_layers_list['ManualCoordTransform']=ManualCoordTransform
 global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
 global_layers_list['PrintMeanAndStd']=PrintMeanAndStd
 
-global_layers_list['LNC']=LNC
+# global_layers_list['LNC']=LNC
 
 ####### other stuff goes here
 from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer

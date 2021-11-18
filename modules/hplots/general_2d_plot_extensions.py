@@ -27,8 +27,8 @@ class ResponseFoIouPlot(General2dBinningPlot):
 
 class EfficiencyFoTruthEnergyPlot(General2dBinningPlot):
     def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),
-                 x_label='Truth energy [GeV]', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)'):
-        super().__init__(bins, x_label, y_label, title, y_label_hist)
+                 x_label='Truth energy [GeV]', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)',histogram_log=True):
+        super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_log=histogram_log)
 
 
 
