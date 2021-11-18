@@ -29,7 +29,7 @@ tf.debugging.set_log_device_placement(False)
 def createData(nvert,ncoords,seed):
     np.random.seed(seed)
     coords = tf.constant( np.random.rand(nvert,ncoords) ,dtype='float32')
-    row_splits = tf.constant( [0,  nvert] ,dtype='int32')
+    row_splits = tf.constant( [0, int(nvert/2),  nvert] ,dtype='int32')
     return coords, row_splits
 
 def selectNeighbours_CUDA(K, coords, row_splits):
@@ -47,7 +47,7 @@ def compareTensors(inTensor1, inTensor2):
 class TestKnn(unittest.TestCase):
 
     def setUp(self):
-        self.N_VERTICIES = 100000
+        self.N_VERTICIES = 200000
         self.N_NEIGHBOURS = 30
         self.N_DIMS = 4
         self.seed = 12345
@@ -95,3 +95,56 @@ class TestKnn(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    #  N_VERTICIES = 200000
+    #  N_NEIGHBOURS = 50
+    #  N_DIMS = 10
+    #  seed = 12345
+    #  coords, row_splits = createData(N_VERTICIES, N_DIMS, seed)
+    #  row_splits = tf.constant( [0, int(N_VERTICIES/2), N_VERTICIES] ,dtype='int32')
+    #
+    #  #  print(coords)
+    #
+    #  import time
+    #  out_old_cuda, _ = selectNeighbours_CUDA(N_NEIGHBOURS, coords, row_splits)
+    #  start_time = time.time()
+    #  for _ in range(0,10):
+    #      out_old_cuda, _ = selectNeighbours_CUDA(N_NEIGHBOURS, coords, row_splits)
+    #
+    #  print("OLD --- %s seconds ---" % (time.time() - start_time))
+    #  ind_old_cuda = out_old_cuda[0]
+    #  dist_old_cuda = out_old_cuda[1]
+    #
+    #  ind_slice_knn, dist_slice_knn = SlicingKnn(K = N_NEIGHBOURS, coords=coords, row_splits=row_splits, features_to_bin_on = (0,1), n_bins=(4,4))
+    #  start_time = time.time()
+    #  for _ in range(0,10):
+    #      ind_slice_knn, dist_slice_knn = SlicingKnn(K = N_NEIGHBOURS, coords=coords, row_splits=row_splits, features_to_bin_on = (0,1), n_bins=(4,4))
+    #  print("NEW --- %s seconds ---" % (time.time() - start_time))
+    #
+    #
+    #  outTensor=compareTensors(ind_slice_knn, ind_old_cuda)
+    #  n_mistakes = np.sum(outTensor[0].numpy())
+    #  if n_mistakes>=1:
+    #      #  print("outTensor:")
+    #      #  print(outTensor)
+    #      #
+    #      #  print("ind_old_cuda:")
+    #      #  print(ind_old_cuda)
+    #      #
+    #      #  print("ind_slice_knn:")
+    #      #  print(ind_slice_knn)
+    #
+    #      #  print("dist_old_cuda:")
+    #      #  print(dist_old_cuda)
+    #      #
+    #      #  print("dist_slice_knn:")
+    #      #  print(dist_slice_knn)
+    #
+    #      print("recall: ",1.0-n_mistakes/(N_VERTICIES*N_NEIGHBOURS))
+    #
+    #  #
+    #  #  coords, row_splits = createData(N_VERTICIES, N_DIMS, seed+1)
+    #  #  _, _ = SlicingKnn(K = N_NEIGHBOURS, coords=coords, row_splits=row_splits, features_to_bin_on = (0,1), n_bins=(8,8))
+    #  #
+    #  #  print("ind_slice_knn:")
+    #  #  print(ind_slice_knn)
