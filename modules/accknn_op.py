@@ -12,7 +12,11 @@ Alternatively, the index -1 is skipped (non TF conpatible padding)
 _accknn_op = tf.load_op_library('accumulate_knn.so')
 _accknn_grad_op = tf.load_op_library('accumulate_knn_grad.so')
 
-def AccumulateKnn(distances,  features, indices, mean_and_max=True):
+
+    
+
+def AccumulateKnn(distances,  features, indices, 
+                  mean_and_max=True):
     '''
     
     .Output("out_features: float32")
@@ -24,10 +28,13 @@ def AccumulateKnn(distances,  features, indices, mean_and_max=True):
     
     '''
     
-    return _accknn_op.AccumulateKnn(n_moments=0, mean_and_max=mean_and_max, 
-                                    distances=distances,  features=features, indices=indices)
+    return _accknn_op.AccumulateKnn(distances=distances,  features=features, indices=indices,
+                                    n_moments=0, mean_and_max=mean_and_max)
+    
+    #make sure shape is defined
+    
 
-
+#this refers to the OP called AccumulateKnn, not the function below
 @ops.RegisterGradient("AccumulateKnn")
 def _AccumulateKnnGrad(op, grad, gradmaxidxs):
     """
@@ -47,8 +54,4 @@ def _AccumulateKnnGrad(op, grad, gradmaxidxs):
                                                                max_feat_indices=max_feat_indices)
     
     return [dist_grad , feat_grad, None] #no gradient for indices
-  
-  
 
-  
-  

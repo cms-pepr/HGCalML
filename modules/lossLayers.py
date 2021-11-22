@@ -166,51 +166,107 @@ class LLClusterCoordinates(LossLayerBase):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+class LLNoiseClassifier(LossLayerBase):
+    def __init__(self, **kwargs):
+        super(LLNoiseClassifier, self).__init__(**kwargs)
+        
+    def loss(self, inputs):
+        score, tidxs = inputs
+        truth = tf.cast(tidxs == -1,dtype='float32')
+        classloss = tf.keras.losses.binary_crossentropy(truth, score)
+        return tf.reduce_mean(classloss)
+
 class LLLocalClusterCoordinates(LossLayerBase):
     '''
     Cluster using truth index and coordinates
     Inputs: dist, nidxs, tidxs, specweight
     
+    Attractive and repulsive potential:
+    - Att: log(sqrt(2)*dist**2+1.)
+    - Rep: 1/(dist**2+0.1)
+    
+    The crossing point is at about 1,1.
+    The ratio of repulse and attractive potential at 
+     - dist**2 = 1. is about 1
+     - dist = 0.85, dist**2 = 0.75 is about 2.
+     - dist = 0.7, dist**2 = 0.5 is about 3.5
+     - dist = 0.5, dist**2 = 0.25 is about 10
+    (might be useful for subsequent distance cut-offs)
     
     '''
     def __init__(self, **kwargs):
         
-        if 'dynamic' in kwargs:
-            super(LLLocalClusterCoordinates, self).__init__(**kwargs)
-        else:
-            super(LLLocalClusterCoordinates, self).__init__(dynamic=kwargs['print_loss'],**kwargs)
+        super(LLLocalClusterCoordinates, self).__init__(**kwargs)
+        #if 'dynamic' in kwargs:
+        #    super(LLLocalClusterCoordinates, self).__init__(**kwargs)
+        #else:
+        #    super(LLLocalClusterCoordinates, self).__init__(dynamic=kwargs['print_loss'],**kwargs)
+        self.time = time.time()
 
     @staticmethod
     def raw_loss(dist, nidxs, tidxs, specweight, print_loss, name):
         
-        sel_tidxs = SelectWithDefault(nidxs, tidxs, tf.expand_dims(tidxs,axis=1))[:,:,0]
+        sel_tidxs = SelectWithDefault(nidxs, tidxs, -1)[:,:,0]
         sel_spec = SelectWithDefault(nidxs, specweight, 1.)[:,:,0]
         active = tf.where(nidxs>=0, tf.ones_like(dist), 0.)
-        nneigh = tf.math.count_nonzero(active, axis=1)
-        notspecmask = (1. - sel_spec) #tf.where(sel_spec>0, 0., tf.ones_like(dist))
+        notspecmask = 1. #(1. - 0.5*sel_spec)#only reduce spec #tf.where(sel_spec>0, 0., tf.ones_like(dist))
+        
+        probe_is_notnoise = tf.cast(tidxs>=0,dtype='float32') [:,0] #V
         notnoisemask = tf.where(sel_tidxs<0, 0., tf.ones_like(dist))
+        notnoiseweight = notnoisemask + (1.-notnoisemask)*0.01
+        #notspecmask *= notnoisemask#noise can never be spec
         #mask spectators
-        sameasprobe = tf.cast(sel_tidxs[:,0:1] == sel_tidxs,dtype='float32') 
-        sameasprobe *= notnoisemask #always push away noise, also from each other
+        sameasprobe = tf.cast(sel_tidxs[:,0:1] == sel_tidxs,dtype='float32')
+        #sameasprobe *= notnoisemask #always push away noise, also from each other
         
-        attr = dist * sameasprobe * notspecmask * active
-        rep = tf.math.exp(-dist) * (1.-sameasprobe) * notspecmask * active
-        nneigh = tf.cast(nneigh,'float32')
+        #only not noise can be attractive
+        attmask = sameasprobe*notspecmask*active
+        repmask = (1.-sameasprobe)*notspecmask*active
         
-        lossval = tf.math.divide_no_nan(tf.reduce_sum(attr+rep,axis=1), nneigh-1.)
-        lossval = tf.reduce_mean(lossval)
+        attr = tf.math.log(tf.math.exp(1.)*dist+1.) * attmask
+        rep =  tf.exp(-dist)* repmask * notnoiseweight # 1./(dist+1.) * repmask #2.*tf.exp(-3.16*tf.sqrt(dist+1e-6)) * repmask  #1./(dist+0.1)
+        nattneigh = tf.reduce_sum(attmask,axis=1)
+        nrepneigh = tf.reduce_sum(repmask,axis=1)
+        
+        attloss =  probe_is_notnoise * tf.reduce_sum(attr,axis=1) #tf.math.divide_no_nan(tf.reduce_sum(attr,axis=1), nattneigh)#same is always 0
+        attloss = tf.math.divide_no_nan(attloss, nattneigh)
+        reploss =  probe_is_notnoise * tf.reduce_sum(rep,axis=1) #tf.math.divide_no_nan(tf.reduce_sum(rep,axis=1), nrepneigh)
+        reploss = tf.math.divide_no_nan(reploss, nrepneigh)
+        #noise does not actively contribute
+        lossval = attloss+reploss
+        lossval = tf.math.divide_no_nan(tf.reduce_sum(probe_is_notnoise * lossval),tf.reduce_sum(probe_is_notnoise))
         
         if print_loss:
+            avattdist = probe_is_notnoise * tf.math.divide_no_nan(tf.reduce_sum(attmask*tf.sqrt(dist),axis=1), nattneigh)
+            avattdist = tf.reduce_sum(avattdist)/tf.reduce_sum(probe_is_notnoise)
+            
+            avrepdist = probe_is_notnoise * tf.math.divide_no_nan(tf.reduce_sum(repmask*tf.sqrt(dist),axis=1), nrepneigh)
+            avrepdist = tf.reduce_sum(avrepdist)/tf.reduce_sum(probe_is_notnoise)
+            
             if hasattr(lossval, "numpy"):
-                print(name, 'loss', lossval.numpy())
+                print(name, 'loss', lossval.numpy(),
+                      'mean att neigh',tf.reduce_mean(nattneigh).numpy(),
+                      'mean rep neigh',tf.reduce_mean(nrepneigh).numpy(),
+                      'att', tf.reduce_mean(probe_is_notnoise *attloss).numpy(),
+                      'rep',tf.reduce_mean(probe_is_notnoise *reploss).numpy(),
+                      'dist (same)', avattdist.numpy(),
+                      'dist (other)', avrepdist.numpy(),
+                      )
             else:
-                tf.print(name, 'loss', lossval)
+                tf.print(name, 'loss', lossval,
+                'mean att neigh',tf.reduce_mean(nattneigh),
+                'mean rep neigh',tf.reduce_mean(nrepneigh))
+            
+                
         return lossval            
          
          
     def loss(self, inputs):
         dist, nidxs, tidxs, specweight = inputs
-
+        if self.print_loss:
+            if self.time>0:
+                print(round((time.time()-self.time)*1000.),'ms')
+                self.time = time.time()
         return LLLocalClusterCoordinates.raw_loss(dist, nidxs, tidxs, specweight,
                                                   self.print_loss, 
                                                   self.name)

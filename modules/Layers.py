@@ -4,22 +4,46 @@
 global_layers_list = {}
 
 from LayersRagged import *
-from GravNetLayersRagged import DownSample,CreateIndexFromMajority,LNC2,ElementScaling,AddIdentity2D,WarpedSpaceKNN,GroupScoreFromEdgeScores,EdgeCreator,EdgeSelector,NoiseFilter,LNC,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
-from lossLayers import CreateTruthSpectatorWeights,LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
+from GravNetLayersRagged import DampenGradient,MultiBackScatterOrGather,NeighbourGroups, AccumulateNeighbours, RecalcDistances,WeightedNeighbourMeans,WeightFeatures,RemoveSelfRef,DirectedGraphBuilder,MultiBackScatter,DownSample,CreateIndexFromMajority,LNC2,ElementScaling,AddIdentity2D,WarpedSpaceKNN,GroupScoreFromEdgeScores,EdgeCreator,EdgeSelector,NoiseFilter,LNC,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
+from lossLayers import LLNoiseClassifier,CreateTruthSpectatorWeights,LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
 import traceback
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
 import os
 
 
+### odd debug layers
+from debugLayers import PlotCoordinates
+
+global_layers_list['PlotCoordinates']=PlotCoordinates
+
+
+##end debug
+
+
+global_layers_list['RemoveSelfRef']=RemoveSelfRef
+
+global_layers_list['RecalcDistances']=RecalcDistances
+
+global_layers_list['NeighbourGroups']=NeighbourGroups
+global_layers_list['AccumulateNeighbours']=AccumulateNeighbours
+
+global_layers_list['WeightedNeighbourMeans']=WeightedNeighbourMeans
+global_layers_list['WeightFeatures']=WeightFeatures
 
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
 global_layers_list['Condensate']=Condensate
 global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
 
 
+global_layers_list['DirectedGraphBuilder']=DirectedGraphBuilder
+
 global_layers_list['DownSample']=DownSample
 global_layers_list['ElementScaling']=ElementScaling
+
+global_layers_list['DampenGradient']=DampenGradient
+
+
 
 global_layers_list['GroupScoreFromEdgeScores']=GroupScoreFromEdgeScores
 
@@ -73,6 +97,9 @@ global_layers_list['LocalClustering']=LocalClustering
 global_layers_list['CreateGlobalIndices']=CreateGlobalIndices
 global_layers_list['SelectFromIndices']=SelectFromIndices
 global_layers_list['MultiBackGather']=MultiBackGather
+global_layers_list['MultiBackScatter']=MultiBackScatter
+global_layers_list['LLNoiseClassifier']=MultiBackScatterOrGather
+
 global_layers_list['KNN']=KNN
 
 global_layers_list['WarpedSpaceKNN']=WarpedSpaceKNN
@@ -92,6 +119,8 @@ global_layers_list['NeighbourCovariance']=NeighbourCovariance
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
+
+global_layers_list['LLNoiseClassifier']=LLNoiseClassifier
 
 global_layers_list['LossLayerBase']=LossLayerBase
 

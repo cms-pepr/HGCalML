@@ -23,16 +23,17 @@ struct LocalGroupOpFunctor {
 
             const int *d_neigh_idxs,
             const int *d_hierarchy_idxs, //maybe do this internally if op can be called by op
+            //the above will require an argsort on ragged (only with eager workaround so far)
 
             const float * d_hierarchy_score,
 
             const float score_threshold,
 
-            const int * d_global_idxs, //global index of each vertex: V x 1, not global dimension!
             const int * d_row_splits,  //keeps dimensions: N_rs x 1
 
             int * mask,
             int * d_out_selection_idxs,    //which ones to keep  - here V x 1, finally: V' x 1
+            int * d_out_dir_neighbours, // V x K
             int * n_sel_vtx,
             int * d_out_row_splits,
 
@@ -41,8 +42,7 @@ struct LocalGroupOpFunctor {
             const int n_row_splits,
 
             //globals for bookkeeping. dimension n_global_vert_g!
-            int *d_out_backscatter, //which global index each vertex is associated to V x 1
-            int n_global_vert_g
+            int *d_out_backgather //which global index each vertex is associated to V x 1
     );
 
 
@@ -58,11 +58,9 @@ struct LocalGroupTruncateOpFunctor {
 
             const int *d_in_selection_idxs, //which ones to keep
             int *d_out_selection_idxs,
-            int *d_out_ningroup,
-            int newsize,
-            int n_neigh
+            int n_new_vert
     );
-//needs a truncate functor, too? or do this with mallocs?
+    //needs a truncate functor, too? or do this with mallocs?
 };
 
 
