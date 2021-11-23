@@ -80,6 +80,9 @@ if __name__ == '__main__':
     if len(args.p) != 0:
         pdfpath = args.p
 
+    # TODO: Remove this
+    files_to_be_tested = files_to_be_tested[0:100]
+
 
     if False:
         all_data = []

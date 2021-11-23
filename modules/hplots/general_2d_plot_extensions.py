@@ -25,7 +25,55 @@ class ResponseFoIouPlot(General2dBinningPlot):
 
 
 
-class EfficiencyFoTruthEnergyPlot(General2dBinningPlot):
+class EffFakeRatePlot(General2dBinningPlot):
+    def __init__(self, bins=np.array([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]),
+                 x_label='Num hits', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)',histogram_log=False):
+        super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_log=histogram_log)
+
+    def _compute(self, x_values, y_values):
+        e_bins = self.e_bins
+        e_bins_n = np.array(e_bins)
+        e_bins_n = (e_bins_n - e_bins_n.min()) / (e_bins_n.max() - e_bins_n.min())
+
+        centers = []
+        mean = []
+        error = []
+
+        lows = []
+        highs = []
+
+        for i in range(len(e_bins) - 1):
+            l = e_bins[i]
+            h = e_bins[i + 1]
+
+
+            filter = np.argwhere(np.logical_and(x_values >= l, x_values < h))
+            filtered_y_values = y_values[filter].astype(float)
+
+
+            m = np.mean(filtered_y_values)
+            print(l,h, m)
+            mean.append(m)
+            # print(np.sum(filtered_found), len(filtered_found), m, l, h)
+            lows.append(l)
+            highs.append(h)
+            error.append(np.sqrt(m * (1 - m) / len(filtered_y_values)))
+
+        hist_values, _ = np.histogram(x_values, bins=e_bins)
+        # hist_values = (hist_values / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
+        # hist_values = (hist_values / np.sum(hist_values))
+
+        processed_data = dict()
+        processed_data['bin_lower_energy'] = np.array(lows)
+        processed_data['bin_upper_energy'] = np.array(highs)
+        processed_data['hist_values'] = hist_values
+        processed_data['mean'] = np.array(mean)
+        processed_data['error'] = np.array(error)
+
+        return processed_data
+
+
+class EfficiencyFoTruthEnergyPlot(EffFakeRatePlot):
     def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),
                  x_label='Truth energy [GeV]', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)',histogram_log=True):
         super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_log=histogram_log)

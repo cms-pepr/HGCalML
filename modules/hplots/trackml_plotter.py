@@ -1,7 +1,7 @@
 from matplotlib.backends.backend_pdf import PdfPages
 
 from hplots.general_2d_plot import General2dBinningPlot
-from hplots.general_2d_plot_extensions import EfficiencyFoTruthEnergyPlot
+from hplots.general_2d_plot_extensions import EfficiencyFoTruthEnergyPlot, EffFakeRatePlot
 from hplots.general_2d_plot_extensions import FakeRateFoPredEnergyPlot
 from hplots.general_2d_plot_extensions import ResponseFoTruthEnergyPlot
 from hplots.general_2d_plot_extensions import EnergyFoundFoPredEnergyPlot
@@ -12,7 +12,10 @@ import experiment_database_reading_manager
 from hplots.general_hist_plot import GeneralHistogramPlot
 import matching_and_analysis
 
-class EffFakeFoNumHitsPlot(General2dBinningPlot):
+
+
+
+class EffFakeFoNumHitsPlot(EffFakeRatePlot):
     def __init__(self, bins=np.array([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]),
                  x_label='Num hits', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)',histogram_log=False):
         super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_log=histogram_log)
@@ -24,13 +27,46 @@ class TrackMLPlotter:
         #                   'eff_fo_num_hits', 'fake_fo_num_hits'])
 
         self.plots = set(['settings', 'efficiency_fo_truth',
-                          'eff_fo_num_hits', 'fake_fo_num_hits'])
+                          'eff_fo_num_hits', 'fake_fo_num_hits',
+                          'eff_fo_pt_1_4','eff_fo_pt_4_10',
+                          'eff_fo_pt_10_20'])
         self.efficiency_plot = EfficiencyFoTruthEnergyPlot(
             bins=np.array([1.5,1.6,1.7,1.8,1.9,2.0,2.5,3.0,4,5,6,7,8,9,10,11]),
             x_label='pT (GeV)',
             y_label='Reconstruction Efficiency',
             histogram_log=False
         )
+
+
+        self.efficiency_fo_pt_plot_1_4 = EfficiencyFoTruthEnergyPlot(
+            bins=np.array([1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.5, 3.0, 4, 5, 6, 7, 8, 9, 10, 11]),
+            x_label='pT (GeV)',
+            y_label='Reconstruction Efficiency (nhits 1-3)',
+            title='nhits 1-3',
+            histogram_log=False
+        )
+        self.efficiency_fo_pt_plot_4_10 = EfficiencyFoTruthEnergyPlot(
+            bins=np.array([1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.5, 3.0, 4, 5, 6, 7, 8, 9, 10, 11]),
+            x_label='pT (GeV)',
+            y_label='Reconstruction Efficiency (nhits 4-10)',
+            title='nhits 4-10',
+            histogram_log=False)
+        self.efficiency_fo_pt_plot_10_20 = EfficiencyFoTruthEnergyPlot(
+            bins=np.array([1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.5, 3.0, 4, 5, 6, 7, 8, 9, 10, 11]),
+            x_label='pT (GeV)',
+            y_label='Reconstruction Efficiency (nhits 10-20)',
+            title='nhits 10-20',
+            histogram_log=False
+        )
+
+        # self.fake_fo_num_hits_plot_1_4 = EfficiencyFoTruthEnergyPlot(title='Fake rate', y_label='Fake rate',
+        #     bins=np.array([1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.5, 3.0, 4, 5, 6, 7, 8, 9, 10, 11]))
+        # self.fake_fo_num_hits_plot_4_10 = EfficiencyFoTruthEnergyPlot(title='Fake rate', y_label='Fake rate',
+        #     bins=np.array([1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.5, 3.0, 4, 5, 6, 7, 8, 9, 10, 11]))
+        # self.fake_fo_num_hits_plot_10_20 = EfficiencyFoTruthEnergyPlot(title='Fake rate', y_label='Fake rate',
+        #     bins=np.array([1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.5, 3.0, 4, 5, 6, 7, 8, 9, 10, 11]))
+
+
         # self.num_hits_hist_pred = GeneralHistogramPlot(bins=np.array([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]),
         #                                                x_label='Num hits',
         #                                                y_label='Predicted number of hits per track'
@@ -42,8 +78,7 @@ class TrackMLPlotter:
         #                                                )
 
         self.efficiency_fo_num_hits_plot = EffFakeFoNumHitsPlot()
-        self.fake_fo_num_hits_plot = EffFakeFoNumHitsPlot(y_label='Fake rate')
-
+        self.fake_fo_num_hits_plot = EffFakeFoNumHitsPlot(title='Fake rate', y_label='Fake rate')
 
         self.dist_thresholds = []
         self.beta_thresholds = []
@@ -154,6 +189,46 @@ class TrackMLPlotter:
             y = np.equal(y, -1)
             self.fake_fo_num_hits_plot.add_raw_values(x,y, tags)
 
+        if 'eff_fo_pt_1_4' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'num_hits', 'num_hits',
+                                                                    numpy=True, not_found_value=-1, sum_multi=True)
+            x2,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'num_hits',
+                                                                    numpy=True, not_found_value=-1, sum_multi=True)
+
+            filter = x < 4
+
+            x2 = x2[filter]
+            y = y[filter]
+
+            y = np.not_equal(y, -1)
+            self.efficiency_fo_pt_plot_1_4.add_raw_values(x2, y, tags)
+
+        if 'eff_fo_pt_4_10' in self.plots:
+            x, y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'num_hits', 'num_hits',
+                                                                    numpy=True, not_found_value=-1, sum_multi=True)
+            x2, _ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'num_hits',
+                                                                    numpy=True, not_found_value=-1, sum_multi=True)
+
+            filter = np.logical_and(x >=4 , x<10)
+
+            x2 = x2[filter]
+            y = y[filter]
+
+            y = np.not_equal(y, -1)
+            self.efficiency_fo_pt_plot_4_10.add_raw_values(x2, y, tags)
+
+        if 'eff_fo_pt_10_20' in self.plots:
+            x, y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'num_hits', 'num_hits',
+                                                                    numpy=True, not_found_value=-1, sum_multi=True)
+            x2, _ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy',
+                                                                    numpy=True, not_found_value=-1, sum_multi=True)
+            filter = x >= 10
+            x2 = x2[filter]
+            y = y[filter]
+
+            y = np.not_equal(y, -1)
+            self.efficiency_fo_pt_plot_10_20.add_raw_values(x2, y, tags)
+
 
 
     def write_to_pdf(self, pdfpath, formatter=lambda x:''):
@@ -183,6 +258,18 @@ class TrackMLPlotter:
 
         if 'fake_fo_num_hits' in self.plots:
             self.fake_fo_num_hits_plot.draw(formatter)
+            pdf.savefig()
+
+        if 'eff_fo_pt_1_4' in self.plots:
+            self.efficiency_fo_pt_plot_1_4.draw(formatter)
+            pdf.savefig()
+
+        if 'eff_fo_pt_4_10' in self.plots:
+            self.efficiency_fo_pt_plot_4_10.draw(formatter)
+            pdf.savefig()
+
+        if 'eff_fo_pt_10_20' in self.plots:
+            self.efficiency_fo_pt_plot_10_20.draw(formatter)
             pdf.savefig()
 
         pdf.close()
