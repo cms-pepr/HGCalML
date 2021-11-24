@@ -780,7 +780,7 @@ class MultiBackGather(tf.keras.layers.Layer):
 
 
 class KNN(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float=-1., **kwargs):
+    def __init__(self,K: int, radius: float=-1., use_approximate_knn=True, **kwargs):
         """
         
         Select K nearest neighbours, with possible radius constraint.
@@ -793,10 +793,12 @@ class KNN(tf.keras.layers.Layer):
         
         :param K: number of nearest neighbours
         :param radius: maximum distance of nearest neighbours
+        :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
         """
         super(KNN, self).__init__(**kwargs) 
         self.K = K
         self.radius = radius
+        self.use_approximate_knn = use_approximate_knn
         
         
     def get_config(self):
@@ -810,8 +812,16 @@ class KNN(tf.keras.layers.Layer):
 
     @staticmethod 
     def raw_call(coordinates, row_splits, K, radius):
-        idx,dist = SelectKnn(K+1, coordinates,  row_splits,
-                             max_radius= radius, tf_compatible=False)
+        if self.use_approximate_knn:
+            bin_width = 1.0 # default value for SlicingKnn kernel
+            if radius>0.0:
+                bin_width = float(radius)
+            idx,dist = SlicingKnn(K+1, coordinates,  row_splits,
+                                  features_to_bin_on = (0,1),
+                                  bin_width=(bin_width,bin_width))
+        else:
+            idx,dist = SelectKnn(K+1, coordinates,  row_splits,
+                                 max_radius= radius, tf_compatible=False)
 
         idx = tf.reshape(idx, [-1,K+1])
         dist = tf.reshape(dist, [-1,K+1])
@@ -1814,8 +1824,10 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
         if self.use_approximate_knn:
+            bin_width = 1.0 # default value for SlicingKnn kernel
             idx,dist = SlicingKnn(self.n_neighbours, coordinates,  row_splits,
-                                  features_to_bin_on = (0,1), bin_width=(1.0,1.0))
+                                  features_to_bin_on = (0,1),
+                                  bin_width=(bin_width,bin_width))
         else:
             idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                                  max_radius= -1.0, tf_compatible=False)
