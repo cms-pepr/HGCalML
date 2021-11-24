@@ -306,13 +306,30 @@ void translate_ind_matrix(const size_t start_vert, const size_t end_vert, const 
     for(size_t i_counter = index; i_counter < end_vert; i_counter += stride){
         for(size_t i_column = 0; i_column < matrix_width; i_column += 1){
             size_t final_index = matrix_width*i_counter+i_column;
-            // size_t final_index = matrix_width*i_column+i_counter;
             const size_t tmp_val1 = in_matrix[final_index];
             const size_t tmp_val2 = translation_matrix[tmp_val1];
-            // printf("\nfinal_index: %d", final_index);
-            // printf("\nold_val: %d", tmp_val1);
-            // printf("\nnew_val: %d", tmp_val2);
             in_matrix[final_index] = tmp_val2;
+        }
+    }
+}
+
+__global__
+void translate_matrices_to_make_selfindex_first(const size_t matrix_height, const size_t matrix_width, int* indx_matrix, float* dist_matrix){
+    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = blockDim.x * gridDim.x;
+    for(size_t i_row = index; i_row < matrix_height; i_row += stride){
+        if (indx_matrix[matrix_width*i_row] == i_row)
+            continue;
+        for(size_t i_column = 0; i_column < matrix_width; i_column += 1){
+            size_t index = matrix_width*i_row+i_column;
+            if (indx_matrix[index]==i_row){
+                indx_matrix[index] = indx_matrix[matrix_width*i_row];
+                indx_matrix[matrix_width*i_row] = i_row;
+                const float tmp_val = dist_matrix[index];
+                dist_matrix[index] = dist_matrix[matrix_width*i_row];
+                dist_matrix[matrix_width*i_row] = tmp_val;
+                break;
+            }
         }
     }
 }
@@ -778,6 +795,8 @@ struct SlicingKnnOpFunctor<GPUDevice, dummy> {
         HANDLE_ERROR(cudaDeviceSynchronize());
         gpu::translate_ind_matrix<<<numBlocks_V,blockSize>>>(0, V, K, d_vtx_idx_translation_matrix, neigh_idx);
         gpu::translate_2d_matrix<<<numBlocks_V,blockSize>>>(0, V, K, d_backward_vtx_idx_translation_matrix, d_tmp_neigh_dist, neigh_dist);
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        gpu::translate_matrices_to_make_selfindex_first<<<numBlocks_V,blockSize>>>(V, K, neigh_idx, neigh_dist);
         HANDLE_ERROR(cudaDeviceSynchronize());
 
         // *****************************
