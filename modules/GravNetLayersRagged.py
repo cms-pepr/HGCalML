@@ -811,8 +811,8 @@ class KNN(tf.keras.layers.Layer):
         return (None, self.K+1),(None, self.K+1)
 
     @staticmethod 
-    def raw_call(coordinates, row_splits, K, radius):
-        if self.use_approximate_knn:
+    def raw_call(coordinates, row_splits, K, radius, use_approximate_knn):
+        if use_approximate_knn:
             bin_width = 1.0 # default value for SlicingKnn kernel
             if radius>0.0:
                 bin_width = float(radius)
@@ -829,7 +829,7 @@ class KNN(tf.keras.layers.Layer):
 
     def call(self, inputs):
         coordinates, row_splits = inputs
-        return KNN.raw_call(coordinates, row_splits, self.K, self.radius)
+        return KNN.raw_call(coordinates, row_splits, self.K, self.radius, self.use_approximate_knn)
         
 
         
