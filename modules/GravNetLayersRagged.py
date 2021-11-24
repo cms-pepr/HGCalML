@@ -5,7 +5,6 @@ from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
 from local_group_op import LocalGroup
 from local_distance_op import LocalDistance
-from lossLayers import LLClusterCoordinates, LLLocalClusterCoordinates
 from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
@@ -374,31 +373,7 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
         
         return x
 
-
-class NormalizeInputShapes(tf.keras.layers.Layer):
-    def __init__(self,
-                 **kwargs):
-        super(NormalizeInputShapes, self).__init__(**kwargs)
         
-    def compute_output_shape(self, input_shapes):
-        outshapes=[]
-        for s in input_shapes:
-            if len(s)<2:
-                outshapes.append((None, 1))
-            else:
-                outshapes.append(s)
-            
-        return outshapes
-    
-    def call(self, inputs):
-        outs=[]
-        for i in inputs:
-            if len(i.shape)<2:
-                outs.append(tf.reshape(i,[-1,1]))
-            else:
-                outs.append(i)
-        return outs
-            
     
     
 
@@ -764,86 +739,7 @@ class LocalDistanceScaling (tf.keras.layers.Layer):
         return LocalDistanceScaling.raw_call(dist,scale,self.max_scale,self.b,self.c)
     
 
-class LocalClustering(tf.keras.layers.Layer):
-    def __init__(self,
-                 print_reduction=False,
-                 **kwargs):
-        """
-        
-        This layer performs a local clustering (a bit similar to object condensation):
-        
-        Inputs are: 
-         - neighbour indices (V x K)
-         - hierarchy tensor (V x 1) to determine the clustering hierarchy
-         - row splits
-         
-        The layer will select all neighbours and assign them to the vertex with the highest hierarchy score.
-        These vertices cannot give rise to a new cluster anymore, nor can be part of any other cluster.
-        The process gets repeated following the hierarchy score (decreasing) until there are no vertices left.
-        
-         
-        Call will return:
-         - indices to select the cluster centres, 
-         - updated row splits for after applying the selection
-         - indices to gather back the original dimensionality by repetion
-        
-        This layer does *not* introduce any new gradients on anything (e.g. the hierarchy score),
-        so that needs to be done by hand. (e.g. using LLLocalClusterCoordinates).
-        
-        Since this layers functionality is inherently sequential, it will run on CPU. Right now, 
-        the implementation (local_cluster_xx) can still be optimised for using multiple CPU cores.
-        A simple way of (mild) parallelising would be given by the row splits.
-        
-        """
-        if 'dynamic' in kwargs:
-            super(LocalClustering, self).__init__(**kwargs)
-        else:
-            super(LocalClustering, self).__init__(dynamic=False,**kwargs)
-        self.print_reduction=print_reduction
-        
-    def get_config(self):
-        config = {'print_reduction': self.print_reduction}
-        base_config = super(LocalClustering, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-        
-    def compute_output_shape(self, input_shapes):
-        return (None,1), (None,), (None,1)
-    
-    def build(self, input_shapes):
-        super(LocalClustering, self).build(input_shapes)
-        
-    @staticmethod
-    def raw_call(neighs, hier, row_splits,print_reduction,name, threshold=-1):
-        if row_splits.shape[0] is None:
-            return tf.zeros_like(hier, dtype='int32'), row_splits, tf.zeros_like(hier, dtype='int32')
-        
-        if hier.shape[1] > 1:
-            raise ValueError(name+' received wrong hierarchy shape')
-        
-        hierarchy_idxs=[]
-        for i in range(row_splits.shape[0] - 1):
-            a = tf.argsort(hier[row_splits[i]:row_splits[i+1]],axis=0, direction='DESCENDING')
-            hierarchy_idxs.append(a+row_splits[i])
-        hierarchy_idxs = tf.concat(hierarchy_idxs,axis=0)
-        if threshold > 0 and threshold < 1:
-            hierarchy_idxs = tf.where( hier < threshold, -(hierarchy_idxs+1), hierarchy_idxs )
-        
-        
-        rs,sel,ggather = LocalCluster(neighs, hierarchy_idxs, row_splits)
-        
-        #keras does not like gather_nd outputs
-        sel = tf.reshape(sel, [-1,1])
-        rs = tf.reshape(rs, [-1])
-        rs = tf.cast(rs, tf.int32) #just so keras knows
-        ggather = tf.reshape(ggather, [-1,1])
-        if print_reduction:
-            tf.print(name,'reduction',round(float(sel.shape[0])/float(ggather.shape[0]),2),'to',sel.shape[0])
-        return sel, rs, ggather
-        
-    def call(self, inputs):
-        neighs, hier, row_splits = inputs
-        return LocalClustering.raw_call(neighs, hier, row_splits,self.print_reduction,self.name)
-        
+ 
         
 class CreateGlobalIndices(tf.keras.layers.Layer):
     def __init__(self, **kwargs):    
@@ -880,6 +776,7 @@ class CreateGlobalIndices(tf.keras.layers.Layer):
         ins = tf.cast(inputs*0.,dtype='int32')[:,0:1]
         add = tf.expand_dims(tf.range(tf.shape(inputs)[0],dtype='int32'), axis=1)
         return ins+add
+    
     
 class WeightedNeighbourMeans(tf.keras.layers.Layer): 
     def __init__(self, 
@@ -1359,95 +1256,9 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         
 
 
-class GraphClusterReshape(tf.keras.layers.Layer):
-    '''
-    
-    This layer implements a graph reshaping. 
-    
-    Inputs:
-    - features
-    - neighbour indices
-    
-    The first dimention of neighbour indices can be smaller than of features 
-    (e.g. as selected clusters from LocalCluster).
-    The features of all neighbours are flattenend to the new features of the whole
-    cluster. In case there are less neighbours than the second dimension of neighbour indices,
-    the corresponding entries are zero-padded.
-    (technically, <K neighbours are implemented as -1 indices in this all other layers)
-    
-    (There is no information loss, therefore 'reshaping')
-    
-    Output:
-    - reshaped features
-    
-    
-    '''
-    def __init__(self, **kwargs):
-        super(GraphClusterReshape, self).__init__(dynamic=True,**kwargs) 
-    #has no init
-    def build(self, input_shapes):
-        super(GraphClusterReshape, self).build(input_shapes)
-        
-    def compute_output_shape(self, input_shapes): #features, nidx = inputs
-        return (None, input_shapes[0][1]*input_shapes[1][1])
-        
-        
-    @staticmethod 
-    def raw_call(features, nidx, reshape=True):
-        nidx = tf.cast(nidx,tf.int32)#just because of keras build
-        TFnidx = tf.expand_dims(tf.where(nidx<0,0,nidx),axis=2)
-        
-        gfeat = tf.gather_nd(features, TFnidx)
-        gfeat = tf.reshape(gfeat, [-1, tf.shape(nidx)[1], tf.shape(features)[1]])#same shape
-        
-        out = tf.where(tf.expand_dims(nidx,axis=2)<0, 0., gfeat)
-        if reshape:
-            out = tf.reshape(out, [-1, tf.shape(features)[1]*tf.shape(nidx)[1]])
-        else:
-            out = tf.reshape(out, [-1, tf.shape(nidx)[1], tf.shape(features)[1]])
-        return out
-    
-        
-    def call(self, inputs):
-        features, nidx = inputs
-        return GraphClusterReshape.raw_call(features, nidx)
-        
-        
-### compound layers for convenience
-
-
-class LocalClusterReshapeFromNeighbours(tf.keras.layers.Layer):
-    def __init__(self, K=-1, 
-                 radius=-1, 
-                 print_reduction=False, 
-                 loss_enabled=False, 
-                 loss_scale = 1., 
-                 loss_repulsion=0.5,
-                 print_loss=False,
-                 **kwargs):
-        
-        raise ValueError("DEPRECATED, use LNC instead")
-        
-class LocalClusterReshapeFromNeighbours2(tf.keras.layers.Layer):
-    def __init__(self, K=-1, 
-                 radius=-1, 
-                 print_reduction=False, 
-                 loss_enabled=False, 
-                 hier_transforms=[],
-                 loss_scale = 1., 
-                 loss_repulsion=0.5,
-                 print_loss=False,
-                 **kwargs):
-        
-        raise ValueError("DEPRECATED, use LNC instead")
-
-
 class NoiseFilter(tf.keras.layers.Layer):
     def __init__(self, 
                  threshold = 0.1, 
-                 loss_scale = 1., 
-                 loss_enabled=False,
-                 print_loss=False,
                  print_reduction=False,
                  return_backscatter=True,
                  **kwargs):
@@ -1477,18 +1288,13 @@ class NoiseFilter(tf.keras.layers.Layer):
         else:
             super(NoiseFilter, self).__init__(dynamic=False,**kwargs)
             
+        assert threshold>0 and threshold < 1
         self.threshold = threshold
-        self.loss_scale = loss_scale
-        self.loss_enabled = loss_enabled
-        self.print_loss = print_loss
         self.print_reduction = print_reduction
         self.return_backscatter = return_backscatter
         
     def get_config(self):
         config = {'threshold': self.threshold,
-                  'loss_scale': self.loss_scale,
-                  'loss_enabled': self.loss_enabled,
-                  'print_loss': self.print_loss,
                   'print_reduction': self.print_reduction,
                   'return_backscatter': self.return_backscatter}
         
@@ -1509,31 +1315,7 @@ class NoiseFilter(tf.keras.layers.Layer):
             if self.return_backscatter:
                 bg = [tf.shape(score)[0], bg]
             return [row_splits, bg] + other
-            
-        #score loss
-        if self.loss_enabled:
-            notnoise = tf.where(tidxs>=0, tf.ones_like(score), 0.)
-            
-            Nnotnoise = tf.cast(tf.math.count_nonzero(notnoise,axis=0),dtype='float32')
-            Nnoise = tf.cast(tf.math.count_nonzero(1.-notnoise,axis=0),dtype='float32')
-            
-            classloss = tf.keras.losses.binary_crossentropy(notnoise, score)
-            
-            notnoiseloss = tf.math.divide_no_nan(tf.reduce_sum(classloss*notnoise[:,0]),tf.squeeze(Nnotnoise))
-            noiseloss = tf.math.divide_no_nan(tf.reduce_sum(classloss*(1.-notnoise[:,0])),tf.squeeze(Nnoise))
-            
-            classloss = notnoiseloss+noiseloss
-            self.add_loss(classloss)
-            if self.print_loss:
-                accuracy = tf.where(score>0.5, notnoise, 0.)
-                accuracy = tf.reduce_sum(accuracy) / tf.squeeze(Nnotnoise)
-                print(self.name, ' loss ', classloss, ' ; accuracy', accuracy)
         
-        if self.threshold<=0: #does nothing
-            bg=defbg
-            if self.return_backscatter:
-                bg = [tf.shape(score)[0], defbg]
-            return [row_splits, bg]+ other
         
         sel, allbackgather, newrs = None,None,None
         if self.return_backscatter:
@@ -1602,105 +1384,29 @@ class EdgeCreator(tf.keras.layers.Layer):
 class EdgeSelector(tf.keras.layers.Layer):
     def __init__(self, 
                  threshold = 0.9, 
-                 loss_scale = 1., 
-                 loss_enabled = False,
-                 print_loss=False,
-                 use_truth=False,
                  **kwargs):
         '''
-        Inputs: neighbour indices (V x K ) , edge score (V x K-1) , spectator weights, truth index
+        Inputs:  edge score (V x K-1), neighbour indices (V x K )
         Outputs: selected neighbour indices ('-1 masked')
         
         '''
         assert threshold<1 and threshold>=0
-        self.threshold = threshold
-        self.loss_scale = loss_scale
-        self.loss_enabled = loss_enabled
-        self.print_loss = print_loss
-        self.use_truth = use_truth
-        
+        self.threshold = threshold        
         if 'dynamic' in kwargs:
             super(EdgeSelector, self).__init__(**kwargs)
         else:
             super(EdgeSelector, self).__init__(dynamic=False,**kwargs)
     
     def get_config(self):
-        config = {'threshold': self.threshold,
-                  'loss_enabled': self.loss_enabled,
-                  'loss_scale': self.loss_scale}
-        
+        config = {'threshold': self.threshold}
         base_config = super(EdgeSelector, self).get_config()
         return dict(list(base_config.items()) + list(config.items())) 
        
     def call(self, inputs):   
+        assert len(inputs) == 2
+        nidx, score = inputs
         
-        nidx, score, specweights, tidxs = inputs
-        #loss part
-        if self.loss_enabled: #revised Nov 2021
-            sel_tidxs = SelectWithDefault(nidx, tidxs, -1)
-            #sanity check
-            tf.assert_equal(tf.expand_dims(tidxs,axis=1),sel_tidxs[:,0:1])
-            #make sure noise disappears
-            sel_tidxs = tf.where(sel_tidxs<0,-2,sel_tidxs)
-            
-            sel_spec  = SelectWithDefault(nidx, specweights, 1.)[:,1:] #don't count -1 entries anyway
-            
-            #just downweight spectators slightly (don't let them build bridges!
-            notspecmask = tf.where(sel_spec[:,:,0]>0, .9, tf.ones_like(score[:,:,0]))
-            
-            active = notspecmask*tf.where(nidx[:,1:]>=0, tf.ones_like(score[:,:,0]), 0.)
-            #Nactive = tf.reduce_sum(active,axis=1)
-            #mask spectators
-            sameasprobe = tf.cast(tf.expand_dims(tidxs,axis=1) == sel_tidxs,dtype='float32')[:,1:]
-            
-                    
-            edgeloss = tf.keras.losses.binary_crossentropy(sameasprobe, score)
-            
-            #print('>>>',sameasprobe[0], edgeloss[0], score[0])
-            
-            edgeloss *= active #includes spec 
-            
-            samesum = tf.reduce_sum(active*sameasprobe[:,:,0])
-            notsamesum = tf.reduce_sum(active*(1.-sameasprobe[:,:,0]))
-            
-            
-            abovethresh = tf.cast(score[:,:,0]>self.threshold,dtype='float32')
-            rightpred = abovethresh * active * sameasprobe[:,:,0]
-            efficiency = tf.reduce_sum(rightpred) / (tf.reduce_sum(active*sameasprobe[:,:,0])+1e-3)
-            purity = tf.reduce_sum(rightpred) / (tf.reduce_sum(active*abovethresh)+1e-3)
-            fakes = tf.reduce_sum(abovethresh * active*(1.-sameasprobe[:,:,0])) / (tf.reduce_sum(active*abovethresh)+1e-3)
-            
-            edgelosssame  = tf.math.divide_no_nan(tf.reduce_sum(sameasprobe[:,:,0]*edgeloss),samesum)
-            edgelossnotsame = tf.math.divide_no_nan(tf.reduce_sum((1.-sameasprobe[:,:,0])*edgeloss),notsamesum)
-            edgeloss = self.loss_scale * tf.reduce_mean(edgelosssame+edgelossnotsame)
-            
-            if hasattr(edgeloss, "numpy"):
-                print(self.name,
-                      'loss', edgeloss.numpy(), 
-                      'same', edgelosssame.numpy(), 
-                      'notsame', edgelossnotsame.numpy(), 
-                      'purity', purity.numpy(),
-                      'efficiency', efficiency.numpy(), 
-                      'fakes', fakes.numpy(), 
-                      'avg score', tf.reduce_mean(tf.reduce_sum(score[:,:,0],axis=1)/tf.reduce_sum(active,axis=1)),
-                      'avg active', tf.reduce_mean(tf.reduce_sum(active,axis=1)).numpy(), 
-                      'avg truth', tf.reduce_mean(tidxs).numpy(),
-                      'max truth', tf.reduce_max(tidxs).numpy())
-            
-            self.add_loss( edgeloss )
-            
         score = tf.concat([tf.ones_like(score[:,0:1,:]),score],axis=1)#add self score always 1
-        
-        #the scores are still training, but we provide truth to the following layers to train them
-        #simultaneously with the edge selector. Later this must be switched off
-        if self.use_truth:
-            print("WARNING: EdgeSelector",self.name, "uses truth! Can be useful in the first training rounds, but MUST BE SWITCHED OFF LATER")
-            sel_tidxs = SelectWithDefault(nidx, tidxs, -1)
-            sel_tidxs = tf.where(sel_tidxs<0,-2,sel_tidxs)
-            tscore = tf.cast(tf.expand_dims(tidxs,axis=1) == sel_tidxs,dtype='float32')[:,1:]
-            #add one real prediction to add some non-truth noise
-            score = tf.concat([tf.ones_like(score[:,0:1]),tscore[:,:-1], score[:,-1:] ],axis=1)#self always true
-        
         return tf.where(score[:,:,0] < self.threshold, -1, nidx)
     
 
@@ -1758,503 +1464,7 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
         return tf.expand_dims(groupscore,axis=1)
         
         
-                
-class LNC(tf.keras.layers.Layer):
-    def __init__(self, 
-                 threshold = 0.9, 
-                 sum_other=[],
-                 select_other=[],
-                 loss_scale = 1., 
-                 distance_loss_scale = 1., 
-                 
-                 print_reduction=False, 
-                 loss_enabled=False, 
-                 print_loss=False,
-                 use_spectators=False,
-                 return_neighbours=False,
-                 noise_loss_scale : float = 0.1,
-                 **kwargs):
-        '''
-        Local Neighbour Clustering
-        This should be an improvement over LocalClusterReshapeFromNeighbours2 with fewer hyperparameters
-        and actually per-point exclusive clustering (not per group)
-        
-        Options:
-        - threshold: minimum group-classifier threshold to cluster (larger means fewer higher purity clusters)
-        - sum_other (list of ints): list of indices for the 'other' tensors (see inputs) that should be summed by feature instead of just selected
-        - loss_scale: loss scale
-        - return_neighbours: returns the collected neighbour features as zero-padded V x K x F' rather than mean and max
-                             If this is set to True, the network will also return the number of neighbours per vertex
-        - ... should be self explanatory
-        
-        Inputs:
-         - features
-         - neighbourhood classifier (linear activation applied only)
-         - coordinates (V x C): only used for loss evaluation
-         - neighbour indices  <- must contain "self"
-         - row splits
-         
-         - +[] of other tensors to be selected or feature-summed (see options) according to clustering
-         
-         - spectator weights (only if options: use_spectators=True)
-         - truth idx (can be dummy if loss is disabled)
-         
-        
-        Outputs:
-         - output features (V x 2F) if return_neighbours False, (V x K x F) otherwise
-         - only if return_neighbours True: number of neighbours (cast to float32)
-         - new row splits
-         - backgather indices
-         - +[] other tensors with selection applied
-         - selected truth index
-        
-        '''
-        self.threshold = threshold
-        self.print_reduction = print_reduction
-        self.loss_enabled = loss_enabled
-        self.loss_scale = loss_scale
-        self.distance_loss_scale = distance_loss_scale
-        self.print_loss = print_loss
-        self.noise_loss_scale = noise_loss_scale
-        self.use_spectators = use_spectators
-        self.sum_other = sum_other
-        self.select_other = select_other
-        self.return_neighbours = return_neighbours
-        
-        assert self.noise_loss_scale >= 0
-        
-        if 'dynamic' in kwargs:
-            super(LNC, self).__init__(**kwargs)
-        else:
-            super(LNC, self).__init__(dynamic=False,**kwargs)#eager
-        
-    
-    def get_config(self):
-        config = {'threshold': self.threshold,
-                  'print_reduction': self.print_reduction,
-                  'loss_enabled': self.loss_enabled,
-                  'loss_scale': self.loss_scale,
-                  'distance_loss_scale': self.distance_loss_scale,
-                  'print_loss': self.print_loss,
-                  'noise_loss_scale': self.noise_loss_scale,
-                  'use_spectators': self.use_spectators,
-                  'sum_other': self.sum_other,
-                  'select_other': self.select_other,
-                  'return_neighbours': self.return_neighbours}
-        
-        base_config = super(LNC, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    def _sel_pass_shape(self, input_shape):
-        shapes =  input_shape[5:-1] 
-        return [(None, s[1:]) for s in shapes]
-
-    def compute_output_shape(self, input_shapes): #features, nidx = inputs
-        K = input_shapes[3][-1]#neighbour indices
-        
-        directoutshape = [(input_shapes[0][0], input_shapes[0][1]*2)]
-        if self.return_neighbours:
-            directoutshape = [(input_shapes[0][0], K, input_shapes[0][1]),(None,K)]
-        
-        if len(input_shapes) > 6:
-            return directoutshape+[(None, 1), (None, 1)] + self._sel_pass_shape(input_shapes) + [(None,)]
-        else:
-            return directoutshape+[(None, 1), (None, 1)] + [(None,)]
-
-    
-    #def __compute_output_signature(self, input_signature):
-    #    
-    #    input_shapes = [x.shape for x in input_signature]
-    #    input_dtypes = [x.dtype for x in input_signature]
-    #    output_shapes = self.compute_output_shape(input_shapes)
-    #
-    #    lenin = len(input_signature)
-    #    # out, rs, backgather
-    #    if lenin > 6:
-    #        return  [tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
-    #                tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
-    #                tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])] + \
-    #                [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i-2]) for i in range(5,lenin)]
-    #    else:
-    #        return  tf.TensorSpec(dtype=input_dtypes[0], shape=output_shapes[0]), \
-    #                tf.TensorSpec(dtype=tf.int32, shape=output_shapes[1]), \
-    #                tf.TensorSpec(dtype=tf.int32, shape=output_shapes[2])
-            
-    
-
-    def build(self, input_shape):
-        super(LNC, self).build(input_shape)
-
-
-    def call(self, inputs):
-        
-        
-        features, score, coords, nidxs, row_splits, other, specweight, tidxs = 8*[None]
-        
-        if len(inputs) > 6:
-            features, score, coords, nidxs, row_splits, *other, tidxs = inputs
-        else:
-            features, score, coords, nidxs, row_splits, tidxs = inputs
-            other=[]
-        
-        if self.use_spectators:
-            specweight = other[-1]
-            other = other[0:-1]
-            
-        for i in self.sum_other:
-            if i >= len(other):
-                raise ValueError(self.name+" sum_other: indices don't match input")
-            
-        for i in self.select_other:
-            if i >= len(other):
-                raise ValueError(self.name+" select_other: indices don't match input")
-            
-        score = tf.nn.sigmoid(score)
-        tnidxs = nidxs #used for truth
-        if self.loss_enabled:
-            if specweight is not None:
-                specweight  = SelectWithDefault(nidxs, specweight, 0.)
-                tnidxs = tf.where(specweight[:,:,0]>0, -1 , nidxs) #remove spectators from loss
-        #generate loss
-        if self.loss_enabled and self.distance_loss_scale > 0:
-            
-            lossval = tf.zeros_like(score[0,0])
-            if row_splits.shape[0] is not None:
-            #some headroom for radius
-                lossval = self.distance_loss_scale * self.loss_scale * \
-                    LLClusterCoordinates.raw_loss([coords, tidxs, row_splits],
-                                          repulsion_contrib=0.5, 
-                                          print_loss=self.print_loss, 
-                                          name=self.name
-                                          )
-            
-            self.add_loss(tf.reduce_mean(lossval))
-            
-        if self.loss_enabled:
-            
-            sel_tidxs = SelectWithDefault(tnidxs, tidxs, tf.expand_dims(tidxs,axis=1))
-            
-            #just in case no "self" index
-            same = tf.reduce_min(sel_tidxs,axis=1) == tf.reduce_max(sel_tidxs,axis=1)
-            sameobject = tf.where(same, 1.,tf.zeros_like(same,dtype='float32'))
-            
-            classloss = tf.keras.losses.binary_crossentropy(sameobject, score)
-
-            #this should be kept independent on the relation of objects versus noise in the event
-
-            N_tot    = tf.cast(tf.shape(tidxs)[0],dtype='float32')
-            N_noise  = tf.cast(tf.math.count_nonzero(tidxs<0),dtype='float32')
-            N_assobj = N_tot-N_noise
-            
-            nweight = tf.where(tidxs<0, self.noise_loss_scale, tf.zeros_like(score))
-            nclassloss = classloss * nweight[:,0]#remove last "1" dimension
-            nclassloss = tf.math.divide_no_nan(tf.reduce_sum(nclassloss),N_noise)
-            
-            oweight = tf.where(tidxs>=0, 1., tf.zeros_like(score))
-            oclassloss = classloss * oweight[:,0]
-            oclassloss = tf.math.divide_no_nan(tf.reduce_sum(oclassloss),N_assobj)
-            
-            classloss = self.loss_scale  * (nclassloss+oclassloss)
-            if self.print_loss:
-                print(self.name, "classifier loss",classloss,"mean score", tf.reduce_mean(score))
-            self.add_loss(classloss)
-            
-            #now make a classifier loss 
-            
-        # do the reshaping
-        
-        
-        hierarchy_idxs=[]
-        if row_splits.shape[0] is None:
-            sel = tf.expand_dims(tf.zeros_like(nidxs, dtype='int32'),axis=2)
-            ggather = tf.zeros_like(score, dtype='int32')
-            npg = tf.zeros_like(score, dtype='int32') + 1
-            rs = row_splits
-        
-        else:
-            for i in range(tf.shape(row_splits)[0] - 1):
-                a = tf.argsort(score[row_splits[i]:row_splits[i+1]],axis=0, direction='DESCENDING')
-                hierarchy_idxs.append(a+row_splits[i])
-            hierarchy_idxs = tf.concat(hierarchy_idxs,axis=0)
-            
-            #neighbour_idxs, hierarchy_idxs, hierarchy_score,  row_splits,     score_threshold
-            
-            rs,sel,ggather,npg = LocalGroup(nidxs, hierarchy_idxs, score, row_splits, 
-                                        score_threshold=self.threshold)
-            
-        #keras does not like gather_nd outputs
-        #sel = tf.reshape(sel, [-1,K]) #
-        #rs = tf.reshape(rs, [-1])
-        rs = tf.cast(rs, tf.int32) #just so keras knows
-        backgather = tf.reshape(ggather, [-1,1])
-        
-
-        #print("sel",sel)
-        rs = tf.cast(rs, tf.int32)#just so keras knows
-        #be explicit because of keras
-        #backgather = tf.cast(backgather, tf.int32)
-        seloutshapes =  [[-1,] + list(s.shape[1:]) for s in other] 
-        otherout = SelectFromIndices.raw_call(sel[:,0], other, seloutshapes)
-        #change those that should be summed
-        
-        for i in self.sum_other:
-            otherout[i] = SelectWithDefault(sel[:,:,0], other[i], 0.)
-            otherout[i] = tf.reduce_sum(otherout[i],axis=1)#sum over neighbours
-        
-        for i in self.select_other:
-            otherout[i] = SelectWithDefault(sel[:,0,0], other[i], 0.)
-        
-        if self.print_reduction:
-            tf.print(self.name,'reduction',tf.cast(tf.shape(sel)[0],dtype='float')/tf.cast(tf.shape(nidxs)[0],dtype='float'),'to',tf.shape(sel)[0])
-        
-        #expanding is done within SelectWithDefault
-        #the latter could also be done with AccumulateKnn if it got generalised from V to V'
-        out_padded = SelectWithDefault(sel[:,:,0], features, 0.)
-        npg = tf.cast(npg,dtype='float32')
-        
-        sel_tidxs = SelectWithDefault(sel[:,0], tidxs, -1)
-        sel_tidxs = tf.squeeze(sel_tidxs, axis=-1)
-        
-        if self.return_neighbours:
-            return [out_padded, npg, rs, backgather] + otherout + [sel_tidxs]
-        
-        out_max  = SelectWithDefault(sel[:,:,0], features, -1000.)
-        
-        
-        out = tf.concat([tf.reduce_sum(out_padded, axis=1)/(npg+1e-6),  
-                         tf.reduce_max(out_max, axis=1)],axis=-1) 
-        
-        return [out, rs, backgather] + otherout + [sel_tidxs]
-        
-        
-                
-class LNC2(tf.keras.layers.Layer):
-    def __init__(self, 
-                 threshold = 0.9, 
-                 
-                 loss_scale = 1., 
-                 distance_loss_scale = 1., 
-                 
-                 print_reduction=False, 
-                 loss_enabled=False, 
-                 print_loss=False,
-                 
-                 assign_empty: int=-10,
-                 
-                 print_output_shape=False,
-                 
-                 noise_loss_scale : float = 0.1,
-                 
-                 return_backscatter=True,
-                 **kwargs):
-        '''
-        Local Neighbour Clustering
-        This should be an improvement over LocalClusterReshapeFromNeighbours2 with fewer hyperparameters
-        and actually per-point exclusive clustering (not per group)
-        
-        Options:
-        - threshold: minimum group-classifier threshold to cluster (larger means fewer higher purity clusters)
-        - loss_scale: loss scale
-        - assign_empty: truth index to assign to empty spaces when flattening truth
-
-        
-        Inputs are lists themselves:
-         IA) A list of
-            - neighbourhood classifier (linear activation applied only)
-            - distances (V x K): only used for loss evaluation
-            - neighbour indices  (V x K) <- must contain "self"
-            - row splits
-            - spectator weights (ignored/can be None if loss disabled)
-            - truth index (ignored/can be None if loss disabled)
-            - a flat list of all previous truth indices
-            
-         IB) A list of all tensors that should be flattened+zero padded (in K) for selected neighbourhoods
-         IC) A list of all tensors that should be summed (in K) for selected neighbourhoods
-         ID) A list of all tensors that should be mean and maxed (in K) for selected neighbourhoods
-         IE) A list of all tensors where the first 'self' index should be selected for selected neighbourshoods
-         
-         
-        
-        Outputs are lists:
-         OA) A list of
-             - The number of neighbours merged
-             - new row splits
-             - backgather indices
-             - an extended flat list of all truth indices, empty space are replaced by <assign_empty>
-             
-         OB) everything that was in IB processed
-         OC) everything that was in IC processed
-         OD) everything that was in ID processed
-         OE) everything that was in IE processed
-         
-        
-        '''
-        self.threshold = threshold
-        self.print_reduction = print_reduction
-        self.loss_enabled = loss_enabled
-        self.loss_scale = loss_scale
-        self.distance_loss_scale = distance_loss_scale
-        self.print_loss = print_loss
-        self.noise_loss_scale = noise_loss_scale
-        self.assign_empty = assign_empty
-        self.print_output_shape = print_output_shape
-        self.return_backscatter = return_backscatter
-        
-        assert self.noise_loss_scale >= 0
-        
-        if 'dynamic' in kwargs:
-            super(LNC2, self).__init__(**kwargs)
-        else:
-            super(LNC2, self).__init__(dynamic=False,**kwargs)#eager
-        
-    
-    def get_config(self):
-        config = {'threshold': self.threshold,
-                  'print_reduction': self.print_reduction,
-                  'loss_enabled': self.loss_enabled,
-                  'loss_scale': self.loss_scale,
-                  'distance_loss_scale': self.distance_loss_scale,
-                  'print_loss': self.print_loss,
-                  'noise_loss_scale': self.noise_loss_scale,
-                  'assign_empty': self.assign_empty,
-                  'print_output_shape': self.print_output_shape,
-                  'return_backscatter': self.return_backscatter}
-        
-        base_config = super(LNC2, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    
-
-    def build(self, input_shape):
-        super(LNC2, self).build(input_shape)
-
-
-    def call(self, inputs):
-        
-        IA, IB, IC, ID, IE = inputs
-        
-        score, dist, nidxs, row_splits, specweight, tidxs = IA
-        score = tf.nn.sigmoid(score)
-        
-        #build truth loss first
-        if self.loss_enabled:
-            #distance loss
-            if self.distance_loss_scale > 0:  #revised Nov 2021
-                lossval = tf.zeros_like(score[0,0])
-                nneigh = tf.zeros_like(score)
-                if row_splits.shape[0] is not None:
-                    lossval = LLLocalClusterCoordinates.raw_loss(dist, nidxs, tidxs, specweight, 
-                                                                 print_loss=False, name=self.name)
-                lossval = tf.reduce_mean(lossval)
-                if self.print_loss:
-                    print(self.name, "distance loss",lossval,'average neighbours',tf.reduce_mean(nneigh))
-                    
-                self.add_loss(self.distance_loss_scale*lossval)
-            
-            sel_tidxs = SelectWithDefault(nidxs, tidxs, tf.expand_dims(tidxs,axis=1))
-            
-            #just in case no "self" index
-            same = tf.reduce_min(sel_tidxs,axis=1) == tf.reduce_max(sel_tidxs,axis=1)
-            sameobject = tf.where(same, 1.,tf.zeros_like(same,dtype='float32'))
-            
-            classloss = tf.keras.losses.binary_crossentropy(sameobject, score)
-
-            #this should be kept independent on the relation of objects versus noise in the event
-
-            N_tot    = tf.cast(tf.shape(tidxs)[0],dtype='float32')
-            N_noise  = tf.cast(tf.math.count_nonzero(tidxs<0),dtype='float32')
-            N_assobj = N_tot-N_noise
-            
-            nweight = tf.where(tidxs<0, self.noise_loss_scale, tf.zeros_like(score))
-            nclassloss = classloss * nweight[:,0]#remove last "1" dimension
-            nclassloss = tf.math.divide_no_nan(tf.reduce_sum(nclassloss),N_noise)
-            
-            oweight = tf.where(tidxs>=0, (1.-specweight), tf.zeros_like(score))
-            oclassloss = classloss * oweight[:,0]
-            oclassloss = tf.math.divide_no_nan(tf.reduce_sum(oclassloss),N_assobj)
-            
-            classloss = self.loss_scale  * (nclassloss+oclassloss)
-            if self.print_loss:
-                print(self.name, "classifier loss",classloss,"mean score", tf.reduce_mean(score))
-            self.add_loss(classloss)
-            
-        ################## loss done    
-        
-        ######## create selectors
-        hierarchy_idxs=[]
-        if row_splits.shape[0] is None:
-            sel = tf.expand_dims(tf.zeros_like(nidxs, dtype='int32'),axis=2)
-            ggather = tf.zeros_like(score, dtype='int32')
-            npg = tf.zeros_like(score, dtype='int32') + 1
-            rs = row_splits
-        
-        else:
-            for i in range(tf.shape(row_splits)[0] - 1):
-                a = tf.argsort(score[row_splits[i]:row_splits[i+1]],axis=0, direction='DESCENDING')
-                hierarchy_idxs.append(a+row_splits[i])
-            hierarchy_idxs = tf.concat(hierarchy_idxs,axis=0)
-            rs,sel,ggather,npg = LocalGroup(nidxs, hierarchy_idxs, score, row_splits, 
-                                        score_threshold=self.threshold)
-            #print('selmin',tf.reduce_min(sel[:,0]))
-            #np.savetxt("test",sel[:,0].numpy())
-
-        rs = tf.cast(rs, tf.int32) #just so keras knows
-        backgather = tf.reshape(ggather, [-1,1])
-        
-        if self.print_reduction:
-            tf.print(self.name,'reduction',tf.cast(tf.shape(sel)[0],dtype='float')/tf.cast(tf.shape(nidxs)[0],dtype='float'),'to',tf.shape(sel)[0])
-        
-        if self.return_backscatter:
-            backgather = [tf.shape(score)[0], sel[:,0]]
-        #[tf.shape(score)[0], sel]]
-        OA = [npg,rs,backgather]
-        OB, OC, OD, OE = [], [], [], []
-        ######### now work with rs, sel, ggather and npg
-        
-        #IB, IC, ID, IE
-        '''
-         IB) A list of all tensors that should be flattened+zero padded (in K) for selected neighbourhoods
-         IC) A list of all tensors that should be summed (in K) for selected neighbourhoods
-         ID) A list of all tensors that should be mean and maxed (in K) for selected neighbourhoods
-         IE) A list of all tensors where the first 'self' index should be selected for selected neighbourshoods
-         
-        '''
-        
-        #the stuff below takes a lot of memory. accumulatekNN could be used here, but needs check
-        
-        for ip in IB: #flattened+zero padded
-            toflat = SelectWithDefault(sel[:,:,0], ip, tf.cast(0., ip.dtype))
-            toflat = tf.reshape(toflat, [-1, sel.shape[1]*ip.shape[-1]])
-            if self.print_output_shape:
-                print(self.name,'flat out shape',toflat.shape)
-            OB.append(toflat)
-        
-        for ip in IC: #summed
-            ocsel = SelectWithDefault(sel[:,:,0], ip, tf.cast(0., ip.dtype))
-            ocsel = tf.reduce_sum(ocsel, axis=1)
-            if self.print_output_shape:
-                print(self.name,'summed out shape',ocsel.shape)
-            OC.append(ocsel)
-        
-        for ip in ID:
-            odsel = SelectWithDefault(sel[:,:,0], ip, tf.cast(0., ip.dtype))
-            odsel = tf.reduce_sum(odsel, axis=1)/(tf.cast(npg, ip.dtype)+1e-6)
-            odselmax = SelectWithDefault(sel[:,:,0], ip, tf.cast(-1000., ip.dtype))
-            odselmax = tf.reduce_max(odselmax, axis=1)
-            if self.print_output_shape:
-                print(self.name,'meanmax out shape',odsel.shape,odselmax.shape)
-            OD.append(tf.concat([odsel,odselmax],axis=-1) )
-            
-        for ip in IE:
-            tosel = SelectWithDefault(sel[:,0:1,0], ip, tf.cast(0., ip.dtype))
-            tosel = tf.squeeze(tosel, axis=1)
-            if self.print_output_shape:
-                print(self.name,'sel out shape',tosel.shape)
-            OE.append(tosel)
-        
-            
-        return OA, OB, OC, OD, OE
-             
+     
 ### soft pixel section
 
 class NeighbourGroups(tf.keras.layers.Layer):
@@ -2263,12 +1473,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
                  purity_min_target = None,
                  efficiency_min_target=None,
                  thresh_viscosity = 1e-2,
-                 
-                 loss_scale = 1., 
-                 
                  print_reduction=False, 
-                 loss_enabled=False, 
-                 print_loss=False,
                  return_backscatter=True,
                 **kwargs):
         '''
@@ -2279,10 +1484,9 @@ class NeighbourGroups(tf.keras.layers.Layer):
             - efficiency_min_target: minimum efficiency target in case threshold is automatically adjusted
         
         Inputs:
-            - neighbourhood classifier (linear activation applied only)
+            - neighbourhood classifier (sigmoid activation must be applied)
             - neighbour indices  (V x K) <- must contain "self"
             - row splits
-            - truth index (ignored/can be None if loss disabled)
             
         Outputs: 
              - neighbour indices for directed graph accumulation (V x K)
@@ -2295,9 +1499,6 @@ class NeighbourGroups(tf.keras.layers.Layer):
         
         super(NeighbourGroups, self).__init__(**kwargs) 
         self.print_reduction = print_reduction
-        self.loss_enabled = loss_enabled
-        self.loss_scale = loss_scale
-        self.print_loss = print_loss
         self.return_backscatter = return_backscatter
         self.purity_min_target = purity_min_target
         self.efficiency_min_target = efficiency_min_target
@@ -2318,9 +1519,6 @@ class NeighbourGroups(tf.keras.layers.Layer):
                   'efficiency_min_target': self.efficiency_min_target,
                   'thresh_viscosity': self.thresh_viscosity,
                   'print_reduction': self.print_reduction,
-                  'loss_enabled': self.loss_enabled,
-                  'loss_scale': self.loss_scale,
-                  'print_loss': self.print_loss,
                   'return_backscatter': self.return_backscatter}
         
         base_config = super(NeighbourGroups, self).get_config()
@@ -2337,6 +1535,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
         add = puradd+effadd
         #add some gooeyness to it
         update = (1. + self.thresh_viscosity*add)*self.threshold
+        update = tf.clip_by_value(update, 1e-3, 1.-1e-3)
         
         updated_thresh = tf.keras.backend.in_train_phase(update,self.threshold,training=training)
         tf.keras.backend.update(self.threshold,updated_thresh)
@@ -2345,35 +1544,9 @@ class NeighbourGroups(tf.keras.layers.Layer):
 
     def call(self, inputs,  training=None):
         assert len(inputs)==4
-        score, nidxs, row_splits, tidxs = inputs
-        score = tf.nn.sigmoid(score)
-        
-        if self.loss_enabled:
-            
-            sel_tidxs = SelectWithDefault(nidxs, tidxs, -200)
-            nntidxs = tf.where(tidxs<0, -20, tidxs)
-            
-            sameasprobe = tf.cast( tf.reduce_all(nntidxs == sel_tidxs[:,:,0],axis=1,keepdims=True), dtype='float32')#V x 1
-            
-            true_pos = tf.reduce_sum(tf.where(score>self.threshold, sameasprobe, 0.))
-            pos = tf.reduce_sum(tf.where(score>self.threshold, tf.ones_like(sameasprobe), 0.))
-            all_true = tf.reduce_sum(sameasprobe)
-            
-            purity = tf.math.divide_no_nan(true_pos,pos)
-            efficiency = tf.math.divide_no_nan(true_pos,all_true)
-            
-            self._update_threshold(purity, efficiency, training)
-            
-            classloss = tf.keras.losses.binary_crossentropy(sameasprobe, score)
-            classloss = tf.reduce_mean(classloss)
-            
-            self.add_loss(classloss)
-            if self.print_loss and hasattr(efficiency, 'numpy'):
-                print(self.name, ' loss ', classloss.numpy(), ', purity', purity.numpy(), 'efficiency', efficiency.numpy(),
-                      'threshold', self.threshold.numpy())
-            elif self.print_loss:
-                tf.print(self.name, ' loss ', classloss, ', purity', purity, 'efficiency', efficiency)
-                
+        score, nidxs, row_splits = inputs
+        score = tf.clip_by_value(score, 0., 1.)
+    
         ######### model build phase        
         if row_splits.shape[0] is None:
             sel = tf.expand_dims(tf.range(tf.shape(nidxs)[0]),axis=1)
@@ -2401,7 +1574,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
         return dirnidx, sel, back, rs
 
     def compute_output_shape(self, input_shapes):
-        score, nidxs, row_splits, _ = input_shapes
+        score, nidxs, row_splits = input_shapes
         if self.return_backscatter:
             return nidxs, score, [(1, ), score], row_splits #first dim omitted
         else:
@@ -2599,85 +1772,6 @@ class SoftPixelCNN(tf.keras.layers.Layer):
 
 
 
-
-class SoftPixelRadiusCNN(tf.keras.layers.Layer):
-    def __init__(self, length_scale_momentum=0.01, subdivisions: int=3 ,**kwargs):
-        """
-        Inputs: 
-        - features
-        - distances squared
-        - neighbour_indices
-        
-        This layer is strongly inspired by 1611.08097 (even though this is only presented for 2D manifolds).
-        It implements "soft pixels" for each direction given by the input coordinates plus one central "pixel".
-        Each "pixel" is represented by a Gaussian weighting of the inputs.
-        For D coordinate dimensions, 2*D + 1 "pixels" are formed (e.g. one for position x direction one for neg x etc).
-        The pixels beyond the length scale are removed.
-        
-        Call will return 
-         - soft pixel CNN outputs:  (V x npixels * features)
-        
-        :param length_scale_momentum: Momentum of the automatically adjusted length scale
-                             
-        :param subdivisions: number of subdivisions along radius
-        
-        """
-        raise ValueError("SoftPixelRadiusCNN: not implemented yet")
-        super(SoftPixelRadiusCNN, self).__init__(**kwargs) 
-        assert length_scale_momentum > 0
-        assert subdivisions > 1
-        
-        with tf.name_scope(self.name + "/1/"):
-            self.length_scale = tf.Variable(initial_value=1., trainable=False,dtype='float32')
-
-        
-    def get_config(self):
-        config = {'length_scale_momentum' : self.length_scale_momentum,
-                  'subdivisions': self.subdivisions
-                  }
-        base_config = super(SoftPixelRadiusCNN, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-    
-    def compute_output_shape(self, input_shapes):
-        noutvert = input_shapes[2][0]
-        #ncoords = input_shapes[0][1]
-        nfeat = input_shapes[1][1]
-        return (noutvert, nfeat*self.subdivisions)
-    
-    
-    def build(self, input_shapes):
-        super(SoftPixelRadiusCNN, self).build(input_shapes)
-        
-    def call(self, inputs, training=None):
-        
-        features, distsq, neighbour_indices = inputs
-        #create coordinate offsets
-        out=[]
-        
-        #adjust to 2 sigma continuously
-        distsq = tf.stop_gradient(distsq)
-        if self.trainable:
-            tf.keras.backend.update(self.length_scale, 
-                                    tf.keras.backend.in_train_phase(
-                self.length_scale*(1.-self.length_scale_momentum) + self.length_scale_momentum*2.*tf.reduce_mean(tf.sqrt(distsq+1e-6)),
-                                self.length_scale,
-                                training=training)
-                                    )
-            
-        scaler = 10.*self.length_scale*float(self.subdivisions)
-        
-        for i in range(self.subdivisions):
-            offset=float(i)/self.length_scale
-            #up to here
-            
-        #    distancesq = LocalDistance(coordinates+o, neighbour_indices)
-        #    f,_ = AccumulateKnn(self.length_scale*distancesq,  features, neighbour_indices) # V x F
-        #    f = f[:,:self.nfeat]
-        #    f = tf.reshape(f, [-1, self.nfeat])
-        #    out.append(f) #only mean
-        #out = tf.concat(out,axis=-1)
-        #return out
-
 ######## generic neighbours
 
 class RaggedGravNet(tf.keras.layers.Layer):
@@ -2720,7 +1814,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.n_prop_total = 2 * self.n_propagate
 
         with tf.name_scope(self.name + "/1/"):
-                self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation=feature_activation)
+            self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation=feature_activation)
 
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,

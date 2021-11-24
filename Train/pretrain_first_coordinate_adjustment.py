@@ -17,40 +17,28 @@ import tensorflow as tf
 from argparse import ArgumentParser
 # from K import Layer
 import numpy as np
-from tensorflow.keras.layers import Reshape,BatchNormalization, Dropout, Add
-from LayersRagged  import RaggedConstructTensor
-from GravNetLayersRagged import ElementScaling,MultiBackScatterOrGather,NeighbourGroups, AccumulateNeighbours,RecalcDistances,WeightFeatures,WeightedNeighbourMeans,DownSample, CreateIndexFromMajority, ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
-from initializers import EyeInitializer
-from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
+
 from datastructures import TrainData_NanoML
 
-from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining, plotClusterSummary
-from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
 
-from clr_callback import CyclicLR
-from lossLayers import LLNoiseClassifier,LLFullObjectCondensation, LLClusterCoordinates
+#from tensorflow.keras import Model
+from Layers import RobustModel
 
-from model_blocks import create_outputs
-from GravNetLayersRagged import MultiBackScatter,LNC2,EdgeCreator, EdgeSelector, GroupScoreFromEdgeScores,NoiseFilter,LNC,ProcessFeatures,SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
-from Layers import CreateTruthSpectatorWeights, ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackScatter, KNN, MessagePassing, RobustModel
-from Layers import GausActivation,GooeyBatchNorm #make a new line
 from model_blocks import create_outputs, noise_pre_filter, first_coordinate_adjustment
+from tensorflow.keras.layers import Dense, Concatenate
+from Layers import CreateGlobalIndices, ProcessFeatures, RaggedConstructTensor
+from DeepJetCore.DJCLayers import SelectFeatures
+
+from lossLayers import LLLocalClusterCoordinates,LLNotNoiseClassifier, LLClusterCoordinates
+from lossLayers import LLNeighbourhoodClassifier, CreateTruthSpectatorWeights
+
 from Regularizers import AverageDistanceRegularizer
-
-
+from initializers import EyeInitializer
 
 from debugLayers import PlotCoordinates
 
-'''
+from clr_callback import CyclicLR
 
-make this about coordinate shifts
-
-
-rewrite LNC2 layer to just return the selection indices, backscatter/gather info and directed neighbour indices
-then write new selection layers with sum/flat option (and just use the accumulate one)
-
-
-'''
 
 
 td = TrainData_NanoML()
@@ -103,15 +91,38 @@ def pretrain_model(Inputs,
         debugplots_after=240
         )
     
-    dist = LLLocalClusterCoordinates(
-            print_loss=True,
+    #dist = LLLocalClusterCoordinates(
+    #        print_loss=True,
+    #        scale=1.
+    #        )([dist, nidx, t_idx, t_spectator_weight])
+            
+    #just the segmentation part without beta terms of OC
+    coords = LLClusterCoordinates(
+        print_loss=True,
             scale=1.
-            )([dist, nidx, t_idx, t_spectator_weight])
+        )([coords,t_idx,rs])
     
+    isnotnoise = Dense(1, activation='sigmoid')(x)
+    isnotnoise = LLNotNoiseClassifier(
+        print_loss=True,
+        scale=1.
+        )([isnotnoise, t_idx])
+        
+        
+    goodneighbours = Dense(1, activation='sigmoid')(x)
+    goodneighbours = LLNeighbourhoodClassifier(
+        print_loss=True,
+        scale=1.,
+        print_batch_time=True
+        )([goodneighbours,nidx,t_idx])
     
-    
-    model_outputs = [('dist', dist),
-                     ('row_splits', row_splits)]
+    #same outputs as the model block
+    model_outputs = [('coords',coords),
+                     ('nidx',nidx),
+                     ('dist',dist), 
+                     ('x',x), 
+                     ('isnotnoise',isnotnoise), 
+                     ('goodneighbours',goodneighbours)]
 
     return RobustModel(model_inputs=Inputs, model_outputs=model_outputs)
 

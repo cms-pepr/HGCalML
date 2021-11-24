@@ -1,100 +1,10 @@
 
 from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply
-from Layers import OnesLike, ExpMinusOne, CondensateToPseudoRS, RaggedSumAndScatter, FusedRaggedGravNetLinParse, VertexScatterer, FusedRaggedGravNetAggAtt
+from Layers import OnesLike, ExpMinusOne
 from DeepJetCore.DJCLayers import  StopGradient, SelectFeatures, ScalarMultiply
 
 import tensorflow as tf
 from initializers import EyeInitializer
-
-
-def indep_energy_block(x, ccoords, beta, x_row_splits):
-    x = StopGradient()(x)
-    ccoords = StopGradient()(ccoords)
-    beta = StopGradient()(beta)
-    feat=[x]
-    
-    sx, psrs, sids, asso_idx, belongs_to_prs = CondensateToPseudoRS(radius=0.8,  
-                                                    soft=True, 
-                                                    threshold=0.1)([x, ccoords, beta, x_row_splits])
-
-    sx = Concatenate()([RaggedSumAndScatter()([sx, psrs, belongs_to_prs]) ,sx])                                            
-    feat.append(VertexScatterer()([sx, sids, sx]))
-    
-    sx,_ = FusedRaggedGravNetLinParse(n_neighbours=128,
-                                 n_dimensions=4,
-                                 n_filters=64,
-                                 n_propagate=[32,32,32,32],
-                                 name='gravnet_enblock_prs')([sx, psrs])
-                                 
-    x = VertexScatterer()([sx, sids, sx])
-    feat.append(x)
-    x,_ = FusedRaggedGravNetLinParse(n_neighbours=128,
-                                 n_dimensions=4,
-                                 n_filters=64,
-                                 n_propagate=[32,32,32,32],
-                                 name='gravnet_enblock_last')([x, x_row_splits])
-    feat.append(x)
-    x = Concatenate()(feat)
-    
-    x = Dense(64, activation='elu',name="dense_last_enblock_1")(x)
-    x = Dense(64, activation='elu',name="dense_last_enblock_2")(x)
-    energy = Dense(1, activation=None,name="dense_enblock_final")(x)
-    energy = energy #linear
-    return energy
-
-def indep_energy_block2(x, energy, ccoords, beta, x_row_splits, energy_proxy=None, stopxgrad=True):
-    if stopxgrad:
-        x = StopGradient()(x)
-    energy = StopGradient()(energy)
-    ccoords = StopGradient()(ccoords)
-    beta = StopGradient()(beta)
-    feat=[x]
-    
-    x = Dense(64, activation='elu',name="dense_last_start_enblock_1")(x)
-    x = Dense(64, activation='elu',name="dense_last_start_enblock_2")(x)
-    x = Concatenate()([energy,x])
-    
-    sx, psrs, sids, asso_idx, belongs_to_prs = CondensateToPseudoRS(radius=0.8,  
-                                                    soft=True, 
-                                                    threshold=0.2)([x, ccoords, beta, x_row_splits])
-                                                    
-    sx = Dense(128, activation='elu',name="dense_set_sum_input")(sx)
-    sx = Dense(128, activation='elu',name="dense_set_sum_input_b")(sx)
-    sx = Dense(128, activation='elu',name="dense_set_sum_input_c")(sx)
-    
-    #deep set like approach
-    sx = Concatenate()([RaggedSumAndScatter()([sx, psrs, belongs_to_prs]) ,sx])
-                                                   
-    feat.append(VertexScatterer()([sx, sids, sx]))
-    
-    sx,_ = FusedRaggedGravNetLinParse(n_neighbours=128,
-                                 n_dimensions=4,
-                                 n_filters=64,
-                                 n_propagate=[32,32,32,32],
-                                 name='gravnet_enblock_prs')([sx, psrs])
-                                 
-    x = VertexScatterer()([sx, sids, sx])
-    feat.append(x)
-    x = Concatenate()([x,energy])
-    x,_ = FusedRaggedGravNetAggAtt(n_neighbours=256,
-                                 n_dimensions=4,
-                                 n_filters=64,
-                                 n_propagate=[32,32,32,32],
-                                 name='gravnet_enblock_last')([x, x_row_splits, beta])
-    feat.append(x)
-    x = Concatenate()(feat)
-    
-    x = Dense(64, activation='elu',name="dense_last_enblock_1")(x)
-    x = Dense(64, activation='elu',name="dense_last_enblock_2")(x)
-    #energy = None
-
-    energy = Dense(1, activation=None,name="predicted_energy")(x)
-    
-    return energy
-
-
-
-
 
 
 
@@ -236,7 +146,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                  
     dist = RecalcDistances()([coords,nidx])
     
-    return coords,nidx,dist, x
+    return coords,nidx,dist,x
     
     
     
