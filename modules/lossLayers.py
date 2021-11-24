@@ -144,6 +144,8 @@ class LLClusterCoordinates(LossLayerBase):
     @staticmethod
     def _rs_loop(coords, tidx):
         Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
+        if N_per_obj is None:
+            return 0.,0.,0. #no objects, discard
         N_per_obj = tf.cast(N_per_obj, dtype='float32')
         N_tot = tf.cast(tidx.shape[0], dtype='float32') 
         K = tf.cast(Msel.shape[0], dtype='float32') 
@@ -180,6 +182,8 @@ class LLClusterCoordinates(LossLayerBase):
         for i in range(len(rs)-1):
             coords = acoords[rs[i]:rs[i+1]]
             tidx = atidx[rs[i]:rs[i+1]]
+            if tidx.shape[0]<20:
+                continue #does not make sense
             tlv, tdl, trl = LLClusterCoordinates._rs_loop(coords,tidx)
             lossval += tlv
             distloss += tdl

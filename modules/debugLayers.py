@@ -23,7 +23,12 @@ class PlotCoordinates(tf.keras.layers.Layer):
          
         Returns coordinates (unchanged)
         '''
-        super(PlotCoordinates, self).__init__(**kwargs)
+        
+        if 'dynamic' in kwargs:
+            super(PlotCoordinates, self).__init__(**kwargs)
+        else:
+            super(PlotCoordinates, self).__init__(dynamic=False,**kwargs)
+            
         
         self.plot_every = plot_every
         self.outdir = outdir
@@ -44,7 +49,7 @@ class PlotCoordinates(tf.keras.layers.Layer):
     def call(self, inputs):
         
         coords, features, tidx, rs = inputs
-        if not hasattr(coords, 'numpy'): #inly in eager
+        if not hasattr(coords, 'numpy'): #only in eager
             return inputs[0]
         
         #plot initial state

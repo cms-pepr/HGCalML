@@ -119,8 +119,8 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
     #coords = Add()([coords,coordsdiff])
     #
     # this does not come at a high cost
-    x = Dense(64,activation='relu')(x)
-    x = Dense(32,activation='relu')(x)
+    x = Dense(64,activation='relu',trainable=trainable)(x)
+    x = Dense(32,activation='relu',trainable=trainable)(x)
     
     learnedcoorddiff = Dense(2,kernel_initializer='zeros',use_bias=False,
                              name=name+'dense2',trainable=trainable)(x)

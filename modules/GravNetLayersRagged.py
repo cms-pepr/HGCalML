@@ -1050,7 +1050,7 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
         xin=x
         for k in range(len(scatters)):
             l = len(scatters) - k - 1
-            if scatters[l] is list:
+            if isinstance(scatters[l], list):
                 V, scidx = scatters[l]
                 #print('scatters[l]',scatters[l])
                 #cast is needed because keras layer out dtypes are not really working
@@ -1058,8 +1058,8 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
                 x = tf.scatter_nd(scidx, x, shape)
             else:
                 x = SelectFromIndices.raw_call(tf.cast(scatters[l],tf.int32), 
-                                           [x], [ [-1]+list(x.shape[1:]) ])[0]
-                
+                                           [x], [ [-1]+list(x.shape[1:]) ])
+                                     
         return tf.reshape(x,[-1,xin.shape[1]])
         
     def call(self, inputs):
@@ -1273,13 +1273,11 @@ class NoiseFilter(tf.keras.layers.Layer):
         Inputs:
          - noise score (linear activation), high means not noise
          - row splits
-         - [] a list of all tensors to be filtered accordingly (at least one)
-         - truth index
          
         Outputs:
+         - selection indices
          - row splits
          - backgather/(bsnumber backscatter indices)
-         - [] the list of all other tensors to be filtered
         '''
 
         
@@ -1301,20 +1299,19 @@ class NoiseFilter(tf.keras.layers.Layer):
         base_config = super(NoiseFilter, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
         
-    def compute_output_shape(self, input_shapes):
-        return input_shapes[1:-1] #all but score itself and truth indices
     
     
     def call(self, inputs):
         
-        score, row_splits, *other, tidxs = inputs
+        score, row_splits = inputs
         
         defbg = tf.expand_dims(tf.range(tf.shape(score)[0]),axis=1)
         if row_splits.shape[0] is None: #dummy execution
             bg = defbg
             if self.return_backscatter:
                 bg = [tf.shape(score)[0], bg]
-            return [row_splits, bg] + other
+                
+            return tf.range(tf.shape(score)[0],dtype='int32'),row_splits, bg
         
         
         sel, allbackgather, newrs = None,None,None
@@ -1333,12 +1330,11 @@ class NoiseFilter(tf.keras.layers.Layer):
         else:
             sel, allbackgather, newrs = select_threshold_with_backgather(score, self.threshold, row_splits)
             
-        other = SelectFromIndices.raw_call(sel, other)
         
         if self.print_reduction:
             print(self.name,' reduction from ', int(row_splits[-1]), ' to ', int(newrs[-1]), ': ', float(row_splits[-1])/float(newrs[-1]))
         
-        return [newrs, allbackgather] + other
+        return sel, newrs, allbackgather
         
         
 
@@ -1503,15 +1499,16 @@ class NeighbourGroups(tf.keras.layers.Layer):
         self.purity_min_target = purity_min_target
         self.efficiency_min_target = efficiency_min_target
         self.thresh_viscosity = thresh_viscosity
+        self.initial_threshold = threshold
         
         if threshold is None:
-            assert purity_min_target is not None and efficiency_min_target is not None
-            threshold = 0.5
+            #assert purity_min_target is not None and efficiency_min_target is not None
+            self.initial_threshold = 0.5
         else:
             assert purity_min_target is None and efficiency_min_target is None #if threshold is not None
         #make this a variable
         with tf.name_scope(self.name + "/1/"):
-            self.threshold = tf.Variable(initial_value=threshold, trainable=False,dtype='float32')
+            self.threshold = tf.Variable(initial_value=self.initial_threshold, trainable=False,dtype='float32')
         
             
     def get_config(self):
@@ -1519,6 +1516,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
                   'efficiency_min_target': self.efficiency_min_target,
                   'thresh_viscosity': self.thresh_viscosity,
                   'print_reduction': self.print_reduction,
+                  'initial_threshold': self.initial_threshold,
                   'return_backscatter': self.return_backscatter}
         
         base_config = super(NeighbourGroups, self).get_config()
@@ -1543,7 +1541,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
 
 
     def call(self, inputs,  training=None):
-        assert len(inputs)==4
+        assert len(inputs)==3
         score, nidxs, row_splits = inputs
         score = tf.clip_by_value(score, 0., 1.)
     
@@ -1564,6 +1562,8 @@ class NeighbourGroups(tf.keras.layers.Layer):
             #rewrite Localgroup
             rs,dirnidx,sel,ggather = LocalGroup(nidxs, hierarchy_idxs, score, row_splits, 
                                         score_threshold=self.threshold.numpy())#force eager
+            if self.print_reduction:
+                print(self.name,'reduced to',sel.shape[0])
         
         back = ggather
         if self.return_backscatter:
@@ -1780,7 +1780,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  n_dimensions: int,
                  n_filters : int,
                  n_propagate : int,
-                 return_self=False,
+                 return_self=True,
                  sumwnorm=False,
                  feature_activation='relu',
                  **kwargs):
