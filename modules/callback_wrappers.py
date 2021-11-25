@@ -98,7 +98,10 @@ def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_dista
         analyzer2 = matching_and_analysis.OCAnlayzerWrapper(
             metadata)  # Use another analyzer here to be safe since it will run scan on
         # on beta and distance threshold which might mess up settings
-        optimizer = OCHyperParamOptimizer(analyzer=analyzer2, limit_n_endcaps=full_analysis_num_hyperparam_optimization_endcaps)
+        optimizer = OCHyperParamOptimizer(analyzer=analyzer2,
+                                          limit_n_endcaps=full_analysis_num_hyperparam_optimization_endcaps,
+                                          beta_bounds=[0.05,1],
+                                          distance_bounds=[0.05,1])
         os.system('mkdir %s/full_validation_plots' % (train.outputDir))
         cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=full_analysis_num_hyperparam_optimization_iterations, optimization_loop_num_init_points=5,
                                      after_n_batches=full_analysis_after_batches, min_batch=8, predictor=predictor, optimizer=optimizer,
