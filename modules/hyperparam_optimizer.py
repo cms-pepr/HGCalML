@@ -8,13 +8,19 @@ import matching_and_analysis
 
 
 class OCHyperParamOptimizer():
-    def __init__(self, analyzer, limit_n_endcaps=-1, database_manager=None, table_prefix='hyperparam_optimizer', matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND):
+    def __init__(self, analyzer, limit_n_endcaps=-1, database_manager=None, table_prefix='hyperparam_optimizer',
+                 matching_type=matching_and_analysis.MATCHING_TYPE_MAX_FOUND,
+                 beta_bounds=[0.,1.],
+                 distance_bounds=[0.,1.]):
         self.limit_n_endcaps=limit_n_endcaps
         self.database_manager = database_manager
         self.table_prefix = table_prefix
         self.iteration = 0
         self.matching_type=matching_type
         self.analyzer = analyzer
+
+        self.beta_bounds = beta_bounds
+        self.distance_bounds = distance_bounds
 
     class Logger():
         def __init__(self, subscriber):
@@ -39,7 +45,7 @@ class OCHyperParamOptimizer():
         :return:
         """
         self.data = data
-        pbounds = {'d': (0, 1), 'b': (0, 1)}
+        pbounds = {'d': (self.distance_bounds[0], self.distance_bounds[1]), 'b': (self.beta_bounds[0], self.beta_bounds[1])}
         optimizer = BayesianOptimization(
             f=self.black_box_function,
             pbounds=pbounds,
