@@ -1400,7 +1400,8 @@ class EdgeSelector(tf.keras.layers.Layer):
        
     def call(self, inputs):   
         assert len(inputs) == 2
-        nidx, score = inputs
+        score, nidx = inputs
+        assert len(score.shape) == 3 and len(nidx.shape) == 2
         
         score = tf.concat([tf.ones_like(score[:,0:1,:]),score],axis=1)#add self score always 1
         return tf.where(score[:,:,0] < self.threshold, -1, nidx)
@@ -1431,8 +1432,8 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         '''
         Input: 
-        - edge scores (V x K x 1)
-        - neighbour indices
+        - edge scores (V x K-1 x 1)
+        - neighbour indices (V x K)
         
         Output:
         - group score (V x 1)
@@ -1466,6 +1467,7 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
 class NeighbourGroups(tf.keras.layers.Layer):
     def __init__(self, 
                  threshold = None, 
+                 initial_threshold = None, #compatibility
                  purity_min_target = None,
                  efficiency_min_target=None,
                  thresh_viscosity = 1e-2,
@@ -1516,7 +1518,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
                   'efficiency_min_target': self.efficiency_min_target,
                   'thresh_viscosity': self.thresh_viscosity,
                   'print_reduction': self.print_reduction,
-                  'initial_threshold': self.initial_threshold,
+                  'threshold': self.initial_threshold,
                   'return_backscatter': self.return_backscatter}
         
         base_config = super(NeighbourGroups, self).get_config()

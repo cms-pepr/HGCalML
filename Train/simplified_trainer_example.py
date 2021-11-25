@@ -46,7 +46,7 @@ from Regularizers import AverageDistanceRegularizer
 from model_blocks import first_coordinate_adjustment
 
 from lossLayers import LLNeighbourhoodClassifier, LLNotNoiseClassifier
-from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
+from lossLayers import LLFullObjectCondensation, LLClusterCoordinates,LLEdgeClassifier
 
 from debugLayers import PlotCoordinates
 
@@ -60,17 +60,48 @@ make this about coordinate shifts
 
 td = TrainData_NanoML()
 
-def reduce(x,coords,energy,goodneighbours, nidx, rs, t_idx, t_spectator_weight, 
+def reduce(x,coords,energy, nidx, rs, t_idx, t_spectator_weight, 
            threshold = 0.5,
            print_reduction=True,
+           use_edges = True,
            return_backscatter=False):
     
+    goodneighbours = None
+    groupthreshold=threshold
+    
+    if use_edges:
+        x_e = Dense(6,activation='relu')(x) #6 x 12 .. still ok
+        x_e = EdgeCreator()([nidx,x_e])
+        x_e = Dense(4,activation='relu')(x_e)#keep this simple!
+        
+        s_e = Dense(1,activation='sigmoid')(x_e)#edge classifier
+        #loss
+        s_e = LLEdgeClassifier(
+            print_loss=True,
+            scale=1.
+            )([s_e,nidx,t_idx])#don't use spectators here yet
+    
+        nidx = EdgeSelector(
+            threshold=threshold
+            )([s_e,nidx])
+        
+        groupthreshold=1e-3#done by edges
+        goodneighbours = GroupScoreFromEdgeScores()([s_e,nidx])
+    
+    else:
+        goodneighbours = Dense(1, activation='sigmoid')(x)
+        goodneighbours = LLNeighbourhoodClassifier(
+            print_loss=True,
+            scale=1.,
+            print_batch_time=False
+            )([goodneighbours,nidx,t_idx])
+        
+    
     gnidx, gsel, bg, srs = NeighbourGroups(
-        threshold = 0.5,
+        threshold = groupthreshold,
         return_backscatter=return_backscatter,
         print_reduction=print_reduction,
         )([goodneighbours, nidx, rs])
-    
     
     
    
@@ -133,7 +164,7 @@ def gravnet_model(Inputs,
     coords,nidx,dist, x = first_coordinate_adjustment(
         orig_coords, x, energy, rs, t_idx, 
         debug_outdir,
-        trainable=True,#change if you read in pre-trained weights
+        trainable=False,#change if you read in pre-trained weights
         name='first_coords',#do not change to read in pre-trained weights
         debugplots_after=-1
         )
@@ -153,17 +184,11 @@ def gravnet_model(Inputs,
     coords = PlotCoordinates(500,outdir=debug_outdir,name='a_firstcoord')([coords,energy,t_idx,rs])
         
     dist = RecalcDistances()([coords,nidx])
-    dist, nidx = SortAndSelectNeighbours(K=12)([dist, nidx])
+    dist, nidx = SortAndSelectNeighbours(K=8)([dist, nidx])
     
     
     #not used here
     x = Concatenate()([x,feat_norm,dist])
-    goodneighbours = Dense(1, activation='sigmoid')(x)
-    goodneighbours = LLNeighbourhoodClassifier(
-        print_loss=True,
-        scale=1.,
-        print_batch_time=False
-        )([goodneighbours,nidx,t_idx])
     
     ### pass info
     
@@ -171,7 +196,7 @@ def gravnet_model(Inputs,
     allfeat.append(coords)
     
     x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight = reduce(x, coords, 
-                                          energy, goodneighbours, nidx, rs,
+                                          energy, nidx, rs,
                                           t_idx,t_spectator_weight,
                                           threshold = 0.6,#higher 
                                           return_backscatter=True) #really cut
@@ -243,19 +268,14 @@ def gravnet_model(Inputs,
             
         dist = RecalcDistances()([coords,nidx])
         dist, nidx = SortAndSelectNeighbours(K=12)([dist, nidx])
+        nx = AccumulateNeighbours('minmeanmax')([x, nidx])
         
-        goodneighbours = Concatenate()([x,dist])
-        goodneighbours = Dense(1, activation='sigmoid')(goodneighbours)
-        goodneighbours = LLNeighbourhoodClassifier(
-            print_loss=True,
-            scale=1.,
-            print_batch_time=False
-            )([goodneighbours,nidx,t_idx])
+        x = Concatenate()([nx,x,dist])
             
-            
-        x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight = reduce(x, coords, energy, goodneighbours, 
+        x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight = reduce(x, coords, energy, 
                                               nidx, rs, t_idx, t_spectator_weight,
                                               print_reduction=True,
+                                              threshold=0.1,#low is ok
                                               return_backscatter=False)#here back-gather
         
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
