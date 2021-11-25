@@ -36,7 +36,7 @@ from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet
 from GravNetLayersRagged import DistanceWeightedMessagePassing,MultiBackScatterOrGather
 
 from GravNetLayersRagged import NeighbourGroups,AccumulateNeighbours,SelectFromIndices
-from GravNetLayersRagged import RecalcDistances, ElementScaling
+from GravNetLayersRagged import RecalcDistances, ElementScaling, RemoveSelfRef
 
 from Layers import CreateTruthSpectatorWeights, ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CreateGlobalIndices, SelectFromIndices, MultiBackScatter, KNN, MessagePassing, RobustModel
 from Layers import GausActivation,GooeyBatchNorm #make a new line
@@ -60,7 +60,7 @@ make this about coordinate shifts
 
 td = TrainData_NanoML()
 
-def reduce(x,coords,energy, nidx, rs, t_idx, t_spectator_weight, 
+def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight, 
            threshold = 0.5,
            print_reduction=True,
            use_edges = True,
@@ -70,8 +70,11 @@ def reduce(x,coords,energy, nidx, rs, t_idx, t_spectator_weight,
     groupthreshold=threshold
     
     if use_edges:
-        x_e = Dense(6,activation='relu')(x) #6 x 12 .. still ok
+        x_e = Dense(4,activation='relu')(x) #6 x 12 .. still ok
         x_e = EdgeCreator()([nidx,x_e])
+        dist = RemoveSelfRef()(dist)#also make it V x K-1
+        dist = Reshape((dist.shape[-1],1))(dist)
+        x_e = Concatenate()([x_e,dist])
         x_e = Dense(4,activation='relu')(x_e)#keep this simple!
         
         s_e = Dense(1,activation='sigmoid')(x_e)#edge classifier
@@ -196,9 +199,8 @@ def gravnet_model(Inputs,
     allfeat.append(coords)
     
     x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight = reduce(x, coords, 
-                                          energy, nidx, rs,
+                                          energy, dist, nidx, rs,
                                           t_idx,t_spectator_weight,
-                                          threshold = 0.6,#higher 
                                           return_backscatter=True) #really cut
     scatterids.append(bg)
     
@@ -267,17 +269,19 @@ def gravnet_model(Inputs,
             )([coords,t_idx,rs])
             
         dist = RecalcDistances()([coords,nidx])
-        dist, nidx = SortAndSelectNeighbours(K=12)([dist, nidx])
+        dist, nidx = SortAndSelectNeighbours(K=8)([dist, nidx])
         nx = AccumulateNeighbours('minmeanmax')([x, nidx])
         
         x = Concatenate()([nx,x,dist])
             
         x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight = reduce(x, coords, energy, 
-                                              nidx, rs, t_idx, t_spectator_weight,
+                                              dist,nidx, rs, t_idx, t_spectator_weight,
                                               print_reduction=True,
                                               threshold=0.1,#low is ok
                                               return_backscatter=False)#here back-gather
         
+        x = Dense(64,activation='relu')(x)
+        x = Dense(64,activation='relu')(x)
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
         
         scatterids.append(bg)
@@ -289,15 +293,24 @@ def gravnet_model(Inputs,
         
 
     rs = row_splits  # important! here we are in non-reduced full graph mode again
+    allcoords = Concatenate()(allcoords)
+    energysums = Concatenate()(energysums)
+    allfeat = Concatenate()(allfeat)
+    
+    print('allcoords',allcoords.shape)
+    print('energysums',energysums.shape)
+    print('allfeat',allfeat.shape)
     
     #x = MultiBackScatterOrGather()([x, scatterids])
-    x = Concatenate()(allfeat+energysums+allcoords)
+    x = Concatenate()([allfeat,energysums,allcoords])
+    
+    
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     #do one more exchange with all
     x = Dense(64,activation='relu')(x)
     x = Dense(64,activation='relu')(x)
     x = Dense(64,activation='relu')(x)
-    x = Concatenate()(allcoords+[x]+energysums)
+    x = Concatenate()([allcoords,x,energysums])
     
     pred_beta, pred_ccoords, pred_dist, pred_energy, \
     pred_pos, pred_time, pred_id = create_outputs(x, feat, fix_distance_scale=False,
@@ -421,7 +434,7 @@ for i in range(5)
 
 #cb=[]
 learningrate = 1e-4
-nbatch = 90000
+nbatch = 60000
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
                           loss=None,
