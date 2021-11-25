@@ -428,7 +428,7 @@ class LLEdgeClassifier(LossLayerBase):
         
         n_active = tf.where(nidx>=0, tf.ones_like(nidx,dtype='float32'), 0.)[:,1:] # V x K-1
         specweight = tf.clip_by_value(specweight,0.,1.)
-        n_specw = SelectWithDefault(nidx, specweight, -1)[:,1:,0]# V x K-1
+        n_specw = SelectWithDefault(nidx, specweight, -1.)[:,1:,0]# V x K-1
         
         #now this will be false for all noise
         n_sameasprobe = tf.cast(tf.expand_dims(tidx, axis=2) == n_tidxs[:,1:,:], dtype='float32') # V x K-1 x 1
@@ -444,9 +444,9 @@ class LLEdgeClassifier(LossLayerBase):
     def loss(self, inputs):
         assert len(inputs) > 2 and len(inputs) < 5
         score, nidx, tidx, specweight = None, None, None, None
-        if len(inputs) == 2:
+        if len(inputs) == 3:
             score, nidx, tidx = inputs
-            specweight = tf.zeros_like(score)
+            specweight = tf.zeros_like(score[:,0])
         else:
             score, nidx, tidx, specweight = inputs
         lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight)
