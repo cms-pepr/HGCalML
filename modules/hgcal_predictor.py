@@ -10,7 +10,7 @@ from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
 import tempfile
 import atexit
-from datastructures.TrainData_NanoML import TrainData_NanoMLTracks, TrainData_NanoML
+from datastructures.TrainData_NanoML import TrainData_NanoML
 
 import os
 from DeepJetCore.customObjects import get_custom_objects
@@ -93,7 +93,7 @@ class HGCalPredictor():
 
             td = self.dc.dataclass()
 
-            if type(td) is not TrainData_NanoML and type(td) is not TrainData_NanoMLTracks and type(td) is not TrainData_TrackML:
+            if type(td) is not TrainData_NanoML  and type(td) is not TrainData_TrackML:
                 raise RuntimeError("TODO: make sure this works for other traindata formats")
 
             if inputfile[-5:] == 'djctd':

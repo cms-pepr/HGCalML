@@ -116,7 +116,9 @@ def calculate_eiou(truth_sid,
     return all_iou, overlap_matrix, pred_sum_matrix.numpy(), truth_sum_matrix.numpy(), intersection_sum_matrix.numpy()
 
 
-def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=500, return_alpha_indices=False, pred_dist=None):
+def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=500, return_alpha_indices=False, pred_dist=None, max_hits_per_shower=-1):
+    # print(beta.shape, cc.shape, type(beta), type(cc))
+
     beta_filtered_indices = np.argwhere(beta>beta_threshold)
     beta_filtered = np.array(beta[beta_filtered_indices])
     beta_filtered_remaining = beta_filtered.copy()
@@ -134,8 +136,19 @@ def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=
         dists = np.sum((cc - cc_alpha)**2, axis=-1)
 
         if pred_dist is None:
-            pred_sid[np.logical_and(dists<dist_threshold, pred_sid==-1)] = max_index
+
+            if max_hits_per_shower != -1:
+                filtered = dists.copy()
+                filtered[dists>dist_threshold] = 1000000.
+                filtered[pred_sid!=-1] = 1000000.
+                filtered[filtered.argsort()[max_hits_per_shower:len(filtered)]] = 1000000.
+                picked = filtered<1000000.
+                pred_sid[picked] = max_index
+            else:
+                pred_sid[np.logical_and(dists<dist_threshold, pred_sid==-1)] = max_index
         else:
+            if max_hits_per_shower != -1:
+                raise NotImplementedError("Error")
             pred_sid[np.logical_and(dists < (pred_dist * dist_threshold), pred_sid == -1)] = max_index
 
 
