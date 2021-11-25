@@ -45,11 +45,14 @@ def publish(file_to_publish, publish_to_path):
     basefilename = os.path.basename(file_to_publish)
     os.system(cpstring + file_to_publish + ' ' + publish_to_path +'_'+basefilename+ ' 2>&1 > /dev/null') 
 
-def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx"):
+def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx",rdst=None):
     ta = df[qualifier]
     unta = np.unique(ta)
     unta = unta[unta>-0.1]
-    np.random.shuffle(unta)
+    if rdst is None:
+        np.random.shuffle(unta)
+    else:
+        rdst.shuffle(unta)
     out = ta.copy()
     for i in range(len(unta)):
         out[ta ==unta[i]]=i

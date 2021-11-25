@@ -115,10 +115,10 @@ def oc_per_batch_element(
     qraw = tf.math.atanh(beta)**2 
     
     if soft_q_scaling:
-        qraw = tf.math.atanh(beta/1.002)**2 #beta_in**4 *20.
+        qraw = tf.math.atanh(beta_in/1.002)**2 #beta_in**4 *20.
         beta = beta_in*(1. - is_spectator) # no need for clipping
     
-    q = qraw + q_min * (1. - is_spectator) # V x 1
+    q = (qraw + q_min) * (1. - is_spectator) # V x 1
     #q = tf.where(beta_in<1.-1e-4, q, tf.math.atanh(1.-1e-4)**2 + q_min + beta_in) #just give the rest above clip a gradient
     
     N = tf.cast(beta.shape[0], dtype='float32')
@@ -137,14 +137,25 @@ def oc_per_batch_element(
     
     K = tf.cast(Msel.shape[0], dtype='float32') 
     
-    padmask_m = SelectWithDefault(Msel, tf.zeros_like(beta_in)+1., 0) #K x V-obj x 1
+    ########################################################
+    #sanity check, use none of the following for the loss calculation
+    truth_m = SelectWithDefault(Msel, truth_idx, -2)#K x V-obj x 1
+    truth_same = truth_m[:,0:1] == truth_m
+    truth_same = tf.where(truth_m==-2, True, truth_same)
+    tf.assert_equal( tf.reduce_all(truth_same), True , 
+                     message="truth indices do not match object selection, serious bug")
+    #end sanity check
+    ########################################################
+    
+    padmask_m = SelectWithDefault(Msel, tf.zeros_like(beta_in)+1., 0.) #K x V-obj x 1
     x_m = SelectWithDefault(Msel, x, 0.) #K x V-obj x C
-    beta_m = SelectWithDefault(Msel, beta_in, 0.) #K x V-obj x 1
+    beta_m = SelectWithDefault(Msel, beta, 0.) #K x V-obj x 1
+    is_spectator_m = SelectWithDefault(Msel, is_spectator, 0.) #K x V-obj x 1
     q_m = SelectWithDefault(Msel, q, 0.)#K x V-obj x 1
     object_weights_m = SelectWithDefault(Msel, object_weights, 0.)
     distance_scale_m = SelectWithDefault(Msel, distance_scale, 1.)
     
-    kalpha_m = tf.argmax(beta_m, axis=1) # K x 1
+    kalpha_m = tf.argmax((1.-is_spectator_m)*beta_m, axis=1) # K x 1
     
     x_kalpha_m = tf.gather_nd(x_m,kalpha_m, batch_dims=1) # K x C
     if use_mean_x>0:
@@ -183,7 +194,8 @@ def oc_per_batch_element(
     #what if Vatt and Vrep are weighted by q, not scaled by it?
     q_rep = q
     if repulsion_q_min >= 0:
-        q_rep = qraw + repulsion_q_min
+        raise ValueError("repulsion_q_min >= 0: spectators TBI")
+        q_rep = (qraw + repulsion_q_min)*(1.- is_spectator)
         q_kalpha_m += repulsion_q_min - q_min
     
     #now the bit that needs Mnot
@@ -202,6 +214,7 @@ def oc_per_batch_element(
     if div_repulsion:
         V_rep = 1. / (rep_distances + 0.1)
     
+    #spec weights are in q
     V_rep *= M_not * tf.expand_dims(q_rep, axis=0) #K x V x 1
     V_rep = tf.reduce_sum(V_rep, axis=1) #K x 1
     
@@ -221,7 +234,7 @@ def oc_per_batch_element(
         b_mes = tf.reduce_sum(b_m**exponent, axis=1)
         if not exponent==1:
             b_mes = (b_mes+1e-16)**(1./float(exponent))
-        return tf.math.log(tf.abs(1.-b_mes)+1.)
+        return tf.math.log((1.-b_mes)**2+1.)
     
     if phase_transition:
     ## beta terms
@@ -235,8 +248,12 @@ def oc_per_batch_element(
         B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9) # 1
     
     else:
-        B_pen = object_weights_kalpha_m * (1. - beta_kalpha_m)
-        B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen,axis=0), K+1e-9)
+        B_pen_po = object_weights_kalpha_m * (1. - beta_kalpha_m)
+        B_pen = tf.math.divide_no_nan(tf.reduce_sum(B_pen_po,axis=0), K+1e-9)#1
+        #get out of random gradients in the beginning
+        #introduces gradients on all betas of hits rather than just the max one
+        B_up = tf.math.divide_no_nan(tf.reduce_sum((1.-is_noise)*(1.-beta_in)), N - tf.reduce_sum(is_noise) )
+        B_pen += 0.01*B_pen*B_up #if it's high try to elevate all betas
         
     if cont_beta_loss:
         B_pen =   bpenhelp(beta_m,2) + bpenhelp(beta_m,4)
@@ -245,13 +262,12 @@ def oc_per_batch_element(
     too_much_B_pen = object_weights_kalpha_m * bpenhelp(beta_m,1) #K x 1, don't make it steep
     too_much_B_pen = tf.math.divide_no_nan(tf.reduce_sum(too_much_B_pen), K+1e-9)
     
-    Noise_pen = S_B*tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise))
+    Noise_pen = S_B*tf.math.divide_no_nan(tf.reduce_sum(is_noise * beta_in), tf.reduce_sum(is_noise)+1e-3)
     
     #explicit payload weight function here, the old one was odd
     
-    #too aggressive scaling is bad for high learning rates. Move to simple x^4
-    p_w = padmask_m * tf.clip_by_value(beta_m**2, 1e-3,10.) #already zero-padded  , K x V_perobj x 1
-    #normalise to maximum; this + 1e-9 might be an issue POSSIBLE FIXME
+    #too aggressive scaling is bad for high learning rates. 
+    p_w = padmask_m * (1.-is_spectator_m) * tf.math.atanh(beta_m/1.002)**2 #this is well behaved
     
     if payload_beta_gradient_damping_strength > 0:
         p_w = payload_beta_gradient_damping_strength * tf.stop_gradient(p_w) + \
@@ -259,27 +275,11 @@ def oc_per_batch_element(
         
     payload_loss_m = p_w * SelectWithDefault(Msel, (1.-is_noise)*payload_loss, 0.) #K x V_perobj x P
     payload_loss_m = object_weights_kalpha_m * tf.reduce_sum(payload_loss_m, axis=1) 
+    #here normalisation per object
     payload_loss_m = tf.math.divide_no_nan(payload_loss_m, tf.reduce_sum(p_w, axis=1))
     
     #pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj+1e-9) # K x P #really?
     pll = tf.math.divide_no_nan(tf.reduce_sum(payload_loss_m,axis=0), K+1e-3) # P
-    
-    #explicit K**2 repulsion
-    #if k_sq_repulsion_strength > 0.: #x_kalpha_m: K  x C
-    #    k_sq_rep = tf.expand_dims(x_kalpha_m, axis=0) - tf.expand_dims(x_kalpha_m, axis=1) #x_kalpha_m: K  x K x C
-    #    k_sq_rep = tf.reduce_sum(k_sq_rep**2, axis=-1) #distances**2 K x K 
-    #    k_sq_rep = -2.*tf.math.log(1.-tf.math.exp(-k_sq_rep/2.)+1e-5) #K x K 
-    #    #add qTq scaling also here?
-    #    k_sq_rep *= q_kalpha_m # adding the latter term would just add a factor of 2. to the corresponding kalpha Mnot term * tf.expand_dims(q_kalpha_m[:,0], axis=0) #K x K
-    #    k_sq_rep *= object_weights_kalpha_m * tf.expand_dims(object_weights_kalpha_m[:,0], axis=0) #K x K
-    #    k_sq_rep = tf.math.divide_no_nan(tf.reduce_sum(k_sq_rep,axis=0), K+1e-9)
-    #    k_sq_rep = tf.math.divide_no_nan(tf.reduce_sum(k_sq_rep,axis=0), K+1e-9)
-    #    
-    #    V_rep += k_sq_repulsion_strength * k_sq_rep
-    #    #object_weights_kalpha_m
-        
-        
-    
     
     return V_att, V_rep, Noise_pen, B_pen, pll, too_much_B_pen
 

@@ -43,11 +43,11 @@ struct LocalGroupOpFunctor<GPUDevice, dummy> {
 
             const float score_threshold,
 
-            const int * d_global_idxs, //global index of each vertex: V x 1, not global dimension!
             const int * d_row_splits,  //keeps dimensions: N_rs x 1
 
             int * mask,
             int * d_out_selection_idxs,    //which ones to keep  - here V x 1, finally: V' x 1
+            int * d_out_dir_neighbours, // V x K
             int * n_sel_vtx,
             int * d_out_row_splits,
 
@@ -55,10 +55,8 @@ struct LocalGroupOpFunctor<GPUDevice, dummy> {
             const int n_neigh,
             const int n_row_splits,
 
-
             //globals for bookkeeping. dimension n_global_vert_g!
-            int *d_out_backscatter, //which global index each vertex is associated to V x 1
-            int n_global_vert_g
+            int *d_out_backgather //which global index each vertex is associated to V x 1
     ){
         //TBI
     }

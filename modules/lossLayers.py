@@ -1,6 +1,8 @@
 import tensorflow as tf
 from object_condensation import oc_loss
 from betaLosses import obj_cond_loss
+from oc_helper_ops import SelectWithDefault
+from oc_helper_ops import CreateMidx
 import time
 
 
@@ -25,18 +27,23 @@ class LossLayerBase(tf.keras.layers.Layer):
     
     def __init__(self, active=True, scale=1., 
                  print_loss=False,
-                 return_lossval=False, **kwargs):
+                 print_batch_time=False,
+                 return_lossval=False, 
+                 **kwargs):
         super(LossLayerBase, self).__init__(**kwargs)
         
         self.active = active
         self.scale = scale
         self.print_loss = print_loss
+        self.print_batch_time = print_batch_time
         self.return_lossval=return_lossval
+        self.time = time.time()
         
     def get_config(self):
         config = {'active': self.active ,
                   'scale': self.scale,
                   'print_loss': self.print_loss,
+                  'print_batch_time': self.print_batch_time,
                   'return_lossval': self.return_lossval}
         base_config = super(LossLayerBase, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -59,6 +66,17 @@ class LossLayerBase(tf.keras.layers.Layer):
         The rest is free (but will probably contain the truth somewhere)
         '''
         return tf.constant(0.,dtype='float32')
+    
+    def maybe_print_loss(self,lossval):
+        if self.print_loss:
+            if hasattr(lossval, 'numpy'):
+                print(self.name, 'loss', lossval.numpy())
+            else:
+                tf.print(self.name, 'loss', lossval)
+        
+        if self.print_batch_time:
+            print(self.name,'batch time',round((time.time()-self.time)*1000.),'ms')
+            self.time = time.time()
 
     def compute_output_shape(self, input_shapes):
         if self.return_lossval:
@@ -112,160 +130,328 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
 class LLClusterCoordinates(LossLayerBase):
     '''
     Cluster using truth index and coordinates
+    Inputs:
+    - coordinates
+    - truth index
+    - row splits
     '''
-    def __init__(self, repulsion_contrib=0.5, **kwargs):
-        self.repulsion_contrib=repulsion_contrib
-        assert repulsion_contrib <= 1. and repulsion_contrib>= 0.
-        
+    def __init__(self, **kwargs):
         if 'dynamic' in kwargs:
             super(LLClusterCoordinates, self).__init__(**kwargs)
         else:
             super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
 
     @staticmethod
-    def raw_loss(inputs, repulsion_contrib, print_loss, name):
+    def _rs_loop(coords, tidx):
+        Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
+        if N_per_obj is None:
+            return 0.,0.,0. #no objects, discard
+        N_per_obj = tf.cast(N_per_obj, dtype='float32')
+        N_tot = tf.cast(tidx.shape[0], dtype='float32') 
+        K = tf.cast(Msel.shape[0], dtype='float32') 
         
-        use_avg_cc=1.
-        coords, truth_indices, row_splits, beta_like = None, None, None, None
-        if len(inputs) == 3:
-            coords, truth_indices, row_splits = inputs
-        elif len(inputs) == 4:
-            coords, truth_indices, beta_like, row_splits = inputs
-            use_avg_cc = 0.
-        else:
-            raise ValueError("LLClusterCoordinates requires 3 or 4 inputs")
+        padmask_m = SelectWithDefault(Msel, tf.ones_like(coords[:,0:1]), 0.)# K x V' x 1
+        coords_m = SelectWithDefault(Msel, coords, 0.)# K x V' x C
+        #create average
+        av_coords_m = tf.reduce_sum(coords_m * padmask_m,axis=1) # K x C
+        av_coords_m = tf.math.divide_no_nan(av_coords_m, N_per_obj) #K x C
+        av_coords_m = tf.expand_dims(av_coords_m,axis=1) ##K x 1 x C
+        
+        distloss = tf.reduce_sum((av_coords_m-coords_m)**2,axis=2)
+        distloss = tf.math.log(tf.math.exp(1.)*distloss+1.) * padmask_m[:,:,0]
+        distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss,axis=1),
+                                         N_per_obj[:,0])#K
+        distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss),K)
+        
+        repdist = tf.expand_dims(coords, axis=0) - av_coords_m #K x V x C
+        repdist = tf.reduce_sum(repdist**2,axis=-1,keepdims=True) #K x V x 1
+        reploss = M_not * tf.exp(-repdist)#K x V x 1
+        #downweight noise
+        reploss *= tf.expand_dims((1. - 0.9* tf.cast( tidx < 0, dtype='float32' )),axis=0)
+        reploss = tf.reduce_sum(reploss,axis=1)/( N_tot-N_per_obj )#K x 1
+        reploss = tf.reduce_sum(reploss)/(K+1e-3)
+        
+        return distloss+reploss, distloss, reploss
+    
+    @staticmethod
+    def raw_loss(acoords, atidx, rs):
+        
+        lossval = tf.zeros_like(acoords[0,0])
+        reploss = tf.zeros_like(acoords[0,0])
+        distloss = tf.zeros_like(acoords[0,0])
+        for i in range(len(rs)-1):
+            coords = acoords[rs[i]:rs[i+1]]
+            tidx = atidx[rs[i]:rs[i+1]]
+            if tidx.shape[0]<20:
+                continue #does not make sense
+            tlv, tdl, trl = LLClusterCoordinates._rs_loop(coords,tidx)
+            lossval += tlv
+            distloss += tdl
+            reploss += trl
+        
+        return lossval, distloss, reploss
 
-        zeros = tf.zeros_like(coords[:,0:1])
-        if beta_like is None:
-            beta_like = zeros+1./2.
-        else:
-            beta_like = tf.nn.sigmoid(beta_like)
-            beta_like = tf.stop_gradient(beta_like)#just informing, no grad # 0 - 1
-            beta_like = 0.1* beta_like + 0.5 #just a slight scaling
+    def maybe_print_loss(self, lossval,distloss, reploss):
+        LossLayerBase.maybe_print_loss(self, lossval)
+        #must be eager
+        if self.print_loss:
+            print(self.name,'attractive',distloss.numpy(),'repulsive',reploss.numpy())
         
-        #this takes care of noise through truth_indices < 0
-        V_att, V_rep,_,_,_,_=oc_loss(coords, beta_like, #beta constant
-                truth_indices, row_splits, 
-                zeros, zeros,Q_MIN=1.0, S_B=0.,energyweights=None,
-                use_average_cc_pos=use_avg_cc)
-        
-        att = (1.-repulsion_contrib)*V_att
-        rep = repulsion_contrib*V_rep
-        lossval = att + rep
-        if print_loss:
-            print(name, lossval.numpy(), 'att loss:', att.numpy(), 'rep loss:',rep.numpy())
-        return lossval
-
     def loss(self, inputs):
-        return LLClusterCoordinates.raw_loss(inputs, self.repulsion_contrib, self.print_loss, self.name)
-        
-    def get_config(self):
-        config = { 'repulsion_contrib': self.repulsion_contrib }
-        base_config = super(LLClusterCoordinates, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        assert len(inputs) == 3
+        coords, tidx, rs = inputs
+        lossval,distloss, reploss = LLClusterCoordinates.raw_loss(coords, tidx, rs)
+        self.maybe_print_loss(lossval,distloss, reploss)
+        return lossval
+    
 
 
 class LLLocalClusterCoordinates(LossLayerBase):
     '''
     Cluster using truth index and coordinates
-    Inputs: distances, hierarchy tensor, neighbour indices, truth_indices
+    Inputs: dist, nidxs, tidxs, specweight
     
-    The loss will be calculated w.r.t. the reference vertex at position [:,0] in the neighbour
-    indices unless add_self_reference is set to True. In this case, the vertex at position i will 
-    be used for all neighbours [i,:] as reference vertex
-    (for GravNet set add_self_reference=True, for local clustering set it to False because the 
-    reference vertex is already included in the indices)
+    Attractive and repulsive potential:
+    - Att: log(sqrt(2)*dist**2+1.)
+    - Rep: 1/(dist**2+0.1)
+    
+    The crossing point is at about 1,1.
+    The ratio of repulse and attractive potential at 
+     - dist**2 = 1. is about 1
+     - dist = 0.85, dist**2 = 0.75 is about 2.
+     - dist = 0.7, dist**2 = 0.5 is about 3.5
+     - dist = 0.5, dist**2 = 0.25 is about 10
+    (might be useful for subsequent distance cut-offs)
     
     '''
-    def __init__(self, add_self_reference, repulsion_contrib=0.5, **kwargs):
-        self.repulsion_contrib=repulsion_contrib
-        self.add_self_reference=add_self_reference
-        assert repulsion_contrib <= 1. and repulsion_contrib>= 0.
+    def __init__(self, **kwargs):
         
-        if 'dynamic' in kwargs:
-            super(LLLocalClusterCoordinates, self).__init__(**kwargs)
-        else:
-            super(LLLocalClusterCoordinates, self).__init__(dynamic=kwargs['print_loss'],**kwargs)
+        super(LLLocalClusterCoordinates, self).__init__(**kwargs)
+        #if 'dynamic' in kwargs:
+        #    super(LLLocalClusterCoordinates, self).__init__(**kwargs)
+        #else:
+        #    super(LLLocalClusterCoordinates, self).__init__(dynamic=kwargs['print_loss'],**kwargs)
+        self.time = time.time()
 
     @staticmethod
-    def raw_loss(distances, hierarchy, neighbour_indices, truth_indices,
-                 add_self_reference, repulsion_contrib, print_loss, name,
-                 hierarchy_penalty=True):
+    def raw_loss(dist, nidxs, tidxs, specweight, print_loss, name):
         
+        sel_tidxs = SelectWithDefault(nidxs, tidxs, -1)[:,:,0]
+        sel_spec = SelectWithDefault(nidxs, specweight, 1.)[:,:,0]
+        active = tf.where(nidxs>=0, tf.ones_like(dist), 0.)
+        notspecmask = 1. #(1. - 0.5*sel_spec)#only reduce spec #tf.where(sel_spec>0, 0., tf.ones_like(dist))
         
-        hierarchy = (tf.nn.sigmoid(hierarchy)+1.)/2.
-        #make neighbour_indices TF compatible (replace -1 with own index)
-        own = tf.expand_dims(tf.range(tf.shape(truth_indices)[0],dtype='int32'),axis=1)
-        neighbour_indices = tf.where(neighbour_indices<0, own, neighbour_indices) #does broadcasting to the righ thing here?
+        probe_is_notnoise = tf.cast(tidxs>=0,dtype='float32') [:,0] #V
+        notnoisemask = tf.where(sel_tidxs<0, 0., tf.ones_like(dist))
+        notnoiseweight = notnoisemask + (1.-notnoisemask)*0.01
+        #notspecmask *= notnoisemask#noise can never be spec
+        #mask spectators
+        sameasprobe = tf.cast(sel_tidxs[:,0:1] == sel_tidxs,dtype='float32')
+        #sameasprobe *= notnoisemask #always push away noise, also from each other
         
-        #reference might already be there, but just to be sure
-        if add_self_reference:
-            neighbour_indices = tf.concat([own,neighbour_indices],axis=-1)
-        else: #remove self-distance
-            distances = distances[:,1:]
-            
-        neighbour_indices = tf.expand_dims(neighbour_indices,axis=2)#tf like
+        #only not noise can be attractive
+        attmask = sameasprobe*notspecmask*active
+        repmask = (1.-sameasprobe)*notspecmask*active
         
-        firsttruth = truth_indices #[,tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,0:1]),axis=2)
-        neightruth = tf.squeeze(tf.gather_nd(truth_indices, neighbour_indices[:,1:,:] ),axis=2)
+        attr = tf.math.log(tf.math.exp(1.)*dist+1.) * attmask
+        rep =  tf.exp(-dist)* repmask * notnoiseweight # 1./(dist+1.) * repmask #2.*tf.exp(-3.16*tf.sqrt(dist+1e-6)) * repmask  #1./(dist+0.1)
+        nattneigh = tf.reduce_sum(attmask,axis=1)
+        nrepneigh = tf.reduce_sum(repmask,axis=1)
         
-        #distances are actually distances**2
-        expdist = tf.exp(- 3. * distances)
-        att_proto = (1.-repulsion_contrib)* (1.-expdist)  #+ 0.01*distances  #mild attractive to help learn
-        att_proto = tf.where(truth_indices<0, att_proto*0.01, att_proto) #milder term for noise
-        
-        rep_proto = repulsion_contrib * expdist #- 0.01 * distances
-        
-        
-        potential = tf.where(firsttruth==neightruth, att_proto, rep_proto)
-        potential = hierarchy**2 * tf.reduce_mean(potential, axis=1, keepdims=True)
-        potential = tf.reduce_mean(potential)
-        
-        penalty = 1. - hierarchy
-        penalty = tf.reduce_mean(penalty)
-        
-        lossval = potential
-        if hierarchy_penalty:
-            lossval += penalty 
+        attloss =  probe_is_notnoise * tf.reduce_sum(attr,axis=1) #tf.math.divide_no_nan(tf.reduce_sum(attr,axis=1), nattneigh)#same is always 0
+        attloss = tf.math.divide_no_nan(attloss, nattneigh)
+        reploss =  probe_is_notnoise * tf.reduce_sum(rep,axis=1) #tf.math.divide_no_nan(tf.reduce_sum(rep,axis=1), nrepneigh)
+        reploss = tf.math.divide_no_nan(reploss, nrepneigh)
+        #noise does not actively contribute
+        lossval = attloss+reploss
+        lossval = tf.math.divide_no_nan(tf.reduce_sum(probe_is_notnoise * lossval),tf.reduce_sum(probe_is_notnoise))
         
         if print_loss:
+            avattdist = probe_is_notnoise * tf.math.divide_no_nan(tf.reduce_sum(attmask*tf.sqrt(dist),axis=1), nattneigh)
+            avattdist = tf.reduce_sum(avattdist)/tf.reduce_sum(probe_is_notnoise)
+            
+            avrepdist = probe_is_notnoise * tf.math.divide_no_nan(tf.reduce_sum(repmask*tf.sqrt(dist),axis=1), nrepneigh)
+            avrepdist = tf.reduce_sum(avrepdist)/tf.reduce_sum(probe_is_notnoise)
+            
             if hasattr(lossval, "numpy"):
-                print(name, lossval.numpy(), 'potential', potential.numpy(), 'penalty',penalty.numpy())
+                print(name, 'loss', lossval.numpy(),
+                      'mean att neigh',tf.reduce_mean(nattneigh).numpy(),
+                      'mean rep neigh',tf.reduce_mean(nrepneigh).numpy(),
+                      'att', tf.reduce_mean(probe_is_notnoise *attloss).numpy(),
+                      'rep',tf.reduce_mean(probe_is_notnoise *reploss).numpy(),
+                      'dist (same)', avattdist.numpy(),
+                      'dist (other)', avrepdist.numpy(),
+                      )
             else:
-                tf.print(name, lossval, 'potential',potential, 'penalty',penalty)
-        return lossval
-        
+                tf.print(name, 'loss', lossval,
+                'mean att neigh',tf.reduce_mean(nattneigh),
+                'mean rep neigh',tf.reduce_mean(nrepneigh))
+            
+                
+        return lossval            
+         
+    def maybe_print_loss(self, lossval):
+        pass #overwritten here
+         
     def loss(self, inputs):
-        if len(inputs) == 4:
-            distances, hierarchy, neighbour_indices, truth_indices = inputs
-        else:
-            distances, neighbour_indices, truth_indices = inputs
-            hierarchy = tf.ones_like(distances[:,0:1])
-        return LLLocalClusterCoordinates.raw_loss(distances, hierarchy, neighbour_indices, 
-                                                  truth_indices, 
-                                                  self.add_self_reference, 
-                                                  self.repulsion_contrib, 
+        dist, nidxs, tidxs, specweight = inputs
+        return LLLocalClusterCoordinates.raw_loss(dist, nidxs, tidxs, specweight,
                                                   self.print_loss, 
                                                   self.name)
 
-    def get_config(self):
-        config = {'add_self_reference': self.add_self_reference,
-                  'repulsion_contrib': self.repulsion_contrib }
-        base_config = super(LLLocalClusterCoordinates, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 
-### LLSelectedDistances
-# slim
-# takes neighbour indices and distances, and (truth) ass idx
-# make indices TF compat by 
-#   overwrite = tile( tf range)
-#   tf.where(idx<0, overwrite, idx)
-# gather asso idx
-# select asso idx (no rs necessary already taken care of by kNN)
-# repulsive/attractive using distances (will be 0 for self index)
-#
+
+class LLNotNoiseClassifier(LossLayerBase):
+    
+    def __init__(self, **kwargs):
+        '''
+        Inputs:
+        - score
+        - truth index (ignored if switched off)
+        - spectator weights (optional)
+        
+        Returns:
+        - score (unchanged)
+        
+        '''
+        super(LLNotNoiseClassifier, self).__init__(**kwargs)
+        
+    @staticmethod
+    def raw_loss(score, tidx, specweight):
+        truth = tf.cast(tidx >= 0,dtype='float32')
+        classloss = (1.-specweight[:,0]) * tf.keras.losses.binary_crossentropy(truth, score)
+        return tf.reduce_mean(classloss)
+        
+    def loss(self, inputs):
+        assert len(inputs) > 1 and len(inputs) < 4
+        score, tidx, specweight = None, None, None
+        if len(inputs) == 2:
+            score, tidx = inputs
+            specweight = tf.zeros_like(score)
+        else:
+            score, tidx, specweight = inputs
+        lossval = LLNotNoiseClassifier.raw_loss(score, tidx, specweight)
+        self.maybe_print_loss(lossval)
+        return lossval
+        
+
+class LLNeighbourhoodClassifier(LossLayerBase):
+    def __init__(self, **kwargs):
+        '''
+        Inputs:
+        - score: high means neighbourhood is of same object as first point
+        - neighbour indices (ignored if switched off)
+        - truth index (ignored if switched off)
+        - spectator weights (optional)
+        
+        Returns:
+        - score (unchanged)
+        
+        '''
+        super(LLNeighbourhoodClassifier, self).__init__(**kwargs)
+        
+    @staticmethod
+    def raw_loss(score, nidx, tidxs, specweights):
+        # score: V x 1
+        # nidx: V x K
+        # tidxs: V x 1
+        # specweight: V x 1
+        
+        n_tidxs = SelectWithDefault(nidx, tidxs, -1)[:,:,0] # V x K
+        tf.assert_equal(tidxs,n_tidxs[:,0:1])#sanity check to make sure the self reference is in the nidxs
+        n_tidxs = tf.where(n_tidxs<0,-10,n_tidxs) #set noise to -10
+        
+        #the actual check
+        n_good = tf.cast(n_tidxs==tidxs, dtype='float32')#noise is always bad
+        
+        #downweight spectators but don't set them to zero
+        n_active = tf.where(nidx>=0, tf.ones_like(nidx,dtype='float32'), 0.) # V x K
+        truthscore = tf.math.divide_no_nan(
+            tf.reduce_sum(n_good,axis=1,keepdims=True),
+            tf.reduce_sum(n_active,axis=1,keepdims=True)) #V x 1
+        #cut at 90% same
+        truthscore = tf.where(truthscore>0.9,1.,truthscore*0.) #V x 1
+        
+        lossval = tf.keras.losses.binary_crossentropy(truthscore, score)#V
+        
+        specweights = specweights[:,0]#V
+        isnotnoise = tf.cast(tidxs>=0, dtype='float32')[:,0] #V
+        obj_lossval = tf.math.divide_no_nan(tf.reduce_sum(specweights*isnotnoise*lossval) , tf.reduce_sum(specweights*isnotnoise))
+        noise_lossval = tf.math.divide_no_nan(tf.reduce_sum((1.-isnotnoise)*lossval) , tf.reduce_sum(1.-isnotnoise))
+        
+        lossval = obj_lossval + 0.1*noise_lossval #noise doesn't really matter so much
+    
+        return lossval
+        
+    def loss(self, inputs):
+        assert len(inputs) > 2 and len(inputs) < 5
+        score, nidx, tidxs, specweights = None, None, None, None
+        if len(inputs) == 3:
+            score, nidx, tidxs = inputs
+            specweights = tf.ones_like(score)
+        else:
+            score, nidx, tidxs, specweights = inputs
+            
+        lossval = LLNeighbourhoodClassifier.raw_loss(score, nidx, tidxs, specweights)
+        self.maybe_print_loss(lossval)
+        return lossval    
+
+
+                
+class LLEdgeClassifier(LossLayerBase):
+    
+    def __init__(self, **kwargs):
+        '''
+        Inputs:
+        - score
+        - neighbour index
+        - truth index (ignored if switched off)
+        - spectator weights (optional)
+        
+        Returns:
+        - score (unchanged)
+        '''
+        super(LLEdgeClassifier, self).__init__(**kwargs)
+        
+    @staticmethod
+    def raw_loss(score, nidx, tidx, specweight):
+        # nidx = V x K
+        # tidx = V x 1
+        # specweight: V x 1
+        # score: V x K-1 x 1
+        n_tidxs = SelectWithDefault(nidx, tidx, -1)# V x K x 1
+        tf.assert_equal(tidx,n_tidxs[:,0]) #check that the nidxs have self-reference
+        
+        n_tidxs = tf.where(n_tidxs<0,-20,n_tidxs)#set to -20 for noise
+        
+        n_active = tf.where(nidx>=0, tf.ones_like(nidx,dtype='float32'), 0.)[:,1:] # V x K-1
+        specweight = tf.clip_by_value(specweight,0.,1.)
+        n_specw = SelectWithDefault(nidx, specweight, -1)[:,1:,0]# V x K-1
+        
+        #now this will be false for all noise
+        n_sameasprobe = tf.cast(tf.expand_dims(tidx, axis=2) == n_tidxs[:,1:,:], dtype='float32') # V x K-1 x 1
+        
+        lossval =  tf.keras.losses.binary_crossentropy(n_sameasprobe, score)# V x K-1
+        lossval *= n_active
+        lossval *= (1.- 0.9*n_specw)#reduce spectators, but don't remove them
+        
+        lossval = tf.math.divide_no_nan( tf.reduce_sum(lossval,axis=1), tf.reduce_sum(n_active,axis=1) ) # V 
+        lossval *= (1.- 0.9*specweight[:,0])#V
+        return tf.reduce_mean(lossval)
+        
+    def loss(self, inputs):
+        assert len(inputs) > 2 and len(inputs) < 5
+        score, nidx, tidx, specweight = None, None, None, None
+        if len(inputs) == 2:
+            score, nidx, tidx = inputs
+            specweight = tf.zeros_like(score)
+        else:
+            score, nidx, tidx, specweight = inputs
+        lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight)
+        self.maybe_print_loss(lossval)
+        return lossval
 
 
 class LLFullObjectCondensation(LossLayerBase):
@@ -600,7 +786,7 @@ class LLFullObjectCondensation(LossLayerBase):
             minbtext = 'min_beta_loss'
             if self.phase_transition>0:
                 minbtext = 'phase transition loss'
-                print('avg beta', tf.reduce_mean(pred_beta))
+            print('avg beta', tf.reduce_mean(pred_beta))
             print('loss', lossval.numpy(),
                   'attractive_loss', att.numpy(),
                   'rep_loss', rep.numpy(),

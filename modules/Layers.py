@@ -3,105 +3,165 @@
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
-from LayersRagged import *
-from GravNetLayersRagged import ElementScaling,AddIdentity2D,GroupScoreFromEdgeScores,EdgeCreator,EdgeSelector,NoiseFilter,PrintMeanAndStd,GooeyBatchNorm,ManualCoordTransform,EdgeConvStatic,NeighbourApproxPCA,NormalizeInputShapes, NeighbourCovariance,LocalDistanceScaling,ProcessFeatures,GraphClusterReshape,SortAndSelectNeighbours,SoftPixelCNN, KNN, CollectNeighbourAverageAndMax, LocalClustering, CreateGlobalIndices, SelectFromIndices, MultiBackGather, RaggedGravNet, MessagePassing, DynamicDistanceMessagePassing, DistanceWeightedMessagePassing
-from lossLayers import CreateTruthSpectatorWeights,LLLocalClusterCoordinates, LLClusterCoordinates, LossLayerBase, LLFullObjectCondensation
+from LayersRagged import RaggedSumAndScatter
+
+global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
+
+from LayersRagged import Condensate
+global_layers_list['Condensate']=Condensate
+
+from LayersRagged import CondensateToPseudoRS
+global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
+
+from LayersRagged import GridMaxPoolReduction
+global_layers_list['GridMaxPoolReduction']=GridMaxPoolReduction
+
+from LayersRagged import RaggedConstructTensor
+global_layers_list['RaggedConstructTensor']=RaggedConstructTensor
+
+from LayersRagged import RaggedGlobalExchange
+global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
+
+##GravNet...
+
+from GravNetLayersRagged import RemoveSelfRef
+global_layers_list['RemoveSelfRef']=RemoveSelfRef
+
+from GravNetLayersRagged import CreateIndexFromMajority
+global_layers_list['CreateIndexFromMajority']=CreateIndexFromMajority
+
+from GravNetLayersRagged import DownSample
+global_layers_list['DownSample']=DownSample
+
+from GravNetLayersRagged import PrintMeanAndStd
+global_layers_list['PrintMeanAndStd']=PrintMeanAndStd
+
+from GravNetLayersRagged import ElementScaling
+global_layers_list['ElementScaling']=ElementScaling
+
+from GravNetLayersRagged import GooeyBatchNorm
+global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
+
+from GravNetLayersRagged import ProcessFeatures
+global_layers_list['ProcessFeatures']=ProcessFeatures
+
+from GravNetLayersRagged import ManualCoordTransform
+global_layers_list['ManualCoordTransform']=ManualCoordTransform
+
+from GravNetLayersRagged import DirectedGraphBuilder
+global_layers_list['DirectedGraphBuilder']=DirectedGraphBuilder
+
+from GravNetLayersRagged import NeighbourCovariance
+global_layers_list['NeighbourCovariance']=NeighbourCovariance
+
+from GravNetLayersRagged import NeighbourApproxPCA
+global_layers_list['NeighbourApproxPCA']=NeighbourApproxPCA
+
+from GravNetLayersRagged import CreateGlobalIndices
+global_layers_list['CreateGlobalIndices']=CreateGlobalIndices
+
+from GravNetLayersRagged import LocalDistanceScaling
+global_layers_list['LocalDistanceScaling']=LocalDistanceScaling
+
+from GravNetLayersRagged import WeightedNeighbourMeans
+global_layers_list['WeightedNeighbourMeans']=WeightedNeighbourMeans
+
+from GravNetLayersRagged import WeightFeatures
+global_layers_list['WeightFeatures']=WeightFeatures
+
+from GravNetLayersRagged import RecalcDistances
+global_layers_list['RecalcDistances']=RecalcDistances
+
+from GravNetLayersRagged import SelectFromIndices
+global_layers_list['SelectFromIndices']=SelectFromIndices
+
+from GravNetLayersRagged import MultiBackGather
+global_layers_list['MultiBackGather']=MultiBackGather
+
+from GravNetLayersRagged import MultiBackScatter
+global_layers_list['MultiBackScatter']=MultiBackScatter
+
+from GravNetLayersRagged import MultiBackScatterOrGather
+global_layers_list['MultiBackScatterOrGather']=MultiBackScatterOrGather
+
+from GravNetLayersRagged import KNN
+global_layers_list['KNN']=KNN
+
+from GravNetLayersRagged import AddIdentity2D
+
+global_layers_list['AddIdentity2D']=AddIdentity2D
+
+from GravNetLayersRagged import WarpedSpaceKNN
+global_layers_list['WarpedSpaceKNN']=WarpedSpaceKNN
+
+from GravNetLayersRagged import SortAndSelectNeighbours
+global_layers_list['SortAndSelectNeighbours']=SortAndSelectNeighbours
+
+from GravNetLayersRagged import NoiseFilter
+global_layers_list['NoiseFilter']=NoiseFilter
+
+from GravNetLayersRagged import EdgeCreator
+global_layers_list['EdgeCreator']=EdgeCreator
+
+from GravNetLayersRagged import EdgeSelector
+global_layers_list['EdgeSelector']=EdgeSelector
+
+from GravNetLayersRagged import DampenGradient
+global_layers_list['DampenGradient']=DampenGradient
+
+from GravNetLayersRagged import GroupScoreFromEdgeScores
+global_layers_list['GroupScoreFromEdgeScores']=GroupScoreFromEdgeScores
+
+from GravNetLayersRagged import NeighbourGroups
+global_layers_list['NeighbourGroups']=NeighbourGroups
+
+from GravNetLayersRagged import AccumulateNeighbours
+global_layers_list['AccumulateNeighbours']=AccumulateNeighbours
+
+from GravNetLayersRagged import SoftPixelCNN
+global_layers_list['SoftPixelCNN']=SoftPixelCNN
+
+from GravNetLayersRagged import RaggedGravNet
+global_layers_list['RaggedGravNet']=RaggedGravNet
+
+from GravNetLayersRagged import DynamicDistanceMessagePassing
+global_layers_list['DynamicDistanceMessagePassing']=DynamicDistanceMessagePassing
+
+from GravNetLayersRagged import CollectNeighbourAverageAndMax
+global_layers_list['CollectNeighbourAverageAndMax']=CollectNeighbourAverageAndMax
+
+from GravNetLayersRagged import MessagePassing
+global_layers_list['MessagePassing']=MessagePassing
+
+from GravNetLayersRagged import DistanceWeightedMessagePassing
+global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePassing
+
+from GravNetLayersRagged import EdgeConvStatic
+global_layers_list['EdgeConvStatic']=EdgeConvStatic
+
+### odd debug layers
+from debugLayers import PlotCoordinates
+global_layers_list['PlotCoordinates']=PlotCoordinates
+
+
+from lossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
+from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates
+from lossLayers import LossLayerBase, LLFullObjectCondensation,LLNeighbourhoodClassifier
 import traceback
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import math_ops
 import os
 
 
+##end debug
 
-global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
-global_layers_list['Condensate']=Condensate
-global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
-
-
-global_layers_list['ElementScaling']=ElementScaling
-
-global_layers_list['GroupScoreFromEdgeScores']=GroupScoreFromEdgeScores
-
-
-global_layers_list['EdgeCreator']=EdgeCreator
-global_layers_list['EdgeSelector']=EdgeSelector
 
 global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
 
-global_layers_list['NoiseFilter']=NoiseFilter
-
-global_layers_list['GridMaxPoolReduction']=GridMaxPoolReduction
-global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
-global_layers_list['RaggedConstructTensor']=RaggedConstructTensor
-global_layers_list['GraphShapeFilters']=GraphShapeFilters
-global_layers_list['GraphFunctionFilters']=GraphFunctionFilters
-global_layers_list['VertexScatterer']=VertexScatterer
-global_layers_list['RaggedNeighborBuilder']=RaggedNeighborBuilder
-global_layers_list['RaggedVertexEater']=RaggedVertexEater
-
-
-global_layers_list['RaggedSelectThreshold']=RaggedSelectThreshold
-
-
-global_layers_list['FusedRaggedGravNet']=FusedRaggedGravNet
-global_layers_list['FusedRaggedGravNet_simple']=FusedRaggedGravNet_simple
-global_layers_list['FusedMaskedRaggedGravNet']=FusedMaskedRaggedGravNet
-global_layers_list['FusedRaggedGravNetLinParse']=FusedRaggedGravNetLinParse
-global_layers_list['FusedRaggedGravNetLinParsePool']=FusedRaggedGravNetLinParsePool
-global_layers_list['FusedRaggedGravNetGarNetLike']=FusedRaggedGravNetGarNetLike
-global_layers_list['FusedRaggedGravNetAggAtt']=FusedRaggedGravNetAggAtt
-global_layers_list['FusedRaggedGravNetDistMod']=FusedRaggedGravNetDistMod
-
-global_layers_list['FusedRaggedGravNetRetDistLinParse']=FusedRaggedGravNetRetDistLinParse
-global_layers_list['FusedRaggedGravNetRetDistDistMod']=FusedRaggedGravNetRetDistDistMod
-
-
-
-global_layers_list['RaggedGravNet']=RaggedGravNet
-global_layers_list['MessagePassing']=MessagePassing
-global_layers_list['DynamicDistanceMessagePassing']=DynamicDistanceMessagePassing
-global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePassing
-
-
-global_layers_list['ProcessFeatures']=ProcessFeatures
-global_layers_list['LocalDistanceScaling']=LocalDistanceScaling
-
-global_layers_list['LocalClustering']=LocalClustering
-global_layers_list['CreateGlobalIndices']=CreateGlobalIndices
-global_layers_list['SelectFromIndices']=SelectFromIndices
-global_layers_list['MultiBackGather']=MultiBackGather
-global_layers_list['KNN']=KNN
-
-# global_layers_list['WarpedSpaceKNN']=WarpedSpaceKNN
-global_layers_list['AddIdentity2D']=AddIdentity2D
-
-
-global_layers_list['CollectNeighbourAverageAndMax']=CollectNeighbourAverageAndMax
-global_layers_list['SoftPixelCNN']=SoftPixelCNN
-
-global_layers_list['SortAndSelectNeighbours']=SortAndSelectNeighbours
-global_layers_list['GraphClusterReshape']=GraphClusterReshape
-
-
-
-global_layers_list['NeighbourCovariance']=NeighbourCovariance
-
+global_layers_list['LossLayerBase']=LossLayerBase
+global_layers_list['LLNotNoiseClassifier']=LLNotNoiseClassifier
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
-
-global_layers_list['LossLayerBase']=LossLayerBase
-
-global_layers_list['NormalizeInputShapes']=NormalizeInputShapes
-global_layers_list['NeighbourApproxPCA']=NeighbourApproxPCA
-
-global_layers_list['EdgeConvStatic']=EdgeConvStatic
-global_layers_list['ManualCoordTransform']=ManualCoordTransform
-
-global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
-global_layers_list['PrintMeanAndStd']=PrintMeanAndStd
-
-# global_layers_list['LNC']=LNC
+global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier
 
 ####### other stuff goes here
 from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer
@@ -124,6 +184,16 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 from Loss_tools import deltaPhi
 
+
+class GausActivation(Layer):
+    def __init__(self,**kwargs):
+        super(GausActivation, self).__init__(**kwargs)
+    def compute_output_shape(self, input_shape):
+        return input_shape
+    def call(self, inputs):
+        return tf.exp(-inputs**2)
+
+global_layers_list['GausActivation']=GausActivation
 
 class OnesLike(Layer):
     def __init__(self,**kwargs):
@@ -483,11 +553,11 @@ class RobustModel(tf.keras.Model):
 
         if submodel is not None:
             self.outputs_keys = [x[0] for x in model_outputs]
-            self.model = keras.Model().from_config(submodel, custom_objects=custom_objects)
+            self.model = tf.keras.Model().from_config(submodel, custom_objects=custom_objects)
         else:
             self.outputs_keys = [x[0] for x in model_outputs]
             outputs_placeholders = [x[1] for x in model_outputs]
-            self.model = keras.Model(inputs=model_inputs, outputs=outputs_placeholders)
+            self.model = tf.keras.Model(inputs=model_inputs, outputs=outputs_placeholders)
 
 
     def save(self, *args, **kwargs):
