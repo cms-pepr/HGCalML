@@ -36,7 +36,7 @@ from GravNetLayersRagged import ProcessFeatures,SoftPixelCNN, RaggedGravNet
 from GravNetLayersRagged import DistanceWeightedMessagePassing,MultiBackScatterOrGather
 
 from GravNetLayersRagged import NeighbourGroups,AccumulateNeighbours,SelectFromIndices
-from GravNetLayersRagged import RecalcDistances
+from GravNetLayersRagged import RecalcDistances, ElementScaling
 
 from Layers import CreateTruthSpectatorWeights, ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CreateGlobalIndices, SelectFromIndices, MultiBackScatter, KNN, MessagePassing, RobustModel
 from Layers import GausActivation,GooeyBatchNorm #make a new line
@@ -215,8 +215,8 @@ def gravnet_model(Inputs,
         
         #exchange information
         x = Concatenate()([coords,x])
-        x, gncoords, nidx, gndist = RaggedGravNet(n_neighbours=32,
-                                                 n_dimensions=6,
+        x, coords, nidx, gndist = RaggedGravNet(n_neighbours=32,
+                                                 n_dimensions=3,
                                                  n_filters=128,
                                                  n_propagate=64,
                                                  )([x, rs])
@@ -225,7 +225,16 @@ def gravnet_model(Inputs,
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         
-        coords = Add()([coords, Dense(3,kernel_initializer='zeros')(x)])
+        
+        coords = PlotCoordinates(500,outdir=debug_outdir,name='c_gn_it'+str(i))([coords,energy,t_idx,rs])
+        
+        coords = ElementScaling()(coords)
+        
+        coords = Add()([coords, 
+                        ScalarMultiply(0.1)(
+                        Dense(3,kernel_initializer='zeros')(x))])
+        
+        coords = PlotCoordinates(500,outdir=debug_outdir,name='c_it'+str(i))([coords,energy,t_idx,rs])
         
         coords = LLClusterCoordinates(
             print_loss=True,
@@ -243,11 +252,10 @@ def gravnet_model(Inputs,
             print_batch_time=False
             )([goodneighbours,nidx,t_idx])
             
-        coords = PlotCoordinates(500,outdir=debug_outdir,name='c_it'+str(i))([coords,energy,t_idx,rs])
             
         x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight = reduce(x, coords, energy, goodneighbours, 
                                               nidx, rs, t_idx, t_spectator_weight,
-                                              print_reduction=i==total_iterations-1,
+                                              print_reduction=True,
                                               return_backscatter=False)#here back-gather
         
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
@@ -277,9 +285,9 @@ def gravnet_model(Inputs,
 
     # loss
     pred_beta = LLFullObjectCondensation(print_loss=True, scale=5.,
-                                         energy_loss_weight=1e-3,
-                                         position_loss_weight=1e-3,
-                                         timing_loss_weight=1e-3,
+                                         energy_loss_weight=1e-2,
+                                         position_loss_weight=1e-2,
+                                         timing_loss_weight=1e-2,
                                          beta_loss_scale=1.,
                                          too_much_beta_scale=.01,
                                          use_energy_weights=True,
@@ -329,6 +337,14 @@ if not train.modelSet():
         #epsilon=1e-2
         ))
 
+    #get pretrained preselection weights
+    
+    #from DeepJetCore.modeltools import apply_weights_where_possible
+    #
+    #tbcp.loadModel(path_to_pretrained)
+    #train.keras_model = apply_weights_where_possible(train.keras_model,
+    #                                                 tbcp.keras_model)
+    #
     train.compileModel(learningrate=1e-4,
                        loss=None)
 
@@ -384,7 +400,7 @@ for i in range(5)
 #cb += build_callbacks(train)
 
 #cb=[]
-learningrate = 1e-3
+learningrate = 1e-4
 nbatch = 90000
 
 train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
