@@ -133,8 +133,8 @@ def gravnet_model(Inputs,
     coords,nidx,dist, x = first_coordinate_adjustment(
         orig_coords, x, energy, rs, t_idx, 
         debug_outdir,
-        trainable=False,
-        name='first_coords',
+        trainable=True,#change if you read in pre-trained weights
+        name='first_coords',#do not change to read in pre-trained weights
         debugplots_after=-1
         )
     
