@@ -24,6 +24,10 @@ NODE_TYPE_TRUTH_SHOWER = 0
 NODE_TYPE_PRED_SHOWER = 1
 NODE_TYPE_RECHIT = 7
 
+
+HIT_WEIGHT_TYPE_RECHIT_ENERGY = 0
+HIT_WEIGHT_TYPE_ONES = 1
+
 def angle(p, t):
     t = np.array([t['x'], t['y'], t['z']])
     p = np.array([p['dep_x'], p['dep_y'], p['dep_z']])
@@ -100,7 +104,7 @@ def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name
 
 def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=MATCHING_TYPE_MAX_FOUND,
                         with_local_distance_scaling=False, beta_weighting_param=1, angle_threshold=0.08, precision_threshold=0.2,
-                        passes=5):
+                        passes=5, max_hits_per_shower=-1, hit_weight_for_intersection=HIT_WEIGHT_TYPE_RECHIT_ENERGY):
     metadata = dict()
     metadata['beta_threshold'] = beta_threshold
     metadata['distance_threshold'] = distance_threshold
@@ -114,6 +118,8 @@ def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshol
     metadata['angle_threshold'] = angle_threshold
     metadata['precision_threshold'] = precision_threshold
     metadata['passes'] = passes
+    metadata['max_hits_per_shower'] = max_hits_per_shower
+    metadata['hit_weight_for_intersection'] = hit_weight_for_intersection
 
 
     metadata['beta_weighting_param'] = beta_weighting_param # This is not beta threshold
@@ -155,7 +161,10 @@ class OCRecoGraphAnalyzer:
         truth_sid = truth_dict['truthHitAssignementIdx'][:, 0].astype(np.int32)
         truth_shower_sid, truth_shower_idx = np.unique(truth_sid, return_index=True)
 
+        print("Truth showers", len(truth_shower_idx))
+
         truth_nodes = []
+        num_vertices_per_truth = []
         for i in range(len(truth_shower_sid)):
             if truth_shower_sid[i] == -1:
                 continue
@@ -164,18 +173,30 @@ class OCRecoGraphAnalyzer:
 
             node_attributes['id'] = int(truth_dict['truthHitAssignementIdx'][truth_shower_idx[i], 0])
 
-
             node_attributes['x'] = truth_dict['truthHitAssignedX'][truth_shower_idx[i], 0].item()\
                 if 'truthHitAssignedX' in truth_dict  else 0.0
 
             node_attributes['y'] = truth_dict['truthHitAssignedY'][truth_shower_idx[i], 0].item()\
                 if 'truthHitAssignedY' in truth_dict  else 0.0
-            node_attributes['z'] = truth_dict['truthHitAssignedZ'][truth_shower_idx[i], 0].item()\
-                if 'truthHitAssignedZ' in truth_dict  else 0.0
-            node_attributes['eta'] = truth_dict['truthHitAssignedEta'][truth_shower_idx[i], 0].item()\
-                if 'truthHitAssignedEta' in truth_dict  else 0.0
-            node_attributes['phi'] = truth_dict['truthHitAssignedPhi'][truth_shower_idx[i], 0].item()\
-                if 'truthHitAssignedPhi' in truth_dict  else 0.0
+
+            try:
+                node_attributes['z'] = truth_dict['truthHitAssignedZ'][truth_shower_idx[i], 0].item()\
+                    if 'truthHitAssignedZ' in truth_dict  else 0.0
+            except:
+                node_attributes['z'] = 0
+
+            try:
+                node_attributes['eta'] = truth_dict['truthHitAssignedEta'][truth_shower_idx[i], 0].item()\
+                    if 'truthHitAssignedEta' in truth_dict  else 0.0
+            except:
+                node_attributes['eta'] = 0
+
+            try:
+                node_attributes['phi'] = truth_dict['truthHitAssignedPhi'][truth_shower_idx[i], 0].item()\
+                    if 'truthHitAssignedPhi' in truth_dict  else 0.0
+            except:
+                node_attributes['phi'] = 0
+
             node_attributes['t'] = truth_dict['truthHitAssignedT'][truth_shower_idx[i], 0].item()\
                 if 'truthHitAssignedT' in truth_dict  else 0.0
 
@@ -193,7 +214,12 @@ class OCRecoGraphAnalyzer:
             node = (int(truth_shower_sid[i]), node_attributes)
             truth_nodes.append(node)
 
+            num_vertices_per_truth.append(np.sum(truth_sid==truth_shower_sid[i]))
+            node_attributes['num_hits'] = np.sum(truth_sid==truth_shower_sid[i])
+
         truth_graph.add_nodes_from(truth_nodes)
+        print("Mean vertices per truth",np.mean(num_vertices_per_truth))
+        print("truth n vertices",num_vertices_per_truth)
 
 
         return truth_graph, truth_sid
@@ -210,17 +236,33 @@ class OCRecoGraphAnalyzer:
 
         if self.with_local_distance_scaling:
             # print("Doing with pred dist")
-            pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'], pred_dict['pred_beta'][:,0], self.beta_threshold, self.distance_threshold, return_alpha_indices=True, limit=1000, pred_dist=pred_dict['pred_dist'][:, 0])
+            pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
+                                                                  pred_dict['pred_beta'][:,0],
+                                                                  self.beta_threshold,
+                                                                  self.distance_threshold,
+                                                                  max_hits_per_shower=self.metadata['max_hits_per_shower'],
+                                                                  return_alpha_indices=True,
+                                                                  limit=1000, pred_dist=pred_dict['pred_dist'][:, 0])
         else:
-            pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'], pred_dict['pred_beta'][:,0], self.beta_threshold, self.distance_threshold, return_alpha_indices=True, limit=1000)
+            # print(pred_dict['pred_ccoords'].shape, pred_dict['pred_beta'][:,0].shape, self.beta_threshold, self.distance_threshold)
+            pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
+                                                                  pred_dict['pred_beta'][:,0],
+                                                                  self.beta_threshold,
+                                                                  self.distance_threshold,
+                                                                  max_hits_per_shower=self.metadata['max_hits_per_shower'],
+                                                                  return_alpha_indices=True, limit=1000)
 
         pred_sid += start_indicing_from
+
+        print("Reconstructed showers", len(pred_shower_alpha_idx))
 
         pred_shower_sid = []
         for i in pred_shower_alpha_idx:
             pred_shower_sid.append(pred_sid[i])
 
         pred_nodes = []
+
+        mean_vertices_per_pred = []
         for i in range(len(pred_shower_sid)):
             if pred_shower_sid[i] == -1:
                 raise RuntimeError("Check this")
@@ -252,21 +294,34 @@ class OCRecoGraphAnalyzer:
             node_attributes['dep_y'] = (np.sum(rechit_energy * rechit_y) / np.sum(rechit_energy)).item()
             node_attributes['dep_z'] = (np.sum(rechit_energy * rechit_z) / np.sum(rechit_energy)).item()
             node_attributes['type'] = NODE_TYPE_PRED_SHOWER
+            node_attributes['num_hits'] = np.sum(pred_sid==sid)
 
             node = (sid, node_attributes)
             pred_nodes.append(node)
 
+            mean_vertices_per_pred.append(np.sum(pred_sid==sid))
+
         pred_graph.add_nodes_from(pred_nodes)
+
+        print("Mean vertices per pred", np.mean(mean_vertices_per_pred))
+        print("N vertices / pred", mean_vertices_per_pred)
 
         return pred_graph, pred_sid
 
     def cost_matrix_intersection_based(self, truth_shower_sid, pred_shower_sid):
 
+        if self.metadata['hit_weight_for_intersection'] == HIT_WEIGHT_TYPE_RECHIT_ENERGY:
+            weight = self.feat_dict['recHitEnergy'][:, 0]
+        elif self.metadata['hit_weight_for_intersection'] == HIT_WEIGHT_TYPE_ONES:
+            weight = self.feat_dict['recHitEnergy'][:, 0] * 0 + 1.
+        else:
+            raise NotImplementedError("Error")
+
         iou_matrix = calculate_iou_tf(self.truth_sid,
                                       self.pred_sid,
                                        truth_shower_sid,
                                        pred_shower_sid,
-                                       self.feat_dict['recHitEnergy'][:, 0])
+                                       weight)
 
         n = max(len(truth_shower_sid), len(pred_shower_sid))
         # Cost matrix
@@ -324,6 +379,9 @@ class OCRecoGraphAnalyzer:
         for p, t in zip(row_id, col_id):
             if C[p, t] > 0:
                 matched_full_graph.add_edge(truth_shower_sid[t], pred_shower_sid[p], attached_in_pass=0)
+
+        print("Efficiency", float(matched_full_graph.number_of_edges()) / self.truth_graph.number_of_nodes())
+        print("Fake rate", (self.pred_graph.number_of_nodes() - float(matched_full_graph.number_of_edges())) / self.pred_graph.number_of_nodes())
 
         if return_rechit_data:
             matched_full_graph = self.attach_rechit_data(matched_full_graph)
@@ -476,13 +534,20 @@ class OCRecoGraphAnalyzer:
         for i, x in enumerate(self.pred_graph.nodes(data=True)):
             x[1]['idx'] = i
 
+
+        if self.metadata['hit_weight_for_intersection'] == HIT_WEIGHT_TYPE_RECHIT_ENERGY:
+            weight = self.feat_dict['recHitEnergy'][:, 0]
+        elif self.metadata['hit_weight_for_intersection'] == HIT_WEIGHT_TYPE_ONES:
+            weight = self.feat_dict['recHitEnergy'][:, 0] * 0 + 1.
+        else:
+            raise NotImplementedError("Error")
+
         iou_matrix, pred_sum_matrix, truth_sum_matrix, intersection_matrix = calculate_iou_tf(self.truth_sid,
-                                                                                              self.pred_sid,
-                                                                                              truth_shower_sid,
-                                                                                              pred_shower_sid,
-                                                                                              self.feat_dict[
-                                                                                                  'recHitEnergy'][:, 0],
-                                                                                              return_all=True)
+                                                                                          self.pred_sid,
+                                                                                          truth_shower_sid,
+                                                                                          pred_shower_sid,
+                                                                                          weight,
+                                                                                          return_all=True)
         intersection_matrix = intersection_matrix.numpy()
         pred_sum_matrix = pred_sum_matrix.numpy()
         truth_sum_matrix = truth_sum_matrix.numpy()

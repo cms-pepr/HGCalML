@@ -85,10 +85,14 @@ class General2dBinningPlot():
 
         max_of_hist_values = 0
         for model_data in self.models_data:
+
+            error_exists = 'error' in model_data
             lows = model_data['bin_lower_energy']
             highs = model_data['bin_upper_energy']
             hist_values = model_data['hist_values']
             mean = model_data['mean']
+            if error_exists:
+                error = model_data['error']
 
             e_bins = self.e_bins
             e_bins_n = np.array(e_bins)
@@ -123,6 +127,11 @@ class General2dBinningPlot():
                 ax2.set_yscale('log')
             ax1.set_title(self.title)
 
+            if error_exists:
+                err_1 = ((np.array(mean) + error/2)).tolist()
+                err_2 = ((np.array(mean) - error/2)).tolist()
+                ax1.fill_between(e_bins, [err_1[0]] + err_1, [err_2[0]] + err_2, alpha=1, step="pre")
+            # else:
             ax1.step(e_bins, [mean[0]] + mean, label=name_of_plot)
             ax1.set_xlabel(self.x_label)
             ax1.set_ylabel(self.y_label)
@@ -149,12 +158,16 @@ class General2dBinningPlot():
             mean = model_data['mean']
             tags = model_data['tags']
 
+            if 'error' in model_data:
+                error = model_data['error']
+
             database_data = dict()
             for i in range(len(lows)):
                 # database_data['bin_lower_energy'] = lows[i]
                 # database_data['bin_upper_energy'] = highs[i]
                 database_data['hist_values_%d'%i] = float(hist_values[i])
                 database_data['mean_%d'%i] = float(mean[i])
+                database_data['error_%d'%i] = float(error[i])
 
             for tag_name, tag_value in tags.items():
                 database_data[tag_name] = tag_value
@@ -172,9 +185,13 @@ class General2dBinningPlot():
 
         results_dict_copy = results_dict.copy()
 
+        error_exists = 'error_0' in results_dict
+
         for i in range(len(self.e_bins) - 1):
             results_dict_copy.pop('mean_%d' % i)
             results_dict_copy.pop('hist_values_%d' % i)
+            if error_exists:
+                results_dict_copy.pop('error_%d' % i)
 
         tags_names = results_dict_copy.keys()
 
@@ -187,6 +204,9 @@ class General2dBinningPlot():
             highs = []
             hist_values = []
             mean = []
+            if error_exists:
+                error = []
+
             for i in range(len(self.e_bins) - 1):
                 l = self.e_bins[i]
                 h = self.e_bins[i + 1]
@@ -194,9 +214,14 @@ class General2dBinningPlot():
                 highs.append(h)
                 mean.append(float(results_dict['mean_%d'%i][row]))
                 hist_values.append(float(results_dict['hist_values_%d'%i][row]))
+                if error_exists:
+                    error.append(float(results_dict['hist_values_%d'%i][row]))
 
             processed_data['hist_values'] = np.array(hist_values)
             processed_data['mean'] = np.array(mean)
+
+            if error_exists:
+                processed_data['error'] = np.array(error)
 
             processed_data['bin_lower_energy'] = np.array(lows)
             processed_data['bin_upper_energy'] = np.array(highs)

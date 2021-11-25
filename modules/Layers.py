@@ -4,6 +4,7 @@
 global_layers_list = {}
 
 from LayersRagged import RaggedSumAndScatter
+
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
 
 from LayersRagged import Condensate
@@ -87,6 +88,7 @@ from GravNetLayersRagged import KNN
 global_layers_list['KNN']=KNN
 
 from GravNetLayersRagged import AddIdentity2D
+
 global_layers_list['AddIdentity2D']=AddIdentity2D
 
 from GravNetLayersRagged import WarpedSpaceKNN
@@ -151,8 +153,6 @@ import os
 
 ##end debug
 
-
-####### loss layers
 
 global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
 

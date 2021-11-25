@@ -1132,25 +1132,25 @@ class AddIdentity2D(tf.keras.layers.Layer):
 class WarpedSpaceKNN(tf.keras.layers.Layer):
     def __init__(self,K: int, radius: float=-1., **kwargs):
         """
-        
+
         Select K nearest neighbours, with possible radius constraint in warped space
         Warning: the time consumption increases with space_dim**2
         About factor 2 slower than standard kNN for 3 dimensions, then increasing
-        
-        Call will return 
+
+        Call will return
          - self + K neighbour indices of K neighbours within max radius
          - distances to self+K neighbours
-        
+
         Inputs: coordinates, warp tensor, row_splits
-        
+
         :param K: number of nearest neighbours
         :param radius: maximum distance of nearest neighbours
         """
-        super(WarpedSpaceKNN, self).__init__(**kwargs) 
+        super(WarpedSpaceKNN, self).__init__(**kwargs)
         self.K = K
         self.radius = radius
-        
-        
+
+
     def get_config(self):
         config = {'K': self.K,
                   'radius': self.radius}
@@ -1160,7 +1160,7 @@ class WarpedSpaceKNN(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes):
         return (None, self.K+1),(None, self.K+1)
 
-    @staticmethod 
+    @staticmethod
     def raw_call(coordinates, row_splits, warp, K, radius):
         idx,dist = SelectModKnn(K+1, coordinates,  warp, row_splits,
                              max_radius= radius, tf_compatible=False)
@@ -1459,11 +1459,9 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
         #give slight priority to larger groups
         groupscore = tf.math.divide_no_nan(groupscore,n_neigh+.1)
         return tf.expand_dims(groupscore,axis=1)
-        
-        
-     
-### soft pixel section
 
+
+### soft pixel section
 class NeighbourGroups(tf.keras.layers.Layer):
     def __init__(self, 
                  threshold = None, 
@@ -1615,7 +1613,7 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
             return (3*fshape[1], )
         else:
             return (2*fshape[1], )
-        
+
     def get_min(self,ndix,feat):
         out,_ = AccumulateKnn(tf.zeros_like(ndix,dtype='float32'), 
                           -feat, ndix,mean_and_max=True)

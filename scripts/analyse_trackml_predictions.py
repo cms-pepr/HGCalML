@@ -7,7 +7,7 @@ import mgzip
 
 import matching_and_analysis
 import argparse
-import hplots.hgcal_analysis_plotter as hp
+import hplots.trackml_plotter as hp
 import sql_credentials
 from experiment_database_manager import ExperimentDatabaseManager
 
@@ -20,6 +20,9 @@ if __name__ == '__main__':
                         help='Path of analysis pdf file (otherwise, it won\'t be produced)',
                         default='')
     parser.add_argument('-database_table_prefix',
+                        help='Database table prefix if you wish to write plots to the database. Leave empty if you don\'t wanna write to database',
+                        default='')
+    parser.add_argument('--database_file_path',
                         help='Database table prefix if you wish to write plots to the database. Leave empty if you don\'t wanna write to database',
                         default='')
     parser.add_argument('-b', help='Beta threshold (default 0.1)', default='0.1')
@@ -41,15 +44,19 @@ if __name__ == '__main__':
     distance_threshold = float(args.d)
     iou_threshold = float(args.i)
     database_table_prefix = args.database_table_prefix
+    database_file = args.database_file_path
 
     matching_type = int(args.m)
     matching_type = matching_and_analysis.MATCHING_TYPE_IOU_MAX if matching_type==0 else matching_and_analysis.MATCHING_TYPE_MAX_FOUND
+
 
     metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=beta_threshold,
                                                          distance_threshold=distance_threshold,
                                                          iou_threshold=iou_threshold,
                                                          matching_type=matching_type,
-                                                         with_local_distance_scaling=False
+                                                         with_local_distance_scaling=False,
+                                                         max_hits_per_shower=20, # TODO: Could change this?,
+                                                         hit_weight_for_intersection=matching_and_analysis.HIT_WEIGHT_TYPE_ONES
                                                          )
 
     files_to_be_tested = []
@@ -73,6 +80,9 @@ if __name__ == '__main__':
     if len(args.p) != 0:
         pdfpath = args.p
 
+    # TODO: Remove this
+    files_to_be_tested = files_to_be_tested[0:100]
+
 
     if False:
         all_data = []
@@ -85,7 +95,7 @@ if __name__ == '__main__':
             all_data)
     else:
         analysed_graphs, metadata = matching_and_analysis.OCAnlayzerWrapper(metadata).analyse_from_files(files_to_be_tested)
-    plotter = hp.HGCalAnalysisPlotter()
+    plotter = hp.TrackMLPlotter()
     plotter.add_data_from_analysed_graph_list(analysed_graphs, metadata)
     if len(pdfpath) > 0:
         plotter.write_to_pdf(pdfpath=pdfpath)
@@ -101,6 +111,12 @@ if __name__ == '__main__':
         plotter.write_data_to_database(database_manager, database_table_prefix)
         database_manager.close()
 
+    if len(database_file) != 0:
+        print("Will write plots to database")
+        database_manager = ExperimentDatabaseManager(file=database_file, cache_size=40)
+        database_manager.set_experiment('analysis_plotting_experiments')
+        plotter.write_data_to_database(database_manager, 'plots')
+        database_manager.close()
 
 
 

@@ -268,6 +268,7 @@ class TrainData_TrackML(TrainData):
             recHitY,
             recHitZ,
             zeroFeature,
+            zeroFeature,
         ], axis=1)
         features = features.astype(np.float32)
 
@@ -309,13 +310,13 @@ class TrainData_TrackML(TrainData):
         t_spectator.createFromNumpy(zeroFeature[..., np.newaxis], rs)
 
         t_fully_contained = SimpleArray(name="recHitFullyContainedFlag")
-        t_fully_contained.createFromNumpy(zeroFeature[..., np.newaxis], rs)
+        t_fully_contained.createFromNumpy((zeroFeature[..., np.newaxis]+1).astype(np.int32), rs)
 
         # remaining truth is mostly for consistency in the plotting tools
         t_rest = SimpleArray(name="recHitTruth")
         t_rest.createFromNumpy(truth, rs)
 
-        x,y,z = [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid, t_spectator, t_fully_contained], [t_rest], []
+        x,y,z = [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid, t_spectator, t_fully_contained], [], []
         self._store(x,y,z)
         self.writeToFile(outfilename)
         print("Storing in new format")
