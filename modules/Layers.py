@@ -147,6 +147,7 @@ global_layers_list['PlotCoordinates']=PlotCoordinates
 from lossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
 from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates
 from lossLayers import LossLayerBase, LLFullObjectCondensation,LLNeighbourhoodClassifier
+from lossLayers import LLEdgeClassifier
 import traceback
 import os
 
@@ -162,6 +163,7 @@ global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier
+global_layers_list['LLEdgeClassifier']=LLEdgeClassifier
 
 ####### other stuff goes here
 from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer
