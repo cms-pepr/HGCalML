@@ -342,7 +342,17 @@ for i in range(5)
 #
 
 
-cb += build_callbacks(train)
+#cb += build_callbacks(train)
+
+#by hand
+from plotting_callbacks import plotClusterSummary
+cb += [
+    plotClusterSummary(
+        outputfile=train.outputDir + "/clustering/",
+        samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
+        after_n_batches=800
+        )
+    ]
 
 #cb=[]
 learningrate = 1e-4
