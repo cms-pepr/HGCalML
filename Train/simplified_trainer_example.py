@@ -342,7 +342,7 @@ for i in range(5)
 #
 
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 1e-4
