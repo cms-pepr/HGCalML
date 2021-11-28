@@ -191,17 +191,20 @@ class LLClusterCoordinates(LossLayerBase):
         
         return lossval, distloss, reploss
 
-    def maybe_print_loss(self, lossval,distloss, reploss):
+    def maybe_print_loss(self, lossval,distloss, reploss, tidx):
         LossLayerBase.maybe_print_loss(self, lossval)
         #must be eager
         if self.print_loss:
-            print(self.name,'attractive',distloss.numpy(),'repulsive',reploss.numpy())
+            print(self.name,'attractive',distloss.numpy(),
+                  'repulsive',reploss.numpy(),'n_noise',
+                  tf.reduce_sum(tf.cast(tidx==-1,dtype='int32')).numpy()
+                  )
         
     def loss(self, inputs):
         assert len(inputs) == 3
         coords, tidx, rs = inputs
         lossval,distloss, reploss = LLClusterCoordinates.raw_loss(coords, tidx, rs)
-        self.maybe_print_loss(lossval,distloss, reploss)
+        self.maybe_print_loss(lossval,distloss, reploss, tidx)
         return lossval
     
 

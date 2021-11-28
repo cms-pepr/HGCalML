@@ -34,7 +34,8 @@ class PlotCoordinates(tf.keras.layers.Layer):
         self.outdir = outdir
         self.counter=-1
         import os
-        os.system('mkdir -p '+self.outdir)
+        if plot_every > 0:
+            os.system('mkdir -p '+self.outdir)
     
     def get_config(self):
         config = {'plot_every': self.plot_every,
@@ -49,8 +50,10 @@ class PlotCoordinates(tf.keras.layers.Layer):
     def call(self, inputs):
         
         coords, features, tidx, rs = inputs
+        if self.plot_every <=0:
+            return coords
         if not hasattr(coords, 'numpy'): #only in eager
-            return inputs[0]
+            return coords
         
         #plot initial state
         if self.counter>=0 and self.counter < self.plot_every:

@@ -130,6 +130,32 @@ def countsame(idxs):
     return nsames,ntotal
     
     
+    
+    
+######################### actual layers: simple helpers first
+
+class CastRowSplits(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        '''
+        This layer casts the row splits as they come from the data (int64, N_RS x 1) 
+        to (int32, N_RS), which is needed for subsequent processing. That's all
+        '''
+        super(CastRowSplits, self).__init__(**kwargs)
+        
+    def build(self, input_shape):
+        super(CastRowSplits, self).build(input_shape)
+    
+    def compute_output_shape(self, input_shapes):
+        return (input_shapes[0],)
+            
+    def call(self,inputs):
+        assert inputs.dtype=='int64' or inputs.dtype=='int32'
+        assert len(inputs.shape)==2
+        return tf.cast(inputs[:,0],dtype='int32')
+        
+    
+    
+    
 class RemoveSelfRef(tf.keras.layers.Layer):
     
     def __init__(self, **kwargs):
@@ -1379,11 +1405,14 @@ class EdgeCreator(tf.keras.layers.Layer):
 
 class EdgeSelector(tf.keras.layers.Layer):
     def __init__(self, 
-                 threshold = 0.9, 
+                 threshold = 0.5, 
                  **kwargs):
         '''
         Inputs:  edge score (V x K-1), neighbour indices (V x K )
         Outputs: selected neighbour indices ('-1 masked')
+        
+        This layer violates the standard '-1'-padded neighbour sorting.
+        Use a sorting layer afterwards!
         
         '''
         assert threshold<1 and threshold>=0
@@ -1405,6 +1434,7 @@ class EdgeSelector(tf.keras.layers.Layer):
         
         score = tf.concat([tf.ones_like(score[:,0:1,:]),score],axis=1)#add self score always 1
         return tf.where(score[:,:,0] < self.threshold, -1, nidx)
+        
     
 
 class DampenGradient(tf.keras.layers.Layer):
@@ -1457,7 +1487,7 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
         n_neigh = tf.cast(n_neigh,dtype='float32') - 1.
         groupscore = tf.reduce_sum(active[:,1:]*score[:,:,0], axis=1)
         #give slight priority to larger groups
-        groupscore = tf.math.divide_no_nan(groupscore,n_neigh+.1)
+        groupscore = tf.math.divide_no_nan(groupscore,n_neigh+1.)#prefer larger groups
         return tf.expand_dims(groupscore,axis=1)
 
 
@@ -1485,7 +1515,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
             - row splits
             
         Outputs: 
-             - neighbour indices for directed graph accumulation (V x K)
+             - neighbour indices for directed graph accumulation (V x K), '-1' padded
              - selection indices (V' x 1)! (Use with Accumulate/Select layers)
              - backgather/backscatter indices (V x K)
              - new row splits
@@ -1563,7 +1593,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
             rs,dirnidx,sel,ggather = LocalGroup(nidxs, hierarchy_idxs, score, row_splits, 
                                         score_threshold=self.threshold.numpy())#force eager
             if self.print_reduction:
-                print(self.name,'reduced to',sel.shape[0])
+                print(self.name,'reduced from', dirnidx.shape[0] ,'to',sel.shape[0])
         
         back = ggather
         if self.return_backscatter:

@@ -138,14 +138,12 @@ def gravnet_model(Inputs,
         pre_selection['noise_backscatter_N'],pre_selection['noise_backscatter_idx']
         ]] #add them here directly
         
-    allfeat = []
-    energysums = []
-    allcoords= []
+    allfeat = [MultiBackScatterOrGather()([x, scatterids])]
+    allcoords= [MultiBackScatterOrGather()([coords, scatterids])]
     
-
     n_cluster_space_coordinates = 3
     
-    total_iterations=4
+    total_iterations=5
 
     for i in range(total_iterations):
 
@@ -166,53 +164,21 @@ def gravnet_model(Inputs,
                                                  n_propagate=64,
                                                  )([x, rs])
 
-        x = MessagePassing([64,32,32,16])([x,gnnidx])
+        x = MessagePassing([64,64,32,32,16])([x,gnnidx])
+        x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
-        allfeat.append(MultiBackScatterOrGather()([x, scatterids]))
-        
-        #now create coordinates for grouping
-        x = Concatenate()([coords,gncoords,x])
-        coords = Dense(n_cluster_space_coordinates,
-                       kernel_initializer=EyeInitializer())(x)
-        
-        if n_cluster_space_coordinates==3:
-            coords = PlotCoordinates(500,outdir=debug_outdir,name='c_it'+str(i))([coords,energy,t_idx,rs])
-        
-        coords = LLClusterCoordinates(
-                print_loss=True,
-                scale=1.
-            )([coords,t_idx,rs])
-        
-        #basically gravnet with fixed coordinates
-        nidx, dist = KNN(K=16,radius=1.)([coords,rs])
-        x = DistanceWeightedMessagePassing([32,32])([x,nidx,dist])
-        x = Dense(64,activation='relu')(x)
-        
-        x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight = reduce(
-            x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight, 
-           threshold = 0.5,
-           print_reduction=True,
-           name='reduce_'+str(i),
-           trainable=True,
-           use_edges = True,
-           return_backscatter=False)  
-        
-        scatterids.append(bg)
-        
-        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
         
         allfeat.append(MultiBackScatterOrGather()([x, scatterids]))
-        energysums.append(MultiBackScatterOrGather()([energy, scatterids]))
-        allcoords.append(MultiBackScatterOrGather()([coords, scatterids]))
+        
         
     
     ####### back to non-reduced space
     
     #x = MultiBackScatterOrGather()([x, scatterids])
-    x = Concatenate()(allfeat+allcoords+energysums)
+    x = Concatenate()(allfeat+allcoords)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     #do one more exchange with all
     x = Dense(64,activation='relu')(x)
@@ -226,7 +192,7 @@ def gravnet_model(Inputs,
                                                   n_ccoords=n_cluster_space_coordinates)
     row_splits = CastRowSplits()(orig_inputs['row_splits'])
     # loss
-    pred_beta = LLFullObjectCondensation(print_loss=True, scale=5.,
+    pred_beta = LLFullObjectCondensation(print_loss=True, scale=1.,
                                          energy_loss_weight=1e-2,
                                          position_loss_weight=1e-2,
                                          timing_loss_weight=1e-2,
@@ -285,11 +251,13 @@ if not train.modelSet():
         ))
 
     #get pretrained preselection weights
+    
     from model_tools import apply_weights_from_path
     import os
     path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection/KERAS_check_model_last.h5'
     train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
     
+    #
     train.compileModel(learningrate=1e-4,
                        loss=None)
 

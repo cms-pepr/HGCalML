@@ -564,14 +564,14 @@ class TrainData_NanoML(TrainData):
                 t['t_pid'], t['t_spectator'], t['t_fully_contained'] ],[], []
     
 
-    def interpretAllModelInputs(self, ilist):
+    def interpretAllModelInputs(self, ilist, returndict=False):
         '''
         input: the full list of keras inputs
         returns: td
          - rechit feature array
-         - t_idxarr
-         - t_energyarr
-         - t_posarr
+         - t_idx
+         - t_energy
+         - t_pos
          - t_time
          - t_pid
          - t_spectator
@@ -580,6 +580,18 @@ class TrainData_NanoML(TrainData):
          
         (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator ,t_fully_contained, row_splits)
         '''
+        if returndict:
+            return {
+                'features':ilist[0],
+                't_idx':ilist[2],
+                't_energy':ilist[4],
+                't_pos':ilist[6],
+                't_time':ilist[8],
+                't_pid':ilist[10],
+                't_spectator':ilist[12],
+                't_fully_contained':ilist[14],
+                'row_splits':ilist[1]
+                }
         return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1] 
      
     def createFeatureDict(self,infeat,addxycomb=True):
