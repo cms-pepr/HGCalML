@@ -1655,7 +1655,7 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
         feat,ndix = inputs
         
         zeros = tf.cast(tf.zeros_like(ndix),dtype='float32')
-        K = tf.cast(tf.reduce_sum(tf.ones_like(ndix[0:1,:])),dtype='float32')
+        K = tf.cast(ndix.shape[1],dtype='float32')
         #K = tf.expand_dims(tf.expand_dims(K,axis=0),axis=0)
         if self.mode == 'mean' or self.mode == 'meanmax':
             out,_ = AccumulateKnnSumw(zeros, 
@@ -1666,7 +1666,8 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
                           feat, ndix)
             return tf.reshape(out,[-1, 2*feat.shape[1]])
         if self.mode=='sum':
-            out,_ = AccumulateKnn(zeros,feat, ndix,mean_and_max=False)#*K
+            out,_ = AccumulateKnn(zeros,feat, ndix,mean_and_max=False)
+            out*=K
             return tf.reshape(out,[-1, feat.shape[1]])              
         if self.mode == 'max':
             out,_ = AccumulateKnn(zeros, 
@@ -1848,7 +1849,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,
-                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=0.01),
+                                                                 #very slow turn on
+                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=1e-6),
                                                                  use_bias=False)
 
         with tf.name_scope(self.name + "/3/"):
