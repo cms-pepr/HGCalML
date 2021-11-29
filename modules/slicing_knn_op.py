@@ -1,6 +1,8 @@
 
 import tensorflow as tf
+import numpy as np
 from tensorflow.python.framework import ops
+import time
 
 '''
 Wrap the module
@@ -43,6 +45,8 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
     @param bin_width: width of phase-space bins
     '''
 
+    #  start_time_int = time.time()
+
     # type and values check for input parameters
     check_tuple(features_to_bin_on,"features_to_bin_on",int)
     n_features = coords.shape[1]
@@ -55,54 +59,36 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
     else:
         check_tuple(n_bins,"n_bins",int)
 
-    # features to do 2d phase-space binning on
-    bin_f1 = features_to_bin_on[0]
-    bin_f2 = features_to_bin_on[1]
+    # select only 2 dimensions that will be used for binning
+    r_coords = tf.gather(coords,features_to_bin_on,axis=1)
 
-    # find min/max in tensor taking into account row_splits
-    # TODO is creation of ragged tensor an expensive operation (memory and time wise)?
-    coords_ragged = tf.RaggedTensor.from_row_splits(values=coords, row_splits=row_splits)
-    r_max = tf.map_fn(tf.math.argmax, coords_ragged, fn_output_signature=tf.int64)
-    r_min = tf.map_fn(tf.math.argmin, coords_ragged, fn_output_signature=tf.int64)
+    # find min/max of selected coordinates
+    r_coords = tf.transpose(r_coords) # since tf.map_fn apply fn to each element unstacked on axis 0
 
-    # contains minimum and maximum coordinates of two first dimentions in coords tensor
-    _phase_space_bin_boundary = []
-    if n_bins is None:
-        n_bins = [float('inf'),float('inf')]
+    r_max = tf.map_fn(tf.math.reduce_max, r_coords, fn_output_signature=tf.float32)
+    r_min = tf.map_fn(tf.math.reduce_min, r_coords, fn_output_signature=tf.float32)
 
-    for i_split in range(0,len(row_splits)-1):
-        min_coords = r_min[i_split]
-        max_coords = r_max[i_split]
+    # add safety margin to the phase-space for binning
+    r_diff = tf.add(r_max,-1*r_min)
+    r_max = tf.add(r_max,0.00001*r_diff)
+    r_min = tf.add(r_min,-0.00001*r_diff)
+    r_diff = tf.add(r_max,-1*r_min)
 
-        _min = coords[min_coords[bin_f1]+row_splits[i_split].numpy()][bin_f1].numpy()
-        _max = coords[max_coords[bin_f1]+row_splits[i_split].numpy()][bin_f1].numpy()
-        _phase_space_bin_boundary.append((_min-0.00001*(_max-_min)).item())
-        _phase_space_bin_boundary.append((_max+0.00001*(_max-_min)).item())
+    # calculate n_bins if bin_width is given
+    if bin_width is not None:
+        _n_bins = tf.cast(tf.math.ceil(tf.multiply(r_diff,1.0/tf.constant(bin_width))),tf.int32)
+    else:
+        _n_bins = tf.constant(n_bins, dtype=tf.int32) # cast tuple to Tensor to match required argument type
 
-        _min = coords[min_coords[bin_f2]+row_splits[i_split].numpy()][bin_f2].numpy()
-        _max = coords[max_coords[bin_f2]+row_splits[i_split].numpy()][bin_f2].numpy()
-        _phase_space_bin_boundary.append((_min-0.00001*(_max-_min)).item())
-        _phase_space_bin_boundary.append((_max+0.00001*(_max-_min)).item())
+    #  print("NEW Init--- %s seconds ---" % (time.time() - start_time_int))
 
-        # find n_bins for the current batch
-        if bin_width is not None:
-            n_bins_1 = int((_phase_space_bin_boundary[-3] - _phase_space_bin_boundary[-4]) / bin_width[0]) + 1
-            n_bins_2 = int((_phase_space_bin_boundary[-1] - _phase_space_bin_boundary[-2]) / bin_width[1]) + 1
-            if n_bins_1<n_bins[0]:
-                n_bins[0] = n_bins_1
-            if n_bins_2<n_bins[1]:
-                n_bins[1] = n_bins_2
-
-    if type(n_bins) is list:
-        n_bins = tuple(n_bins)
-
-    return _nknn_op.SlicingKnn(n_neighbours=K, coords=coords, row_splits=row_splits, n_bins=n_bins, features_to_bin_on=features_to_bin_on, phase_space_bin_boundary=_phase_space_bin_boundary)
+    return _nknn_op.SlicingKnn(n_neighbours=K, coords=coords, row_splits=row_splits, n_bins=_n_bins, features_to_bin_on=features_to_bin_on, coord_min=r_min, coord_max=r_max)
 
 
 _sknn_grad_op = tf.load_op_library('select_knn_grad.so')
 
 @ops.RegisterGradient("SlicingKnn")
-def _SelectKnnGrad(op, gradidx, dstgrad):
+def _SlicingKnnGrad(op, gradidx, dstgrad):
 
     coords = op.inputs[0]
     indices = op.outputs[0]
@@ -110,5 +96,4 @@ def _SelectKnnGrad(op, gradidx, dstgrad):
 
     coord_grad = _sknn_grad_op.SelectKnnGrad(grad_distances=dstgrad, indices=indices, distances=distances, coordinates=coords)
 
-    #  return coord_grad, None, None #no grad for row splits and masking values
-    return coord_grad
+    return coord_grad, None, None, None, None #no grad for row_splits, features_to_bin_on, n_bins and and bin_width
