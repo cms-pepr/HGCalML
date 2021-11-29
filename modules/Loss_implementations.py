@@ -93,19 +93,49 @@ def _frac_loss(truth, pred, sort_pred):
 def frac_loss(truth, pred):
     return _frac_loss(truth, pred, sort_pred=False)
 def frac_loss_sort_pred(truth, pred):
-    return _frac_loss(truth, pred, sort_pred=True)
+	return _frac_loss(truth, pred, sort_pred=True)
+
+
+def modular_loss(D, MSE=False, ORTHO=False, ANGLE=False, NORM=False, COS=False):
+
+    def loss_fn(truth, prediction):
+        prediction= tf.reshape(prediction, shape=(-1, D, D))
+        # truth = tf.reshape(truth, shape=(-1, D,D))
+        # loss = tf.Variable(initial_value=0.0, name='loss')
+        loss = 0.0
+        # print("Truth: ", tf.reduce_mean(truth))
+        # print("Prediction: ",tf.reduce_mean(prediction))
+        
+        if MSE: 
+            # loss.assign_add(tf.reduce_mean((truth - prediction) * (truth - prediction)))
+            loss += tf.reduce_mean((truth - prediction) * (truth - prediction))
+            
+        if ORTHO:
+            prod = tf.matmul(prediction, prediction, transpose_a=False, transpose_b=True)
+            offd = (tf.reduce_sum(prod, axis=[1,2]) - tf.linalg.trace(prod)) / D**2
+            # loss.assign_add(tf.reduce_mean(offd))
+            loss += tf.reduce_mean(tf.math.abs(offd))
+            
+        if ANGLE or NORM:
+            if ANGLE:
+                prod = tf.einsum('ijk,ijk->ik', truth, prediction)
+            tn = tf.norm(truth, axis=1)
+            pn = tf.norm(prediction, axis=1)
+            # print("tn: ", tf.reduce_mean(tn))
+            # print("tn: ", tn.shape)
+            # print("pn: ", pn.shape)
+            if NORM:
+                # loss.assign_add(tf.reduce_mean(tf.math.abs(nt-np)))
+                loss += tf.reduce_mean(tf.math.abs(tn-pn))
+            if ANGLE:
+                cos = tf.math.abs(prod / (tn * pn + 1e-5))
+                # loss.assign_add(tf.reduce_mean(1 - cos))
+                if COS:
+                    loss += tf.reduce_mean(1 - cos)
+                else:
+                    sin = tf.math.abs(1 - tf.math.square(cos))
+                    loss += tf.reduce_mean(sin)
+        
+        return loss
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+    return loss_fn    

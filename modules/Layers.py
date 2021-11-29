@@ -3,8 +3,8 @@
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
-from LayersRagged import RaggedSumAndScatter
 
+from LayersRagged import RaggedSumAndScatter
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
 
 from LayersRagged import Condensate
@@ -138,6 +138,9 @@ global_layers_list['MessagePassing']=MessagePassing
 
 from GravNetLayersRagged import DistanceWeightedMessagePassing
 global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePassing
+
+from GravNetLayersRagged import ApproxPCA
+global_layers_list['ApproxPCA']=ApproxPCA
 
 from GravNetLayersRagged import EdgeConvStatic
 global_layers_list['EdgeConvStatic']=EdgeConvStatic
