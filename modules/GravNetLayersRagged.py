@@ -1,4 +1,7 @@
 import tensorflow as tf
+import pdb
+import yaml
+import os
 from select_knn_op import SelectKnn
 from select_mod_knn_op import SelectModKnn
 from accknn_op import AccumulateKnn
@@ -537,7 +540,6 @@ class ManualCoordTransform(tf.keras.layers.Layer):
         coords = tf.concat([newx,newy,newz],axis=-1)
         coords /= tf.constant([[262.897095, 246.292236, 0.422947705]])
         return coords
-        
 
 
 class DirectedGraphBuilder(tf.keras.layers.Layer):
@@ -716,6 +718,121 @@ class NeighbourApproxPCA(tf.keras.layers.Layer):
         means = tf.reshape(means, [-1, self.nF*self.nC])
         
         return tf.concat([cov,means],axis=-1)
+            
+        
+class ApproxPCA(tf.keras.layers.Layer):
+    # New implementation of NeighbourApproxPCA 
+    # Old version is kept to not cause unexpected behaviour
+    def __init__(self, size='small', 
+                 base_path=os.environ.get('HGCALML') + '/HGCalML_data/pca/pretrained/', 
+                 **kwargs):
+        """
+        Inputs: 
+          - coordinates (Vin x C)
+          - distsq (Vin x K)
+          - features (Vin x F)
+          - neighbour indices (Vin x K)
+          
+        Returns:
+          - per feature: Approximated PCA of weighted coordinates' covariance matrices
+            (V, F, C**2)
+          - if enabled: feature weighted means (Vout x F*C)
+          
+        """
+        super(ApproxPCA, self).__init__(**kwargs)
+        assert size.lower() in ['small', 'medium', 'large']\
+            , "size must be 'small', 'medium', or 'large'!"
+        self.size = size.lower()
+        self.base_path = base_path
+        self.layers = []
+        
+        print("This layer uses the pretrained PCA approximation layers found in `pca/pretrained`")
+        print("It is still somewhat experimental and subject to change!")
+        
+        
+    def get_config(self):
+        base_config = super(ApproxPCA, self).get_config()
+        init_config = {'base_path': self.base_path, 'size': self.size}
+        if not self.config:
+            self.config = {}
+        config = dict(list(base_config.items()) + list(init_config.items()) + list(self.config.items()))
+        return config
+
+    
+    def build(self, input_shapes): #pure python
+        nF, nC, _ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        self.nF = nF
+        self.nC = nC
+        self.covshape = nF * nC * nC
+        self.counter = 0
+
+        self.path = self.base_path + f"{str(self.nC)}D/{self.size}/"
+        assert os.path.exists(self.path), f"path: {self.path} not found!"
+        with open(self.path + 'config.yaml', 'r') as f:
+            self.config = yaml.load(f, Loader=yaml.FullLoader)
+            
+        # Build model and load weights
+        inputs = tf.keras.layers.Input(shape=(self.nC**2,))
+        x = inputs
+        nodes = self.config['nodes']
+        for i, node in enumerate(nodes):
+            x = tf.keras.layers.Dense(node, activation='elu')(x)
+        outputs = tf.keras.layers.Dense(self.nC**2)(x)
+        with tf.name_scope(self.name + '/pca/model'):
+            self.model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+        self.model.load_weights(self.path)
+        self.model.trainable = False
+        self.model.summary()
+
+        for i in range(len(nodes) + 1):
+            with tf.name_scope(self.name + "/1/" + str(i)):
+                # layer = model.layers[i+1]
+                if i == 0:
+                    # first entry, input layer
+                    input_dim = [None, self.nC**2]  # Not sure if I need the batch dimension
+                else:
+                    input_dim = [None, nodes[i-1]]
+                if i == len(nodes):
+                    # Last entry, output layer, no activation
+                    output_dim = self.nC**2
+                    layer = tf.keras.layers.Dense(units=output_dim, trainable=False)
+                else:
+                    output_dim = nodes[i]
+                    layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=False)
+                layer.build(input_dim)
+                layer.set_weights(self.model.layers[i+1].get_weights())
+                self.layers.append(layer)
+
+        super(ApproxPCA, self).build(input_shapes)  
+        
+        
+    def compute_output_shape(self):
+        out_shape = (None, self.nF, self.nC * self.nC)
+        return out_shape
+
+
+    def call(self, inputs):
+        self.counter += 1
+        ReturnMean = False  
+        coordinates, distsq, features, n_idxs = inputs
+        
+        cov, means = NeighbourCovarianceOp(coordinates=coordinates, 
+                                           distsq=10. * distsq, #same as gravnet scaling
+                                           features=features, 
+                                           n_idxs=n_idxs)
+        
+        means = tf.reshape(means, [-1, self.nF*self.nC])
+        cov = tf.reshape(cov, shape=(-1, self.nC**2))
+
+        x = cov
+        for i, layer in enumerate(self.layers):
+            x = layer(x)
+        approxPCA = tf.reshape(x, shape=(-1, self.nF * self.nC**2))
+
+        if ReturnMean:
+            return tf.concat([approxPCA, means], axis=-1)
+        else:
+            return approxPCA
     
     
     
