@@ -10,7 +10,12 @@ from initializers import EyeInitializer
 
 from datastructures import TrainData_OC,TrainData_NanoML
 #new format!
-def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_NanoML(), add_features=True, fix_distance_scale=False,name_prefix="output_module"):
+def create_outputs(x, feat, energy=None, n_ccoords=3, 
+                   n_classes=6, td=TrainData_NanoML(), add_features=True, 
+                   fix_distance_scale=False,
+                   scale_energy=True,
+                   energy_proxy=None,
+                   name_prefix="output_module"):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
@@ -25,7 +30,13 @@ def create_outputs(x, feat, energy=None, n_ccoords=3, n_classes=6, td=TrainData_
                          name = name_prefix+'_clustercoords'
                          )(x) #bias has no effect
     
-    pred_energy = ScalarMultiply(10.)(Dense(1,name = name_prefix+'_energy')(x))
+    if energy_proxy is None:
+        energy_proxy = x
+    else:
+        energy_proxy = Concatenate()([energy_proxy,x])
+    pred_energy = Dense(1,name = name_prefix+'_energy')(energy_proxy)
+    if scale_energy:
+        pred_energy = ScalarMultiply(10.)(pred_energy)
     if energy is not None:
         pred_energy = Multiply()([pred_energy,energy])
         

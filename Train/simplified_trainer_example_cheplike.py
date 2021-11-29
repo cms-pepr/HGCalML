@@ -158,13 +158,13 @@ def gravnet_model(Inputs,
         
         #exchange information, create coordinates
         x = Concatenate()([coords,x])
-        x, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=32,
+        x, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
                                                  n_dimensions=7,
                                                  n_filters=128,
                                                  n_propagate=64,
                                                  )([x, rs])
 
-        x = MessagePassing([64,64,32,32,16])([x,gnnidx])
+        x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
@@ -184,6 +184,7 @@ def gravnet_model(Inputs,
     x = Dense(64,activation='relu')(x)
     x = Dense(64,activation='relu')(x)
     x = Dense(64,activation='relu')(x)
+    x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     x = Concatenate()(allcoords+[x])
     
     pred_beta, pred_ccoords, pred_dist, pred_energy, \
@@ -200,7 +201,7 @@ def gravnet_model(Inputs,
                                          too_much_beta_scale=.01,
                                          use_energy_weights=True,
                                          q_min=2.5,
-                                         div_repulsion=True,
+                                         #div_repulsion=True,
                                          # cont_beta_loss=True,
                                          # beta_gradient_damping=0.999,
                                          # phase_transition=1,
@@ -324,9 +325,9 @@ cb += [
 
 #cb=[]
 learningrate = 1e-4
-nbatch = 90000
+nbatch = 120000
 
-train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
+train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
                           loss=None,
                           metrics=None,
                           )
@@ -339,10 +340,7 @@ model, history = train.trainModel(nepochs=3,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
                                   backup_after_batches=500,
-                                  additional_callbacks=
-                                  [CyclicLR (base_lr = learningrate/5.,
-                                  max_lr = learningrate,
-                                  step_size = 250)]+cb)
+                                  additional_callbacks=cb)
 
 print("freeze BN")
 # Note the submodel here its not just train.keras_model
@@ -375,9 +373,6 @@ model, history = train.trainModel(nepochs=121,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
                                   backup_after_batches=500,
-                                  additional_callbacks=
-                                  [CyclicLR (base_lr = learningrate/10.,
-                                  max_lr = learningrate,
-                                  step_size = 100)]+cb)
+                                  additional_callbacks=cb)
 #
 

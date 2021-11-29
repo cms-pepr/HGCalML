@@ -92,6 +92,7 @@ def oc_per_batch_element(
         super_repulsion=False,
         super_attraction=False,
         div_repulsion=False,
+        soft_att=True
         ):
     '''
     all inputs
@@ -182,6 +183,9 @@ def oc_per_batch_element(
         huberdistsq += 1. - tf.math.exp(-100.*absdist)
         
     V_att = q_m * tf.expand_dims(q_kalpha_m,axis=1) * huberdistsq #K x V-obj x 1
+    if soft_att:
+        V_att = q_m * tf.math.log(tf.math.exp(1.)*distancesq_m+1.)
+        
     V_att = V_att * tf.expand_dims(object_weights_kalpha_m,axis=1) #K x V-obj x 1
     
     if weight_by_q:
@@ -206,7 +210,7 @@ def oc_per_batch_element(
         
     rep_distances *= distance_scale_kalpha_m_exp**2  #K x V x 1 , same scaling as attractive potential
     
-    V_rep =  tf.math.exp(-4.* rep_distances) #1. / (V_rep + 0.1) #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
+    V_rep =  tf.math.exp(-rep_distances) #1. / (V_rep + 0.1) #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
     
     if super_repulsion:
         V_rep += 10.*tf.math.exp(-100.* tf.sqrt(rep_distances+1e-6))

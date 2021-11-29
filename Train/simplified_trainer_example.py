@@ -166,7 +166,7 @@ def gravnet_model(Inputs,
                                                  n_propagate=64,
                                                  )([x, rs])
 
-        x = MessagePassing([64,32,32,16])([x,gnnidx])
+        x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         
@@ -176,7 +176,9 @@ def gravnet_model(Inputs,
         #now create coordinates for grouping
         x = Concatenate()([coords,gncoords,x])
         coords = Dense(n_cluster_space_coordinates,
-                       kernel_initializer=EyeInitializer())(x)
+                       kernel_initializer=
+                       EyeInitializer(stddev=1e-5),
+                       use_bias=False)(x)#carefully turn it on
         
         if n_cluster_space_coordinates==3:
             coords = PlotCoordinates(500,outdir=debug_outdir,name='c_it'+str(i))([coords,energy,t_idx,rs])
@@ -201,7 +203,7 @@ def gravnet_model(Inputs,
            return_backscatter=False)  
         
         scatterids.append(bg)
-        
+        x = Concatenate()([x,energy])
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
         
         allfeat.append(MultiBackScatterOrGather()([x, scatterids]))
@@ -218,23 +220,28 @@ def gravnet_model(Inputs,
     x = Dense(64,activation='relu')(x)
     x = Dense(64,activation='relu')(x)
     x = Dense(64,activation='relu')(x)
+    x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     x = Concatenate()(allcoords+[x])
+    
+    eproxies = Concatenate()(energysums)
     
     pred_beta, pred_ccoords, pred_dist, pred_energy, \
     pred_pos, pred_time, pred_id = create_outputs(x, orig_inputs['features'], 
                                                   fix_distance_scale=False,
+                                                  scale_energy=False,
+                                                  energy_proxy = eproxies,
                                                   n_ccoords=n_cluster_space_coordinates)
     row_splits = CastRowSplits()(orig_inputs['row_splits'])
     # loss
     pred_beta = LLFullObjectCondensation(print_loss=True, scale=5.,
-                                         energy_loss_weight=1e-2,
-                                         position_loss_weight=1e-2,
+                                         energy_loss_weight=3e-1,
+                                         position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
                                          beta_loss_scale=1.,
                                          too_much_beta_scale=.01,
                                          use_energy_weights=True,
                                          q_min=2.5,
-                                         div_repulsion=True,
+                                         #div_repulsion=True,
                                          # cont_beta_loss=True,
                                          # beta_gradient_damping=0.999,
                                          # phase_transition=1,
@@ -356,9 +363,9 @@ cb += [
 
 #cb=[]
 learningrate = 1e-4
-nbatch = 90000
+nbatch = 120000
 
-train.compileModel(learningrate=1e-3, #gets overwritten by CyclicLR callback anyway
+train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
                           loss=None,
                           metrics=None,
                           )
@@ -371,10 +378,7 @@ model, history = train.trainModel(nepochs=3,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
                                   backup_after_batches=500,
-                                  additional_callbacks=
-                                  [CyclicLR (base_lr = learningrate/5.,
-                                  max_lr = learningrate,
-                                  step_size = 250)]+cb)
+                                  additional_callbacks=cb)
 
 print("freeze BN")
 # Note the submodel here its not just train.keras_model
@@ -407,9 +411,6 @@ model, history = train.trainModel(nepochs=121,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
                                   backup_after_batches=500,
-                                  additional_callbacks=
-                                  [CyclicLR (base_lr = learningrate/10.,
-                                  max_lr = learningrate,
-                                  step_size = 100)]+cb)
+                                  additional_callbacks=cb)
 #
 
