@@ -24,6 +24,9 @@ global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 
 ##GravNet...
 
+from GravNetLayersRagged import CastRowSplits
+global_layers_list['CastRowSplits']=CastRowSplits
+
 from GravNetLayersRagged import RemoveSelfRef
 global_layers_list['RemoveSelfRef']=RemoveSelfRef
 

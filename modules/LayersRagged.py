@@ -163,53 +163,19 @@ class GridMaxPoolReduction(keras.layers.Layer):
 
 class RaggedConstructTensor(keras.layers.Layer):
     """
-    This layer is used to construct ragged tensor from data and row_splits. data and row_splits have 2 and 1 axis
-    respectively. They have same dimensions along the first dimension (for cater to keras limitations of ragged
-    tensors). The second axis of the data tensor contains features. The last value of the row_split vector must be
-    (batch size + 1). Since we cannot yet return RaggedTensor(s) from layers, we return data and row_splits in a format
-    compatible with tf.RaggedTensor.from_row_splits for ease. We'll probably not need this when keras starts to support
-    RaggedTensors.
+    
 
     """
 
 
     def __init__(self, **kwargs):
         super(RaggedConstructTensor, self).__init__(**kwargs)
+        print(">>>> WARNING: RaggedConstructTensor is deprecated. Please just cast the row splits (CastRowSplits layer).")
         self.num_features = -1
 
-    def build(self, input_shape):
-        super(RaggedConstructTensor, self).build(input_shape)
-
-    
-    def call(self, x):
-        x_data = x[0]
-        x_row_splits = x[1]
-        #new DJC format
-        rs = tf.cast(x_row_splits, dtype='int32')
-        rs = tf.reshape(rs,[-1])
-        return x_data, rs
-    
-        #below is for the OLD format
-        
-        data_shape = x_data.shape
-        # assert (data_shape[0]== row_splits_shape[0])
-        self.num_features = data_shape[1]
-
-        if len(x_row_splits.shape) == 2:
-            x_row_splits = x_row_splits[:,0]
-
-        row_splits = tf.reshape(x_row_splits, (-1,))
-        batch_size_plus_1 = tf.cast(row_splits[-1], tf.int32)
-        row_splits = tf.slice(row_splits, [0], batch_size_plus_1[..., tf.newaxis])
-
-        num_elements = tf.cast(row_splits[-1], tf.int32)
-        data = tf.slice(x_data, [0, 0], [num_elements, self.num_features])
-
-        row_splits = tf.cast(row_splits, tf.int32)
-        return data, row_splits
-
-    def compute_output_shape(self, input_shape):
-        return [(None, self.num_features), (None,)]
+    def call(self,inputs):
+        rs = tf.cast(inputs[1][:,0],dtype='int32')
+        return inputs[0],rs #so that models can still be loaded
 
 
 
