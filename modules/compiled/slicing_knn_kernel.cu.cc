@@ -122,13 +122,29 @@ void print_array(
 }
 
 template <typename T>
-void print_gpu_array(
-        const T *in_arr,
+void print_array(
+        std::vector<T> in_arr,
         const size_t start,
         const size_t end,
         bool convert_to_int = false
 ){
-    int arr_size = end-start;
+    for(size_t i = start ; i < end ; i += 1){
+        float tmp_val = in_arr[i];
+        if (convert_to_int == true)
+            printf("i: %d;\t%d\n", i, (int)tmp_val);
+        else
+            printf("i: %d;\t%f\n", i, tmp_val);
+    }
+}
+
+template <typename T>
+void print_gpu_array(
+        const T *in_arr,
+        const size_t arr_size,
+        const size_t start,
+        const size_t end,
+        bool convert_to_int = false
+){
     std::vector<T> tmp_arr(arr_size);
     HANDLE_ERROR(cudaMemcpy(&tmp_arr.at(0),in_arr,arr_size*sizeof(T),cudaMemcpyDeviceToHost));
 
@@ -307,8 +323,13 @@ void translate_ind_matrix(const size_t start_vert, const size_t end_vert, const 
         for(size_t i_column = 0; i_column < matrix_width; i_column += 1){
             size_t final_index = matrix_width*i_counter+i_column;
             const size_t tmp_val1 = in_matrix[final_index];
-            const size_t tmp_val2 = translation_matrix[tmp_val1];
-            in_matrix[final_index] = tmp_val2;
+            if (tmp_val1==-1){
+                in_matrix[final_index] = -1;
+            }
+            else{
+                const size_t tmp_val2 = translation_matrix[tmp_val1];
+                in_matrix[final_index] = tmp_val2;
+            }
         }
     }
 }
