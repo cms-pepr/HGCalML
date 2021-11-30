@@ -33,4 +33,6 @@ class ResponseScale(mscale.ScaleBase):
                  major_formatter=fmt, minor_formatter=fmt)
 
 
-mscale.register_scale(ResponseScale)
+def register():
+    mscale.register_scale(ResponseScale)
+

@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from hplots.general_2d_plot import  General2dBinningPlot
-from hplots.response_scale import *
+
+import hplots.response_scale
+hplots.response_scale.register()
 
 
 
