@@ -3,7 +3,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from hplots.general_2d_plot import General2dBinningPlot
 from hplots.general_2d_plot_extensions import EfficiencyFoTruthEnergyPlot, EffFakeRatePlot
 from hplots.general_2d_plot_extensions import FakeRateFoPredEnergyPlot
-from hplots.general_2d_plot_extensions import ResponseFoTruthEnergyPlot
+from hplots.general_2d_plot_extensions import ResponseFoEnergyPlot
 from hplots.general_2d_plot_extensions import EnergyFoundFoPredEnergyPlot
 from hplots.general_2d_plot_extensions import EnergyFoundFoTruthEnergyPlot
 import numpy as np

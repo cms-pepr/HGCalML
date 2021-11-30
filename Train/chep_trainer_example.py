@@ -153,7 +153,6 @@ def gravnet_model(Inputs,
         allfeat.append(x)
 
 
-
     ####### back to non-reduced space
 
     #x = MultiBackScatterOrGather()([x, scatterids])
@@ -284,7 +283,7 @@ for i in range(5)
 #
 
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
 #by hand
 from plotting_callbacks import plotClusterSummary

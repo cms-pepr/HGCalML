@@ -18,9 +18,11 @@ graph_functions = reload(graph_functions)
 
 
 class RunningFullValidation(tf.keras.callbacks.Callback):
-    def __init__(self, after_n_batches, predictor, optimizer, database_manager, pdfs_path=None, min_batch = 0, table_prefix='gamma_full_validation',
+    def __init__(self, after_n_batches, predictor, analyzer, optimizer=None, test_on_points=None,
+                 database_manager=None, pdfs_path=None, min_batch=0, table_prefix='gamma_full_validation',
                  run_optimization_loop_for=80, optimization_loop_num_init_points=5, trial_batch=10):
         """
+        :param analyzer:
         :param after_n_batches: Run this after number batches equal to this
         :param predictor: Predictor class for HGCal
         :param optimizer: Bayesian optimizer class for HGCal (OCHyperParamOptimizer)
@@ -36,6 +38,7 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
         self.min_batch = 0
         self.predictor = predictor
         self.optimizer = optimizer
+        self.hyper_param_points=test_on_points
         self.database_manager = database_manager
         self.table_prefix = table_prefix
         self.min_batch = min_batch
@@ -43,6 +46,13 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
         self.run_optimization_loop_for = run_optimization_loop_for
         self.optimization_loop_num_init_points = optimization_loop_num_init_points
         self.trial_batch = trial_batch
+        self.analyzer = analyzer
+
+        if database_manager is None and pdfs_path is None:
+            raise RuntimeError("Set either database manager or pdf output path")
+
+        if optimizer is None != test_on_points is None: # Just an xor
+            raise RuntimeError("Can either do optimization or run at specific points")
 
     def on_train_batch_end(self, batch, logs=None):
         if self.model.num_train_step < self.min_batch:
@@ -63,26 +73,37 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
             print("Model file not found. Will skip.")
             return
 
+        if self.optimizer is not None:
+            max_point = self.optimizer.optimize(all_data, num_iterations=self.run_optimization_loop_for, init_points=self.optimization_loop_num_init_points)
+            b = max_point['params']['b']
+            d = max_point['params']['d']
+            test_on = [(b,d)]
+        else:
+            test_on = self.hyper_param_points
 
-        max_point = self.optimizer.optimize(all_data, num_iterations=self.run_optimization_loop_for, init_points=self.optimization_loop_num_init_points)
-        b = max_point['params']['b']
-        d = max_point['params']['d']
-        graphs, metadata = self.optimizer.analyzer.analyse_from_data(all_data, b, d)
-        self.optimizer.remove_data() # To save memory
+        for b, d in test_on:
+            graphs, metadata = self.analyzer.analyse_from_data(all_data, b, d)
+            if self.optimizer is not None:
+                self.optimizer.remove_data() # To save memory
 
 
-        plotter = HGCalAnalysisPlotter()
-        tags = dict()
-        tags['iteration'] = int(self.optimizer.iteration)
-        tags['training_iteration'] = int(self.model.num_train_step)
+            plotter = HGCalAnalysisPlotter()
+            tags = dict()
+            if self.optimizer is not None:
+                tags['iteration'] = int(self.optimizer.iteration)
+            else:
+                tags['iteration'] = -1
 
-        plotter.add_data_from_analysed_graph_list(graphs, metadata, additional_tags=tags)
+            tags['training_iteration'] = int(self.model.num_train_step)
 
-        if self.database_manager is not None:
-            plotter.write_data_to_database(self.database_manager, self.table_prefix)
-            print("Written to database")
-        if self.pdfs_path is not None:
-            plotter.write_to_pdf(pdfpath=os.path.join(self.pdfs_path, 'validation_results_%d.pdf'%self.model.num_train_step))
+            plotter.add_data_from_analysed_graph_list(graphs, metadata, additional_tags=tags)
+
+            if self.database_manager is not None:
+                plotter.write_data_to_database(self.database_manager, self.table_prefix)
+                print("Written to database")
+
+            if self.pdfs_path is not None:
+                plotter.write_to_pdf(pdfpath=os.path.join(self.pdfs_path, 'validation_results_%07d_%.2f_%.2f.pdf'%(self.model.num_train_step, b,d)))
 
 
 
