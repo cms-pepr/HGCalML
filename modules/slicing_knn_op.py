@@ -76,7 +76,7 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
 
     # calculate n_bins if bin_width is given
     if bin_width is not None:
-        _n_bins = tf.cast(tf.math.ceil(tf.multiply(r_diff,1.0/tf.constant(bin_width))),tf.int32)
+        _n_bins = tf.math.minimum(tf.cast(tf.math.ceil(tf.multiply(r_diff,1.0/tf.constant(bin_width))),tf.int32), tf.constant([50,50], dtype=tf.int32)) # limit the number of bins to max 50x50
     else:
         _n_bins = tf.constant(n_bins, dtype=tf.int32) # cast tuple to Tensor to match required argument type
 
