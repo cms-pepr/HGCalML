@@ -48,8 +48,8 @@ void create_bin_neighbours_list(
 {
     int tmp_arr[3] = {0,-1,1};
 
-    for (size_t j = 0; j<n_bins_y; j+=1){
-        for (size_t i = 0; i<n_bins_x; i+=1){
+    for (int j = 0; j<n_bins_y; j+=1){
+        for (int i = 0; i<n_bins_x; i+=1){
             int index = (i + n_bins_x*j)*9;
             int counter = 0;
             for (size_t ii = 0; ii<3; ii++){
@@ -322,7 +322,7 @@ void translate_ind_matrix(const size_t start_vert, const size_t end_vert, const 
     for(size_t i_counter = index; i_counter < end_vert; i_counter += stride){
         for(size_t i_column = 0; i_column < matrix_width; i_column += 1){
             size_t final_index = matrix_width*i_counter+i_column;
-            const size_t tmp_val1 = in_matrix[final_index];
+            const int tmp_val1 = in_matrix[final_index];
             if (tmp_val1==-1){
                 in_matrix[final_index] = -1;
             }
@@ -721,9 +721,6 @@ struct SlicingKnnOpFunctor<GPUDevice, dummy> {
         // set default values global
         gpu::set_defaults<<<numBlocks_V,blockSize>>>(d_tmp_neigh_idx, d_tmp_neigh_dist, V, K);
         gpu::set_defaults<<<numBlocks_V,blockSize>>>(d_farthest_neighbour, V, -1);
-
-        dim3 numblocks_2d(n_bins_x/32+1,n_bins_y/32+1);
-        dim3 threadsperblock_2d(32,32);
 
         cpu::create_bin_neighbours_list(n_bins_x,n_bins_y,bin_neighbours);
         HANDLE_ERROR(cudaMemcpy(d_bin_neighbours,bin_neighbours,9*n_bins_x*n_bins_y*sizeof(int),cudaMemcpyHostToDevice));

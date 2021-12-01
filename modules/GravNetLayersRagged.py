@@ -1241,7 +1241,8 @@ class KNN(tf.keras.layers.Layer):
         
     def get_config(self):
         config = {'K': self.K,
-                  'radius': self.radius}
+                  'radius': self.radius,
+                  'use_approximate_knn': self.use_approximate_knn}
         base_config = super(KNN, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 

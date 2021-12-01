@@ -80,8 +80,6 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
     else:
         _n_bins = tf.constant(n_bins, dtype=tf.int32) # cast tuple to Tensor to match required argument type
 
-    #  print("NEW Init--- %s seconds ---" % (time.time() - start_time_int))
-
     return _nknn_op.SlicingKnn(n_neighbours=K, coords=coords, row_splits=row_splits, n_bins=_n_bins, features_to_bin_on=features_to_bin_on, coord_min=r_min, coord_max=r_max)
 
 
