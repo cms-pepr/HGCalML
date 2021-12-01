@@ -70,6 +70,35 @@ def get_truth_matched_attribute(graphs_list, attribute_name_truth, attribute_nam
 
 
 
+def get_truth_matched_attribute_fo_plot_attribute_truth(graphs_list, attribute_plot_name_truth, attribute_name_truth, attribute_name_pred, numpy=False, not_found_value=-1, sum_multi=False):
+    truth_plot_data = []
+    truth_data = []
+    pred_data = []
+    for g in graphs_list:
+        for n, att in g.nodes(data=True):
+            if att['type'] == NODE_TYPE_TRUTH_SHOWER:
+                matched = [x for x in g.neighbors(n)]
+                if len(matched)==0:
+                    pred_data.append(None)
+                elif len(matched)==1:
+                    pred_data.append( g.nodes(data=True)[matched[0]][attribute_name_pred])
+                elif len(matched) == 2:
+                    if not sum_multi:
+                        raise RuntimeError()
+                    pred_data.append( g.nodes(data=True)[matched[0]][attribute_name_pred] + g.nodes(data=True)[matched[1]][attribute_name_pred])
+
+                else:
+                    raise RuntimeError("Truth shower matched to multiple pred showers?")
+                truth_data.append(att[attribute_name_truth])
+                truth_plot_data.append(att[attribute_plot_name_truth])
+    if numpy:
+        truth_data = np.array(truth_data)
+        truth_plot_data = np.array(truth_plot_data)
+        pred_data = [x if x is not None else not_found_value for x in pred_data]
+        pred_data =np.array(pred_data)
+
+    return truth_plot_data, truth_data, pred_data
+
 def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name_pred, numpy=False, not_found_value=-1, sum_multi=False):
     pred_data = []
     truth_data = []
@@ -95,6 +124,35 @@ def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name
         truth_data =np.array(truth_data)
 
     return pred_data, truth_data
+
+def get_pred_matched_attribute_fo_plot_attribute_pred(graphs_list, attribute_plot_name_pred, attribute_name_truth, attribute_name_pred, numpy=False, not_found_value=-1, sum_multi=False):
+    pred_plot_data = []
+    pred_data = []
+    truth_data = []
+    for g in graphs_list:
+        for n, att in g.nodes(data=True):
+            if att['type'] == NODE_TYPE_PRED_SHOWER:
+                matched = [x for x in g.neighbors(n)]
+                if len(matched)==0:
+                    truth_data.append(None)
+                elif len(matched)==1:
+                    truth_data.append(g.nodes(data=True)[matched[0]][attribute_name_truth])
+                elif len(matched) == 2:
+                    if not sum_multi:
+                        raise RuntimeError()
+                    truth_data.append(g.nodes(data=True)[matched[0]][attribute_name_truth] + g.nodes(data=True)[matched[1]][attribute_name_truth])
+                else:
+                    raise RuntimeError("Pred shower matched to multiple truth showers?")
+
+                pred_data.append(att[attribute_name_pred])
+                pred_plot_data.append(att[attribute_plot_name_pred])
+    if numpy:
+        pred_data = np.array(pred_data)
+        pred_plot_data = np.array(pred_plot_data)
+        truth_data = [x if x is not None else not_found_value for x in truth_data]
+        truth_data =np.array(truth_data)
+
+    return pred_plot_data, pred_data, truth_data
 
 
 
@@ -246,11 +304,13 @@ class OCRecoGraphAnalyzer:
             rechit_x = feat_dict['recHitX'][pred_sid==sid]
             rechit_y = feat_dict['recHitY'][pred_sid==sid]
             rechit_z = feat_dict['recHitZ'][pred_sid==sid]
+            rechit_eta = feat_dict['recHitEta'][pred_sid==sid]
 
             node_attributes['dep_energy'] = np.sum(rechit_energy).item()
             node_attributes['dep_x'] = (np.sum(rechit_energy * rechit_x) / np.sum(rechit_energy)).item()
             node_attributes['dep_y'] = (np.sum(rechit_energy * rechit_y) / np.sum(rechit_energy)).item()
             node_attributes['dep_z'] = (np.sum(rechit_energy * rechit_z) / np.sum(rechit_energy)).item()
+            node_attributes['dep_eta'] = (np.sum(rechit_energy * rechit_eta) / np.sum(rechit_energy)).item()
             node_attributes['type'] = NODE_TYPE_PRED_SHOWER
 
             node = (sid, node_attributes)
@@ -915,4 +975,3 @@ class OCAnlayzerWrapper():
 
         metadata = self._add_metadata(analysed_graphs)
         return analysed_graphs, metadata
-

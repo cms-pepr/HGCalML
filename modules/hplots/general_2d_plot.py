@@ -207,10 +207,3 @@ class General2dBinningPlot():
 
             processed_data['tags'] = tags
             self.add_processed_data(processed_data)
-
-
-
-
-
-
-

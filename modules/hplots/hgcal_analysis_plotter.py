@@ -1,8 +1,13 @@
 from matplotlib.backends.backend_pdf import PdfPages
 
 from hplots.general_2d_plot_extensions import EfficiencyFoTruthEnergyPlot
+from hplots.general_2d_plot_extensions import EfficiencyFoEtaTruthPlot
+from hplots.general_2d_plot_extensions import EfficiencyFoPIDTruthPlot
 from hplots.general_2d_plot_extensions import FakeRateFoPredEnergyPlot
+from hplots.general_2d_plot_extensions import FakeRateFoPredEtaPlot
 from hplots.general_2d_plot_extensions import ResponseFoTruthEnergyPlot
+from hplots.general_2d_plot_extensions import ResponseFoEtaTruthPlot
+from hplots.general_2d_plot_extensions import ResponseFoPIDTruthPlot
 from hplots.general_2d_plot_extensions import EnergyFoundFoPredEnergyPlot
 from hplots.general_2d_plot_extensions import EnergyFoundFoTruthEnergyPlot
 import numpy as np
@@ -13,13 +18,19 @@ import matching_and_analysis
 
 
 class HGCalAnalysisPlotter:
-    def __init__(self, plots = ['settings', 'efficiency_fo_truth', 'fake_rate_fo_pred', 'response_fo_truth',
-                                'response_fo_pred', 'response_sum_fo_truth', 'energy_resolution',
+    def __init__(self, plots = ['settings', 'efficiency_fo_truth', 'efficiency_fo_eta_truth', 'efficiency_fo_pid_truth', 'fake_rate_fo_pred', 'fake_rate_fo_eta_pred', 'response_fo_truth', 'response_fo_eta_truth', 'response_fo_pid_truth',
+                                'response_fo_pred', 'response_fo_eta_pred', 'response_sum_fo_truth', 'energy_resolution',
                                 'energy_found_fo_truth', 'energy_found_fo_pred']):
         self.efficiency_plot = EfficiencyFoTruthEnergyPlot()
+        self.efficiency_eta_plot = EfficiencyFoEtaTruthPlot()
+        self.efficiency_pid_plot = EfficiencyFoPIDTruthPlot()
         self.fake_rate_plot = FakeRateFoPredEnergyPlot()
+        self.fake_rate_eta_plot = FakeRateFoPredEtaPlot()
         self.response_plot = ResponseFoTruthEnergyPlot()
+        self.response_eta_plot = ResponseFoEtaTruthPlot()
+        self.response_pid_plot = ResponseFoPIDTruthPlot()
         self.response_fo_pred_plot = ResponseFoTruthEnergyPlot(x_label='Pred energy [GeV]', y_label='Response mean (pred energy/truth energy')
+        self.response_fo_eta_pred_plot = ResponseFoEtaTruthPlot(x_label='Pred eta', y_label='Response mean (pred energy/truth energy')
         self.response_sum_plot = ResponseFoTruthEnergyPlot(y_label='Response (sum/truth)')
 
         self.energy_found_fo_truth_plot = EnergyFoundFoTruthEnergyPlot()
@@ -74,9 +85,15 @@ class HGCalAnalysisPlotter:
 
     def write_data_to_database(self, database_manager, table_prefix):
         self.efficiency_plot.write_to_database(database_manager, table_prefix+'_efficiency_plot')
+        self.efficiency_eta_plot.write_to_database(database_manager, table_prefix+'_efficiency_eta_plot')
+        self.efficiency_pid_plot.write_to_database(database_manager, table_prefix+'_efficiency_pid_plot')
         self.fake_rate_plot.write_to_database(database_manager, table_prefix+'_fake_rate_plot')
+        self.fake_rate_eta_plot.write_to_database(database_manager, table_prefix+'_fake_rate_eta_plot')
         self.response_plot.write_to_database(database_manager, table_prefix+'_response_plot')
+        self.response_eta_plot.write_to_database(database_manager, table_prefix+'_response_eta_plot')
+        self.response_pid_plot.write_to_database(database_manager, table_prefix+'_response_pid_plot')
         self.response_fo_pred_plot.write_to_database(database_manager, table_prefix+'_response_fo_pred_plot')
+        self.response_fo_eta_pred_plot.write_to_database(database_manager, table_prefix+'_response_fo_eta_pred_plot')
         self.response_sum_plot.write_to_database(database_manager, table_prefix+'_response_sum_plot')
         self.resolution_histogram_plot.write_to_database(database_manager, table_prefix+'_resolution_histogram_plot')
         self.energy_found_fo_truth_plot.write_to_database(database_manager, table_prefix+'_energy_found_fo_truth_energy')
@@ -87,14 +104,23 @@ class HGCalAnalysisPlotter:
 
     def add_data_from_database(self, database_reading_manager, table_prefix, experiment_name=None, condition=None):
         self.efficiency_plot.read_from_database(database_reading_manager, table_prefix + '_efficiency_plot', experiment_name=experiment_name, condition=condition)
+        self.efficiency_eta_plot.read_from_database(database_reading_manager, table_prefix + '_efficiency_eta_plot', experiment_name=experiment_name, condition=condition)
+        self.efficiency_pid_plot.read_from_database(database_reading_manager, table_prefix + '_efficiency_pid_plot', experiment_name=experiment_name, condition=condition)
         self.fake_rate_plot.read_from_database(database_reading_manager, table_prefix + '_fake_rate_plot', experiment_name=experiment_name, condition=condition)
+        self.fake_rate_eta_plot.read_from_database(database_reading_manager, table_prefix + '_fake_rate_eta_plot', experiment_name=experiment_name, condition=condition)
         self.response_plot.read_from_database(database_reading_manager, table_prefix + '_response_plot', experiment_name=experiment_name, condition=condition)
+        self.response_eta_plot.read_from_database(database_reading_manager, table_prefix + '_response_eta_plot', experiment_name=experiment_name, condition=condition)
+        self.response_pid_plot.read_from_database(database_reading_manager, table_prefix + '_response_pid_plot', experiment_name=experiment_name, condition=condition)
 
         try:
             self.response_fo_pred_plot.read_from_database(database_reading_manager, table_prefix + '_response_fo_pred_plot', experiment_name=experiment_name, condition=condition)
         except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
             print("Skipping response fo pred plot, table doesn't exist")
 
+        try:
+            self.response_fo_eta_pred_plot.read_from_database(database_reading_manager, table_prefix + '_response_fo_eta_pred_plot', experiment_name=experiment_name, condition=condition)
+        except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
+            print("Skipping response fo pred plot, table doesn't exist")
 
         if 'energy_found_fo_truth' in self.plots:
             try:
@@ -188,11 +214,31 @@ class HGCalAnalysisPlotter:
             self.efficiency_plot.add_raw_values(x, y, tags)
 
 
+        if 'efficiency_fo_eta_truth' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            y = np.not_equal(y, -1)
+
+            self.efficiency_eta_plot.add_raw_values(x, y, tags)
+
+        if 'efficiency_fo_pid_truth' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pid', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            y = np.not_equal(y, -1)
+
+            self.efficiency_pid_plot.add_raw_values(x, y, tags)
+
+
         if 'fake_rate_fo_pred' in self.plots:
 
             x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y = np.equal(y, -1)
             self.fake_rate_plot.add_raw_values(x,y, tags)
+
+
+        if 'fake_rate_fo_eta_pred' in self.plots:
+
+            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'dep_eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            y = np.equal(y, -1)
+            self.fake_rate_eta_plot.add_raw_values(x,y, tags)
 
 
 
@@ -201,10 +247,26 @@ class HGCalAnalysisPlotter:
             filter = y!=-1
             self.response_plot.add_raw_values(x[filter], y[filter] / x[filter], tags)
 
+
+        if 'response_fo_eta_truth' in self.plots:
+            x,y,z = matching_and_analysis.get_truth_matched_attribute_fo_plot_attribute_truth(analysed_graphs, 'eta', 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = z!=-1
+            self.response_eta_plot.add_raw_values(x[filter], z[filter] / y[filter], tags)
+
+        if 'response_fo_pid_truth' in self.plots:
+            x,y,z = matching_and_analysis.get_truth_matched_attribute_fo_plot_attribute_truth(analysed_graphs, 'pid', 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = z!=-1
+            self.response_pid_plot.add_raw_values(x[filter], z[filter] / y[filter], tags)
+
         if 'response_fo_pred' in self.plots:
             x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             filter = y!=-1
             self.response_fo_pred_plot.add_raw_values(x[filter], x[filter] / y[filter], tags)
+
+        if 'response_fo_eta_pred' in self.plots:
+            x,y,z = matching_and_analysis.get_pred_matched_attribute_fo_plot_attribute_pred(analysed_graphs, 'dep_eta', 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = z!=-1
+            self.response_fo_eta_pred_plot.add_raw_values(x[filter], y[filter] / z[filter], tags)
 
         if 'response_sum_fo_truth' in self.plots:
             x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
@@ -220,6 +282,7 @@ class HGCalAnalysisPlotter:
             x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y[y==-1] = 0
             self.energy_found_fo_truth_plot.add_raw_values(x, np.minimum(x,y), tags=tags)
+
         if 'energy_found_fo_pred' in self.plots:
             x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y[y==-1] = 0
@@ -237,16 +300,41 @@ class HGCalAnalysisPlotter:
         if 'efficiency_fo_truth' in self.plots:
             self.efficiency_plot.draw(formatter)
             pdf.savefig()
+
+        if 'efficiency_fo_eta_truth' in self.plots:
+            self.efficiency_eta_plot.draw(formatter)
+            pdf.savefig()
+
+        if 'efficiency_fo_pid_truth' in self.plots:
+            self.efficiency_pid_plot.draw(formatter)
+            pdf.savefig()
+
         if 'fake_rate_fo_pred' in self.plots:
             self.fake_rate_plot.draw(formatter)
+            pdf.savefig()
+
+        if 'fake_rate_fo_eta_pred' in self.plots:
+            self.fake_rate_eta_plot.draw(formatter)
             pdf.savefig()
 
         if 'response_fo_truth' in self.plots:
             self.response_plot.draw(formatter)
             pdf.savefig()
 
+        if 'response_fo_eta_truth' in self.plots:
+            self.response_eta_plot.draw(formatter)
+            pdf.savefig()
+
+        if 'response_fo_pid_truth' in self.plots:
+            self.response_pid_plot.draw(formatter)
+            pdf.savefig()
+
         if 'response_fo_pred' in self.plots:
             self.response_fo_pred_plot.draw(formatter)
+            pdf.savefig()
+
+        if 'response_fo_eta_pred' in self.plots:
+            self.response_fo_eta_pred_plot.draw(formatter)
             pdf.savefig()
 
 
@@ -263,6 +351,7 @@ class HGCalAnalysisPlotter:
         if 'energy_found_fo_truth' in self.plots:
             self.energy_found_fo_truth_plot.draw(formatter)
             pdf.savefig()
+
         if 'energy_found_fo_pred' in self.plots:
             self.energy_found_fo_pred_plot.draw(formatter)
             pdf.savefig()

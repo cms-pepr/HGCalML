@@ -26,14 +26,24 @@ class ResponseFoIouPlot(General2dBinningPlot):
 
 
 class EfficiencyFoTruthEnergyPlot(General2dBinningPlot):
-    def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),
+    def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200]),
                  x_label='Truth energy [GeV]', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)'):
         super().__init__(bins, x_label, y_label, title, y_label_hist)
 
+class EfficiencyFoEtaTruthPlot(General2dBinningPlot):
+    def __init__(self, bins=np.array([-4.0, -3.5, -3.25, -3.0, -2.75, -2.5, -2.25, -2.0, -1.75, -1.5, -1.25, -1.0, 0.0, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 4.0]),
+                x_label='Truth eta', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)'):
+        super().__init__(bins, x_label, y_label, title, y_label_hist)
+
+
+class EfficiencyFoPIDTruthPlot(General2dBinningPlot):
+    def __init__(self, bins=np.array([-30.5, -29.5, -28.5, -27.5, -26.5, -25.5, -24.5, -23.5, -22.5, -21.5, -20.5, -19.5, -18.5, -17.5, -16.5, -15.5, -14.5, -13.5, -12.5, -11.5, -10.5, -9.5, -8.5, -7.5, -6.5, -5.5, -4.5, -3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.9, 19.5, 20.5, 21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.9, 29.5, 30.5]),
+                x_label='Truth PID', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)'):
+        super().__init__(bins, x_label, y_label, title, y_label_hist)
 
 
 class EnergyFoundFoTruthEnergyPlot(General2dBinningPlot):
-    def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),
+    def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200]),
                  x_label='Truth energy [GeV]', y_label='% energy found', title='% truth energy matched', y_label_hist='Total truth energy / bin (fraction)',
                  histogram_fraction=True, histogram_log=False):
         super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_fraction=histogram_fraction, histogram_log=histogram_log)
@@ -101,7 +111,7 @@ class EnergyFoundFoTruthEnergyPlot(General2dBinningPlot):
 
 
             mean = mean.tolist()
-            print(mean)
+            #print(mean)
 
             e_bins = np.concatenate(([lows[0]], highs), axis=0)
 
@@ -125,13 +135,11 @@ class EnergyFoundFoTruthEnergyPlot(General2dBinningPlot):
         if return_fig:
             return fig
 
-
 class EnergyFoundFoPredEnergyPlot(EnergyFoundFoTruthEnergyPlot):
-    def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),
+    def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200]),
                  x_label='Pred energy [GeV]', y_label='% energy found', title='% of pred energy matched', y_label_hist='Total predicted energy / bin (fraction)',
                  histogram_fraction=True, histogram_log=False):
         super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_fraction=histogram_fraction, histogram_log=histogram_log)
-
 
 # class EfficiencyFoEtaPlot(General2dBinningPlot):
 #     def __init__(self, bins=np.array([]),
@@ -141,8 +149,13 @@ class EnergyFoundFoPredEnergyPlot(EnergyFoundFoTruthEnergyPlot):
 
 
 class FakeRateFoPredEnergyPlot(General2dBinningPlot):
-    def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),
+    def __init__(self, bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200]),
                  x_label='Pred energy [GeV]', y_label='Fake rate', title='Fake rate comparison', y_label_hist='Histogram (fraction)'):
+        super().__init__(bins, x_label, y_label, title, y_label_hist)
+
+class FakeRateFoPredEtaPlot(General2dBinningPlot):
+    def __init__(self, bins=np.array([-4.0, -3.5, -3.25, -3.0, -2.75, -2.5, -2.25, -2.0, -1.75, -1.5, -1.25, -1.0, 0.0, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 4.0]),
+                 x_label='Pred eta', y_label='Fake rate', title='Fake rate comparison', y_label_hist='Histogram (fraction)'):
         super().__init__(bins, x_label, y_label, title, y_label_hist)
 
 
@@ -151,6 +164,36 @@ class ResponseFoTruthEnergyPlot(General2dBinningPlot):
                  bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 25, 30, 40, 50, 60, 70, 80,
                        90, 100, 120, 140, 160, 180, 200]),
                  x_label='Truth energy [GeV]', y_label='Response', title='Response comparison',
+                 y_label_hist='Histogram (fraction)'):
+        super().__init__(bins, x_label, y_label, title, y_label_hist)
+
+    def draw(self, name_tag_formatter=None, return_fig=False):
+        fig = super().draw(name_tag_formatter, return_fig=True)
+        axes = fig.axes
+        axes[0].axhline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
+        axes[0].axhline(0, 0, 1, ls='--', linewidth=0.5, color='gray')
+        if return_fig:
+            return fig
+
+class ResponseFoEtaTruthPlot(General2dBinningPlot):
+    def __init__(self,
+                 bins=np.array([-4.0, -3.5, -3.25, -3.0, -2.75, -2.5, -2.25, -2.0, -1.75, -1.5, -1.25, -1.0, 0.0, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 4.0]),
+                 x_label='Truth eta', y_label='Response', title='Response comparison',
+                 y_label_hist='Histogram (fraction)'):
+        super().__init__(bins, x_label, y_label, title, y_label_hist)
+
+    def draw(self, name_tag_formatter=None, return_fig=False):
+        fig = super().draw(name_tag_formatter, return_fig=True)
+        axes = fig.axes
+        axes[0].axhline(1, 0, 1, ls='--', linewidth=0.5, color='gray')
+        axes[0].axhline(0, 0, 1, ls='--', linewidth=0.5, color='gray')
+        if return_fig:
+            return fig
+
+class ResponseFoPIDTruthPlot(General2dBinningPlot):
+    def __init__(self,
+                 bins=np.array([-30.5, -29.5, -28.5, -27.5, -26.5, -25.5, -24.5, -23.5, -22.5, -21.5, -20.5, -19.5, -18.5, -17.5, -16.5, -15.5, -14.5, -13.5, -12.5, -11.5, -10.5, -9.5, -8.5, -7.5, -6.5, -5.5, -4.5, -3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.9, 19.5, 20.5, 21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.9, 29.5, 30.5]),
+                 x_label='Truth PID', y_label='Response', title='Response comparison',
                  y_label_hist='Histogram (fraction)'):
         super().__init__(bins, x_label, y_label, title, y_label_hist)
 
@@ -208,4 +251,3 @@ class ResolutionFoTruthEnergyPlot(General2dBinningPlot):
         processed_data['mean'] = np.array(mean)
 
         return processed_data
-
