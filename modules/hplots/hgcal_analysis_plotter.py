@@ -359,7 +359,13 @@ class HGCalAnalysisPlotter:
             x[x==217] = 38
             x[x==119] = 39
             x[x==219] = 40
-            x[x>=100] = 41
+            x[x==130] = 41
+            x[x==310] = 42
+            x[x==311] = 43
+            x[x==321] = 44
+            x[x==2212] = 46
+            x[x==2112] = 47
+            x[x>=100] = 49
             y = y!=-1
             self.efficiency_fo_truth_pid_plot.add_raw_values(x, y, tags)
 
@@ -378,7 +384,13 @@ class HGCalAnalysisPlotter:
             l[l==217] = 38
             l[l==119] = 39
             l[l==219] = 40
-            l[l>=100] = 41
+            l[l==130] = 41
+            l[l==310] = 42
+            l[l==311] = 43
+            l[l==321] = 44
+            l[l==2212] = 46
+            l[l==2112] = 47
+            l[l>=100] = 49
             filter = y!=-1
             self.response_fo_truth_pid_plot.add_raw_values(l[filter], y[filter] / x[filter], tags)
 
