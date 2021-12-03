@@ -28,16 +28,17 @@ struct SlicingKnnOpFunctor<CPUDevice, dummy> {
 
             const float *d_coords, // accessible only on GPU!!!
             const int* d_row_splits, // accessible only on GPU!
+            const int* d_n_bins, // accessible only on GPU!!!
+            const float* d_coords_min, // accessible only on GPU!!!
+            const float* d_coords_max, // accessible only on GPU!!!
             int *neigh_idx,
             float *neigh_dist,
 
             const int V, // # of vertices
             const int K, // # of neighbours to be found
             const int n_coords,
-            std::vector<float> phase_space_bin_boundary,
             const int n_rs,
 
-            std::vector<int> n_bins,
             std::vector<int> features_to_bin_on
             ) {
 
@@ -52,26 +53,23 @@ class SlicingKnnOp : public OpKernel {
 
 private:
     int K_;
-    std::vector<int> n_bins;
     std::vector<int> features_to_bin_on;
-    std::vector<float> phase_space_bin_boundary;
 
 public:
     explicit SlicingKnnOp(OpKernelConstruction *context) : OpKernel(context) {
         OP_REQUIRES_OK(context,
                        context->GetAttr("n_neighbours", &K_));
         OP_REQUIRES_OK(context,
-                        context->GetAttr("n_bins", &n_bins));
-        OP_REQUIRES_OK(context,
                         context->GetAttr("features_to_bin_on", &features_to_bin_on));
-        OP_REQUIRES_OK(context,
-                        context->GetAttr("phase_space_bin_boundary", &phase_space_bin_boundary));
     }
 
     void Compute(OpKernelContext *context) override {
 
         const Tensor &d_coord_tensor = context->input(0);
         const Tensor &d_rs_tensor = context->input(1);
+        const Tensor &d_n_bins = context->input(2);
+        const Tensor &d_coords_min = context->input(3);
+        const Tensor &d_coords_max = context->input(4);
 
         int n_vert = d_coord_tensor.dim_size(0);
         int n_coords = d_coord_tensor.dim_size(1);
@@ -92,16 +90,17 @@ public:
 
                 d_coord_tensor.flat<float>().data(),
                 d_rs_tensor.flat<int>().data(),
+                d_n_bins.flat<int>().data(),
+                d_coords_min.flat<float>().data(),
+                d_coords_max.flat<float>().data(),
                 output_tensor->flat<int>().data(),
                 output_distances->flat<float>().data(),
 
                 n_vert,
                 K_,
                 n_coords,
-                phase_space_bin_boundary,
                 n_rs,
 
-                n_bins,
                 features_to_bin_on
         );
     }
