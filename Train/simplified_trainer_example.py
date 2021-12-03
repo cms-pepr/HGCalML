@@ -223,34 +223,34 @@ def gravnet_model(Inputs,
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     x = Concatenate()(allcoords+[x])
     
-    eproxies = Concatenate()(energysums)
     
-    pred_beta, pred_ccoords, pred_dist, pred_energy, \
+    pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
     pred_pos, pred_time, pred_id = create_outputs(x, orig_inputs['features'], 
                                                   fix_distance_scale=False,
                                                   scale_energy=False,
-                                                  energy_proxy = eproxies,
+                                                  energy_factor=True,
                                                   n_ccoords=n_cluster_space_coordinates)
     row_splits = CastRowSplits()(orig_inputs['row_splits'])
     # loss
-    pred_beta = LLFullObjectCondensation(print_loss=True, scale=5.,
-                                         energy_loss_weight=3e-1,
+    pred_beta = LLFullObjectCondensation(print_loss=True, scale=2.,
+                                         energy_loss_weight=5.,
                                          position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
                                          beta_loss_scale=1.,
-                                         too_much_beta_scale=.01,
+                                         too_much_beta_scale=.0001,
                                          use_energy_weights=True,
                                          q_min=2.5,
                                          #div_repulsion=True,
                                          # cont_beta_loss=True,
                                          # beta_gradient_damping=0.999,
                                          # phase_transition=1,
-                                         huber_energy_scale=3,
+                                         huber_energy_scale=0.1,
                                          use_average_cc_pos=0.5,  # smoothen it out a bit
                                          name="FullOCLoss"
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
-         pred_energy, pred_pos, pred_time, pred_id] +
+         pred_energy_corr, pred_pos, pred_time, pred_id] +
+        [orig_inputs['rechit_energy']]+
         # truth information
         [orig_inputs['t_idx'] ,
          orig_inputs['t_energy'] ,
@@ -262,7 +262,7 @@ def gravnet_model(Inputs,
 
     model_outputs = [('pred_beta', pred_beta), 
                      ('pred_ccoords', pred_ccoords),
-                     ('pred_energy', pred_energy),
+                     ('pred_energy_corr_factor', pred_energy_corr),
                      ('pred_pos', pred_pos),
                      ('pred_time', pred_time),
                      ('pred_id', pred_id),
@@ -363,7 +363,7 @@ cb += [
 
 #cb=[]
 learningrate = 1e-4
-nbatch = 120000
+nbatch = 90000
 
 train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
                           loss=None,

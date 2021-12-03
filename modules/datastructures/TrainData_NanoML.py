@@ -583,6 +583,7 @@ class TrainData_NanoML(TrainData):
         if returndict:
             return {
                 'features':ilist[0],
+                'rechit_energy': ilist[0][:,0:1], #this is hacky. FIXME
                 't_idx':ilist[2],
                 't_energy':ilist[4],
                 't_pos':ilist[6],

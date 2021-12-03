@@ -468,7 +468,10 @@ class LLFullObjectCondensation(LossLayerBase):
     making the config explode (more)
     '''
 
-    def __init__(self, *, energy_loss_weight=1., use_energy_weights=True, q_min=0.1, no_beta_norm=False,
+    def __init__(self, *, energy_loss_weight=1., 
+                 use_energy_weights=True, 
+                 train_energy_correction=True,
+                 q_min=0.1, no_beta_norm=False,
                  potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
                  classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
                  use_average_cc_pos=0.,
@@ -548,6 +551,7 @@ class LLFullObjectCondensation(LossLayerBase):
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights
+        self.train_energy_correction = train_energy_correction
         self.q_min = q_min
         self.no_beta_norm = no_beta_norm
         self.potential_scaling = potential_scaling
@@ -611,6 +615,46 @@ class LLFullObjectCondensation(LossLayerBase):
         toclip *= startclipat
         return toclip
         
+    def calc_energy_correction_factor_loss(self, t_energy, t_idx, hit_energy, pred_energy, row_splits): 
+        #
+        # all V x 1
+        #
+        depe=[]
+        for b in tf.range(row_splits.shape[0]-1):
+            dep = self._calc_and_scatter_dep_energy_pre_rs(
+                t_energy[row_splits[b]:row_splits[b + 1]], 
+                t_idx[row_splits[b]:row_splits[b + 1]], 
+                hit_energy[row_splits[b]:row_splits[b + 1]], 
+                pred_energy[row_splits[b]:row_splits[b + 1]]
+                )
+            depe.append(dep)
+        dep_energies = tf.concat(depe,axis=0)
+        
+        corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
+        corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
+        
+        eloss = None
+        if self.huber_energy_scale>0:
+            eloss = huber(corrtruth-pred_energy, self.huber_energy_scale)
+        else:
+            eloss = (corrtruth-pred_energy)**2 #V X 1
+        
+        return eloss
+        
+    def _calc_and_scatter_dep_energy_pre_rs(self, t_energy, t_idx, hit_energy, pred_energy):   
+        
+        nt_idx = t_idx + 1 #make noise object
+        
+        objsel, _, _ = CreateMidx(nt_idx, calc_m_not=False)
+        obj_hit_e = SelectWithDefault(objsel, hit_energy, 0.) # K x V-obj x 1
+        obj_dep_e = tf.reduce_sum(obj_hit_e,axis=1)#K x 1
+        
+        _, idxs, _ = tf.unique_with_counts(nt_idx[:,0])#for backgather, same indices as in objsel
+        idxs = tf.expand_dims(idxs, axis=1)
+        scat_dep_e = tf.gather_nd(obj_dep_e,idxs)
+        return scat_dep_e
+        
+        
             
     def calc_energy_loss(self, t_energy, pred_energy): 
         
@@ -663,39 +707,18 @@ class LLFullObjectCondensation(LossLayerBase):
     
     def loss(self, inputs):
         
+        assert len(inputs) == 15
         start_time = 0
         if self.print_time:
             start_time = time.time()
         
-        pred_distscale=None
-        rechit_energy=None
-        t_spectator_weights=None
-        if self.use_local_distances:
-            if self.energy_weighted_qmin:
-                raise ValueError("energy_weighted_qmin not implemented")
-
-            else:
-                #check for sepctator weights
-                if len(inputs) == 14:
-                    pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
-                    t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
-                    rowsplits = inputs
-                elif len(inputs) == 13:
-                    pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
-                    t_idx, t_energy, t_pos, t_time, t_pid,\
-                    rowsplits = inputs
-                
-        else:
-            if len(inputs) == 13:
-                pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
-                t_idx, t_energy, t_pos, t_time, t_pid,t_spectator_weights,\
-                rowsplits = inputs
-            elif len(inputs) == 12:
-                pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
-                t_idx, t_energy, t_pos, t_time, t_pid,\
-                rowsplits = inputs
-
-
+        
+        pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
+        rechit_energy,\
+        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
+        rowsplits = inputs
+                    
+        
         if rowsplits.shape[0] is None:
             return tf.constant(0,dtype='float32')
         
@@ -708,7 +731,16 @@ class LLFullObjectCondensation(LossLayerBase):
         q_min = self.q_min #self.calc_qmin_weight(rechit_energy)#FIXME
             
         #also kill any gradients for zero weight
-        energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
+        energy_loss = None
+        if self.train_energy_correction:
+            energy_loss = self.energy_loss_weight * self.calc_energy_correction_factor_loss(t_energy, 
+                                                                                            t_idx, 
+                                                                                            rechit_energy, 
+                                                                                            pred_energy, 
+                                                                                            rowsplits)
+        else:
+            energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
+            
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
         classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id)
@@ -813,6 +845,7 @@ class LLFullObjectCondensation(LossLayerBase):
         config = {
             'energy_loss_weight': self.energy_loss_weight,
             'use_energy_weights': self.use_energy_weights,
+            'train_energy_correction': self.train_energy_correction,
             'q_min': self.q_min,
             'no_beta_norm': self.no_beta_norm,
             'potential_scaling': self.potential_scaling,

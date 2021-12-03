@@ -14,11 +14,14 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
                    n_classes=6, td=TrainData_NanoML(), add_features=True, 
                    fix_distance_scale=False,
                    scale_energy=True,
+                   energy_factor=False,
                    energy_proxy=None,
                    name_prefix="output_module"):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
+    
+    assert scale_energy != energy_factor
     
     feat = td.createFeatureDict(feat)
     
@@ -34,7 +37,13 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
         energy_proxy = x
     else:
         energy_proxy = Concatenate()([energy_proxy,x])
-    pred_energy = Dense(1,name = name_prefix+'_energy')(energy_proxy)
+    energy_act=None
+    if energy_factor:
+        energy_act='relu'
+    pred_energy = Dense(1,name = name_prefix+'_energy',
+                        bias_initializer='ones',#no effect if full scale, useful if corr factor
+                        activation=energy_act
+                        )(energy_proxy)
     if scale_energy:
         pred_energy = ScalarMultiply(10.)(pred_energy)
     if energy is not None:
