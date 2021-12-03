@@ -297,11 +297,13 @@ class OCRecoGraphAnalyzer:
             rechit_x = feat_dict['recHitX'][pred_sid==sid]
             rechit_y = feat_dict['recHitY'][pred_sid==sid]
             rechit_z = feat_dict['recHitZ'][pred_sid==sid]
+            rechit_eta = feat_dict['recHitEta'][pred_sid==sid]
 
             node_attributes['dep_energy'] = np.sum(rechit_energy).item()
             node_attributes['dep_x'] = (np.sum(rechit_energy * rechit_x) / np.sum(rechit_energy)).item()
             node_attributes['dep_y'] = (np.sum(rechit_energy * rechit_y) / np.sum(rechit_energy)).item()
             node_attributes['dep_z'] = (np.sum(rechit_energy * rechit_z) / np.sum(rechit_energy)).item()
+            node_attributes['dep_eta'] = (np.sum(rechit_energy * rechit_eta) / np.sum(rechit_energy)).item()
             node_attributes['type'] = NODE_TYPE_PRED_SHOWER
             node_attributes['num_hits'] = np.sum(pred_sid==sid)
 
@@ -979,4 +981,3 @@ class OCAnlayzerWrapper():
 
         metadata = self._add_metadata(analysed_graphs)
         return analysed_graphs, metadata
-
