@@ -27,6 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
     parser.add_argument('-v', help='Leave at 0, functionality removed', default='0')
     parser.add_argument('-m', help='Matching type. 0 for IOU based matching, 1 for f score based matching', default='2')
+    parser.add_argument('-et', help='Energy type. See matching_and_analysis.py for options. Control+F for \'ENERGY_GATHER_TYPE_PRED_ENERGY\'', default='0')
     parser.add_argument('--soft', help='uses soft object condensation', action='store_true')
     parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.',
                         default='')
@@ -45,11 +46,14 @@ if __name__ == '__main__':
     matching_type = int(args.m)
     matching_type = matching_and_analysis.MATCHING_TYPE_IOU_MAX if matching_type==0 else matching_and_analysis.MATCHING_TYPE_MAX_FOUND
 
+    energy_gather_type = int(args.et)
+
     metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=beta_threshold,
                                                          distance_threshold=distance_threshold,
                                                          iou_threshold=iou_threshold,
                                                          matching_type=matching_type,
-                                                         with_local_distance_scaling=False
+                                                         with_local_distance_scaling=False,
+                                                         energy_gather_type=energy_gather_type
                                                          )
 
     files_to_be_tested = []

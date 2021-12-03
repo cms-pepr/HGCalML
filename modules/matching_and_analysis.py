@@ -25,6 +25,11 @@ NODE_TYPE_PRED_SHOWER = 1
 NODE_TYPE_RECHIT = 7
 
 
+ENERGY_GATHER_TYPE_PRED_ENERGY = 0
+ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT = 1
+ENERGY_GATHER_TYPE_CORRECTION_FACTOR_PER_HIT = 2
+
+
 HIT_WEIGHT_TYPE_RECHIT_ENERGY = 0
 HIT_WEIGHT_TYPE_ONES = 1
 
@@ -105,7 +110,7 @@ def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name
 def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=MATCHING_TYPE_MAX_FOUND,
                         with_local_distance_scaling=False, beta_weighting_param=1, angle_threshold=0.08, precision_threshold=0.2,
                         passes=5, max_hits_per_shower=-1, hit_weight_for_intersection=HIT_WEIGHT_TYPE_RECHIT_ENERGY,
-                        log_of_distributions=0):
+                        log_of_distributions=0, energy_gather_type=ENERGY_GATHER_TYPE_PRED_ENERGY):
     metadata = dict()
     metadata['beta_threshold'] = beta_threshold
     metadata['distance_threshold'] = distance_threshold
@@ -122,6 +127,9 @@ def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshol
     metadata['max_hits_per_shower'] = max_hits_per_shower
     metadata['hit_weight_for_intersection'] = hit_weight_for_intersection
     metadata['log_of_distributions'] = log_of_distributions
+
+
+    metadata['energy_type'] = energy_gather_type
 
 
     metadata['beta_weighting_param'] = beta_weighting_param # This is not beta threshold
@@ -290,8 +298,16 @@ class OCRecoGraphAnalyzer:
                 if 'pred_id' in pred_dict else 0
 
             node_attributes['dep_energy'] = np.sum(feat_dict['recHitEnergy'][pred_sid==sid]).item()
-            node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
-                if 'pred_energy' in pred_dict else node_attributes['dep_energy']
+
+            if self.metadata['energy_type'] == ENERGY_GATHER_TYPE_PRED_ENERGY:
+                node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
+                    if 'pred_energy' in pred_dict else node_attributes['dep_energy']
+            elif self.metadata['energy_type'] == ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT:
+                node_attributes['energy']  = max(pred_dict['pred_correction_factor_from_condensation_point'][pred_shower_alpha_idx[i]][0].item(), 0) * node_attributes['dep_energy']
+            elif self.metadata['energy_type'] == ENERGY_GATHER_TYPE_CORRECTION_FACTOR_PER_HIT:
+                node_attributes['energy']  = pred_dict['pred_correction_factor_per_hit'][pred_sid==sid] * feat_dict['recHitEnergy'][pred_sid==sid]
+            else:
+                raise RuntimeError("Wrong energy gather type")
 
             rechit_energy = feat_dict['recHitEnergy'][pred_sid==sid]
             rechit_x = feat_dict['recHitX'][pred_sid==sid]
