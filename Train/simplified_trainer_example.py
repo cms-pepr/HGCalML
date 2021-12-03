@@ -140,7 +140,7 @@ def gravnet_model(Inputs,
         
     allfeat = []
     energysums = []
-    allcoords= []
+    allcoords= [pre_selection['orig_dim_coords']]
     
 
     n_cluster_space_coordinates = 3

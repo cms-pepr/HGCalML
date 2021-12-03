@@ -139,7 +139,7 @@ def gravnet_model(Inputs,
         ]] #add them here directly
         
     allfeat = [MultiBackScatterOrGather()([x, scatterids])]
-    allcoords= [MultiBackScatterOrGather()([coords, scatterids])]
+    allcoords= [pre_selection['orig_dim_coords'],MultiBackScatterOrGather()([coords, scatterids])]
     
     n_cluster_space_coordinates = 3
     
