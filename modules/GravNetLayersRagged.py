@@ -158,7 +158,45 @@ class CastRowSplits(tf.keras.layers.Layer):
         return tf.cast(inputs[:,0],dtype='int32')
         
     
+
+class ScaleBackpropGradient(tf.keras.layers.Layer):
+    def __init__(self, scale, **kwargs):
+        '''
+        Scales the gradient in back propagation. 
+        Useful for strong reduction models where low-statistics parts 
+        should get lower effective learning rates
+        
+        Please notice that this is applied backwards (as it affects back propagation)
+        '''
+        super(ScaleBackpropGradient, self).__init__(**kwargs)
+        self.scale = scale
+        
+    def get_config(self):
+        base_config = super(ScaleBackpropGradient, self).get_config()
+        return dict(list(base_config.items()) + list({'scale': self.scale }.items()))
     
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, inputs):
+        @tf.custom_gradient
+        def scale_grad(x):
+            def grad(dy):
+                return self.scale * dy
+            return tf.identity(x), grad
+        
+        islist = isinstance(inputs, list)
+        
+        if not islist:
+            inputs = [inputs]
+            
+        out = []
+        for i in inputs:
+            out.append(scale_grad(i))
+            
+        if islist:  
+            return out
+        return out[0]    
     
 class RemoveSelfRef(tf.keras.layers.Layer):
     

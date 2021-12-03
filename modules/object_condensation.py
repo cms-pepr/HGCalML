@@ -92,7 +92,8 @@ def oc_per_batch_element(
         super_repulsion=False,
         super_attraction=False,
         div_repulsion=False,
-        soft_att=True
+        soft_att=True,
+        dynamic_payload_scaling_onset=-0.03
         ):
     '''
     all inputs
@@ -192,6 +193,9 @@ def oc_per_batch_element(
         V_att = tf.math.divide_no_nan(tf.reduce_sum(padmask_m * V_att,axis=1), tf.reduce_sum(q_m, axis=1)) # K x 1
     else:
         V_att = tf.math.divide_no_nan(tf.reduce_sum(padmask_m * V_att,axis=1), N_per_obj+1e-9) # K x 1
+    
+    # opt. used later in payload loss
+    V_att_K = V_att
     V_att = tf.math.divide_no_nan(tf.reduce_sum(V_att,axis=0), K+1e-9) # 1
     
     
@@ -230,6 +234,8 @@ def oc_per_batch_element(
     else:
         V_rep = tf.math.divide_no_nan(V_rep, 
                                   tf.expand_dims(tf.expand_dims(N,axis=0),axis=0) - N_per_obj+1e-9) # K x 1
+    # opt used later in payload loss
+    V_rep_K = V_rep
     V_rep = tf.math.divide_no_nan(tf.reduce_sum(V_rep,axis=0), K+1e-9) # 1
     
     B_pen = None
@@ -278,10 +284,20 @@ def oc_per_batch_element(
         (1.- payload_beta_gradient_damping_strength)* p_w
         
     payload_loss_m = p_w * SelectWithDefault(Msel, (1.-is_noise)*payload_loss, 0.) #K x V_perobj x P
-    payload_loss_m = object_weights_kalpha_m * tf.reduce_sum(payload_loss_m, axis=1) 
+    payload_loss_m = object_weights_kalpha_m * tf.reduce_sum(payload_loss_m, axis=1) # K x P
+        
     #here normalisation per object
     payload_loss_m = tf.math.divide_no_nan(payload_loss_m, tf.reduce_sum(p_w, axis=1))
     
+    #print('dynamic_payload_scaling_onset',dynamic_payload_scaling_onset)
+    if dynamic_payload_scaling_onset > 0:
+        #stop gradient
+        V_scaler = tf.stop_gradient(V_rep_K + V_att_K)    # K x 1
+        #print('N_per_obj[V_scaler=0]',N_per_obj[V_scaler==0])
+        #max of V_scaler is around 1 given the potentials
+        scaling = tf.exp(-tf.math.log(2.)*V_scaler/(dynamic_payload_scaling_onset/5.))
+        #print('affected fraction',tf.math.count_nonzero(scaling>0.5,dtype='float32')/K,'max',tf.reduce_max(V_scaler,axis=0,keepdims=True))
+        payload_loss_m *= scaling#basically the onset of the rise
     #pll = tf.math.divide_no_nan(payload_loss_m, N_per_obj+1e-9) # K x P #really?
     pll = tf.math.divide_no_nan(tf.reduce_sum(payload_loss_m,axis=0), K+1e-3) # P
     
@@ -313,7 +329,8 @@ def oc_loss(
         repulsion_q_min=-1,
         super_repulsion=False,
         super_attraction=False,
-        div_repulsion=False
+        div_repulsion=False,
+        dynamic_payload_scaling_onset=-0.1
         ):   
     
     if energyweights is None:
@@ -359,7 +376,8 @@ def oc_loss(
             repulsion_q_min=repulsion_q_min,
             super_repulsion=super_repulsion,
             super_attraction=super_attraction,
-            div_repulsion=div_repulsion
+            div_repulsion=div_repulsion,
+            dynamic_payload_scaling_onset=dynamic_payload_scaling_onset
             )
         V_att += att
         V_rep += rep

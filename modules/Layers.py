@@ -27,6 +27,9 @@ global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 from GravNetLayersRagged import CastRowSplits
 global_layers_list['CastRowSplits']=CastRowSplits
 
+from GravNetLayersRagged import ScaleBackpropGradient
+global_layers_list['ScaleBackpropGradient']=ScaleBackpropGradient
+
 from GravNetLayersRagged import RemoveSelfRef
 global_layers_list['RemoveSelfRef']=RemoveSelfRef
 
