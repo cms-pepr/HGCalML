@@ -1256,7 +1256,9 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
 
 
 class KNN(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float=-1., use_approximate_knn=True, **kwargs):
+    def __init__(self,K: int, radius=-1., 
+                 use_approximate_knn=True,
+                 **kwargs):
         """
         
         Select self+K nearest neighbours, with possible radius constraint.
@@ -1268,14 +1270,26 @@ class KNN(tf.keras.layers.Layer):
         Inputs: coordinates, row_splits
         
         :param K: number of nearest neighbours
-        :param radius: maximum distance of nearest neighbours
+        :param radius: maximum distance of nearest neighbours,
+                       can also contain the keyword 'dynamic'
         :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
         """
         super(KNN, self).__init__(**kwargs) 
         self.K = K
-        self.radius = radius
+        
         self.use_approximate_knn = use_approximate_knn
         
+        if isinstance(radius,int):
+            radius=float(radius)
+        self.radius = radius
+        assert (isinstance(radius,str) and radius=='dynamic') or isinstance(radius,float)
+        assert not(radius=='dynamic' and not use_approximate_knn)
+        self.dynamic_radius = None
+        if radius == 'dynamic':
+            radius=1.
+            with tf.name_scope(self.name + "/1/"):
+                self.dynamic_radius = tf.Variable(initial_value=radius, 
+                                         trainable=False,dtype='float32')
         
     def get_config(self):
         config = {'K': self.K,
@@ -1290,9 +1304,7 @@ class KNN(tf.keras.layers.Layer):
     @staticmethod 
     def raw_call(coordinates, row_splits, K, radius, use_approximate_knn):
         if use_approximate_knn:
-            bin_width = 1.0 # default value for SlicingKnn kernel
-            if radius>0.0:
-                bin_width = float(radius)
+            bin_width = radius # default value for SlicingKnn kernel
             idx,dist = SlicingKnn(K+1, coordinates,  row_splits,
                                   features_to_bin_on = (0,1),
                                   bin_width=(bin_width,bin_width))
@@ -1304,9 +1316,23 @@ class KNN(tf.keras.layers.Layer):
         dist = tf.reshape(dist, [-1,K+1])
         return idx,dist
 
-    def call(self, inputs):
+    def update_dynamic_radius(self, dist, training=None):
+        if self.dynamic_radius is None:
+            return
+        #update slowly, with safety margin
+        update = tf.reduce_max(dist)*1.2
+        update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
+        updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
+        tf.keras.backend.update(self.dynamic_radius,updated_radius)
+        
+    def call(self, inputs, training=None):
         coordinates, row_splits = inputs
-        return KNN.raw_call(coordinates, row_splits, self.K, self.radius, self.use_approximate_knn)
+        if self.dynamic_radius is None:
+            return KNN.raw_call(coordinates, row_splits, self.K, self.radius, self.use_approximate_knn)
+        else:
+            idx,dist = KNN.raw_call(coordinates, row_splits, self.K, self.dynamic_radius, self.use_approximate_knn)
+            self.update_dynamic_radius(dist,training)
+            return idx,dist
         
 
         

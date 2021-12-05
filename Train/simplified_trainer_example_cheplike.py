@@ -143,6 +143,14 @@ def gravnet_model(Inputs,
     
     n_cluster_space_coordinates = 3
     
+    #extend coordinates already here if needed
+    if n_cluster_space_coordinates > 3:
+        extendcoords = Dense(3-n_cluster_space_coordinates,
+                             use_bias=False,
+                             kernel_initializer='zeros'
+                             )(x)
+        coords = Concatenate()([coords, extendcoords])
+    
     total_iterations=5
 
     for i in range(total_iterations):
@@ -165,6 +173,22 @@ def gravnet_model(Inputs,
                                                  )([x, rs])
 
         x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
+        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
+        
+        #gradually improve coordinates
+        
+        add_to_coords = Dense(n_cluster_space_coordinates,
+                             use_bias=False,kernel_initializer='zeros')(x)
+                     
+        coords = Add()([coords,add_to_coords])
+        coords = LLClusterCoordinates(
+            scale=0.1,
+            active=True,
+            print_loss=True
+            )([coords, t_idx, rs])
+        
+                             
+        #compress output
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
@@ -176,8 +200,9 @@ def gravnet_model(Inputs,
         
     
     ####### back to non-reduced space
+    #extend coordinate list
+    allcoords = [MultiBackScatterOrGather()([coords, scatterids])]+allcoords
     
-    #x = MultiBackScatterOrGather()([x, scatterids])
     x = Concatenate()(allfeat+allcoords)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     #do one more exchange with all
