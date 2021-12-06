@@ -11,7 +11,7 @@ from initializers import EyeInitializer
 from datastructures import TrainData_OC,TrainData_NanoML
 #new format!
 def create_outputs(x, feat, energy=None, n_ccoords=3, 
-                   n_classes=6, td=TrainData_NanoML(), add_features=True, 
+                   n_classes=4, td=TrainData_NanoML(), add_features=True, 
                    fix_distance_scale=False,
                    scale_energy=True,
                    energy_factor=False,
