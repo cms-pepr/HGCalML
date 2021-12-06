@@ -735,6 +735,9 @@ class LLFullObjectCondensation(LossLayerBase):
         corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
         corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
         
+        corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
+        corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
+        
         eloss = None
         if self.huber_energy_scale>0:
             eloss = huber(corrtruth-pred_energy, self.huber_energy_scale)

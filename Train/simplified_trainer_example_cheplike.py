@@ -145,7 +145,7 @@ def gravnet_model(Inputs,
     
     #extend coordinates already here if needed
     if n_cluster_space_coordinates > 3:
-        extendcoords = Dense(3-n_cluster_space_coordinates,
+        extendcoords = Dense(n_cluster_space_coordinates-3,
                              use_bias=False,
                              kernel_initializer='zeros'
                              )(x)
@@ -171,22 +171,28 @@ def gravnet_model(Inputs,
                                                  n_filters=128,
                                                  n_propagate=64,
                                                  )([x, rs])
+                                                 
+        #just keep them in a reasonable range  
+        #safeguard against diappearing gradients on coordinates                                       
+        gndist = AverageDistanceRegularizer(strength=0.01,
+                                            printout=False
+                                            )(gndist)
 
         x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
         
-        #gradually improve coordinates
-        
-        add_to_coords = Dense(n_cluster_space_coordinates,
-                             use_bias=False,kernel_initializer='zeros')(x)
-                    
-        coords = Add()([coords,add_to_coords])
-        coords = LLClusterCoordinates(
-            scale=0.1,
-            active=True,
-            downsample=1000,#make it resource friendly
-            print_loss=False
-            )([coords, t_idx, rs])
+        #gradually improve coordinates, opt. takes some extra training time
+        if True:
+            add_to_coords = Dense(n_cluster_space_coordinates,
+                                 use_bias=False,kernel_initializer='zeros')(x)
+                        
+            coords = Add()([coords,add_to_coords])
+            coords = LLClusterCoordinates(
+                scale=0.1,
+                active=True,
+                downsample=1000,#possible to make it more resource friendly
+                print_loss=True
+                )([coords, t_idx, rs])
         #
         #                     
         #compress output
@@ -225,7 +231,7 @@ def gravnet_model(Inputs,
                                          energy_loss_weight=5.,
                                          position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
-                                         classification_loss_weight=0.1,
+                                         classification_loss_weight=0.5,
                                          beta_loss_scale=1.,
                                          too_much_beta_scale=.001,
                                          use_energy_weights=True,
@@ -341,25 +347,16 @@ for i in range(5)
 #
 
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
-#by hand
-from plotting_callbacks import plotClusterSummary
-cb += [
-    plotClusterSummary(
-        outputfile=train.outputDir + "/clustering/",
-        samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=800
-        )
-    ]
 
 #cb=[]
 learningrate = 1e-4
-nbatch = 90000
+nbatch = 120000
 
 train.change_learning_rate(learningrate)
 
-model, history = train.trainModel(nepochs=3,
+model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
@@ -375,15 +372,7 @@ for l in train.keras_model.model.layers:
     if 'gooey_batch_norm' in l.name:
         l.max_viscosity = 0.99
         l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
-    if 'FullOCLoss' in l.name:
-        l.use_average_cc_pos = 0.1
-        l.q_min = 2.
-        l.cont_beta_loss=False
-        l.energy_loss_weight=1e-2 #etc
-        l.position_loss_weight=1e-2
-    if 'edge_selector' in l.name:
-        l.use_truth=False#IMPORTANT
-
+    
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=10.
 nbatch = 120000

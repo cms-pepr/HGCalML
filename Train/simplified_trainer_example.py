@@ -349,26 +349,13 @@ for i in range(5)
 #
 
 
-#cb += build_callbacks(train)
-
-#by hand
-from plotting_callbacks import plotClusterSummary
-cb += [
-    plotClusterSummary(
-        outputfile=train.outputDir + "/clustering/",
-        samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=800
-        )
-    ]
+cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 1e-4
 nbatch = 90000
 
-train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
-                          loss=None,
-                          metrics=None,
-                          )
+train.change_learning_rate(learningrate)
 
 model, history = train.trainModel(nepochs=3,
                                   run_eagerly=True,
@@ -386,22 +373,12 @@ for l in train.keras_model.model.layers:
     if 'gooey_batch_norm' in l.name:
         l.max_viscosity = 0.99
         l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
-    if 'FullOCLoss' in l.name:
-        l.use_average_cc_pos = 0.1
-        l.q_min = 2.
-        l.cont_beta_loss=False
-        l.energy_loss_weight=1e-2 #etc
-        l.position_loss_weight=1e-2
-    if 'edge_selector' in l.name:
-        l.use_truth=False#IMPORTANT
 
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=10.
 nbatch = 120000
 
-train.compileModel(learningrate=learningrate,
-                          loss=None,
-                          metrics=None)
+train.change_learning_rate(learningrate)
 
 model, history = train.trainModel(nepochs=121,
                                   run_eagerly=True,
