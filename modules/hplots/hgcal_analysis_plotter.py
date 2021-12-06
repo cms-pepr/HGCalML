@@ -25,8 +25,8 @@ class HGCalAnalysisPlotter:
         self.energy_found_fo_truth_plot = EnergyFoundFoTruthEnergyPlot()
         self.energy_found_fo_pred_plot = EnergyFoundFoPredEnergyPlot()
 
-        # TODO: for Nadya
-        self.resolution_histogram_plot = GeneralHistogramPlot(bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),x_label='Resolution (to be done)', y_label='Frequency', title='Energy resolution (to be done, placeholder)', histogram_log=False)
+        # TODO: for 
+        self.resolution_histogram_plot = GeneralHistogramPlot(bins=np.linspace(0,2,50),x_label='Energy Resolution', y_label='Frequency', title='Energy resolution', histogram_log=False)
 
         self.dist_thresholds = []
         self.beta_thresholds = []
@@ -213,8 +213,10 @@ class HGCalAnalysisPlotter:
 
 
         # TODO: Nadya Just adding a histogram of all the truth shower energy as a placeholder
-        # if 'energy_resolution' in self.plots:
-        #     self.resolution_histogram_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'][filter_truth_found], tags)
+        if 'energy_resolution' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy_unc', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+            self.resolution_histogram_plot.add_raw_values(y[filter], tags)
 
         if 'energy_found_fo_truth' in self.plots:
             x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
@@ -257,9 +259,9 @@ class HGCalAnalysisPlotter:
 
         if 'energy_resolution' in self.plots:
             # TODO: remove comments when added
-            # self.resolution_histogram_plot.draw(formatter)
-            # pdf.savefig()
-            pass
+             self.resolution_histogram_plot.draw(formatter)
+             pdf.savefig()
+            #pass
         if 'energy_found_fo_truth' in self.plots:
             self.energy_found_fo_truth_plot.draw(formatter)
             pdf.savefig()

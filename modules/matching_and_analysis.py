@@ -283,6 +283,7 @@ class OCRecoGraphAnalyzer:
             node_attributes['dep_energy'] = np.sum(feat_dict['recHitEnergy'][pred_sid==sid]).item()
             node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
                 if 'pred_energy' in pred_dict else node_attributes['dep_energy']
+            node_attributes['energy_unc']  =(max(pred_dict['pred_energy_high_quantile'][pred_shower_alpha_idx[i]][0].item(), 0) -  max(pred_dict['pred_energy_low_quantile'][pred_shower_alpha_idx[i]][0].item(), 0))/2./node_attributes['energy']
 
             rechit_energy = feat_dict['recHitEnergy'][pred_sid==sid]
             rechit_x = feat_dict['recHitX'][pred_sid==sid]
