@@ -14,7 +14,6 @@ def one_hot_encode_id(t_pid, n_classes):
     depth = n_classes #If n_classes=pred_id.shape[1], should we add an assert statement? 
     return tf.one_hot(valued_pids, depth)
 
-
 def huber(x, d):
     losssq  = x**2   
     absx = tf.abs(x)                
@@ -502,6 +501,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  energy_weighted_qmin=False,
                  super_attraction=False,
                  div_repulsion=False,
+                 dynamic_payload_scaling_onset=-0.005,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -538,6 +538,7 @@ class LLFullObjectCondensation(LossLayerBase):
         :param phase_transition
         :param standard_configuration:
         :param alt_energy_loss: introduces energy loss with very mild gradient for large delta. (modified 1-exp form)
+        :param dynamic_payload_scaling_onset: only apply payload loss to well reconstructed showers. typical values 0.1 (negative=off)
         :param kwargs:
         """
         if 'dynamic' in kwargs:
@@ -596,6 +597,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.energy_weighted_qmin=energy_weighted_qmin
         self.super_attraction = super_attraction
         self.div_repulsion=div_repulsion
+        self.dynamic_payload_scaling_onset = dynamic_payload_scaling_onset
         
         self.loc_time=time.time()
         self.call_count=0
@@ -636,7 +638,8 @@ class LLFullObjectCondensation(LossLayerBase):
         else:
             eloss = tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))
         
-        eloss = self.softclip(eloss, 10.) 
+        if self.dynamic_payload_scaling_onset<=0:
+            eloss = self.softclip(eloss, 10.) 
         return eloss
 
     def calc_qmin_weight(self, hitenergy):
@@ -659,12 +662,12 @@ class LLFullObjectCondensation(LossLayerBase):
         
         tloss = huber((t_time - pred_time),2.) 
         return self.softclip(tloss, 6.) 
-   
+    
     def calc_classification_loss(self, t_pid, pred_id):
         depth = pred_id.shape[1]#add n_classes here?
         truthclass  = one_hot_encode_id(t_pid, depth)
         return tf.expand_dims(tf.keras.metrics.categorical_crossentropy(truthclass, pred_id), axis=1)
-    
+
     def loss(self, inputs):
         
         start_time = 0
@@ -752,7 +755,8 @@ class LLFullObjectCondensation(LossLayerBase):
                                            repulsion_q_min=self.repulsion_q_min,
                                            super_repulsion=self.super_repulsion,
                                            super_attraction = self.super_attraction,
-                                           div_repulsion = self.div_repulsion
+                                           div_repulsion = self.div_repulsion,
+                                           dynamic_payload_scaling_onset=self.dynamic_payload_scaling_onset
                                            )
 
         
@@ -855,7 +859,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'use_local_distances': self.use_local_distances,
             'energy_weighted_qmin': self.energy_weighted_qmin,
             'super_attraction':self.super_attraction,
-            'div_repulsion' : self.div_repulsion
+            'div_repulsion' : self.div_repulsion,
+            'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

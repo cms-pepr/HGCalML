@@ -343,6 +343,8 @@ def pre_selection_model_full(orig_inputs,
     selfeat = orig_inputs['features']
     selfeat = SelectFromIndices()([gsel,selfeat])
     
+    #save for later
+    orig_dim_coords = coords
     
     x = AccumulateNeighbours('minmeanmax')([x, gnidx])
     x = SelectFromIndices()([gsel,x])
@@ -397,6 +399,7 @@ def pre_selection_model_full(orig_inputs,
     out['noise_backscatter_idx']=noise_backscatter[1]
     out['orig_t_idx'] = orig_inputs['t_idx']
     out['orig_t_energy'] = orig_inputs['t_energy'] #for validation
+    out['orig_dim_coords'] = orig_dim_coords
     out['rs']=rs
 
     return out
