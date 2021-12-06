@@ -11,7 +11,7 @@ from initializers import EyeInitializer
 from datastructures import TrainData_OC,TrainData_NanoML
 #new format!
 def create_outputs(x, feat, energy=None, n_ccoords=3, 
-                   n_classes=6, td=TrainData_NanoML(), add_features=True, 
+                   n_classes=4, td=TrainData_NanoML(), add_features=True, 
                    fix_distance_scale=False,
                    scale_energy=True,
                    energy_proxy=None,
@@ -343,8 +343,6 @@ def pre_selection_model_full(orig_inputs,
     selfeat = orig_inputs['features']
     selfeat = SelectFromIndices()([gsel,selfeat])
     
-    #save for later
-    orig_dim_coords = coords
     
     x = AccumulateNeighbours('minmeanmax')([x, gnidx])
     x = SelectFromIndices()([gsel,x])
@@ -399,7 +397,6 @@ def pre_selection_model_full(orig_inputs,
     out['noise_backscatter_idx']=noise_backscatter[1]
     out['orig_t_idx'] = orig_inputs['t_idx']
     out['orig_t_energy'] = orig_inputs['t_energy'] #for validation
-    out['orig_dim_coords'] = orig_dim_coords
     out['rs']=rs
 
     return out
