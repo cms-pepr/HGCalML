@@ -216,12 +216,18 @@ class LLClusterCoordinates(LossLayerBase):
     - truth index
     - row splits
     '''
-    def __init__(self, **kwargs):
+    def __init__(self, downsample:int = -1, **kwargs):
         if 'dynamic' in kwargs:
             super(LLClusterCoordinates, self).__init__(**kwargs)
         else:
             super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
+            
+        self.downsample = downsample
 
+    def get_config(self):
+        base_config = super(LLClusterCoordinates, self).get_config()
+        return dict(list(base_config.items()) + list({'downsample':self.downsample}.items()))
+         
     @staticmethod
     def _rs_loop(coords, tidx):
         Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
@@ -255,7 +261,7 @@ class LLClusterCoordinates(LossLayerBase):
         return distloss+reploss, distloss, reploss
     
     @staticmethod
-    def raw_loss(acoords, atidx, rs):
+    def raw_loss(acoords, atidx, rs, downsample):
         
         lossval = tf.zeros_like(acoords[0,0])
         reploss = tf.zeros_like(acoords[0,0])
@@ -263,6 +269,13 @@ class LLClusterCoordinates(LossLayerBase):
         for i in range(len(rs)-1):
             coords = acoords[rs[i]:rs[i+1]]
             tidx = atidx[rs[i]:rs[i+1]]
+            
+            if downsample>0 and downsample < coords.shape[0]:
+                sel = tf.random.uniform(shape=(downsample,), minval=0, maxval=coords.shape[0]-1, dtype=tf.int32)
+                sel = tf.expand_dims(sel,axis=1)
+                coords = tf.gather_nd(coords, sel)
+                tidx = tf.gather_nd(tidx, sel)
+            
             if tidx.shape[0]<20:
                 continue #does not make sense
             tlv, tdl, trl = LLClusterCoordinates._rs_loop(coords,tidx)
@@ -284,7 +297,7 @@ class LLClusterCoordinates(LossLayerBase):
     def loss(self, inputs):
         assert len(inputs) == 3
         coords, tidx, rs = inputs
-        lossval,distloss, reploss = LLClusterCoordinates.raw_loss(coords, tidx, rs)
+        lossval,distloss, reploss = LLClusterCoordinates.raw_loss(coords, tidx, rs, self.downsample)
         self.maybe_print_loss(lossval,distloss, reploss, tidx)
         return lossval
     

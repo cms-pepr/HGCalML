@@ -179,15 +179,16 @@ def gravnet_model(Inputs,
         
         add_to_coords = Dense(n_cluster_space_coordinates,
                              use_bias=False,kernel_initializer='zeros')(x)
-                     
+                    
         coords = Add()([coords,add_to_coords])
         coords = LLClusterCoordinates(
             scale=0.1,
             active=True,
-            print_loss=True
+            downsample=1000,#make it resource friendly
+            print_loss=False
             )([coords, t_idx, rs])
-        
-                             
+        #
+        #                     
         #compress output
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
@@ -224,6 +225,7 @@ def gravnet_model(Inputs,
                                          energy_loss_weight=5.,
                                          position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
+                                         classification_loss_weight=0.1,
                                          beta_loss_scale=1.,
                                          too_much_beta_scale=.001,
                                          use_energy_weights=True,
@@ -353,12 +355,9 @@ cb += [
 
 #cb=[]
 learningrate = 1e-4
-nbatch = 120000
+nbatch = 90000
 
-train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
-                          loss=None,
-                          metrics=None,
-                          )
+train.change_learning_rate(learningrate)
 
 model, history = train.trainModel(nepochs=3,
                                   run_eagerly=True,
@@ -389,9 +388,7 @@ for l in train.keras_model.model.layers:
 learningrate/=10.
 nbatch = 120000
 
-train.compileModel(learningrate=learningrate,
-                          loss=None,
-                          metrics=None)
+train.change_learning_rate(learningrate)
 
 model, history = train.trainModel(nepochs=121,
                                   run_eagerly=True,

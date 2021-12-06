@@ -392,6 +392,7 @@ def pre_selection_model_full(orig_inputs,
         threshold = 0.025, #high signal efficiency filter
         print_reduction=True,
         )([isnotnoise,rs])
+        
     for k in out.keys():
         out[k] = SelectFromIndices()([sel,out[k]])
         
