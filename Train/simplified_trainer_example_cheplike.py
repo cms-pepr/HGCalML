@@ -351,7 +351,7 @@ cb += build_callbacks(train)
 
 
 #cb=[]
-learningrate = 3e-5
+learningrate = 1e-4
 nbatch = 120000
 
 train.change_learning_rate(learningrate)
@@ -374,7 +374,7 @@ for l in train.keras_model.model.layers:
         l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
     
 #also stop GravNetLLLocalClusterLoss* from being evaluated
-learningrate/=3.
+learningrate/=5.
 nbatch = 120000
 
 train.change_learning_rate(learningrate)
