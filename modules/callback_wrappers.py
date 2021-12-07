@@ -17,7 +17,8 @@ def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_dista
                     running_plots_write_after_iterations=200, full_analysis_num_hyperparam_optimization_iterations=-1,
                     test_on_points=[(0.2,0.2), (0.8,0.8),(0.2,0.8),(0.8,0.2),(0.5,0.5)],
                     full_analysis_num_hyperparam_optimization_endcaps=-1, should_write_to_file=True,
-                    should_write_to_remote_server=False, full_analysis_after_batches=5000):
+                    should_write_to_remote_server=False, full_analysis_after_batches=5000,
+                    running_plots_energy_gather_type=matching_and_analysis.ENERGY_GATHER_TYPE_PRED_ENERGY):
     """
 
     This function will add two types of call backs:
@@ -92,9 +93,11 @@ def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_dista
     database_reading_manager = ExperimentDatabaseReadingManager(
         file=os.path.join(train.outputDir, "training_metrics.db"))
     database_manager.set_experiment(unique_id)
-    metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=running_plots_beta_threshold, distance_threshold=running_plots_distance_threshold,
+    metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=running_plots_beta_threshold,
+                                                         distance_threshold=running_plots_distance_threshold,
                                                          iou_threshold=running_plots_iou_threshold,
-                                                         matching_type=running_plots_matching_type)
+                                                         matching_type=running_plots_matching_type,
+                                                         energy_gather_type=running_plots_energy_gather_type)
     analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
     cb += [RunningMetricsDatabaseAdditionCallback(td, database_manager=database_manager,
                                                   analyzer=analyzer)]
