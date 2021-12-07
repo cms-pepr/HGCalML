@@ -18,7 +18,7 @@ def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_dista
                     test_on_points=[(0.2,0.2), (0.8,0.8),(0.2,0.8),(0.8,0.2),(0.5,0.5)],
                     full_analysis_num_hyperparam_optimization_endcaps=-1, should_write_to_file=True,
                     should_write_to_remote_server=False, full_analysis_after_batches=5000,
-                    running_plots_energy_gather_type=matching_and_analysis.ENERGY_GATHER_TYPE_PRED_ENERGY):
+                    running_plots_energy_gather_type=matching_and_analysis.ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT):
     """
 
     This function will add two types of call backs:
