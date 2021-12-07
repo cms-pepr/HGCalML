@@ -320,9 +320,9 @@ class OCRecoGraphAnalyzer:
                 node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
                     if 'pred_energy' in pred_dict else node_attributes['dep_energy']
             elif self.metadata['energy_type'] == ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT:
-                node_attributes['energy']  = max(pred_dict['pred_correction_factor_from_condensation_point'][pred_shower_alpha_idx[i]][0].item(), 0) * node_attributes['dep_energy']
+                node_attributes['energy']  = max(pred_dict['pred_energy_corr_factor'][pred_shower_alpha_idx[i]][0].item(), 0) * node_attributes['dep_energy']
             elif self.metadata['energy_type'] == ENERGY_GATHER_TYPE_CORRECTION_FACTOR_PER_HIT:
-                node_attributes['energy']  = pred_dict['pred_correction_factor_per_hit'][pred_sid==sid] * feat_dict['recHitEnergy'][pred_sid==sid]
+                node_attributes['energy']  = np.sum(pred_dict['pred_energy_corr_factor'][pred_sid==sid] * feat_dict['recHitEnergy'][pred_sid==sid])
             else:
                 raise RuntimeError("Wrong energy gather type")
 

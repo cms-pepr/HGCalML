@@ -591,11 +591,23 @@ class HGCalAnalysisPlotter:
             fig = self.confusion_matrix_plot.draw(formatter)
             pdf_pid.savefig(fig)
 
+            self.confusion_matrix_plot.dont_plot(3)
+            fig = self.confusion_matrix_plot.draw(formatter)
+            pdf_pid.savefig(fig)
+            self.confusion_matrix_plot.dont_plot(None)
+
         if 'roc_curves' in self.plots:
             for i in range(4):
                 self.roc_curves.set_primary_class(i)
                 fig = self.roc_curves.draw(formatter)
                 pdf_pid.savefig(figure=fig)
+
+            for i in range(3):
+                self.roc_curves.set_primary_class(i)
+                self.roc_curves.dont_plot(3)
+                fig = self.roc_curves.draw(formatter)
+                pdf_pid.savefig(figure=fig)
+
             # self.roc_curves.set_primary_class(0)
             # fig = self.roc_curves.draw(formatter)
             # print(fig)

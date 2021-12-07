@@ -8,6 +8,10 @@ class RocCurvesPlot():
         self.classes = classes
         self.primary_class = 0
         self.models_data = []
+        self.dont_plot_idx=None
+
+    def dont_plot(self, class_index):
+        self.dont_plot_idx=class_index
 
 
     def _compute(self, true_id, pred_scores):
@@ -21,7 +25,6 @@ class RocCurvesPlot():
                 if primary_class == i:
                     continue
                 filter = np.logical_or(np.equal(true_id, primary_class), np.equal(true_id, i))
-                print("X", filter, filter.shape, np.sum(filter))
 
                 if np.sum(filter)!=0:
 
@@ -75,6 +78,10 @@ class RocCurvesPlot():
         for curve in data['curves']:
             if curve['primary_class'] != self.primary_class:
                 continue
+
+            if self.dont_plot_idx is not None:
+                if self.dont_plot_idx==curve['secondary_class']:
+                    continue
 
             ax1.plot(curve['tpr'], 1-curve['fpr'], label='%s vs %s'% (self.classes[self.primary_class],self.classes[curve['secondary_class']]))
 
@@ -138,6 +145,7 @@ class ConfusionMatrixPlot():
     def __init__(self, classes=['EM', 'Hadronic', 'MIP', 'undef']):
         self.classes = classes
         self.models_data = []
+        self.dont_plot_idx=None
 
     def _compute(self, true_id, pred_id):
         data = dict()
@@ -158,6 +166,8 @@ class ConfusionMatrixPlot():
     def add_processed_data(self, processed_data):
         self.models_data.append(processed_data)
 
+    def dont_plot(self, class_index):
+        self.dont_plot_idx=class_index
 
     def draw(self, name_tag_formatter=None):
         fig, ax1 = plt.subplots(1, 1, figsize=(9, 6))
@@ -171,8 +181,18 @@ class ConfusionMatrixPlot():
 
         data = self.models_data[0]
 
-        disp = ConfusionMatrixDisplay(confusion_matrix=data['confusion_matrix'],
-                                      display_labels=self.classes)
+        confusion_matrix = data['confusion_matrix']
+        classes = self.classes
+
+        if self.dont_plot_idx is not None:
+            confusion_matrix = np.delete(confusion_matrix, axis=0, obj=self.dont_plot_idx)
+            confusion_matrix = np.delete(confusion_matrix, axis=1, obj=self.dont_plot_idx)
+            classes = [c for i, c in enumerate(classes) if i!=self.dont_plot_idx]
+
+
+
+        disp = ConfusionMatrixDisplay(confusion_matrix=confusion_matrix,
+                                      display_labels=classes)
 
         disp.plot(ax=ax1)
 
