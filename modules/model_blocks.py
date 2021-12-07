@@ -11,14 +11,17 @@ from initializers import EyeInitializer
 from datastructures import TrainData_OC,TrainData_NanoML
 #new format!
 def create_outputs(x, feat, energy=None, n_ccoords=3, 
-                   n_classes=6, td=TrainData_NanoML(), add_features=True, 
+                   n_classes=4, td=TrainData_NanoML(), add_features=True, 
                    fix_distance_scale=False,
                    scale_energy=True,
+                   energy_factor=False,
                    energy_proxy=None,
                    name_prefix="output_module"):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
+    
+    assert scale_energy != energy_factor
     
     feat = td.createFeatureDict(feat)
     
@@ -34,7 +37,13 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
         energy_proxy = x
     else:
         energy_proxy = Concatenate()([energy_proxy,x])
-    pred_energy = Dense(1,name = name_prefix+'_energy')(energy_proxy)
+    energy_act=None
+    if energy_factor:
+        energy_act='relu'
+    pred_energy = Dense(1,name = name_prefix+'_energy',
+                        bias_initializer='ones',#no effect if full scale, useful if corr factor
+                        activation=energy_act
+                        )(energy_proxy)
     if scale_energy:
         pred_energy = ScalarMultiply(10.)(pred_energy)
     if energy is not None:
@@ -115,44 +124,29 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                  outdir=debug_outdir,
                                  name=name+'plt1a')([coords,energy,t_idx,rs])
     
-    nidx,dist = KNN(K=24,radius=1)([coords,rs])#all distance weighted afterwards
+    nidx,dist = KNN(K=24,radius='dynamic' #use dynamic feature
+                    )([coords,rs])#all distance weighted afterwards
     
     x = Dense(32,activation='relu',name=name+'dense1',trainable=trainable)(x)
     #the last 8 and 4 just add 5% more gpu
     x = DistanceWeightedMessagePassing([32,32,8,8], #sumwnorm=True,
                                        name=name+'dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
     
-    #
-    #this actually takes quite some resources 
     
-    #coordsdiff = WeightedNeighbourMeans(name=name+'wnm1')([coords,energy,dist,nidx])
-    #coords = Add()([coords,coordsdiff])
-    #
     # this does not come at a high cost
     x = Dense(64,activation='relu',name=name+'dense1b',trainable=trainable)(x)
     x = Dense(32,activation='relu',name=name+'dense1c',trainable=trainable)(x)
     
-    learnedcoorddiff = Dense(2,kernel_initializer='zeros',use_bias=False,
+    learnedcoorddiff = Dense(3,kernel_initializer='zeros',use_bias=False,
                              name=name+'dense2',trainable=trainable)(x)
-    learnedcoorddiff = Concatenate()([ learnedcoorddiff,
-                                      Dense(1,use_bias=False,
-                                            name=name+'dense3',trainable=trainable)
-                                      (x)])#prefer z axis
-    learnedcoorddiff = ScalarMultiply(0.1)(learnedcoorddiff)#make it a soft start
     
-                                 
-    coords = Add()([coords,learnedcoorddiff])
+    coords = Concatenate()([coords,learnedcoorddiff])                             
+    coords = Dense(3,kernel_initializer=EyeInitializer(mean=0,stddev=0.1),
+                   use_bias=False)(coords)
     
     if debugplots_after>0:
         coords = PlotCoordinates(debugplots_after,outdir=debug_outdir,
                                  name=name+'plt3')([coords,energy,t_idx,rs])
-    
-    coords = ElementScaling(name=name+'es2',trainable=trainable)(coords)#simple scaling
-    
-    
-    if debugplots_after>0:
-        coords = PlotCoordinates(debugplots_after,outdir=debug_outdir,
-                                 name=name+'plt2')([coords,energy,t_idx,rs])
                                  
     dist = RecalcDistances()([coords,nidx])
     
@@ -263,7 +257,7 @@ def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight,
 
     rs = srs #set new row splits
     
-    return x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight    
+    return x,coords,energy, rs, bg, t_idx, t_spectator_weight    
     
     
     
@@ -275,6 +269,7 @@ def pre_selection_model_full(orig_inputs,
                              name='pre_selection',
                              debugplots_after=-1,
                              reduction_threshold=0.5,
+                             noise_threshold = 0.025,
                              use_edges=True,
                              omit_reduction=False #only trains coordinate transform. useful for pretrain phase
                              ):
@@ -283,7 +278,7 @@ def pre_selection_model_full(orig_inputs,
     from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
     from GravNetLayersRagged import CastRowSplits, ProcessFeatures
     from debugLayers import PlotCoordinates
-    from lossLayers import LLClusterCoordinates, LLNotNoiseClassifier
+    from lossLayers import LLClusterCoordinates, LLNotNoiseClassifier, LLFillSpace
     
     rs = CastRowSplits()(orig_inputs['row_splits'])
     t_idx = orig_inputs['t_idx']
@@ -307,12 +302,18 @@ def pre_selection_model_full(orig_inputs,
         )
     #create the gradients
     coords = LLClusterCoordinates(
-        print_loss=True,
+        print_loss = trainable,
         active = trainable,
         print_batch_time=trainable,
         scale=1.
         )([coords,t_idx,rs])
     
+    coords = LLFillSpace(
+        print_loss = trainable,
+        active = trainable,
+        scale=0.1,#just mild
+        runevery=20, #give it a kick only every now and then - hat's enough
+        )([coords,rs])
     
     if debugplots_after>0:
         coords = PlotCoordinates(debugplots_after,outdir=debug_outdir,name=name+'_bef_red')([coords,
@@ -321,6 +322,7 @@ def pre_selection_model_full(orig_inputs,
     
     if omit_reduction:
         return {'coords': coords,'dist':dist,'x':x}
+    
     dist,nidx = SortAndSelectNeighbours(K=16)([dist,nidx])#only run reduction on 12 closest
     
     '''
@@ -388,9 +390,10 @@ def pre_selection_model_full(orig_inputs,
         )([isnotnoise, out['t_idx']])
 
     sel, rs, noise_backscatter = NoiseFilter(
-        threshold = 0.025, #high signal efficiency filter
+        threshold = noise_threshold, #high signal efficiency filter
         print_reduction=True,
         )([isnotnoise,rs])
+        
     for k in out.keys():
         out[k] = SelectFromIndices()([sel,out[k]])
         

@@ -1256,7 +1256,9 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
 
 
 class KNN(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float=-1., use_approximate_knn=True, **kwargs):
+    def __init__(self,K: int, radius=-1., 
+                 use_approximate_knn=True,
+                 **kwargs):
         """
         
         Select self+K nearest neighbours, with possible radius constraint.
@@ -1268,14 +1270,26 @@ class KNN(tf.keras.layers.Layer):
         Inputs: coordinates, row_splits
         
         :param K: number of nearest neighbours
-        :param radius: maximum distance of nearest neighbours
+        :param radius: maximum distance of nearest neighbours,
+                       can also contain the keyword 'dynamic'
         :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
         """
         super(KNN, self).__init__(**kwargs) 
         self.K = K
-        self.radius = radius
+        
         self.use_approximate_knn = use_approximate_knn
         
+        if isinstance(radius,int):
+            radius=float(radius)
+        self.radius = radius
+        assert (isinstance(radius,str) and radius=='dynamic') or isinstance(radius,float)
+        assert not(radius=='dynamic' and not use_approximate_knn)
+        self.dynamic_radius = None
+        if radius == 'dynamic':
+            radius=1.
+            with tf.name_scope(self.name + "/1/"):
+                self.dynamic_radius = tf.Variable(initial_value=radius, 
+                                         trainable=False,dtype='float32')
         
     def get_config(self):
         config = {'K': self.K,
@@ -1290,9 +1304,7 @@ class KNN(tf.keras.layers.Layer):
     @staticmethod 
     def raw_call(coordinates, row_splits, K, radius, use_approximate_knn):
         if use_approximate_knn:
-            bin_width = 1.0 # default value for SlicingKnn kernel
-            if radius>0.0:
-                bin_width = float(radius)
+            bin_width = radius # default value for SlicingKnn kernel
             idx,dist = SlicingKnn(K+1, coordinates,  row_splits,
                                   features_to_bin_on = (0,1),
                                   bin_width=(bin_width,bin_width))
@@ -1304,9 +1316,23 @@ class KNN(tf.keras.layers.Layer):
         dist = tf.reshape(dist, [-1,K+1])
         return idx,dist
 
-    def call(self, inputs):
+    def update_dynamic_radius(self, dist, training=None):
+        if self.dynamic_radius is None or not self.trainable:
+            return
+        #update slowly, with safety margin
+        update = tf.reduce_max(dist)*1.2
+        update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
+        updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
+        tf.keras.backend.update(self.dynamic_radius,updated_radius)
+        
+    def call(self, inputs, training=None):
         coordinates, row_splits = inputs
-        return KNN.raw_call(coordinates, row_splits, self.K, self.radius, self.use_approximate_knn)
+        if self.dynamic_radius is None:
+            return KNN.raw_call(coordinates, row_splits, self.K, self.radius, self.use_approximate_knn)
+        else:
+            idx,dist = KNN.raw_call(coordinates, row_splits, self.K, self.dynamic_radius, self.use_approximate_knn)
+            self.update_dynamic_radius(dist,training)
+            return idx,dist
         
 
         
@@ -1982,6 +2008,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  sumwnorm=False,
                  feature_activation='relu',
                  use_approximate_knn=True,
+                 use_dynamic_knn=True,
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -1996,6 +2023,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         :param sumwnorm: normalise distance weights such that their sum is 1. (default False)
         :param feature_activation: activation to be applied to feature creation (F_LR) (default relu)
         :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
+        :param use_dynamic_knn: uses dynamic adjustment of kNN binning derived from previous batches (only in effect together with use_approximate_knn)
         :param kwargs:
         """
         super(RaggedGravNet, self).__init__(**kwargs)
@@ -2010,7 +2038,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.sumwnorm = sumwnorm
         self.feature_activation = feature_activation
         self.use_approximate_knn = use_approximate_knn
-
+        self.use_dynamic_knn = use_dynamic_knn
+        
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
 
@@ -2025,6 +2054,9 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='relu')#changed to relu
+            
+        with tf.name_scope(self.name + "/4/"):
+            self.dynamic_radius = tf.Variable(initial_value=1.,trainable=False,dtype='float32')
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]
@@ -2040,6 +2072,20 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         super(RaggedGravNet, self).build(input_shape)
 
+    def update_dynamic_radius(self, dist, training):
+        if not self.use_dynamic_knn or not self.trainable:
+            return
+        #update slowly, with safety margin
+        update = tf.reduce_max(dist)*1.2
+        mean_dist = tf.reduce_mean(dist)
+        low_update = tf.where(update>2.,2.,update)#receptive field ends at 1.
+        update = tf.where(low_update>2.*mean_dist,low_update,2.*mean_dist)#safety setting to not loose all neighbours
+        update += 1e-3
+        update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
+        updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
+        print('updated_radius',updated_radius)
+        tf.keras.backend.update(self.dynamic_radius,updated_radius)
+        
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
@@ -2054,12 +2100,12 @@ class RaggedGravNet(tf.keras.layers.Layer):
         features = tf.concat(allfeat + [x], axis=-1)
         return self.output_feature_transform(features)
 
-    def priv_call(self, inputs):
+    def priv_call(self, inputs, training=None):
         x = inputs[0]
         row_splits = inputs[1]
         
         coordinates = self.input_spatial_transform(x)
-        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits, training)
         neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours-1]) #for proper output shape for keras
         distancesq = tf.reshape(distancesq, [-1, self.n_neighbours-1])
 
@@ -2068,8 +2114,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
             neighbour_indices, distancesq = sidx, sdist
         return outfeats, coordinates, neighbour_indices, distancesq
 
-    def call(self, inputs):
-        return self.priv_call(inputs)
+    def call(self, inputs, training):
+        return self.priv_call(inputs, training)
 
     def compute_output_shape(self, input_shapes):
         if self.return_self:
@@ -2085,9 +2131,9 @@ class RaggedGravNet(tf.keras.layers.Layer):
               
     
 
-    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits, training):
         if self.use_approximate_knn:
-            bin_width = 1.0 # default value for SlicingKnn kernel
+            bin_width = self.dynamic_radius # default value for SlicingKnn kernel
             idx,dist = SlicingKnn(self.n_neighbours, coordinates,  row_splits,
                                   features_to_bin_on = (0,1),
                                   bin_width=(bin_width,bin_width))
@@ -2096,6 +2142,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
                                  max_radius= -1.0, tf_compatible=False)
         idx = tf.reshape(idx, [-1, self.n_neighbours])
         dist = tf.reshape(dist, [-1, self.n_neighbours])
+        
+        dist = tf.where(idx<0,0.,dist)
+        
+        self.update_dynamic_radius(dist,training)
+        
         if self.return_self:
             return idx[:, 1:], dist[:, 1:], idx, dist
         return idx[:, 1:], dist[:, 1:], None, None

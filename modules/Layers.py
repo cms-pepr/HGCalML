@@ -154,7 +154,7 @@ global_layers_list['PlotCoordinates']=PlotCoordinates
 
 
 from lossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
-from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates
+from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace
 from lossLayers import LossLayerBase, LLFullObjectCondensation,LLNeighbourhoodClassifier
 from lossLayers import LLEdgeClassifier
 import traceback
@@ -168,6 +168,7 @@ global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
 
 global_layers_list['LossLayerBase']=LossLayerBase
 global_layers_list['LLNotNoiseClassifier']=LLNotNoiseClassifier
+global_layers_list['LLFillSpace']=LLFillSpace
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation

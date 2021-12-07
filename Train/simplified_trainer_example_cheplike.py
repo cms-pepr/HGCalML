@@ -62,7 +62,7 @@ make this about coordinate shifts
 
 def gravnet_model(Inputs,
                   td,
-                  viscosity=0.8,
+                  viscosity=0.2,
                   print_viscosity=False,
                   fluidity_decay=5e-4,  # reaches after about 7k batches
                   max_viscosity=0.95,
@@ -143,6 +143,14 @@ def gravnet_model(Inputs,
     
     n_cluster_space_coordinates = 3
     
+    #extend coordinates already here if needed
+    if n_cluster_space_coordinates > 3:
+        extendcoords = Dense(n_cluster_space_coordinates-3,
+                             use_bias=False,
+                             kernel_initializer='zeros'
+                             )(x)
+        coords = Concatenate()([coords, extendcoords])
+    
     total_iterations=5
 
     for i in range(total_iterations):
@@ -163,8 +171,31 @@ def gravnet_model(Inputs,
                                                  n_filters=128,
                                                  n_propagate=64,
                                                  )([x, rs])
+                                                 
+        #just keep them in a reasonable range  
+        #safeguard against diappearing gradients on coordinates                                       
+        gndist = AverageDistanceRegularizer(strength=0.01,
+                                            printout=True
+                                            )(gndist)
 
         x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
+        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
+        
+        #gradually improve coordinates, opt. takes some extra training time
+        if True:
+            add_to_coords = Dense(n_cluster_space_coordinates,
+                                 use_bias=False,kernel_initializer='zeros')(x)
+                        
+            coords = Add()([coords,add_to_coords])
+            coords = LLClusterCoordinates(
+                scale=0.1,
+                active=True,
+                downsample=-1,#possible to make it more resource friendly
+                print_loss=True
+                )([coords, t_idx, rs])
+        #
+        #                     
+        #compress output
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
@@ -176,8 +207,9 @@ def gravnet_model(Inputs,
         
     
     ####### back to non-reduced space
+    #extend coordinate list
+    allcoords = [MultiBackScatterOrGather()([coords, scatterids])]+allcoords
     
-    #x = MultiBackScatterOrGather()([x, scatterids])
     x = Concatenate()(allfeat+allcoords)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     #do one more exchange with all
@@ -187,30 +219,34 @@ def gravnet_model(Inputs,
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     x = Concatenate()(allcoords+[x])
     
-    pred_beta, pred_ccoords, pred_dist, pred_energy, \
+    pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
     pred_pos, pred_time, pred_id = create_outputs(x, orig_inputs['features'], 
                                                   fix_distance_scale=False,
+                                                  scale_energy=False,
+                                                  energy_factor=True,
                                                   n_ccoords=n_cluster_space_coordinates)
     row_splits = CastRowSplits()(orig_inputs['row_splits'])
     # loss
     pred_beta = LLFullObjectCondensation(print_loss=True, scale=1.,
-                                         energy_loss_weight=1e-2,
-                                         position_loss_weight=1e-2,
+                                         energy_loss_weight=2.,
+                                         position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
+                                         classification_loss_weight=0.25,
                                          beta_loss_scale=1.,
-                                         too_much_beta_scale=.01,
+                                         too_much_beta_scale=.001,
                                          use_energy_weights=True,
                                          q_min=2.5,
                                          #div_repulsion=True,
                                          # cont_beta_loss=True,
                                          # beta_gradient_damping=0.999,
                                          # phase_transition=1,
-                                         huber_energy_scale=3,
-                                         use_average_cc_pos=0.5,  # smoothen it out a bit
+                                         huber_energy_scale=0.1,
+                                         use_average_cc_pos=0.75,  # smoothen it out a bit
                                          name="FullOCLoss"
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
-         pred_energy, pred_pos, pred_time, pred_id] +
+         pred_energy_corr, pred_pos, pred_time, pred_id] +
+        [orig_inputs['rechit_energy']]+
         # truth information
         [orig_inputs['t_idx'] ,
          orig_inputs['t_energy'] ,
@@ -222,7 +258,7 @@ def gravnet_model(Inputs,
 
     model_outputs = [('pred_beta', pred_beta), 
                      ('pred_ccoords', pred_ccoords),
-                     ('pred_energy', pred_energy),
+                     ('pred_energy_corr_factor', pred_energy_corr),
                      ('pred_pos', pred_pos),
                      ('pred_time', pred_time),
                      ('pred_id', pred_id),
@@ -311,28 +347,16 @@ for i in range(5)
 #
 
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
-#by hand
-from plotting_callbacks import plotClusterSummary
-cb += [
-    plotClusterSummary(
-        outputfile=train.outputDir + "/clustering/",
-        samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=800
-        )
-    ]
 
 #cb=[]
-learningrate = 1e-4
+learningrate = 3e-5
 nbatch = 120000
 
-train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
-                          loss=None,
-                          metrics=None,
-                          )
+train.change_learning_rate(learningrate)
 
-model, history = train.trainModel(nepochs=3,
+model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
@@ -346,24 +370,14 @@ print("freeze BN")
 # Note the submodel here its not just train.keras_model
 for l in train.keras_model.model.layers:
     if 'gooey_batch_norm' in l.name:
-        l.max_viscosity = 0.99
+        l.max_viscosity = 0.995
         l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
-    if 'FullOCLoss' in l.name:
-        l.use_average_cc_pos = 0.1
-        l.q_min = 2.
-        l.cont_beta_loss=False
-        l.energy_loss_weight=1e-2 #etc
-        l.position_loss_weight=1e-2
-    if 'edge_selector' in l.name:
-        l.use_truth=False#IMPORTANT
-
+    
 #also stop GravNetLLLocalClusterLoss* from being evaluated
-learningrate/=10.
+learningrate/=3.
 nbatch = 120000
 
-train.compileModel(learningrate=learningrate,
-                          loss=None,
-                          metrics=None)
+train.change_learning_rate(learningrate)
 
 model, history = train.trainModel(nepochs=121,
                                   run_eagerly=True,
