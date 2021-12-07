@@ -54,7 +54,6 @@ class EffFakeRatePlot(General2dBinningPlot):
 
 
             m = np.mean(filtered_y_values)
-            print(l,h, m)
             mean.append(m)
             # print(np.sum(filtered_found), len(filtered_found), m, l, h)
             lows.append(l)
@@ -173,7 +172,6 @@ class EnergyFoundFoTruthEnergyPlot(General2dBinningPlot):
 
 
             mean = mean.tolist()
-            print(mean)
 
             e_bins = np.concatenate(([lows[0]], highs), axis=0)
 
@@ -262,7 +260,6 @@ class ResponseFoEnergyPlot(General2dBinningPlot):
             filtered_y_values = y_values[filter].astype(float)
 
             m = np.mean(filtered_y_values)
-            print(l,h, m)
             mean.append(m)
             # print(np.sum(filtered_found), len(filtered_found), m, l, h)
             lows.append(l)

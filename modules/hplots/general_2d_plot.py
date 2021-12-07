@@ -43,7 +43,6 @@ class General2dBinningPlot():
 
 
             m = np.mean(filtered_y_values)
-            print(l,h, m)
             mean.append(m)
             # print(np.sum(filtered_found), len(filtered_found), m, l, h)
             lows.append(l)
@@ -111,13 +110,9 @@ class General2dBinningPlot():
             else:
                 name_of_plot = name_tag_formatter(tags)
 
-            print(name_of_plot)
-
-
 
             hist_values = hist_values.tolist()
             mean = mean.tolist()
-            print(mean)
 
             e_bins = np.concatenate(([lows[0]], highs), axis=0)
             max_of_hist_values = max(max_of_hist_values, np.max(hist_values))
