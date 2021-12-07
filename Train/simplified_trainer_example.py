@@ -193,7 +193,7 @@ def gravnet_model(Inputs,
         x = DistanceWeightedMessagePassing([32,32])([x,nidx,dist])
         x = Dense(64,activation='relu')(x)
         
-        x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight = reduce(
+        x,coords,energy, rs, bg, t_idx, t_spectator_weight = reduce(
             x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight, 
            threshold = 0.5,
            print_reduction=True,
@@ -349,7 +349,7 @@ for i in range(5)
 #
 
 
-cb += build_callbacks(train)
+#cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 1e-4

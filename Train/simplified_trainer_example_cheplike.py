@@ -62,7 +62,7 @@ make this about coordinate shifts
 
 def gravnet_model(Inputs,
                   td,
-                  viscosity=0.8,
+                  viscosity=0.2,
                   print_viscosity=False,
                   fluidity_decay=5e-4,  # reaches after about 7k batches
                   max_viscosity=0.95,
@@ -175,7 +175,7 @@ def gravnet_model(Inputs,
         #just keep them in a reasonable range  
         #safeguard against diappearing gradients on coordinates                                       
         gndist = AverageDistanceRegularizer(strength=0.01,
-                                            printout=False
+                                            printout=True
                                             )(gndist)
 
         x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
@@ -190,7 +190,7 @@ def gravnet_model(Inputs,
             coords = LLClusterCoordinates(
                 scale=0.1,
                 active=True,
-                downsample=1000,#possible to make it more resource friendly
+                downsample=-1,#possible to make it more resource friendly
                 print_loss=True
                 )([coords, t_idx, rs])
         #
@@ -228,10 +228,10 @@ def gravnet_model(Inputs,
     row_splits = CastRowSplits()(orig_inputs['row_splits'])
     # loss
     pred_beta = LLFullObjectCondensation(print_loss=True, scale=1.,
-                                         energy_loss_weight=5.,
+                                         energy_loss_weight=2.,
                                          position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
-                                         classification_loss_weight=0.5,
+                                         classification_loss_weight=0.25,
                                          beta_loss_scale=1.,
                                          too_much_beta_scale=.001,
                                          use_energy_weights=True,
@@ -241,7 +241,7 @@ def gravnet_model(Inputs,
                                          # beta_gradient_damping=0.999,
                                          # phase_transition=1,
                                          huber_energy_scale=0.1,
-                                         use_average_cc_pos=0.5,  # smoothen it out a bit
+                                         use_average_cc_pos=0.75,  # smoothen it out a bit
                                          name="FullOCLoss"
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
@@ -351,7 +351,7 @@ cb += build_callbacks(train)
 
 
 #cb=[]
-learningrate = 1e-4
+learningrate = 3e-5
 nbatch = 120000
 
 train.change_learning_rate(learningrate)
@@ -370,11 +370,11 @@ print("freeze BN")
 # Note the submodel here its not just train.keras_model
 for l in train.keras_model.model.layers:
     if 'gooey_batch_norm' in l.name:
-        l.max_viscosity = 0.99
+        l.max_viscosity = 0.995
         l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
     
 #also stop GravNetLLLocalClusterLoss* from being evaluated
-learningrate/=10.
+learningrate/=3.
 nbatch = 120000
 
 train.change_learning_rate(learningrate)

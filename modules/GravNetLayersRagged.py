@@ -2077,11 +2077,13 @@ class RaggedGravNet(tf.keras.layers.Layer):
             return
         #update slowly, with safety margin
         update = tf.reduce_max(dist)*1.2
-        update = tf.where(update>2.,2.,update)#receptive field ends at 1.
+        mean_dist = tf.reduce_mean(dist)
+        low_update = tf.where(update>2.,2.,update)#receptive field ends at 1.
+        update = tf.where(low_update>2.*mean_dist,low_update,2.*mean_dist)#safety setting to not loose all neighbours
         update += 1e-3
         update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
         updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
-        #print('updated_radius',updated_radius)
+        print('updated_radius',updated_radius)
         tf.keras.backend.update(self.dynamic_radius,updated_radius)
         
     def create_output_features(self, x, neighbour_indices, distancesq):

@@ -257,7 +257,7 @@ def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight,
 
     rs = srs #set new row splits
     
-    return x,coords,energy,nidx, rs, bg, t_idx, t_spectator_weight    
+    return x,coords,energy, rs, bg, t_idx, t_spectator_weight    
     
     
     
@@ -269,6 +269,7 @@ def pre_selection_model_full(orig_inputs,
                              name='pre_selection',
                              debugplots_after=-1,
                              reduction_threshold=0.5,
+                             noise_threshold = 0.025,
                              use_edges=True,
                              omit_reduction=False #only trains coordinate transform. useful for pretrain phase
                              ):
@@ -389,7 +390,7 @@ def pre_selection_model_full(orig_inputs,
         )([isnotnoise, out['t_idx']])
 
     sel, rs, noise_backscatter = NoiseFilter(
-        threshold = 0.025, #high signal efficiency filter
+        threshold = noise_threshold, #high signal efficiency filter
         print_reduction=True,
         )([isnotnoise,rs])
         
