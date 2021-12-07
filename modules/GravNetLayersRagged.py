@@ -2083,7 +2083,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         update += 1e-3
         update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
         updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
-        print('updated_radius',updated_radius)
+        #print('updated_radius',updated_radius)
         tf.keras.backend.update(self.dynamic_radius,updated_radius)
         
     def create_output_features(self, x, neighbour_indices, distancesq):
