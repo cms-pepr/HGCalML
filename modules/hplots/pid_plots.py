@@ -149,7 +149,11 @@ class ConfusionMatrixPlot():
 
     def _compute(self, true_id, pred_id):
         data = dict()
-        data['confusion_matrix'] = confusion_matrix(true_id, pred_id)
+        a = confusion_matrix(true_id, pred_id)
+        result = np.zeros((len(self.classes),len(self.classes)), np.int32)
+        result[:a.shape[0], :a.shape[1]] = a
+        data['confusion_matrix'] = result
+
 
         return data
 
