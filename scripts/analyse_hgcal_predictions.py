@@ -19,15 +19,17 @@ if __name__ == '__main__':
     parser.add_argument('-p',
                         help='Path of analysis pdf file (otherwise, it won\'t be produced)',
                         default='')
-    parser.add_argument('-database_table_prefix',
+    parser.add_argument('--database_table_prefix',
                         help='Database table prefix if you wish to write plots to the database. Leave empty if you don\'t wanna write to database',
+                        default='')
+    parser.add_argument('--database_file', help='database file, otherwise remote server',
                         default='')
     parser.add_argument('-b', help='Beta threshold (default 0.1)', default='0.1')
     parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
     parser.add_argument('-v', help='Leave at 0, functionality removed', default='0')
     parser.add_argument('-m', help='Matching type. 0 for IOU based matching, 1 for f score based matching', default='2')
-    parser.add_argument('-et', help='Energy type. See matching_and_analysis.py for options. Control+F for \'ENERGY_GATHER_TYPE_PRED_ENERGY\'', default='0')
+    parser.add_argument('--et', help='Energy type. See matching_and_analysis.py for options. Control+F for \'ENERGY_GATHER_TYPE_PRED_ENERGY\'', default='0')
     parser.add_argument('--soft', help='uses soft object condensation', action='store_true')
     parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.',
                         default='')
@@ -44,7 +46,7 @@ if __name__ == '__main__':
     database_table_prefix = args.database_table_prefix
 
     matching_type = int(args.m)
-    matching_type = matching_and_analysis.MATCHING_TYPE_IOU_MAX if matching_type==0 else matching_and_analysis.MATCHING_TYPE_MAX_FOUND
+    # matching_type = matching_and_analysis.MATCHING_TYPE_IOU_MAX if matching_type==0 else matching_and_analysis.MATCHING_TYPE_MAX_FOUND
 
     energy_gather_type = int(args.et)
 
@@ -100,7 +102,13 @@ if __name__ == '__main__':
 
     if len(database_table_prefix) != 0:
         print("Will write plots to database")
-        database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
+        database_file = args.database_file
+
+        if len(database_file) == 0:
+            database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
+        else:
+            database_manager = ExperimentDatabaseManager(file=database_file, cache_size=40)
+
         database_manager.set_experiment('analysis_plotting_experiments')
         plotter.write_data_to_database(database_manager, database_table_prefix)
         database_manager.close()

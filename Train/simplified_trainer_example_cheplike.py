@@ -11,6 +11,7 @@ On flatiron:
 not compatible with datasets before end of October 2021
 
 '''
+import matching_and_analysis
 from callback_wrappers import build_callbacks
 from experiment_database_manager import ExperimentDatabaseManager
 import tensorflow as tf
@@ -348,7 +349,6 @@ for i in range(5)
 
 
 cb += build_callbacks(train)
-
 
 #cb=[]
 learningrate = 1e-4
