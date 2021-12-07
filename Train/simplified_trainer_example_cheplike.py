@@ -348,7 +348,7 @@ for i in range(5)
 #
 
 
-cb += build_callbacks(train, running_plots_energy_gather_type=matching_and_analysis.ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT)
+cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 3e-5
