@@ -352,3 +352,22 @@ class ResolutionFoEnergyPlot(General2dBinningPlot):
         processed_data['error'] = np.array(error)
 
         return processed_data
+
+
+class ResolutionFoLocalShowerEnergyFraction(ResolutionFoEnergyPlot):
+    def __init__(self,
+                 bins=np.array([0, 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]),
+                 x_label='Local Shower Energy Fraction', y_label='Resolution', title='Resolution comparison',
+                 y_label_hist='Histogram (fraction)'
+                 , histogram_log=True):
+        super().__init__(bins, x_label, y_label, title, y_label_hist,histogram_log=histogram_log)
+
+
+class ResolutionFoTruthEta(ResolutionFoEnergyPlot):
+    def __init__(self,
+                 bins=np.array([1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0,2.25,2.5,2.75,3,3.1]),
+                 x_label='$|\\eta|$', y_label='Resolution', title='Resolution comparison',
+                 y_label_hist='Histogram (fraction)'
+                 , histogram_log=True):
+        super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_log=histogram_log)
+

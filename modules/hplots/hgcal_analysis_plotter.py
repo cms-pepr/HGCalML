@@ -1,6 +1,10 @@
+import os
+import shutil
+
 from matplotlib.backends.backend_pdf import PdfPages
 
-from hplots.general_2d_plot_extensions import EfficiencyFoTruthEnergyPlot
+from hplots.general_2d_plot_extensions import EfficiencyFoTruthEnergyPlot, ResolutionFoEnergyPlot, ResolutionFoTruthEta, \
+    ResolutionFoLocalShowerEnergyFraction
 from hplots.general_2d_plot_extensions import FakeRateFoPredEnergyPlot
 from hplots.general_2d_plot_extensions import ResponseFoEnergyPlot
 from hplots.general_2d_plot_extensions import EnergyFoundFoPredEnergyPlot
@@ -28,7 +32,14 @@ class HGCalAnalysisPlotter:
                                 'energy_found_fo_truth', 'energy_found_fo_pred','efficiency_fo_local_shower_energy_fraction','response_fo_local_shower_energy_fraction',
                                 'efficiency_fo_truth_eta','fake_rate_fo_pred_eta', 'response_fo_truth_eta', 'response_fo_pred_eta',
                                 'efficiency_fo_truth_pid', 'response_fo_truth_pid',
-                                'confusion_matrix', 'roc_curves'],log_of_distributions=True):
+                                'confusion_matrix', 'roc_curves',
+                                'resolution_fo_true_energy',
+                                'resolution_fo_local_shower_fraction',
+                                'resolution_fo_eta',
+                                'resolution_sum_fo_true_energy',
+                                'resolution_sum_fo_local_shower_fraction',
+                                'resolution_sum_fo_eta',
+                                ],log_of_distributions=True):
 
 
         self.efficiency_plot = EfficiencyFoTruthEnergyPlot(histogram_log=log_of_distributions)
@@ -48,6 +59,15 @@ class HGCalAnalysisPlotter:
         self.energy_found_fo_pred_plot = EnergyFoundFoPredEnergyPlot()
         self.confusion_matrix_plot = ConfusionMatrixPlot()
         self.roc_curves = RocCurvesPlot()
+
+
+        self.resolution_fo_true_energy = ResolutionFoEnergyPlot()
+        self.resolution_fo_true_eta = ResolutionFoTruthEta()
+        self.resolution_fo_local_shower_energy_fraction = ResolutionFoLocalShowerEnergyFraction()
+
+        self.resolution_sum_fo_true_energy = ResolutionFoEnergyPlot(y_label='Resolution (truth, dep pred)')
+        self.resolution_sum_fo_true_eta = ResolutionFoTruthEta(y_label='Resolution (truth, dep pred)')
+        self.resolution_sum_fo_local_shower_energy_fraction = ResolutionFoLocalShowerEnergyFraction(y_label='Resolution (truth, dep pred)')
 
         # TODO: for Nadya
         self.resolution_histogram_plot = GeneralHistogramPlot(bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),x_label='Resolution (to be done)', y_label='Frequency', title='Energy resolution (to be done, placeholder)')
@@ -445,34 +465,89 @@ class HGCalAnalysisPlotter:
             x = one_hot_encode_id(x, n_classes=len(metadata['classes']))
             self.roc_curves.add_raw_values(x, y)
 
+        if 'resolution_fo_true_energy' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+            self.resolution_fo_true_energy.add_raw_values(x[filter], y[filter] / x[filter], tags)
+
+
+        if 'resolution_fo_local_shower_fraction' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+            self.resolution_fo_local_shower_energy_fraction.add_raw_values(l[filter], y[filter] / x[filter], tags)
+
+
+        if 'resolution_fo_eta' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l = np.abs(l)
+            l[l>3] = 3.01
+            filter = y!=-1
+            self.resolution_fo_true_eta.add_raw_values(l[filter], y[filter] / x[filter], tags)
+
+
+        if 'resolution_sum_fo_true_energy' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+            self.resolution_sum_fo_true_energy.add_raw_values(x[filter], y[filter] / x[filter], tags)
+
+
+        if 'resolution_sum_fo_local_shower_fraction' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+            self.resolution_sum_fo_local_shower_energy_fraction.add_raw_values(l[filter], y[filter] / x[filter], tags)
+
+
+        if 'resolution_sum_fo_eta' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l = np.abs(l)
+            l[l>3] = 3.01
+            filter = y!=-1
+            self.resolution_sum_fo_true_eta.add_raw_values(l[filter], y[filter] / x[filter], tags)
 
 
     def write_to_pdf(self, pdfpath, formatter=lambda x:''):
-        pdf = PdfPages(pdfpath)
+        if os.path.exists(pdfpath):
+            if os.path.isdir(pdfpath):
+                shutil.rmtree(pdfpath)
+            else:
+                os.unlink(pdfpath)
 
-        # TODO: draw settings page here
+        os.mkdir(pdfpath)
+
+        pdf_efficiency = PdfPages(os.path.join(pdfpath,'efficiency.pdf'))
+        pdf_response = PdfPages(os.path.join(pdfpath,'response.pdf'))
+        pdf_pid = PdfPages(os.path.join(pdfpath,'pid.pdf'))
+        pdf_fake_rate = PdfPages(os.path.join(pdfpath,'fake_rate.pdf'))
+        pdf_others = PdfPages(os.path.join(pdfpath,'others.pdf'))
+        pdf_resolution = PdfPages(os.path.join(pdfpath,'resolution.pdf'))
 
         if 'settings' in self.plots:
             self._draw_numerics()
-            pdf.savefig()
+            pdf_others.savefig()
+
         if 'efficiency_fo_truth' in self.plots:
             self.efficiency_plot.draw(formatter)
-            pdf.savefig()
+            pdf_efficiency.savefig()
+
         if 'fake_rate_fo_pred' in self.plots:
             self.fake_rate_plot.draw(formatter)
-            pdf.savefig()
+            pdf_fake_rate.savefig()
 
         if 'response_fo_truth' in self.plots:
             self.response_plot.draw(formatter)
-            pdf.savefig()
+            pdf_response.savefig()
 
         if 'response_fo_pred' in self.plots:
             self.response_fo_pred_plot.draw(formatter)
-            pdf.savefig()
+            pdf_response.savefig()
 
         if 'response_sum_fo_truth' in self.plots:
             self.response_sum_plot.draw(formatter)
-            pdf.savefig()
+            pdf_response.savefig()
 
         if 'energy_resolution' in self.plots:
             # TODO: remove comments when added
@@ -482,45 +557,76 @@ class HGCalAnalysisPlotter:
 
         if 'response_fo_local_shower_energy_fraction' in self.plots:
             self.response_fo_local_shower_energy_fraction.draw(formatter)
-            pdf.savefig()
+            pdf_response.savefig()
 
         if 'efficiency_fo_local_shower_energy_fraction' in self.plots:
             self.efficiency_fo_local_shower_energy_fraction.draw(formatter)
-            pdf.savefig()
+            pdf_efficiency.savefig()
 
         if 'efficiency_fo_truth_eta' in self.plots:
             self.efficiency_fo_truth_eta_plot.draw(formatter)
-            pdf.savefig()
+            pdf_efficiency.savefig()
 
         if 'fake_rate_fo_pred_eta' in self.plots:
             self.fake_rate_fo_pred_eta_plot.draw(formatter)
-            pdf.savefig()
+            pdf_fake_rate.savefig()
 
         if 'response_fo_truth_eta' in self.plots:
             self.response_fo_truth_eta_plot.draw(formatter)
-            pdf.savefig()
+            pdf_response.savefig()
 
         if 'response_fo_pred_eta' in self.plots:
             self.response_fo_pred_eta_plot.draw(formatter)
-            pdf.savefig()
+            pdf_response.savefig()
 
         if 'efficiency_fo_truth_pid' in self.plots:
             self.efficiency_fo_truth_pid_plot.draw(formatter)
-            pdf.savefig()
+            pdf_efficiency.savefig()
 
         if 'response_fo_truth_pid' in self.plots:
             self.response_fo_truth_pid_plot.draw(formatter)
-            pdf.savefig()
+            pdf_response.savefig()
 
         if 'confusion_matrix' in self.plots:
-            self.confusion_matrix_plot.draw(formatter)
-            pdf.savefig()
+            fig = self.confusion_matrix_plot.draw(formatter)
+            pdf_pid.savefig(fig)
 
         if 'roc_curves' in self.plots:
             for i in range(4):
                 self.roc_curves.set_primary_class(i)
-                self.roc_curves.draw(formatter)
-                pdf.savefig()
+                fig = self.roc_curves.draw(formatter)
+                pdf_pid.savefig(figure=fig)
+            # self.roc_curves.set_primary_class(0)
+            # fig = self.roc_curves.draw(formatter)
+            # print(fig)
+            # fig.savefig('xyza.png')
+            # print("Saving to png")
+            # pdf_pid.savefig(figure=fig)
+
+        if 'resolution_fo_true_energy':
+            fig = self.resolution_fo_true_energy.draw(formatter)
+            pdf_resolution.savefig(fig)
+
+        if 'resolution_fo_local_shower_fraction':
+            fig = self.resolution_fo_local_shower_energy_fraction.draw(formatter)
+            pdf_resolution.savefig(fig)
+
+        if 'resolution_fo_eta':
+            fig = self.resolution_fo_true_eta.draw(formatter)
+            pdf_resolution.savefig(fig)
+
+
+        if 'resolution_sum_fo_true_energy':
+            fig = self.resolution_sum_fo_true_energy.draw(formatter)
+            pdf_resolution.savefig(fig)
+
+        if 'resolution_sum_fo_local_shower_fraction':
+            fig = self.resolution_sum_fo_local_shower_energy_fraction.draw(formatter)
+            pdf_resolution.savefig(fig)
+
+        if 'resolution_sum_fo_eta':
+            fig = self.resolution_sum_fo_true_eta.draw(formatter)
+            pdf_resolution.savefig(fig)
 
         # if 'energy_found_fo_truth' in self.plots:
         #     self.energy_found_fo_truth_plot.draw(formatter)
@@ -533,6 +639,12 @@ class HGCalAnalysisPlotter:
         #     EnergyFoundFoTruthEnergyPlot.draw_together_scalar_metrics(self.energy_found_fo_truth_plot, self.energy_found_fo_pred_plot)
         #     pdf.savefig()
 
+        #
+        pdf_efficiency.close()
+        pdf_response.close()
+        pdf_fake_rate.close()
+        pdf_others.close()
+        pdf_pid.close()
+        pdf_resolution.close()
 
-        pdf.close()
         plt.close('all')
