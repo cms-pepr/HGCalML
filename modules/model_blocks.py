@@ -407,4 +407,12 @@ def pre_selection_model_full(orig_inputs,
 
     return out
     
+def extent_coords_if_needed(coords, x, n_cluster_space_coordinates):
+    if n_cluster_space_coordinates > 3:
+        extendcoords = Dense(n_cluster_space_coordinates-3,
+                             use_bias=False,
+                             kernel_initializer='zeros'
+                             )(x)
+        coords = Concatenate()([coords, extendcoords])
+    return coords
     
