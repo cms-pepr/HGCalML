@@ -74,4 +74,5 @@ After training the model for a while, navigate to scripts directory and do the i
 predict_hgcal.py /mnt/ceph/users/sqasim/trainings/training_folder/KERAS_check_model_last_save/ /mnt/ceph/users/sqasim/trainings/training_folder/valsamples.djcdc /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop /mnt/ceph/users/sqasim/trainings/training_folder/inference
 ```
 
+To analyse the prediction, use the `analyse_hgcal_predictions.py` script.
 
