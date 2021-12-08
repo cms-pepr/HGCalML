@@ -53,9 +53,8 @@ def pretrain_model(Inputs,
                              reduction_threshold=0.5,
                              use_edges=True,
                              trainable=True,
-                             name='pre_selection',
                              debugplots_after=1500,
-                             omit_reduction=True
+                             omit_reduction=False
                              )
 
     #same outputs as the model block
