@@ -3,6 +3,7 @@ import pdb
 import yaml
 import os
 from select_knn_op import SelectKnn
+from slicing_knn_op import SlicingKnn
 from select_mod_knn_op import SelectModKnn
 from accknn_op import AccumulateKnn
 from local_cluster_op import LocalCluster
@@ -157,7 +158,45 @@ class CastRowSplits(tf.keras.layers.Layer):
         return tf.cast(inputs[:,0],dtype='int32')
         
     
+
+class ScaleBackpropGradient(tf.keras.layers.Layer):
+    def __init__(self, scale, **kwargs):
+        '''
+        Scales the gradient in back propagation. 
+        Useful for strong reduction models where low-statistics parts 
+        should get lower effective learning rates
+        
+        Please notice that this is applied backwards (as it affects back propagation)
+        '''
+        super(ScaleBackpropGradient, self).__init__(**kwargs)
+        self.scale = scale
+        
+    def get_config(self):
+        base_config = super(ScaleBackpropGradient, self).get_config()
+        return dict(list(base_config.items()) + list({'scale': self.scale }.items()))
     
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, inputs):
+        @tf.custom_gradient
+        def scale_grad(x):
+            def grad(dy):
+                return self.scale * dy
+            return tf.identity(x), grad
+        
+        islist = isinstance(inputs, list)
+        
+        if not islist:
+            inputs = [inputs]
+            
+        out = []
+        for i in inputs:
+            out.append(scale_grad(i))
+            
+        if islist:  
+            return out
+        return out[0]    
     
 class RemoveSelfRef(tf.keras.layers.Layer):
     
@@ -1217,7 +1256,9 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
 
 
 class KNN(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float=-1., **kwargs):
+    def __init__(self,K: int, radius=-1., 
+                 use_approximate_knn=True,
+                 **kwargs):
         """
         
         Select self+K nearest neighbours, with possible radius constraint.
@@ -1229,16 +1270,31 @@ class KNN(tf.keras.layers.Layer):
         Inputs: coordinates, row_splits
         
         :param K: number of nearest neighbours
-        :param radius: maximum distance of nearest neighbours
+        :param radius: maximum distance of nearest neighbours,
+                       can also contain the keyword 'dynamic'
+        :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
         """
         super(KNN, self).__init__(**kwargs) 
         self.K = K
-        self.radius = radius
         
+        self.use_approximate_knn = use_approximate_knn
+        
+        if isinstance(radius,int):
+            radius=float(radius)
+        self.radius = radius
+        assert (isinstance(radius,str) and radius=='dynamic') or isinstance(radius,float)
+        assert not(radius=='dynamic' and not use_approximate_knn)
+        self.dynamic_radius = None
+        if radius == 'dynamic':
+            radius=1.
+            with tf.name_scope(self.name + "/1/"):
+                self.dynamic_radius = tf.Variable(initial_value=radius, 
+                                         trainable=False,dtype='float32')
         
     def get_config(self):
         config = {'K': self.K,
-                  'radius': self.radius}
+                  'radius': self.radius,
+                  'use_approximate_knn': self.use_approximate_knn}
         base_config = super(KNN, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -1246,17 +1302,37 @@ class KNN(tf.keras.layers.Layer):
         return (None, self.K+1),(None, self.K+1)
 
     @staticmethod 
-    def raw_call(coordinates, row_splits, K, radius):
-        idx,dist = SelectKnn(K+1, coordinates,  row_splits,
-                             max_radius= radius, tf_compatible=False)
+    def raw_call(coordinates, row_splits, K, radius, use_approximate_knn):
+        if use_approximate_knn:
+            bin_width = radius # default value for SlicingKnn kernel
+            idx,dist = SlicingKnn(K+1, coordinates,  row_splits,
+                                  features_to_bin_on = (0,1),
+                                  bin_width=(bin_width,bin_width))
+        else:
+            idx,dist = SelectKnn(K+1, coordinates,  row_splits,
+                                 max_radius= radius, tf_compatible=False)
 
         idx = tf.reshape(idx, [-1,K+1])
         dist = tf.reshape(dist, [-1,K+1])
         return idx,dist
 
-    def call(self, inputs):
+    def update_dynamic_radius(self, dist, training=None):
+        if self.dynamic_radius is None:
+            return
+        #update slowly, with safety margin
+        update = tf.reduce_max(dist)*1.2
+        update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
+        updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
+        tf.keras.backend.update(self.dynamic_radius,updated_radius)
+        
+    def call(self, inputs, training=None):
         coordinates, row_splits = inputs
-        return KNN.raw_call(coordinates, row_splits, self.K, self.radius)
+        if self.dynamic_radius is None:
+            return KNN.raw_call(coordinates, row_splits, self.K, self.radius, self.use_approximate_knn)
+        else:
+            idx,dist = KNN.raw_call(coordinates, row_splits, self.K, self.dynamic_radius, self.use_approximate_knn)
+            self.update_dynamic_radius(dist,training)
+            return idx,dist
         
 
         
@@ -1931,6 +2007,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  return_self=True,
                  sumwnorm=False,
                  feature_activation='relu',
+                 use_approximate_knn=True,
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -1944,6 +2021,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         :param return_self: for the neighbour indices and distances, switch whether to return the 'self' index and distance (0)
         :param sumwnorm: normalise distance weights such that their sum is 1. (default False)
         :param feature_activation: activation to be applied to feature creation (F_LR) (default relu)
+        :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
         :param kwargs:
         """
         super(RaggedGravNet, self).__init__(**kwargs)
@@ -1957,6 +2035,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.return_self = return_self
         self.sumwnorm = sumwnorm
         self.feature_activation = feature_activation
+        self.use_approximate_knn = use_approximate_knn
 
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
@@ -2033,8 +2112,14 @@ class RaggedGravNet(tf.keras.layers.Layer):
     
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
-        idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
-                             max_radius= -1.0, tf_compatible=False)
+        if self.use_approximate_knn:
+            bin_width = 1.0 # default value for SlicingKnn kernel
+            idx,dist = SlicingKnn(self.n_neighbours, coordinates,  row_splits,
+                                  features_to_bin_on = (0,1),
+                                  bin_width=(bin_width,bin_width))
+        else:
+            idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+                                 max_radius= -1.0, tf_compatible=False)
         idx = tf.reshape(idx, [-1, self.n_neighbours])
         dist = tf.reshape(dist, [-1, self.n_neighbours])
         if self.return_self:
@@ -2057,7 +2142,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
                   'n_propagate': self.n_propagate,
                   'return_self': self.return_self,
                   'sumwnorm': self.sumwnorm,
-                  'feature_activation': self.feature_activation}
+                  'feature_activation': self.feature_activation,
+                  'use_approximate_knn':self.use_approximate_knn}
         base_config = super(RaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 

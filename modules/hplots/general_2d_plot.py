@@ -3,9 +3,12 @@ import matplotlib.pyplot as plt
 
 
 class General2dBinningPlot():
-    def __init__(self, bins, x_label='x-axis', y_label='y-axis', title='', y_label_hist='Histogram (fraction)', histogram_log=True, histogram_fraction=True):
+    def __init__(self, bins, x_label='x-axis', y_label='y-axis', title='', y_label_hist='Histogram (fraction)', histogram_log=True, histogram_fraction=True,
+                 yscale='linear'):
         self.models_data = list()
         self.e_bins = bins
+
+        self.yscale=yscale
 
         if type(bins) is not np.ndarray:
             raise ValueError("bins has to be numpy array")
@@ -130,11 +133,14 @@ class General2dBinningPlot():
             if error_exists:
                 err_1 = ((np.array(mean) + error/2)).tolist()
                 err_2 = ((np.array(mean) - error/2)).tolist()
-                ax1.fill_between(e_bins, [err_1[0]] + err_1, [err_2[0]] + err_2, alpha=1, step="pre")
+                ax1.step(e_bins, [mean[0]] + mean, label=name_of_plot)
+                ax1.fill_between(e_bins, [err_1[0]] + err_1, [err_2[0]] + err_2, alpha=0.4, step="pre")
             # else:
-            ax1.step(e_bins, [mean[0]] + mean, label=name_of_plot)
+            else:
+                ax1.step(e_bins, [mean[0]] + mean, label=name_of_plot)
             ax1.set_xlabel(self.x_label)
             ax1.set_ylabel(self.y_label)
+            ax1.set_yscale(self.yscale)
             ax1.legend(loc='center right')
 
         # ax1.set_ylim(0, 1.04)
@@ -167,7 +173,8 @@ class General2dBinningPlot():
                 # database_data['bin_upper_energy'] = highs[i]
                 database_data['hist_values_%d'%i] = float(hist_values[i])
                 database_data['mean_%d'%i] = float(mean[i])
-                database_data['error_%d'%i] = float(error[i])
+                if 'error' in model_data:
+                    database_data['error_%d'%i] = float(error[i])
 
             for tag_name, tag_value in tags.items():
                 database_data[tag_name] = tag_value

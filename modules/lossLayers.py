@@ -130,6 +130,87 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
         return tf.where(abovethresh, tf.ones_like(inputs[0])-self.minimum, 0.)
     
 
+class LLFillSpace(LossLayerBase):
+    def __init__(self, 
+                 maxhits: int=1000,
+                 runevery: int=-1,
+                 **kwargs):
+        '''
+        calculated a PCA of all points in coordinate space and 
+        penalises very asymmetric PCs. 
+        Reduces the risk of falling back to a (hyper)surface
+        
+        Inputs:
+         - coordinates, row splits
+        Outputs:
+         - coordinates (unchanged)
+        '''
+        assert maxhits>0
+        self.maxhits = maxhits
+        self.runevery = runevery
+        self.counter=0
+        if runevery < 0:
+            self.counter = -1
+        if 'dynamic' in kwargs:
+            super(LLFillSpace, self).__init__(**kwargs)
+        else:
+            super(LLFillSpace, self).__init__(dynamic=True,**kwargs)
+        
+    
+    def get_config(self):
+        config={'maxhits': self.maxhits,
+                'runevery': self.runevery }
+        base_config = super(LLFillSpace, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    @staticmethod
+    def _rs_loop(coords, maxhits=1000):
+        #only select a few hits to keep memory managable
+        nhits = coords.shape[0]
+        sel = None
+        if nhits > maxhits:
+            sel = tf.random.uniform(shape=(maxhits,), minval=0, maxval=coords.shape[0]-1, dtype=tf.int32)
+        else:
+            sel = tf.range(coords.shape[0], dtype=tf.int32)
+        sel = tf.expand_dims(sel,axis=1)
+        coords = tf.gather_nd(coords, sel) # V' x C
+        #print('coords',coords.shape)
+        means = tf.reduce_mean(coords,axis=0,keepdims=True)#1 x C
+        coords -= means # V' x C
+        #build covariance
+        cov = tf.expand_dims(coords,axis=1)*tf.expand_dims(coords,axis=2)#V' x C x C
+        cov = tf.reduce_mean(cov,axis=0,keepdims=False)# 1 x C x C
+        #print('cov',cov)
+        #get eigenvals
+        eigenvals,_ = tf.linalg.eig(cov)#cheap because just once, no need for approx
+        eigenvals = tf.cast(eigenvals, dtype='float32')
+        #penalise one small EV (e.g. when building a surface)
+        pen = tf.math.log((tf.math.divide_no_nan(tf.reduce_mean(eigenvals), 
+                                    tf.reduce_min(eigenvals)+1e-6) - 1.)**2+1.)
+        return pen
+        
+        
+    @staticmethod
+    def raw_loss(coords, rs, maxhits=1000):
+        loss = tf.zeros_like(coords[0,0])
+        for i in range(len(rs)-1):
+            rscoords = coords[rs[i]:rs[i+1]]
+            loss += LLFillSpace._rs_loop(rscoords, maxhits)
+        return tf.math.divide_no_nan(loss ,tf.cast(rs.shape[0],dtype='float32'))
+    
+    def loss(self, inputs):
+        assert len(inputs) == 2 #coords, rs
+        coords, rs = inputs
+        if self.counter >= 0: #completely optimise away increment
+            if self.counter < self.runevery:
+                self.counter+=1
+                return tf.zeros_like(coords[0,0])
+            self.counter = 0
+        lossval = LLFillSpace.raw_loss(coords, rs, self.maxhits)
+        self.maybe_print_loss(lossval)
+        return lossval
+    
+    
 #naming scheme: LL<what the layer is supposed to do>
 class LLClusterCoordinates(LossLayerBase):
     '''
@@ -139,12 +220,18 @@ class LLClusterCoordinates(LossLayerBase):
     - truth index
     - row splits
     '''
-    def __init__(self, **kwargs):
+    def __init__(self, downsample:int = -1, **kwargs):
         if 'dynamic' in kwargs:
             super(LLClusterCoordinates, self).__init__(**kwargs)
         else:
             super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
+            
+        self.downsample = downsample
 
+    def get_config(self):
+        base_config = super(LLClusterCoordinates, self).get_config()
+        return dict(list(base_config.items()) + list({'downsample':self.downsample}.items()))
+         
     @staticmethod
     def _rs_loop(coords, tidx):
         Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
@@ -178,7 +265,7 @@ class LLClusterCoordinates(LossLayerBase):
         return distloss+reploss, distloss, reploss
     
     @staticmethod
-    def raw_loss(acoords, atidx, rs):
+    def raw_loss(acoords, atidx, rs, downsample):
         
         lossval = tf.zeros_like(acoords[0,0])
         reploss = tf.zeros_like(acoords[0,0])
@@ -186,6 +273,13 @@ class LLClusterCoordinates(LossLayerBase):
         for i in range(len(rs)-1):
             coords = acoords[rs[i]:rs[i+1]]
             tidx = atidx[rs[i]:rs[i+1]]
+            
+            if downsample>0 and downsample < coords.shape[0]:
+                sel = tf.random.uniform(shape=(downsample,), minval=0, maxval=coords.shape[0]-1, dtype=tf.int32)
+                sel = tf.expand_dims(sel,axis=1)
+                coords = tf.gather_nd(coords, sel)
+                tidx = tf.gather_nd(tidx, sel)
+            
             if tidx.shape[0]<20:
                 continue #does not make sense
             tlv, tdl, trl = LLClusterCoordinates._rs_loop(coords,tidx)
@@ -207,7 +301,7 @@ class LLClusterCoordinates(LossLayerBase):
     def loss(self, inputs):
         assert len(inputs) == 3
         coords, tidx, rs = inputs
-        lossval,distloss, reploss = LLClusterCoordinates.raw_loss(coords, tidx, rs)
+        lossval,distloss, reploss = LLClusterCoordinates.raw_loss(coords, tidx, rs, self.downsample)
         self.maybe_print_loss(lossval,distloss, reploss, tidx)
         return lossval
     
@@ -472,7 +566,10 @@ class LLFullObjectCondensation(LossLayerBase):
     making the config explode (more)
     '''
 
-    def __init__(self, *, energy_loss_weight=1., use_energy_weights=True, q_min=0.1, no_beta_norm=False,
+    def __init__(self, *, energy_loss_weight=1., 
+                 use_energy_weights=True, 
+                 train_energy_correction=True,
+                 q_min=0.1, no_beta_norm=False,
                  potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
                  classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
                  use_average_cc_pos=0.,
@@ -497,9 +594,9 @@ class LLFullObjectCondensation(LossLayerBase):
                  energy_weighted_qmin=False,
                  super_attraction=False,
                  div_repulsion=False,
-                 add_energy_unc=True,
-                 low_energy_tau=0.25,
-                 high_energy_tau=0.75,
+                 low_energy_tau=0.16,
+                 high_energy_tau=0.84,
+                 dynamic_payload_scaling_onset=-0.005,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -536,6 +633,7 @@ class LLFullObjectCondensation(LossLayerBase):
         :param phase_transition
         :param standard_configuration:
         :param alt_energy_loss: introduces energy loss with very mild gradient for large delta. (modified 1-exp form)
+        :param dynamic_payload_scaling_onset: only apply payload loss to well reconstructed showers. typical values 0.1 (negative=off)
         :param kwargs:
         """
         if 'dynamic' in kwargs:
@@ -553,6 +651,7 @@ class LLFullObjectCondensation(LossLayerBase):
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights
+        self.train_energy_correction = train_energy_correction
         self.q_min = q_min
         self.no_beta_norm = no_beta_norm
         self.potential_scaling = potential_scaling
@@ -592,11 +691,11 @@ class LLFullObjectCondensation(LossLayerBase):
         self.super_repulsion=super_repulsion
         self.use_local_distances = use_local_distances
         self.energy_weighted_qmin=energy_weighted_qmin
-        self.add_energy_unc = add_energy_unc
         self.low_energy_tau = low_energy_tau
         self.high_energy_tau = high_energy_tau
         self.super_attraction = super_attraction
         self.div_repulsion=div_repulsion
+        self.dynamic_payload_scaling_onset = dynamic_payload_scaling_onset
         
         self.loc_time=time.time()
         self.call_count=0
@@ -618,6 +717,50 @@ class LLFullObjectCondensation(LossLayerBase):
         toclip *= startclipat
         return toclip
         
+    def calc_energy_correction_factor_loss(self, t_energy, t_idx, hit_energy, pred_energy,pred_energy_low_quantile,pred_energy_high_quantile, row_splits): 
+        #
+        # all V x 1
+        #
+        depe=[]
+        for b in tf.range(row_splits.shape[0]-1):
+            dep = self._calc_and_scatter_dep_energy_pre_rs(
+                t_energy[row_splits[b]:row_splits[b + 1]], 
+                t_idx[row_splits[b]:row_splits[b + 1]], 
+                hit_energy[row_splits[b]:row_splits[b + 1]], 
+                pred_energy[row_splits[b]:row_splits[b + 1]]
+                )
+            depe.append(dep)
+        dep_energies = tf.concat(depe,axis=0)
+        
+        corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
+        corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
+        
+        eloss = None
+        if self.huber_energy_scale>0:
+            eloss = huber(corrtruth-pred_energy, self.huber_energy_scale)
+        else:
+            eloss = (corrtruth-pred_energy)**2 #V X 1
+        
+        euncloss=None
+        l_low = corrtruth - pred_energy_low_quantile
+        l_high = corrtruth - pred_energy_high_quantile
+        euncloss = quantile(l_low,self.low_energy_tau) + quantile(l_high,self.high_energy_tau) 
+        return eloss, euncloss
+        
+    def _calc_and_scatter_dep_energy_pre_rs(self, t_energy, t_idx, hit_energy, pred_energy):   
+        
+        nt_idx = t_idx + 1 #make noise object
+        
+        objsel, _, _ = CreateMidx(nt_idx, calc_m_not=False)
+        obj_hit_e = SelectWithDefault(objsel, hit_energy, 0.) # K x V-obj x 1
+        obj_dep_e = tf.reduce_sum(obj_hit_e,axis=1)#K x 1
+        
+        _, idxs, _ = tf.unique_with_counts(nt_idx[:,0])#for backgather, same indices as in objsel
+        idxs = tf.expand_dims(idxs, axis=1)
+        scat_dep_e = tf.gather_nd(obj_dep_e,idxs)
+        return scat_dep_e
+        
+        
             
     def calc_energy_loss(self, t_energy, pred_energy): 
         
@@ -637,22 +780,11 @@ class LLFullObjectCondensation(LossLayerBase):
         else:
             eloss = tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))
         
-        eloss = self.softclip(eloss, 10.) 
+        if self.dynamic_payload_scaling_onset<=0:
+            eloss = self.softclip(eloss, 10.) 
         return eloss
 
 
-    def calc_energy_unc_loss(self, t_energy, pred_energy_low_quantile, pred_energy_high_quantile): 
-        if not self.energy_loss_weight:
-            return pred_energy**2 #just learn 0
-
-        #FIXME: this is just for debugging
-        #return (t_energy-pred_energy)**2
-        eloss=0
-        l_low = t_energy-pred_energy_low_quantile
-        l_high = t_energy-pred_energy_high_quantile
-        eloss = quantile(l_low,self.low_energy_tau) + quantile(l_high,self.high_energy_tau) 
-        eloss = self.softclip(eloss, 10.) 
-        return eloss
 
 
     def calc_qmin_weight(self, hitenergy):
@@ -684,67 +816,17 @@ class LLFullObjectCondensation(LossLayerBase):
     
     def loss(self, inputs):
         
+        assert len(inputs) == 17
         start_time = 0
         if self.print_time:
             start_time = time.time()
         
-        pred_distscale=None
-        rechit_energy=None
-        t_spectator_weights=None
-        if self.use_local_distances:
-            if self.energy_weighted_qmin:
-                raise ValueError("energy_weighted_qmin not implemented")
-
-            else:
-                if not self.add_energy_unc:
-                    #check for sepctator weights
-                    if len(inputs) == 14:
-                        pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
-                        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
-                        rowsplits = inputs
-                    elif len(inputs) == 13:
-                        pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
-                        t_idx, t_energy, t_pos, t_time, t_pid,\
-                        rowsplits = inputs
-                else :
-                    if len(inputs) == 16:
-                        pred_beta, pred_ccoords, pred_distscale, pred_energy,\
-                        pred_energy_low_quantile,pred_energy_high_quantile, pred_pos, pred_time, pred_id,\
-                        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
-                        rowsplits = inputs
-                    elif len(inputs) == 15:
-                        pred_beta, pred_ccoords, pred_distscale, pred_energy,\
-                        pred_energy_low_quantile,pred_energy_high_quantile, pred_pos, pred_time, pred_id,\
-                        t_idx, t_energy, t_pos, t_time, t_pid,\
-                        rowsplits = inputs
-
-                
-        else:
-            if not self.add_energy_unc:
-                if len(inputs) == 13:
-                    pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
-                    t_idx, t_energy, t_pos, t_time, t_pid,t_spectator_weights,\
-                    rowsplits = inputs
-                elif len(inputs) == 12:
-                    pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id,\
-                    t_idx, t_energy, t_pos, t_time, t_pid,\
-                    rowsplits = inputs
-            else :
-                if len(inputs) == 15:
-                    pred_beta, pred_ccoords, pred_energy, \
-                    pred_energy_low_quantile,pred_energy_high_quantile,\
-                    pred_pos, pred_time, pred_id,\
-                    t_idx, t_energy, t_pos, t_time, t_pid,t_spectator_weights,\
-                    rowsplits = inputs
-                elif len(inputs) == 14:
-                    pred_beta, pred_ccoords, pred_energy,\
-                    pred_energy_low_quantile,pred_energy_high_quantile,\
-                    pred_pos, pred_time, pred_id,\
-                    t_idx, t_energy, t_pos, t_time, t_pid,\
-                    rowsplits = inputs
-
-
-
+        pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,\
+        pred_pos, pred_time, pred_id,\
+        rechit_energy,\
+        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
+        rowsplits = inputs
+                    
         if rowsplits.shape[0] is None:
             return tf.constant(0,dtype='float32')
         
@@ -757,16 +839,26 @@ class LLFullObjectCondensation(LossLayerBase):
         q_min = self.q_min #self.calc_qmin_weight(rechit_energy)#FIXME
             
         #also kill any gradients for zero weight
-        energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
-        energy_quantiles_loss = self.energy_loss_weight * self.calc_energy_unc_loss(t_energy, pred_energy_low_quantile,pred_energy_high_quantile) 
+        energy_loss,energy_quantiles_loss = None,None
+        if self.train_energy_correction:
+            energy_loss, energy_quantiles_loss =  self.calc_energy_correction_factor_loss(t_energy, 
+                                                                                            t_idx, 
+                                                                                            rechit_energy, 
+                                                                                            pred_energy,
+                                                                                            pred_energy_low_quantile,
+                                                                                            pred_energy_high_quantile,
+                                                                                            rowsplits)
+            energy_loss *= self.energy_loss_weight 
+            energy_quantiles_loss *= self.energy_loss_weight/2. #to start with divide over two
+
+        else:
+            energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
+            
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
         classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id)
         
-        if not self.add_energy_unc:
-            full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss], axis=-1)
-        else:
-            full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss,energy_quantiles_loss], axis=-1)
+        full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss,energy_quantiles_loss], axis=-1)
 
 
         if self.payload_beta_clip > 0:
@@ -802,7 +894,8 @@ class LLFullObjectCondensation(LossLayerBase):
                                            repulsion_q_min=self.repulsion_q_min,
                                            super_repulsion=self.super_repulsion,
                                            super_attraction = self.super_attraction,
-                                           div_repulsion = self.div_repulsion
+                                           div_repulsion = self.div_repulsion,
+                                           dynamic_payload_scaling_onset=self.dynamic_payload_scaling_onset
                                            )
 
         
@@ -823,15 +916,12 @@ class LLFullObjectCondensation(LossLayerBase):
         pos_loss    = payload[1]
         time_loss   = payload[2]
         class_loss  = payload[3]
-        if  self.add_energy_unc:
-            energy_unc_loss  = payload[4]
+        energy_unc_loss  = payload[4]
         
         #explicit cc damping
         ccdamp = self.cc_damping_strength * (0.02*tf.reduce_mean(pred_ccoords))**4# gently keep them around 0
         
-        lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta + ccdamp
-        if  self.add_energy_unc:
-            lossval += energy_unc_loss
+        lossval = att + rep + min_b + noise + energy_loss + energy_unc_loss+ pos_loss + time_loss + class_loss + exceed_beta + ccdamp
             
         lossval = tf.reduce_mean(lossval)
         
@@ -869,6 +959,7 @@ class LLFullObjectCondensation(LossLayerBase):
         config = {
             'energy_loss_weight': self.energy_loss_weight,
             'use_energy_weights': self.use_energy_weights,
+            'train_energy_correction': self.train_energy_correction,
             'q_min': self.q_min,
             'no_beta_norm': self.no_beta_norm,
             'potential_scaling': self.potential_scaling,
@@ -907,11 +998,11 @@ class LLFullObjectCondensation(LossLayerBase):
             'super_repulsion': self.super_repulsion,
             'use_local_distances': self.use_local_distances,
             'energy_weighted_qmin': self.energy_weighted_qmin,
-            'add_energy_unc': self.add_energy_unc,
             'low_energy_tau': self.low_energy_tau,
             'high_energy_tau': self.high_energy_tau,
             'super_attraction':self.super_attraction,
-            'div_repulsion' : self.div_repulsion
+            'div_repulsion' : self.div_repulsion,
+            'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

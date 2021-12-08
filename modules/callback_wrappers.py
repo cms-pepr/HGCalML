@@ -14,8 +14,9 @@ from plotting_callbacks import plotClusterSummary
 def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_distance_threshold=0.5,
                     running_plots_iou_threshold=0.1,
                     running_plots_matching_type=matching_and_analysis.MATCHING_TYPE_IOU_MAX,
-                    running_plots_write_after_iterations=200, full_analysis_num_hyperparam_optimization_iterations=100,
-                    full_analysis_num_hyperparam_optimization_endcaps=10, should_write_to_file=True,
+                    running_plots_write_after_iterations=200, full_analysis_num_hyperparam_optimization_iterations=-1,
+                    test_on_points=[(0.2,0.2), (0.8,0.8),(0.2,0.8),(0.8,0.2),(0.5,0.5)],
+                    full_analysis_num_hyperparam_optimization_endcaps=-1, should_write_to_file=True,
                     should_write_to_remote_server=False, full_analysis_after_batches=5000):
     """
 
@@ -44,18 +45,31 @@ def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_dista
     :param running_plots_iou_threshold: iou threshold live for efficiency, response etc monitoring
     :param running_plots_matching_type: matching type (search for "Matching types" in in modules/matching_and_analysis.py)
     :param running_plots_write_after_iterations: Make html plots showing
+    :param test_on_points: Run on these points instead of doing hyper param optimization, set to none for hyper param
+           optimization
     :param full_analysis_after_batches: Run full analysis after this many batches, it will try to optimize wrt beta
            and distance threshold and won't use the parameters of this function and then produce a pdf file. Set to -1
            if full analysis plots are not required.
     :param full_analysis_num_hyperparam_optimization_iterations: Number of iterations for bayesian optimization for
-           full analysis
+           full analysis, set -1 for no hyper param optimization.
     :param full_analysis_num_hyperparam_optimization_endcaps: Number of endcaps for bayesian optimization for full
-           analysis
+           analysis, set -1 for no hyper param optimization
     :param should_write_to_file: Keep to True otherwise can't produce running plots
     :param should_write_to_remote_server: Keep to False unless you want to make plots on other machines. Loss and
            efficiency plots will be made regardless after
     :return: a list of callbacks you can append to train function
     """
+
+    if full_analysis_num_hyperparam_optimization_endcaps==-1 and full_analysis_num_hyperparam_optimization_endcaps !=-1:
+        raise RuntimeError("Can't run hyper param optimization without setting full_analysis_num"
+                           "hyperparam_optimization_endcaps and full_analysis_num_hyperparam_optimization_endcaps")
+    if full_analysis_num_hyperparam_optimization_endcaps==-1 != test_on_points is None: # Just an xor
+        raise RuntimeError("Either set test on points or hyper param optimization.")
+
+    if test_on_points is not None:
+        assert type(test_on_points) == list
+        assert len(test_on_points) >= 1
+
 
     cb = []
     os.system('mkdir -p %s' % (train.outputDir + "/summary/"))
@@ -98,15 +112,25 @@ def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_dista
         analyzer2 = matching_and_analysis.OCAnlayzerWrapper(
             metadata)  # Use another analyzer here to be safe since it will run scan on
         # on beta and distance threshold which might mess up settings
-        optimizer = OCHyperParamOptimizer(analyzer=analyzer2,
-                                          limit_n_endcaps=full_analysis_num_hyperparam_optimization_endcaps,
-                                          beta_bounds=[0.05,1],
-                                          distance_bounds=[0.05,1])
+
+        if full_analysis_num_hyperparam_optimization_iterations != -1:
+            optimizer = OCHyperParamOptimizer(analyzer=analyzer2,
+                                              limit_n_endcaps=full_analysis_num_hyperparam_optimization_endcaps,
+                                              beta_bounds=[0.05,1],
+                                              distance_bounds=[0.05,1])
+        else:
+            optimizer = None
+
+
+
         os.system('mkdir %s/full_validation_plots' % (train.outputDir))
-        cb += [RunningFullValidation(trial_batch=10, run_optimization_loop_for=full_analysis_num_hyperparam_optimization_iterations, optimization_loop_num_init_points=5,
-                                     after_n_batches=full_analysis_after_batches, min_batch=8, predictor=predictor, optimizer=optimizer,
-                                     database_manager=database_manager, pdfs_path=os.path.join(train.outputDir,
-                                                                                               'full_validation_plots'))]
+        cb += [RunningFullValidation(after_n_batches=full_analysis_after_batches, predictor=predictor, analyzer=analyzer2,
+                                     optimizer=optimizer, test_on_points=test_on_points,
+                                     database_manager=database_manager,
+                                     pdfs_path=os.path.join(train.outputDir,
+                                                            'full_validation_plots'), min_batch=8,
+                                     run_optimization_loop_for=full_analysis_num_hyperparam_optimization_iterations,
+                                     optimization_loop_num_init_points=5, trial_batch=10)]
     cb += [
     plotClusterSummary(
         outputfile=train.outputDir + "/clustering/",

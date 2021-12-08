@@ -104,7 +104,8 @@ def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name
 
 def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=MATCHING_TYPE_MAX_FOUND,
                         with_local_distance_scaling=False, beta_weighting_param=1, angle_threshold=0.08, precision_threshold=0.2,
-                        passes=5, max_hits_per_shower=-1, hit_weight_for_intersection=HIT_WEIGHT_TYPE_RECHIT_ENERGY):
+                        passes=5, max_hits_per_shower=-1, hit_weight_for_intersection=HIT_WEIGHT_TYPE_RECHIT_ENERGY,
+                        log_of_distributions=0):
     metadata = dict()
     metadata['beta_threshold'] = beta_threshold
     metadata['distance_threshold'] = distance_threshold
@@ -120,6 +121,7 @@ def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshol
     metadata['passes'] = passes
     metadata['max_hits_per_shower'] = max_hits_per_shower
     metadata['hit_weight_for_intersection'] = hit_weight_for_intersection
+    metadata['log_of_distributions'] = log_of_distributions
 
 
     metadata['beta_weighting_param'] = beta_weighting_param # This is not beta threshold
@@ -160,8 +162,6 @@ class OCRecoGraphAnalyzer:
 
         truth_sid = truth_dict['truthHitAssignementIdx'][:, 0].astype(np.int32)
         truth_shower_sid, truth_shower_idx = np.unique(truth_sid, return_index=True)
-
-        print("Truth showers", len(truth_shower_idx))
 
         truth_nodes = []
         num_vertices_per_truth = []
@@ -217,9 +217,20 @@ class OCRecoGraphAnalyzer:
             num_vertices_per_truth.append(np.sum(truth_sid==truth_shower_sid[i]))
             node_attributes['num_hits'] = np.sum(truth_sid==truth_shower_sid[i])
 
-        truth_graph.add_nodes_from(truth_nodes)
-        print("Mean vertices per truth",np.mean(num_vertices_per_truth))
-        print("truth n vertices",num_vertices_per_truth)
+
+
+        energies = np.array([x[1]['energy'] for x in truth_nodes])
+        etas = np.array([x[1]['eta'] for x in truth_nodes])
+        phis = np.array([x[1]['phi'] for x in truth_nodes])
+
+        d_eta_phi = (etas[..., np.newaxis] - etas[np.newaxis, ...])**2 + (phis[..., np.newaxis] - phis[np.newaxis, ...])
+        lsf = energies / np.sum(np.less_equal(d_eta_phi, 0.5)  * energies[np.newaxis, ...], axis=1)
+
+        truth_nodes_2 = []
+        for i, t in enumerate(truth_nodes):
+            truth_nodes_2.append((t[0],dict(**t[1],**({'local_shower_energy_fraction':lsf[i]}))))
+
+        truth_graph.add_nodes_from(truth_nodes_2)
 
 
         return truth_graph, truth_sid
@@ -254,8 +265,6 @@ class OCRecoGraphAnalyzer:
 
         pred_sid += start_indicing_from
 
-        print("Reconstructed showers", len(pred_shower_alpha_idx))
-
         pred_shower_sid = []
         for i in pred_shower_alpha_idx:
             pred_shower_sid.append(pred_sid[i])
@@ -281,19 +290,29 @@ class OCRecoGraphAnalyzer:
                 if 'pred_id' in pred_dict else 0
 
             node_attributes['dep_energy'] = np.sum(feat_dict['recHitEnergy'][pred_sid==sid]).item()
-            node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
-                if 'pred_energy' in pred_dict else node_attributes['dep_energy']
-            node_attributes['energy_unc']  =(max(pred_dict['pred_energy_high_quantile'][pred_shower_alpha_idx[i]][0].item(), 0) -  max(pred_dict['pred_energy_low_quantile'][pred_shower_alpha_idx[i]][0].item(), 0))/2./node_attributes['energy']
+            #node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
+            #    if 'pred_energy' in pred_dict else node_attributes['dep_energy']
+
+            #this one-liner should work, but for some reason it does not..
+            #node_attributes['energy']  = {'pred_energy' in pred_dict : max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0), 
+            #                             'pred_energy_corr_factor' in pred_dict : node_attributes['dep_energy']*max(pred_dict['pred_energy_corr_factor'][pred_shower_alpha_idx[i]][0].item(), 0)
+            #                             }.get(True,node_attributes['dep_energy'])
+
+            node_attributes['energy']  = node_attributes['dep_energy']*max(pred_dict['pred_energy_corr_factor'][pred_shower_alpha_idx[i]][0].item(), 0)
+
+            node_attributes['energy_unc']  =(max(pred_dict['pred_energy_high_quantile'][pred_shower_alpha_idx[i]][0].item(), 0) -  max(pred_dict['pred_energy_low_quantile'][pred_shower_alpha_idx[i]][0].item(), 0))/2.
 
             rechit_energy = feat_dict['recHitEnergy'][pred_sid==sid]
             rechit_x = feat_dict['recHitX'][pred_sid==sid]
             rechit_y = feat_dict['recHitY'][pred_sid==sid]
             rechit_z = feat_dict['recHitZ'][pred_sid==sid]
+            rechit_eta = feat_dict['recHitEta'][pred_sid==sid]
 
             node_attributes['dep_energy'] = np.sum(rechit_energy).item()
             node_attributes['dep_x'] = (np.sum(rechit_energy * rechit_x) / np.sum(rechit_energy)).item()
             node_attributes['dep_y'] = (np.sum(rechit_energy * rechit_y) / np.sum(rechit_energy)).item()
             node_attributes['dep_z'] = (np.sum(rechit_energy * rechit_z) / np.sum(rechit_energy)).item()
+            node_attributes['dep_eta'] = (np.sum(rechit_energy * rechit_eta) / np.sum(rechit_energy)).item()
             node_attributes['type'] = NODE_TYPE_PRED_SHOWER
             node_attributes['num_hits'] = np.sum(pred_sid==sid)
 
@@ -303,9 +322,6 @@ class OCRecoGraphAnalyzer:
             mean_vertices_per_pred.append(np.sum(pred_sid==sid))
 
         pred_graph.add_nodes_from(pred_nodes)
-
-        print("Mean vertices per pred", np.mean(mean_vertices_per_pred))
-        print("N vertices / pred", mean_vertices_per_pred)
 
         return pred_graph, pred_sid
 
@@ -380,9 +396,6 @@ class OCRecoGraphAnalyzer:
         for p, t in zip(row_id, col_id):
             if C[p, t] > 0:
                 matched_full_graph.add_edge(truth_shower_sid[t], pred_shower_sid[p], attached_in_pass=0)
-
-        print("Efficiency", float(matched_full_graph.number_of_edges()) / self.truth_graph.number_of_nodes())
-        print("Fake rate", (self.pred_graph.number_of_nodes() - float(matched_full_graph.number_of_edges())) / self.pred_graph.number_of_nodes())
 
         if return_rechit_data:
             matched_full_graph = self.attach_rechit_data(matched_full_graph)
@@ -597,10 +610,6 @@ class OCRecoGraphAnalyzer:
                     pairs.append((pred_c, truth_c))
                 else:
                     free_nodes.append(c.pop())
-
-            # print("Pass", npass)
-            # print("Free nodes", free_nodes)
-            # print("Matches", pairs)
 
             # Construct another cost matrix
             C = np.zeros((len(pairs), len(free_nodes)))
@@ -981,4 +990,3 @@ class OCAnlayzerWrapper():
 
         metadata = self._add_metadata(analysed_graphs)
         return analysed_graphs, metadata
-

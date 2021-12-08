@@ -150,12 +150,17 @@ def gravnet_model(Inputs,
 
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
 
+        raise ValueError("this is broken here, needs a backscatter or gather. ")
+        '''
+        x here has different dimension after prefiltering, see the other training scripts
+        '''
         allfeat.append(x)
 
 
-
     ####### back to non-reduced space
-
+    '''
+    The appended features abore are not used
+    '''
     #x = MultiBackScatterOrGather()([x, scatterids])
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     #do one more exchange with all
@@ -164,14 +169,16 @@ def gravnet_model(Inputs,
     x = Dense(64,activation='relu')(x)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
 
-    pred_beta, pred_ccoords, pred_dist, pred_energy, \
+    pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
     pred_pos, pred_time, pred_id = create_outputs(x, orig_inputs['features'],
                                                   fix_distance_scale=False,
+                                                  scale_energy=False,
+                                                  energy_factor=True,
                                                   n_ccoords=n_cluster_space_coordinates)
     row_splits = CastRowSplits()(orig_inputs['row_splits'])
     # loss
     pred_beta = LLFullObjectCondensation(print_loss=True, scale=1.,
-                                         energy_loss_weight=1e-2,
+                                         energy_loss_weight=5.,
                                          position_loss_weight=1e-2,
                                          timing_loss_weight=1e-2,
                                          beta_loss_scale=1.,
@@ -182,12 +189,13 @@ def gravnet_model(Inputs,
                                          # cont_beta_loss=True,
                                          # beta_gradient_damping=0.999,
                                          # phase_transition=1,
-                                         huber_energy_scale=3,
+                                         huber_energy_scale=0.1,
                                          use_average_cc_pos=0.5,  # smoothen it out a bit
                                          name="FullOCLoss"
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
-         pred_energy, pred_pos, pred_time, pred_id] +
+         pred_energy_corr, pred_pos, pred_time, pred_id] +
+        [orig_inputs['rechit_energy']]+
         # truth information
         [orig_inputs['t_idx'] ,
          orig_inputs['t_energy'] ,
@@ -199,7 +207,7 @@ def gravnet_model(Inputs,
 
     model_outputs = [('pred_beta', pred_beta),
                      ('pred_ccoords', pred_ccoords),
-                     ('pred_energy', pred_energy),
+                     ('pred_energy_corr_factor', pred_energy_corr),
                      ('pred_pos', pred_pos),
                      ('pred_time', pred_time),
                      ('pred_id', pred_id),
@@ -284,7 +292,7 @@ for i in range(5)
 #
 
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
 #by hand
 from plotting_callbacks import plotClusterSummary

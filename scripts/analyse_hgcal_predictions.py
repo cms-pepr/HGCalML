@@ -10,6 +10,8 @@ import argparse
 import hplots.hgcal_analysis_plotter as hp
 import sql_credentials
 from experiment_database_manager import ExperimentDatabaseManager
+import setGPU
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -85,14 +87,17 @@ if __name__ == '__main__':
             all_data)
     else:
         analysed_graphs, metadata = matching_and_analysis.OCAnlayzerWrapper(metadata).analyse_from_files(files_to_be_tested)
+        
+    if len(args.analysisoutpath)!=0:
+        with gzip.open(args.analysisoutpath, 'wb') as f:
+            pickle.dump((analysed_graphs, metadata), f)
+
     plotter = hp.HGCalAnalysisPlotter()
     plotter.add_data_from_analysed_graph_list(analysed_graphs, metadata)
     if len(pdfpath) > 0:
         plotter.write_to_pdf(pdfpath=pdfpath)
 
-    if len(args.analysisoutpath)!=0:
-        with gzip.open(args.analysisoutpath, 'wb') as f:
-            pickle.dump((analysed_graphs, metadata), f)
+
 
     if len(database_table_prefix) != 0:
         print("Will write plots to database")
