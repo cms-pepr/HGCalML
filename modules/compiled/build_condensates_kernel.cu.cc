@@ -264,13 +264,20 @@ static void check_and_collect(
         if(soft){
             //should the reduction in beta be using the original betas or the modified ones...?
             //go with original betas
-            float moddist = 1 - (distmod*distsq / radius );
-            if(moddist < 0)
-                moddist = 0;
+            float scaleddist = distmod * distsq ;
+            float moddist = std::exp(-std::log(1./min_beta)*scaleddist*scaleddist / (radius*radius));//2 sigma at radius
+            //float moddist = std::exp(-scaleddist / (radius));//2 sigma at radius
+
+
+            //becomes normal reduction at radius
             float subtract =  moddist * ref_beta;
-            temp_betas[i_v] -= subtract;
-            if(temp_betas[i_v] <= min_beta && moddist)
+            float prebeta = temp_betas[i_v];
+            float subbeta = prebeta-subtract;
+            if(scaleddist < 2.*radius)//reduce mem access
+                temp_betas[i_v] = subbeta;
+            if((subbeta <= min_beta && scaleddist < radius)){
                 asso_idx[i_v] = ref_vertex;
+            }
         }
         else{
             if(distmod*distsq <= radius){ //sum features in parallel?
