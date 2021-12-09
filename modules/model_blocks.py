@@ -394,6 +394,8 @@ def pre_selection_model_full(orig_inputs,
         print_reduction=True,
         )([isnotnoise,rs])
         
+    out['not_noise_score']=isnotnoise
+        
     for k in out.keys():
         out[k] = SelectFromIndices()([sel,out[k]])
         
@@ -404,6 +406,7 @@ def pre_selection_model_full(orig_inputs,
     out['orig_t_energy'] = orig_inputs['t_energy'] #for validation
     out['orig_dim_coords'] = orig_dim_coords
     out['rs']=rs
+    out['orig_row_splits'] = orig_inputs['row_splits']
 
     return out
     
@@ -415,4 +418,63 @@ def extent_coords_if_needed(coords, x, n_cluster_space_coordinates):
                              )(x)
         coords = Concatenate()([coords, extendcoords])
     return coords
+
+
+def re_integrate_to_full_hits(
+        pre_selection,
+        pred_ccoords,
+        pred_beta,
+        pred_energy_corr,
+        pred_pos,
+        pred_time,
+        pred_id,
+        pred_dist
+        ):
+    '''
+    To be called after OC loss is applied to pre-selected outputs to bring it all back to the full dimensionality
+    all hits that have been selected before and cannot be backgathered will be assigned coordinates far away,
+    and a zero beta value.
+    
+    This is the counterpart of the pre_selection_model_full.
+    
+    returns full suite
+    ('pred_beta', pred_beta), 
+    ('pred_ccoords', pred_ccoords),
+    ('pred_energy_corr_factor', pred_energy_corr),
+    ('pred_pos', pred_pos),
+    ('pred_time', pred_time),
+    ('pred_id', pred_id),
+    ('pred_dist', pred_dist),
+    ('row_splits', row_splits)
+    '''
+    from GravNetLayersRagged import MultiBackScatterOrGather
+    
+    
+    scatterids = [pre_selection['group_backgather'], [
+        pre_selection['noise_backscatter_N'],pre_selection['noise_backscatter_idx']
+        ]] #add them here directly
+    
+    pred_ccoords = MultiBackScatterOrGather(default=100.)([pred_ccoords, scatterids])#set it far away for noise
+    pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
+    pred_energy_corr = MultiBackScatterOrGather(default=1.)([pred_energy_corr, scatterids])
+    pred_pos = MultiBackScatterOrGather(default=0.)([pred_pos, scatterids])
+    pred_time = MultiBackScatterOrGather(default=10.)([pred_time, scatterids])
+    pred_id = MultiBackScatterOrGather(default=0.)([pred_id, scatterids])
+    pred_dist = MultiBackScatterOrGather(default=1.)([pred_dist, scatterids])
+    
+    return [
+        ('pred_beta', pred_beta), 
+        ('pred_ccoords', pred_ccoords),
+        ('pred_energy_corr_factor', pred_energy_corr),
+        ('pred_pos', pred_pos),
+        ('pred_time', pred_time),
+        ('pred_id', pred_id),
+        ('pred_dist', pred_dist),
+        ('row_splits', pre_selection['orig_row_splits'])]
+    
+    
+
+
+
+
     

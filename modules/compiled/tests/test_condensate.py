@@ -127,7 +127,7 @@ for radius in [0.25, 0.5, 0.8]:
         
         ax2.scatter(predCCoords[:,0], predCCoords[:,1],
                     c=predBeta)
-        #plt.show()
+        plt.show()
         plt.savefig("plot_"+str(i)+"_rad_"+str(radius)+".pdf")
         #fig.clear()
         plt.close(fig)

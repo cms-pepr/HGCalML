@@ -732,17 +732,20 @@ class LLFullObjectCondensation(LossLayerBase):
             depe.append(dep)
         dep_energies = tf.concat(depe,axis=0)
         
-        corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
-        corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
+        #corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
+        #corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
+        #
+        #corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
+        #corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
         
-        corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
-        corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
+        #calo-like
+        ediff = (t_energy - pred_energy*dep_energies)/tf.sqrt(t_energy+1e-3)
         
         eloss = None
         if self.huber_energy_scale>0:
-            eloss = huber(corrtruth-pred_energy, self.huber_energy_scale)
+            eloss = huber(ediff, self.huber_energy_scale)
         else:
-            eloss = (corrtruth-pred_energy)**2 #V X 1
+            eloss = tf.math.log(ediff**2 + 1. + 1e-5)
         
         return eloss
         
@@ -822,6 +825,7 @@ class LLFullObjectCondensation(LossLayerBase):
         t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
         rowsplits = inputs
                     
+        tf.assert_equal(rowsplits[-1], pred_beta.shape[0])#guard
         
         if rowsplits.shape[0] is None:
             return tf.constant(0,dtype='float32')

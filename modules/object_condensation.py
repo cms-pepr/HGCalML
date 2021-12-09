@@ -99,7 +99,8 @@ def oc_per_batch_element(
     all inputs
     V x X , where X can be 1
     '''
-    
+    tf.assert_equal(True, is_spectator>=0.)
+    tf.assert_equal(True, beta>=0.)
     
     if prob_repulsion:
         raise ValueError("prob_repulsion not implemented")
@@ -172,7 +173,15 @@ def oc_per_batch_element(
     beta_kalpha_m = tf.gather_nd(beta_m,kalpha_m, batch_dims=1) # K x 1
     
     object_weights_kalpha_m = tf.gather_nd(object_weights_m,kalpha_m, batch_dims=1) # K x 1
-    distance_scale_kalpha_m = tf.gather_nd(distance_scale_m,kalpha_m, batch_dims=1) # K x 1
+    
+    #make the distance scale a beta weighted mean so that there is more than 1 impact per object
+    distance_scale_kalpha_m = tf.math.divide_no_nan(
+        tf.reduce_sum(distance_scale_m*beta_m*padmask_m, axis=1),
+        tf.reduce_sum(beta_m*padmask_m,axis=1)+1e-3
+        )#K x 1
+    #distance_scale_kalpha_m = tf.gather_nd(distance_scale_m,kalpha_m, batch_dims=1) # K x 1
+    
+    
     distance_scale_kalpha_m_exp = tf.expand_dims(distance_scale_kalpha_m, axis=2) # K x 1 x 1
     
     distancesq_m = tf.reduce_sum( (tf.expand_dims(x_kalpha_m, axis=1) - x_m)**2, axis=-1, keepdims=True) #K x V-obj x 1
@@ -184,6 +193,7 @@ def oc_per_batch_element(
         huberdistsq += 1. - tf.math.exp(-100.*absdist)
         
     V_att = q_m * tf.expand_dims(q_kalpha_m,axis=1) * huberdistsq #K x V-obj x 1
+    
     if soft_att:
         V_att = q_m * tf.math.log(tf.math.exp(1.)*distancesq_m+1.)
         

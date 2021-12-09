@@ -1211,7 +1211,7 @@ class MultiBackScatter(tf.keras.layers.Layer):
         return xnew
         
 class MultiBackScatterOrGather(tf.keras.layers.Layer):  
-    def __init__(self, **kwargs):    
+    def __init__(self, default: float=0., **kwargs):    
         """
         
         Either applies a scattering or gathering operation depending on the inputs
@@ -1219,16 +1219,24 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
         
         In general preferred
         
+        Inputs:
+        - data
+        - scatter or gather indices
+        
         """  
-        self.gathers=[]
+        self.default = default
         if 'dynamic' in kwargs:
             super(MultiBackScatterOrGather, self).__init__(**kwargs) 
         else:
             super(MultiBackScatterOrGather, self).__init__(dynamic=False,**kwargs) 
         
+    def get_config(self):
+        config = {'default': self.default}
+        base_config = super(MultiBackScatterOrGather, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
         
     @staticmethod 
-    def raw_call(x, scatters):
+    def raw_call(x, scatters, default=0.):
         xin=x
         for k in range(len(scatters)):
             l = len(scatters) - k - 1
@@ -1237,7 +1245,10 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
                 #print('scatters[l]',scatters[l])
                 #cast is needed because keras layer out dtypes are not really working
                 shape = tf.concat([tf.expand_dims(V,axis=0), tf.shape(x)[1:]],axis=0)
-                x = tf.scatter_nd(scidx, x, shape)
+                if default:
+                    x = tf.tensor_scatter_nd_update(tf.zeros(shape, x.dtype)+default, scidx, x)
+                else:
+                    x = tf.scatter_nd(scidx, x, shape)
             else:
                 x = SelectFromIndices.raw_call(tf.cast(scatters[l],tf.int32), 
                                            [x], [ [-1]+list(x.shape[1:]) ])
@@ -1248,7 +1259,7 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
         x, scatters = inputs
         if x.shape[0] is None:
             return tf.reshape(x,[-1 ,x.shape[1]])
-        xnew = MultiBackScatterOrGather.raw_call(x,scatters)
+        xnew = MultiBackScatterOrGather.raw_call(x,scatters,self.default)
         return xnew    
         
         
