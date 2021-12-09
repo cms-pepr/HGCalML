@@ -11,16 +11,16 @@ from DeepJetCore.training.gpuTools import DJCSetGPUs
 DJCSetGPUs()
 
 gpus = tf.config.list_physical_devices('GPU')
-#  if gpus:
-#    try:
-#      # Currently, memory growth needs to be the same across GPUs
-#      for gpu in gpus:
-#        tf.config.experimental.set_memory_growth(gpu, True)
-#      logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-#      print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-#    except RuntimeError as e:
-#      # Memory growth must be set before GPUs have been initialized
-#      print(e)
+if gpus:
+  try:
+    # Currently, memory growth needs to be the same across GPUs
+    for gpu in gpus:
+      tf.config.experimental.set_memory_growth(gpu, True)
+    logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+  except RuntimeError as e:
+    # Memory growth must be set before GPUs have been initialized
+    print(e)
 
 
 
@@ -53,9 +53,9 @@ class TestKnn(unittest.TestCase):
         self.seed = 12345
         self.coords, self.row_splits = createData(self.N_VERTICIES, self.N_DIMS, self.seed)
 
-        out_old_cuda, _ = selectNeighbours_CUDA(self.N_NEIGHBOURS, self.coords, self.row_splits)
-        self.ind_old_cuda = out_old_cuda[0]
-        self.dist_old_cuda = out_old_cuda[1]
+        out_selectKnn_cuda, _ = selectNeighbours_CUDA(self.N_NEIGHBOURS, self.coords, self.row_splits)
+        self.ind_selectKnn_cuda = out_selectKnn_cuda[0]
+        self.dist_selectKnn_cuda = out_selectKnn_cuda[1]
 
     def test_first_coordinate_index_out_of_range(self):
         with self.assertRaises(Exception) as context:
@@ -82,15 +82,21 @@ class TestKnn(unittest.TestCase):
             ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1))
         self.assertTrue('Specify either' in str(context.exception))
 
-    def test_compare_indices_old_cuda_vs_knn(self):
+    def test_compare_indices_selectKnn_cuda_vs_knn(self):
         ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), n_bins=(8,8))
-        outTensor=compareTensors(self.ind_old_cuda, ind_slice_knn)
+        outTensor=compareTensors(self.ind_selectKnn_cuda, ind_slice_knn)
         self.assertEqual(np.sum(outTensor[0].numpy()),0)
 
-    def test_compare_indices_old_cuda_vs_knn_specify_bin_width(self):
+    def test_compare_indices_selectKnn_cuda_vs_knn_specify_bin_width(self):
         ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), bin_width=(0.13,0.13))
-        outTensor=compareTensors(self.ind_old_cuda, ind_slice_knn)
+        outTensor=compareTensors(self.ind_selectKnn_cuda, ind_slice_knn)
         self.assertEqual(np.sum(outTensor[0].numpy()),0)
+
+    def test_cpu_specialized_slicingknn_kernel(self):
+        with tf.device('/cpu:0'):
+            ind_slice_knn, self.dist_slice_knn = SlicingKnn(K = self.N_NEIGHBOURS, coords=self.coords, row_splits=self.row_splits, features_to_bin_on = (0,1), n_bins=(8,8))
+            outTensor=compareTensors(self.ind_selectKnn_cuda, ind_slice_knn)
+            self.assertEqual(np.sum(outTensor[0].numpy()),0)
 
 
 if __name__ == '__main__':
