@@ -33,6 +33,7 @@ if __name__ == '__main__':
     parser.add_argument('--soft', help='uses soft object condensation', action='store_true')
     parser.add_argument('--analysisoutpath', help='Will dump analysis to a file to remake plots without re-running everything.',
                         default='')
+    parser.add_argument('--local_distance_scaling', help='With local distance scaling', action='store_true')
     parser.add_argument('--gpu', help='GPU', default='')
     args = parser.parse_args()
 
@@ -54,7 +55,7 @@ if __name__ == '__main__':
                                                          distance_threshold=distance_threshold,
                                                          iou_threshold=iou_threshold,
                                                          matching_type=matching_type,
-                                                         with_local_distance_scaling=False,
+                                                         with_local_distance_scaling=args.local_distance_scaling,
                                                          energy_gather_type=energy_gather_type
                                                          )
 
