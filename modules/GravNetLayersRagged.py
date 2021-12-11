@@ -365,25 +365,29 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
                  max_viscosity=1.,
                  epsilon=1e-4,
                  print_viscosity=False,
+                 soften_update: float = 0.,
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
         
         assert viscosity >= 0 and viscosity <= 1.
         assert fluidity_decay >= 0 and fluidity_decay <= 1.
         assert max_viscosity >= viscosity
+        assert soften_update >= 0
         
         self.fluidity_decay = fluidity_decay
         self.max_viscosity = max_viscosity
         self.viscosity_init = viscosity
         self.epsilon = epsilon
         self.print_viscosity = print_viscosity
+        self.soften_update = soften_update
         
     def get_config(self):
         config = {'viscosity': self.viscosity_init,
                   'fluidity_decay': self.fluidity_decay,
                   'max_viscosity': self.max_viscosity,
                   'epsilon': self.epsilon,
-                  'print_viscosity': self.print_viscosity
+                  'print_viscosity': self.print_viscosity,
+                  'soften_update': self.soften_update
                   }
         base_config = super(GooeyBatchNorm, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -410,6 +414,15 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
             
         super(GooeyBatchNorm, self).build(input_shapes)
     
+    def _calc_soft_update(self, old, new, training):
+        delta = new-old
+        #soft update, avoid too strong jumps
+        if self.soften_update>0:
+            #scale down relative change
+            delta = tf.nn.softsign(tf.math.divide_no_nan(self.soften_update*delta,old))*old
+            delta /= self.soften_update
+        update = old + (1. - self.viscosity)*delta
+        return tf.keras.backend.in_train_phase(update,old,training=training)
 
     def call(self, inputs, training=None):
         #x, _ = inputs
@@ -418,14 +431,12 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
         #update only if trainable flag is set, AND in training mode
         if self.trainable:
             newmean = tf.reduce_mean(x,axis=0,keepdims=True) #FIXME
-            newmean = (1. - self.viscosity)*newmean + self.viscosity*self.mean
-            updated_mean = tf.keras.backend.in_train_phase(newmean,self.mean,training=training)
-            tf.keras.backend.update(self.mean,updated_mean)
+            update = self._calc_soft_update(self.mean,newmean,training)
+            tf.keras.backend.update(self.mean,update)
             
             newvar = tf.math.reduce_std(x-self.mean,axis=0,keepdims=True) #FIXME
-            newvar = (1. - self.viscosity)*newvar + self.viscosity*self.variance
-            updated_var = tf.keras.backend.in_train_phase(newvar,self.variance,training=training)
-            tf.keras.backend.update(self.variance,updated_var)
+            update = self._calc_soft_update(self.variance,newvar,training)
+            tf.keras.backend.update(self.variance,update)
             
             #increase viscosity
             if self.fluidity_decay > 0:
@@ -438,6 +449,9 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
         #apply
         x -= self.mean
         x = tf.math.divide_no_nan(x, self.variance + self.epsilon)
+        
+        #print(self.name,'corr x mean', tf.reduce_mean(x))
+        #print(self.name,'corr x var', tf.math.reduce_std(x))
         
         return x
 
@@ -882,7 +896,7 @@ class LocalDistanceScaling (tf.keras.layers.Layer):
         """
         Inputs: 
         - distances (V x N)
-        - scaling (V x 1)
+        - scaling (V x 1): (linear activation)
         
         Returns:
         distances * scaling : V x N x 1
@@ -2060,7 +2074,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,
                                                                  #very slow turn on
-                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=1e-6),
+                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=1e-3),
                                                                  use_bias=False)
 
         with tf.name_scope(self.name + "/3/"):

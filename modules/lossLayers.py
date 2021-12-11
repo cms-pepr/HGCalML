@@ -572,6 +572,7 @@ class LLFullObjectCondensation(LossLayerBase):
 
     def __init__(self, *, energy_loss_weight=1., 
                  use_energy_weights=True, 
+                 alt_energy_weight=False,
                  train_energy_correction=True,
                  q_min=0.1, no_beta_norm=False,
                  potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
@@ -696,7 +697,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.super_attraction = super_attraction
         self.div_repulsion=div_repulsion
         self.dynamic_payload_scaling_onset = dynamic_payload_scaling_onset
-        
+        self.alt_energy_weight = alt_energy_weight
         self.loc_time=time.time()
         self.call_count=0
         
@@ -707,9 +708,17 @@ class LLFullObjectCondensation(LossLayerBase):
         
         
     def calc_energy_weights(self, t_energy):
+        if self.alt_energy_weight:
+            p0=1.49224
+            p1=0.000581188
+            p2=2.31003
+            weight = 1./tf.exp( - (p0* tf.math.log(p1*t_energy+1e-6) + p2))/0.161885;#average weight is one
+            return weight
         lower_cut = 0.5
         w = tf.where(t_energy > 10., 1., ((t_energy-lower_cut) / 10.)*10./(10.-lower_cut))
         return tf.nn.relu(w)
+        #flatten energy weights
+        
     
     def softclip(self, toclip, startclipat):
         toclip /= startclipat
@@ -952,6 +961,7 @@ class LLFullObjectCondensation(LossLayerBase):
     def get_config(self):
         config = {
             'energy_loss_weight': self.energy_loss_weight,
+            'alt_energy_weight': self.alt_energy_weight,
             'use_energy_weights': self.use_energy_weights,
             'train_energy_correction': self.train_energy_correction,
             'q_min': self.q_min,
