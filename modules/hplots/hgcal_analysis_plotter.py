@@ -5,6 +5,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from hplots.general_2d_plot_extensions import EfficiencyFoTruthEnergyPlot, ResolutionFoEnergyPlot, ResolutionFoTruthEta, \
     ResolutionFoLocalShowerEnergyFraction
+from hplots.general_2d_plot_extensions import EfficiencyFakeRateFoPt, ResolutionFoPt, ResponseFoPt
 from hplots.general_2d_plot_extensions import FakeRateFoPredEnergyPlot
 from hplots.general_2d_plot_extensions import ResponseFoEnergyPlot
 from hplots.general_2d_plot_extensions import EnergyFoundFoPredEnergyPlot
@@ -16,6 +17,10 @@ from hplots.general_2d_plot_extensions import FakeRateFoPredEtaPlot
 from hplots.general_2d_plot_extensions import ResponseFoTruthEtaPlot
 from hplots.general_2d_plot_extensions import EfficiencyFoTruthPIDPlot
 from hplots.general_2d_plot_extensions import ResponseFoTruthPIDPlot
+
+
+from hplots.general_hist_extensions import ResponseHisto, Multi4HistEnergy, Multi4HistPt
+
 import numpy as np
 import matplotlib.pyplot as plt
 import experiment_database_reading_manager
@@ -27,18 +32,43 @@ from hplots.pid_plots import ConfusionMatrixPlot, RocCurvesPlot
 
 
 class HGCalAnalysisPlotter:
-    def __init__(self, plots = ['settings', 'efficiency_fo_truth', 'fake_rate_fo_pred', 'response_fo_truth',
-                                'response_fo_pred', 'response_sum_fo_truth', 'energy_resolution',
-                                'energy_found_fo_truth', 'energy_found_fo_pred','efficiency_fo_local_shower_energy_fraction','response_fo_local_shower_energy_fraction',
-                                'efficiency_fo_truth_eta','fake_rate_fo_pred_eta', 'response_fo_truth_eta', 'response_fo_pred_eta',
-                                'efficiency_fo_truth_pid', 'response_fo_truth_pid',
-                                'confusion_matrix', 'roc_curves',
+    def __init__(self, plots = ['settings',
+                                'efficiency_fo_truth',
+                                'fake_rate_fo_pred',
+                                'response_fo_truth',
+                                'response_fo_pred',
+                                'response_sum_fo_truth',
+                                'energy_resolution',
+                                'energy_found_fo_truth',
+                                'energy_found_fo_pred',
+                                'efficiency_fo_local_shower_energy_fraction',
+                                'efficiency_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy',
+                                'response_fo_local_shower_energy_fraction',
+                                'response_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy',
+                                'efficiency_fo_truth_eta',
+                                'efficiency_fo_truth_eta_flat_spectrum_wrt_energy',
+                                'fake_rate_fo_pred_eta',
+                                'response_fo_truth_eta',
+                                'response_fo_truth_eta_flat_spectrum_wrt_energy',
+                                'response_fo_pred_eta',
+                                'efficiency_fo_truth_pid',
+                                'response_fo_truth_pid',
+                                'confusion_matrix',
+                                'roc_curves',
                                 'resolution_fo_true_energy',
                                 'resolution_fo_local_shower_fraction',
                                 'resolution_fo_eta',
                                 'resolution_sum_fo_true_energy',
                                 'resolution_sum_fo_local_shower_fraction',
                                 'resolution_sum_fo_eta',
+                                'efficiency_fo_pt',
+                                'fake_rate_fo_pt',
+                                'response_fo_pt',
+                                'resolution_fo_pt',
+                                'response_histogram',
+                                'response_histogram_divided',
+                                'response_pt_histogram',
+                                'response_pt_histogram_divided',
                                 ],log_of_distributions=True):
 
 
@@ -48,10 +78,20 @@ class HGCalAnalysisPlotter:
         self.response_fo_pred_plot = ResponseFoEnergyPlot(x_label='Pred energy [GeV]', y_label='Response mean (pred energy/truth energy)', histogram_log=log_of_distributions)
         self.response_sum_plot = ResponseFoEnergyPlot(y_label='Response (sum/truth)', histogram_log=log_of_distributions)
         self.response_fo_local_shower_energy_fraction = ResponseFoLocalShowerEnergyFractionPlot()
+        self.response_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy = ResponseFoLocalShowerEnergyFractionPlot(y_label='Response (Energy spectrum flattened)')
+
         self.efficiency_fo_local_shower_energy_fraction = EfficiencyFoLocalShowerEnergyFractionPlot()
+        self.efficiency_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy = EfficiencyFoLocalShowerEnergyFractionPlot(y_label='Reconstruction Efficiency (Energy spectrum flattened)')
+
         self.efficiency_fo_truth_eta_plot = EfficiencyFoTruthEtaPlot(histogram_log=log_of_distributions)
+
+        self.efficiency_fo_truth_eta_plot_flat_spectrum_wrt_energy = EfficiencyFoTruthEtaPlot(histogram_log=log_of_distributions,
+                                                                                     y_label='Reconstruction Efficiency (Energy spectrum flattened)')
+
         self.fake_rate_fo_pred_eta_plot = FakeRateFoPredEtaPlot(histogram_log=log_of_distributions)
+
         self.response_fo_truth_eta_plot = ResponseFoTruthEtaPlot(histogram_log=log_of_distributions)
+        self.response_fo_truth_eta_plot_flat_spectrum_wrt_energy = ResponseFoTruthEtaPlot(histogram_log=log_of_distributions, y_label='Response (Energy spectrum flattened)')
         self.response_fo_pred_eta_plot = ResponseFoTruthEtaPlot(x_label='abs(Pred eta)', y_label='Response mean (pred energy/truth energy)', histogram_log=log_of_distributions)
         self.efficiency_fo_truth_pid_plot = EfficiencyFoTruthPIDPlot(histogram_log=log_of_distributions)
         self.response_fo_truth_pid_plot = ResponseFoTruthPIDPlot(histogram_log=log_of_distributions)
@@ -60,6 +100,17 @@ class HGCalAnalysisPlotter:
         self.confusion_matrix_plot = ConfusionMatrixPlot()
         self.roc_curves = RocCurvesPlot()
 
+        self.efficiency_fo_pt = EfficiencyFakeRateFoPt()
+        self.fake_rate_fo_pt = EfficiencyFakeRateFoPt(y_label='Fake rate', title='Fake rate comparison')
+        self.response_fo_pt = ResponseFoPt(x_label='pT (GeV)')
+        self.resolution_fo_pt = ResolutionFoPt(x_label='pT (GeV)')
+
+        self.response_histogam = ResponseHisto()
+        self.response_histogam_divided = Multi4HistEnergy()
+
+
+        self.response_pt_histogam = ResponseHisto(x_label='${p_T}_{true}/{p_T}_{pred}$')
+        self.response_pt_histogam_divided = Multi4HistPt()
 
         self.resolution_fo_true_energy = ResolutionFoEnergyPlot()
         self.resolution_fo_true_eta = ResolutionFoTruthEta()
@@ -183,11 +234,19 @@ class HGCalAnalysisPlotter:
                 print("Skipping efficiency_fo_truth_eta_plot plot, table doesn't exist")
 
 
+        # if 'efficiency_fo_truth_eta_flat_spectrum_wrt_energy' in self.plots:
+        #     try:
+        #         self.efficiency_fo_truth_eta_plot.read_from_database(database_reading_manager, table_prefix + '_efficiency_fo_truth_eta', experiment_name=experiment_name, condition=condition)
+        #     except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
+        #         print("Skipping efficiency_fo_truth_eta_plot plot, table doesn't exist")
+
+
         if 'fake_rate_fo_pred_eta' in self.plots:
             try:
                 self.fake_rate_fo_pred_eta_plot.read_from_database(database_reading_manager, table_prefix + '_fake_rate_fo_pred_eta', experiment_name=experiment_name, condition=condition)
             except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
                 print("Skipping fake_rate_fo_pred_eta_plot, table doesn't exist")
+
 
         if 'response_fo_truth_eta' in self.plots:
             try:
@@ -218,6 +277,7 @@ class HGCalAnalysisPlotter:
                 self.confusion_matrix_plot.read_from_database(database_reading_manager, table_prefix + '_confusion_matrix', experiment_name=experiment_name, condition=condition)
             except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
                 print("Skipping confusion_matrix, table doesn't exist")
+
 
 
         self.response_sum_plot.read_from_database(database_reading_manager, table_prefix + '_response_sum_plot', experiment_name=experiment_name, condition=condition)
@@ -297,6 +357,7 @@ class HGCalAnalysisPlotter:
             x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y = np.not_equal(y, -1)
 
+
             self.efficiency_plot.add_raw_values(x, y, tags)
 
 
@@ -343,10 +404,56 @@ class HGCalAnalysisPlotter:
             filter = y!=-1
             self.response_fo_local_shower_energy_fraction.add_raw_values(l[filter], y[filter] / x[filter], tags)
 
+        if 'response_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy' in self.plots:
+            e, _ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True,
+                                                                     not_found_value=-1, sum_multi=True)
+
+            bins = [0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]
+            freq = []
+            for i in range(len(bins) - 1):
+                l = bins[i]
+                h = bins[i + 1]
+                filter = np.logical_and(e >= l, e < h)
+                s = float(np.sum(filter)) / float((h-l))
+                freq.append(s)
+
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+
+            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
+            z = np.searchsorted(bins, e) - 1
+            z = np.minimum(np.maximum(z,0), len(freq)-1)
+
+            weights = np.array([1./freq[x] for x in z])
+
+            filter = y!=-1
+            self.response_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy.add_raw_values(l[filter], y[filter] / x[filter], tags, weights=weights)
+
         if 'efficiency_fo_local_shower_energy_fraction' in self.plots:
             x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
             y = y!=-1
             self.efficiency_fo_local_shower_energy_fraction.add_raw_values(x, y, tags)
+
+        if 'efficiency_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy' in self.plots:
+            e, _ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True,
+                                                                     not_found_value=-1, sum_multi=True)
+
+            bins = [0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]
+            freq = []
+            for i in range(len(bins) - 1):
+                l = bins[i]
+                h = bins[i + 1]
+                filter = np.logical_and(e >= l, e < h)
+                s = float(np.sum(filter)) / float((h-l))
+                freq.append(s)
+
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            z = np.searchsorted(bins, e) - 1
+            z = np.minimum(np.maximum(z,0), len(freq)-1)
+
+            weights = np.array([1./freq[x] for x in z])
+
+            y = y!=-1
+            self.efficiency_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy.add_raw_values(x, y, tags, weights=weights)
 
         if 'efficiency_fo_truth_eta' in self.plots:
             x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
@@ -355,6 +462,33 @@ class HGCalAnalysisPlotter:
             x[x>3] = 3.01
             y = y!=-1
             self.efficiency_fo_truth_eta_plot.add_raw_values(x, y, tags)
+
+        if 'efficiency_fo_truth_eta_flat_spectrum_wrt_energy' in self.plots:
+            e, _ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True,
+                                                                     not_found_value=-1, sum_multi=True)
+
+            bins = [0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]
+            freq = []
+            for i in range(len(bins) - 1):
+                l = bins[i]
+                h = bins[i + 1]
+                filter = np.logical_and(e >= l, e < h)
+                s = float(np.sum(filter)) / float((h-l))
+                freq.append(s)
+
+            x, y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True,
+                                                                     not_found_value=-1, sum_multi=True)
+
+            z = np.searchsorted(bins, e) - 1
+            z = np.minimum(np.maximum(z,0), len(freq)-1)
+
+            weights = np.array([1./freq[x] for x in z])
+
+
+            x = np.abs(x)
+            x[x > 3] = 3.01
+            y = y != -1
+            self.efficiency_fo_truth_eta_plot_flat_spectrum_wrt_energy.add_raw_values(x, y, tags, weights=weights)
 
         if 'fake_rate_fo_pred_eta' in self.plots:
             x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'dep_eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
@@ -370,6 +504,34 @@ class HGCalAnalysisPlotter:
             l[l>3] = 3.01
             filter = y!=-1
             self.response_fo_truth_eta_plot.add_raw_values(l[filter], y[filter] / x[filter], tags)
+
+
+        if 'response_fo_truth_eta_flat_spectrum_wrt_energy' in self.plots:
+            e, _ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True,
+                                                                     not_found_value=-1, sum_multi=True)
+
+            bins = [0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]
+            freq = []
+            for i in range(len(bins) - 1):
+                l = bins[i]
+                h = bins[i + 1]
+                filter = np.logical_and(e >= l, e < h)
+                s = float(np.sum(filter)) / float((h-l))
+                freq.append(s)
+
+
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+
+            z = np.searchsorted(bins, e) - 1
+            z = np.minimum(np.maximum(z,0), len(freq)-1)
+
+            weights = np.array([1./freq[x] for x in z])
+            l = np.abs(l)
+            l[l>3] = 3.01
+            filter = y!=-1
+
+            self.response_fo_truth_eta_plot_flat_spectrum_wrt_energy.add_raw_values(l[filter], y[filter] / x[filter], tags, weights=weights)
 
         if 'response_fo_pred_eta' in self.plots:
             x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
@@ -508,6 +670,70 @@ class HGCalAnalysisPlotter:
             filter = y!=-1
             self.resolution_sum_fo_true_eta.add_raw_values(l[filter], y[filter] / x[filter], tags)
 
+        if 'efficiency_fo_pt' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pt', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            y = np.not_equal(y, -1)
+            self.efficiency_fo_pt.add_raw_values(x, y, tags)
+
+
+        if 'fake_rate_fo_pt' in self.plots:
+            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'pt', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            y = np.not_equal(y, -1)
+            self.fake_rate_fo_pt.add_raw_values(x, y, tags)
+
+
+        if 'response_fo_pt' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pt', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+            self.response_fo_pt.add_raw_values(l[filter], y[filter] / x[filter], tags)
+
+
+        if 'resolution_fo_pt' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pt', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+            self.resolution_fo_pt.add_raw_values(l[filter], y[filter] / x[filter], tags)
+
+        if 'response_histogram' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+
+            data = y[filter] / x[filter]
+            data[data>3] = 3
+
+            self.response_histogam.add_raw_values(data, tags)
+
+
+        if 'response_histogram_divided' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+
+            data = y[filter] / x[filter]
+            data[data>3] = 3
+
+            self.response_histogam_divided.add_raw_values(x[filter], data, tags)
+
+        if 'response_pt_histogram' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pt', 'pt', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+
+            data = y[filter] / x[filter]
+            data[data>3] = 3
+
+            self.response_pt_histogam.add_raw_values(data, tags)
+
+
+        if 'response_pt_histogram_divided' in self.plots:
+            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pt', 'pt', numpy=True, not_found_value=-1, sum_multi=True)
+            filter = y!=-1
+
+            data = y[filter] / x[filter]
+            data[data>3] = 3
+
+            self.response_pt_histogam_divided.add_raw_values(x[filter], data, tags)
+
+
 
     def write_to_pdf(self, pdfpath, formatter=lambda x:''):
         if os.path.exists(pdfpath):
@@ -524,6 +750,9 @@ class HGCalAnalysisPlotter:
         pdf_fake_rate = PdfPages(os.path.join(pdfpath,'fake_rate.pdf'))
         pdf_others = PdfPages(os.path.join(pdfpath,'others.pdf'))
         pdf_resolution = PdfPages(os.path.join(pdfpath,'resolution.pdf'))
+
+
+        pdf_response_histos = PdfPages(os.path.join(pdfpath,'response_histos.pdf'))
 
         if 'settings' in self.plots:
             self._draw_numerics()
@@ -559,12 +788,24 @@ class HGCalAnalysisPlotter:
             self.response_fo_local_shower_energy_fraction.draw(formatter)
             pdf_response.savefig()
 
+        if 'response_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy' in self.plots:
+            self.response_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy.draw(formatter)
+            pdf_response.savefig()
+
         if 'efficiency_fo_local_shower_energy_fraction' in self.plots:
             self.efficiency_fo_local_shower_energy_fraction.draw(formatter)
             pdf_efficiency.savefig()
 
+        if 'efficiency_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy' in self.plots:
+            self.efficiency_fo_local_shower_energy_fraction_flat_spectrum_wrt_energy.draw(formatter)
+            pdf_efficiency.savefig()
+
         if 'efficiency_fo_truth_eta' in self.plots:
             self.efficiency_fo_truth_eta_plot.draw(formatter)
+            pdf_efficiency.savefig()
+
+        if 'efficiency_fo_truth_eta_flat_spectrum_wrt_energy' in self.plots:
+            self.efficiency_fo_truth_eta_plot_flat_spectrum_wrt_energy.draw(formatter)
             pdf_efficiency.savefig()
 
         if 'fake_rate_fo_pred_eta' in self.plots:
@@ -573,6 +814,10 @@ class HGCalAnalysisPlotter:
 
         if 'response_fo_truth_eta' in self.plots:
             self.response_fo_truth_eta_plot.draw(formatter)
+            pdf_response.savefig()
+
+        if 'response_fo_truth_eta_flat_spectrum_wrt_energy' in self.plots:
+            self.response_fo_truth_eta_plot_flat_spectrum_wrt_energy.draw(formatter)
             pdf_response.savefig()
 
         if 'response_fo_pred_eta' in self.plots:
@@ -640,6 +885,38 @@ class HGCalAnalysisPlotter:
             fig = self.resolution_sum_fo_true_eta.draw(formatter)
             pdf_resolution.savefig(fig)
 
+        if 'efficiency_fo_pt' in self.plots:
+            fig = self.efficiency_fo_pt.draw(formatter)
+            pdf_efficiency.savefig(fig)
+
+        if 'fake_rate_fo_pt' in self.plots:
+            fig = self.fake_rate_fo_pt.draw(formatter)
+            pdf_fake_rate.savefig(fig)
+
+        if 'response_fo_pt' in self.plots:
+            fig = self.response_fo_pt.draw(formatter)
+            pdf_response.savefig(fig)
+
+        if 'resolution_fo_pt' in self.plots:
+            fig = self.resolution_fo_pt.draw(formatter)
+            pdf_resolution.savefig(fig)
+
+        if 'response_histogram' in self.plots:
+            fig = self.response_histogam.draw(formatter)
+            pdf_response_histos.savefig(fig)
+
+        if 'response_histogram_divided' in self.plots:
+            fig = self.response_histogam_divided.draw(formatter)
+            pdf_response_histos.savefig(fig)
+
+        if 'response_pt_histogram' in self.plots:
+            fig = self.response_pt_histogam.draw(formatter)
+            pdf_response_histos.savefig(fig)
+
+        if 'response_pt_histogram_divided' in self.plots:
+            fig = self.response_pt_histogam_divided.draw(formatter)
+            pdf_response_histos.savefig(fig)
+
         # if 'energy_found_fo_truth' in self.plots:
         #     self.energy_found_fo_truth_plot.draw(formatter)
         #     pdf.savefig()
@@ -658,5 +935,6 @@ class HGCalAnalysisPlotter:
         pdf_others.close()
         pdf_pid.close()
         pdf_resolution.close()
+        pdf_response_histos.close()
 
         plt.close('all')

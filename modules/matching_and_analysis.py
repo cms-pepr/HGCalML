@@ -1,14 +1,14 @@
 
-import numpy
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 from scipy.optimize import linear_sum_assignment
 import pickle
-from graph_functions import *
+from graph_functions import reconstruct_showers_cond_op, reconstruct_showers, calculate_eiou, calculate_iou_tf
 import networkx as nx
 import gzip
 import scalar_metrics
-
+import tensorflow as tf
 
 
 # Matching types
@@ -85,6 +85,34 @@ def get_truth_matched_attribute(graphs_list, attribute_name_truth, attribute_nam
 
     return truth_data, pred_data
 
+def get_truth_matched_attributes(graphs_list, attributes_name_truth, attributes_name_pred, numpy=False, not_found_value=-1):
+    truth_data = {x:[] for x in attributes_name_truth}
+    pred_data = {x:[] for x in attributes_name_pred}
+
+    for g in graphs_list:
+        for n, att in g.nodes(data=True):
+            if att['type'] == NODE_TYPE_TRUTH_SHOWER:
+                matched = [x for x in g.neighbors(n)]
+                if len(matched)==0:
+                    for n in attributes_name_pred:
+                        pred_data[n].append(None)
+                elif len(matched)==1:
+                    attached = g.nodes(data=True)[matched[0]]
+                    for n in attributes_name_pred:
+                        pred_data[n].append(attached[n])
+                else:
+                    raise RuntimeError("Truth shower matched to multiple pred showers?")
+                for n in attributes_name_truth:
+                    truth_data[n].append(att[n])
+    if numpy:
+        truth_data = {x:np.array(truth_data[x]) for x in attributes_name_truth}
+        pred_data = {x:np.array(pred_data[x]) for x in attributes_name_pred}
+
+        if not_found_value is not None:
+            pred_data = {x : np.array([i if i is not None else not_found_value for i in pred_data[x]]) for x in attributes_name_pred}
+
+    return truth_data, pred_data
+
 
 
 def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name_pred, numpy=False, not_found_value=-1, sum_multi=False):
@@ -113,6 +141,33 @@ def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name
 
     return pred_data, truth_data
 
+def get_pred_matched_attributes(graphs_list, attributes_name_pred, attributes_name_truth, numpy=False, not_found_value=-1):
+    truth_data = {x:[] for x in attributes_name_truth}
+    pred_data = {x:[] for x in attributes_name_pred}
+
+    for g in graphs_list:
+        for n, att in g.nodes(data=True):
+            if att['type'] == NODE_TYPE_PRED_SHOWER:
+                matched = [x for x in g.neighbors(n)]
+                if len(matched)==0:
+                    for n in attributes_name_truth:
+                        truth_data[n].append(None)
+                elif len(matched)==1:
+                    attached = g.nodes(data=True)[matched[0]]
+                    for n in attributes_name_truth:
+                        truth_data[n].append(attached[n])
+                else:
+                    raise RuntimeError("Truth shower matched to multiple pred showers?")
+                for n in attributes_name_pred:
+                    pred_data[n].append(att[n])
+    if numpy:
+        truth_data = {x:np.array(truth_data[x]) for x in attributes_name_truth}
+        pred_data = {x:np.array(pred_data[x]) for x in attributes_name_pred}
+
+        if not_found_value is not None:
+            truth_data = {x : np.array([i if i is not None else not_found_value for i in truth_data[x]]) for x in attributes_name_truth}
+
+    return pred_data, truth_data
 
 
 def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=MATCHING_TYPE_MAX_FOUND,
@@ -221,6 +276,10 @@ class OCRecoGraphAnalyzer:
             node_attributes['energy'] = truth_dict['truthHitAssignedEnergies'][truth_shower_idx[i], 0].item()\
                 if 'truthHitAssignedEnergies' in truth_dict else node_attributes['dep_energy']
 
+            node_attributes['pt'] = node_attributes['energy'] / np.cosh(node_attributes['eta'])
+
+            # print("pt and energy", node_attributes['pt'],node_attributes['energy'])
+
             #node_attributes['dep_energy'] = truth_dict['truthHitAssignedDepEnergies'][
             #    truth_shower_idx[i], 0].item()
             node_attributes['pid'] = truth_dict['truthHitAssignedPIDs'][truth_shower_idx[i], 0].item()\
@@ -273,6 +332,25 @@ class OCRecoGraphAnalyzer:
                                                                   max_hits_per_shower=self.metadata['max_hits_per_shower'],
                                                                   return_alpha_indices=True,
                                                                   limit=1000, pred_dist=pred_dict['pred_dist'][:, 0])
+
+            #
+            # # print(pred_dict['pred_ccoords'].shape, pred_dict['pred_beta'][:,0].shape, self.beta_threshold, self.distance_threshold)
+            # pred_sid2, pred_shower_alpha_idx2 = reconstruct_showers_cond_op(pred_dict['pred_ccoords'],
+            #                                                       pred_dict['pred_beta'][:,0],
+            #                                                       self.beta_threshold,
+            #                                                       self.distance_threshold,
+            #                                                       max_hits_per_shower=self.metadata['max_hits_per_shower'],
+            #                                                       return_alpha_indices=True,
+            #                                                       limit=1000, pred_dist=pred_dict['pred_dist'][:, 0])
+            # print(np.sort(pred_shower_alpha_idx))
+            # print(np.sort(pred_shower_alpha_idx2))
+            # print(len(pred_shower_alpha_idx2), len(pred_shower_alpha_idx))
+            #
+            # print("stopped with local scaling")
+            # 0/0
+
+
+
         else:
             # print(pred_dict['pred_ccoords'].shape, pred_dict['pred_beta'][:,0].shape, self.beta_threshold, self.distance_threshold)
             pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
@@ -281,6 +359,24 @@ class OCRecoGraphAnalyzer:
                                                                   self.distance_threshold,
                                                                   max_hits_per_shower=self.metadata['max_hits_per_shower'],
                                                                   return_alpha_indices=True, limit=1000)
+
+
+            # # print(pred_dict['pred_ccoords'].shape, pred_dict['pred_beta'][:,0].shape, self.beta_threshold, self.distance_threshold)
+            # pred_sid2, pred_shower_alpha_idx2 = reconstruct_showers_cond_op(pred_dict['pred_ccoords'],
+            #                                                       pred_dict['pred_beta'][:,0],
+            #                                                       self.beta_threshold,
+            #                                                       self.distance_threshold,
+            #                                                       max_hits_per_shower=self.metadata['max_hits_per_shower'],
+            #                                                       return_alpha_indices=True, limit=1000)
+            #
+            # print(np.sort(pred_shower_alpha_idx))
+            # print(np.sort(pred_shower_alpha_idx2))
+            # print(len(pred_shower_alpha_idx2), len(pred_shower_alpha_idx))
+            #
+            # print("stopped without local scaling")
+            #
+            # 0/0
+
 
         pred_sid += start_indicing_from
 
@@ -326,6 +422,14 @@ class OCRecoGraphAnalyzer:
             else:
                 raise RuntimeError("Wrong energy gather type")
 
+            a = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0) if 'pred_energy' in pred_dict else node_attributes['dep_energy']
+            b = max(pred_dict['pred_energy_corr_factor'][pred_shower_alpha_idx[i]][0].item(), 0) * node_attributes['dep_energy']
+            c = node_attributes['dep_energy']
+            d = np.sum(pred_dict['pred_energy_corr_factor'][pred_sid==sid] * feat_dict['recHitEnergy'][pred_sid==sid])
+
+
+
+
             rechit_energy = feat_dict['recHitEnergy'][pred_sid==sid]
             rechit_x = feat_dict['recHitX'][pred_sid==sid]
             rechit_y = feat_dict['recHitY'][pred_sid==sid]
@@ -339,6 +443,9 @@ class OCRecoGraphAnalyzer:
             node_attributes['dep_eta'] = (np.sum(rechit_energy * rechit_eta) / np.sum(rechit_energy)).item()
             node_attributes['type'] = NODE_TYPE_PRED_SHOWER
             node_attributes['num_hits'] = np.sum(pred_sid==sid)
+
+
+            node_attributes['pt'] = node_attributes['energy'] / np.cosh(node_attributes['dep_eta'])
 
             node = (sid, node_attributes)
             pred_nodes.append(node)

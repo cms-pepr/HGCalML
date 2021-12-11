@@ -59,13 +59,16 @@ class GeneralHistogramPlot():
     def add_processed_data(self, processed_data):
         self.models_data.append(processed_data)
 
-    def draw(self, name_tag_formatter=None):
+    def draw(self, name_tag_formatter=None, axis=None):
         """
 
         :param name_tag_formatter: a function to which tags dict is given and it returns the name
         :return:
         """
-        fig, ax1 = plt.subplots(1, 1, figsize=(9, 6))
+        if axis is None:
+            fig, ax1 = plt.subplots(1, 1, figsize=(9, 6))
+        else:
+            ax1 = axis
 
         max_of_hist_values = 0
         for model_data in self.models_data:
@@ -86,15 +89,13 @@ class GeneralHistogramPlot():
 
             print(name_of_plot)
 
-
-
             hist_values = hist_values.tolist()
 
             e_bins = np.concatenate(([lows[0]], highs), axis=0)
             max_of_hist_values = max(max_of_hist_values, np.max(hist_values))
 
-            ax1.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
-            ax1.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
+            ax1.step(e_bins, [hist_values[0]] + hist_values, alpha=0.7)
+            # ax1.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
 
             if self.histogram_log:
                 ax1.set_yscale('log')
@@ -175,7 +176,6 @@ class GeneralHistogramPlot():
 
             processed_data['tags'] = tags
             self.add_processed_data(processed_data)
-
 
 
 
