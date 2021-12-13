@@ -2033,6 +2033,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  sumwnorm=False,
                  feature_activation='relu',
                  use_approximate_knn=True,
+                 coord_initialiser_noise=1e-2,
                  use_dynamic_knn=True,
                  **kwargs):
         """
@@ -2074,7 +2075,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,
                                                                  #very slow turn on
-                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=1e-3),
+                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=coord_initialiser_noise),
                                                                  use_bias=False)
 
         with tf.name_scope(self.name + "/3/"):
