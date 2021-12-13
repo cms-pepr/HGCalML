@@ -31,6 +31,11 @@ class HGCalAnalysisPlotter:
         self.eta_bins = np.array([1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0,2.25,2.5,2.75,3,3.1])
         self.pt_bins = np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80])
 
+        self.total_response_bins = [0.79,0.8,0.9,0.91,0.92,0.93,0.94,0.95,0.96,0.97,0.98,0.99,
+                                    1,1.01,1.02,1.03,1.04,1.05,1.06,1.07,1.08,1.09,1.1,1.2,1.21]
+
+        self.e_other_bins= [0,0.25,0.5,0.75,1,1.25,1.5,1.75,2,2.25,2.5,2.75,3,3.25,3.5,3.75,4,4.25,4.5,4.75,5,5.25,5.5,5.75,6,6.25,6.5,6.75,7,7.25,7.5,7.75,8,8.25,8.5,8.75,9,9.25,9.5,9.75,10,10.25,10.5,10.75,11,11.25,11.5,11.75,12,12.25,12.5,12.75,13,13.25,13.5,13.75,14,14.25,14.5,14.75,15,15.25,15.5,15.75,16,16.25,16.5,16.75,17,17.25,17.5,17.75,18,18.25,18.5,18.75,19,19.25,19.5,19.75,20]
+
 
         self.efficiency_fo_truth_pid_plot = EfficiencyFoTruthPIDPlot(histogram_log=log_of_distributions)
         self.response_fo_truth_pid_plot = ResponseFoTruthPIDPlot(histogram_log=log_of_distributions)
@@ -42,6 +47,26 @@ class HGCalAnalysisPlotter:
 
         self.response_pt_histogam = ResponseHisto(x_label='${p_T}_{true}/{p_T}_{pred}$')
         self.response_pt_histogam_divided = Multi4HistPt()
+
+        self.total_dep_to_impact = ResponseHisto(
+            x_label='$\\frac{\\sum E_{true\_dep}}{\\sum E_{true}}$',
+            y_label='Frequency',
+            bins=np.array(self.total_response_bins),
+        )
+
+        self.total_pred_to_impact = ResponseHisto(
+            x_label='$\\frac{\\sum E_{pred}}{\\sum E_{true}}$',
+            y_label='Frequency',
+            bins=np.array(self.total_response_bins),
+        )
+
+        binsx = np.linspace(0,200,801)
+        self.e_other_histogram = GeneralHistogramPlot(
+            # bins=np.array(self.e_other_bins+[20.25]),
+            bins=binsx,
+            x_label='E other',
+            histogram_log=True
+        )
 
         self.resolution_fo_true_energy = ResolutionFoEnergyPlot()
         self.resolution_fo_true_eta = ResolutionFoTruthEta()
@@ -66,6 +91,9 @@ class HGCalAnalysisPlotter:
             'response_histogram_divided',
             'response_pt_histogram',
             'response_pt_histogram_divided',
+            'total_response_true_dep_to_impact',
+            'total_response_pred_to_impact',
+            'e_other_histogram',
         ]
 
         self.plots = set(plots)
@@ -80,7 +108,8 @@ class HGCalAnalysisPlotter:
     def _build_plotter_classes(self):
         self.all_plots = []
         for p in self.all_plots_config:
-            if p['class'] == 'efficiency_simple' or p['class']=='fake_rate_simple' or p['class'] == 'efficiency_energy_spectrum_flattened':
+            if p['class'] == 'efficiency_simple' or p['class']=='fake_rate_simple' or p['class'] == 'efficiency_energy_spectrum_flattened'\
+                    or p['class'] == 'efficiency_truth_pu_adjustment':
                 plot = hp2.EfficiencyFakeRatePlot(
                     bins=p['bins'],
                     x_label=p['x_label'],
@@ -124,6 +153,16 @@ class HGCalAnalysisPlotter:
                 'class': 'efficiency_simple',
                 'x_label': 'Truth Energy [GeV]',
                 'y_label': 'Efficiency',
+                'fo': 'energy',
+                'title': 'Efficiency',
+                'file': 'efficiency',
+                'bins': self.energy_bins,
+            },
+            {
+                'id': 'v2_efficiency_fo_truth_energy_pu_weighting',
+                'class': 'efficiency_truth_pu_adjustment',
+                'x_label': 'Truth Energy [GeV]',
+                'y_label': 'Efficiency (redistributed wrt PU)',
                 'fo': 'energy',
                 'title': 'Efficiency',
                 'file': 'efficiency',
@@ -564,6 +603,39 @@ class HGCalAnalysisPlotter:
         #     self.truth_energy_matched += [x['truth_energy_percentage_matched'] for x in tags]
         #     self.truth_energy_matched = np.unique(self.truth_energy_matched).tolist()
 
+    def compute_truth_list_weighting_for_PU(self, graphs):
+        # Just computing energy weights for weighing for PU.
+        x, _ = matching_and_analysis.get_truth_matched_attribute(graphs, 'energy_others_in_vicinity', 'energy',
+                                                                 numpy=True, not_found_value=-1, sum_multi=True)
+        e, _ = matching_and_analysis.get_truth_matched_attribute(graphs, 'energy', 'energy',
+                                                                 numpy=True, not_found_value=-1, sum_multi=True)
+
+        # plt.scatter(e, x, s=0.1)
+        # plt.xlabel('Energy')
+        # plt.ylabel('Energy others')
+        # plt.show()
+
+        e_my_bins = self.e_other_bins + [np.max(x)+1000]
+        weights_dataset,_ = np.histogram(x, e_my_bins)
+
+        weights_pu = np.array([0.349623, 0.401939, 0.400925, 0.368028, 0.32228, 0.275206, 0.232257, 0.19529, 0.164396, 0.138938, 0.118072,
+         0.100973, 0.0869215, 0.0753203, 0.0656888, 0.0576434, 0.0508807, 0.0451602, 0.0402915, 0.0361229, 0.0325333,
+         0.0294253, 0.0267203, 0.0243544, 0.0222754, 0.0204405, 0.0188142, 0.0173671, 0.0160747, 0.0149162, 0.0138744,
+         0.0129345, 0.0120841, 0.0113123, 0.01061, 0.00996929, 0.00938337, 0.00884628, 0.00835285, 0.00789857,
+         0.00747949, 0.00709214, 0.00673344, 0.00640069, 0.00609148, 0.0058037, 0.00553543, 0.00528497, 0.00505081,
+         0.00483159, 0.00462608, 0.00443318, 0.00425188, 0.0040813, 0.00392061, 0.00376907, 0.00362602, 0.00349083,
+         0.00336294, 0.00324186, 0.0031271, 0.00301824, 0.00291489, 0.00281669, 0.0027233, 0.00263441, 0.00254975,
+         0.00246906, 0.00239209, 0.00231862, 0.00224844, 0.00218136, 0.0021172, 0.0020558, 0.00199701, 0.00194067,
+         0.00188665, 0.00183484, 0.00178511, 0.00173735, 0])
+
+
+        weights_calc = weights_pu / weights_dataset
+
+        z = np.searchsorted(e_my_bins, x) - 1
+        weights = [weights_calc[x] for x in z]
+
+        return np.array(weights)
+
     def add_data_from_analysed_graph_list(self, analysed_graphs, metadata, label='', additional_tags=dict()):
         tags = dict()
         tags['beta_threshold'] = float(metadata['beta_threshold'])
@@ -596,6 +668,7 @@ class HGCalAnalysisPlotter:
         self.dist_thresholds = np.unique(self.dist_thresholds).tolist()
         self.iou_thresholds = np.unique(self.iou_thresholds).tolist()
 
+        self.truth_weights_for_pu = self.compute_truth_list_weighting_for_PU(analysed_graphs)
 
         if 'reco_score' in metadata:
             self.reco_scores.append(metadata['reco_score'])
@@ -731,6 +804,45 @@ class HGCalAnalysisPlotter:
 
             self.response_pt_histogam_divided.add_raw_values(x[filter], data, tags)
 
+        if 'total_response_true_dep_to_impact' in self.plots:
+            x = []
+            for g in analysed_graphs:
+                truth_impact = 0
+                pred_values = 0
+                for n, att in g.nodes(data=True):
+                    if att['type'] == matching_and_analysis.NODE_TYPE_TRUTH_SHOWER:
+                        truth_impact += att['energy']
+                        pred_values += att['dep_energy']
+                x += [pred_values/truth_impact]
+
+            x = np.array(x)
+            x[x>1.2] = 1.201
+            x[x<0.8] = 0.799
+            self.total_dep_to_impact.add_raw_values(x, tags)
+
+        if 'total_response_pred_to_impact' in self.plots:
+            x = []
+            for g in analysed_graphs:
+                truth_impact = 0
+                pred_values = 0
+                for n, att in g.nodes(data=True):
+                    if att['type'] == matching_and_analysis.NODE_TYPE_TRUTH_SHOWER:
+                        truth_impact += att['energy']
+                    if att['type'] == matching_and_analysis.NODE_TYPE_PRED_SHOWER:
+                        pred_values += att['energy']
+                x += [pred_values/truth_impact]
+
+            x = np.array(x)
+            x[x>1.2] = 1.201
+            x[x<0.8] = 0.799
+            self.total_pred_to_impact.add_raw_values(x, tags)
+
+        if 'e_other_histogram' in self.plots:
+            x,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy_others_in_vicinity', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
+            x[x>200]=199.9999
+
+            self.e_other_histogram.add_raw_values(x, tags)
+
 
         for plot,config in zip(self.all_plots, self.all_plots_config):
             if config['class']=='efficiency_simple':
@@ -741,6 +853,15 @@ class HGCalAnalysisPlotter:
                     x = config['x_transform'](x)
 
                 plot.add_raw_values(x, y, tags)
+
+            elif config['class']=='efficiency_truth_pu_adjustment':
+                x, y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, config['fo'], 'energy',
+                                                                         numpy=True, not_found_value=-1, sum_multi=True)
+                y = np.not_equal(y, -1)
+                if 'x_transform' in config:
+                    x = config['x_transform'](x)
+
+                plot.add_raw_values(x, y, tags, weights=self.truth_weights_for_pu)
 
             elif config['class']=='efficiency_energy_spectrum_flattened':
                 truth_values, pred_values = matching_and_analysis.get_truth_matched_attributes(
@@ -935,6 +1056,18 @@ class HGCalAnalysisPlotter:
         if 'response_pt_histogram_divided' in self.plots:
             fig = self.response_pt_histogam_divided.draw(formatter)
             pdf_response_histos.savefig(fig)
+
+        if 'total_response_true_dep_to_impact' in self.plots:
+            fig = self.total_dep_to_impact.draw(formatter)
+            pdf_response_histos.savefig(fig)
+
+        if 'total_response_pred_to_impact' in self.plots:
+            fig = self.total_pred_to_impact.draw(formatter)
+            pdf_response_histos.savefig(fig)
+
+        if 'e_other_histogram' in self.plots:
+            fig = self.e_other_histogram.draw(formatter)
+            pdf_others.savefig(fig)
 
 
         pdf_efficiency.close()

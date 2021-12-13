@@ -10,6 +10,8 @@ import gzip
 import scalar_metrics
 import tensorflow as tf
 
+import plotly.express as px
+import pandas as pd
 
 # Matching types
 MATCHING_TYPE_IOU_MAX = 0
@@ -301,12 +303,15 @@ class OCRecoGraphAnalyzer:
         etas = np.array([x[1]['eta'] for x in truth_nodes])
         phis = np.array([x[1]['phi'] for x in truth_nodes])
 
-        d_eta_phi = (etas[..., np.newaxis] - etas[np.newaxis, ...])**2 + (phis[..., np.newaxis] - phis[np.newaxis, ...])
+        d_eta_phi = np.sqrt((etas[..., np.newaxis] - etas[np.newaxis, ...])**2 + (phis[..., np.newaxis] - phis[np.newaxis, ...])**2)
         lsf = energies / np.sum(np.less_equal(d_eta_phi, 0.5)  * energies[np.newaxis, ...], axis=1)
+
+
+        e_other =  np.sum(np.less_equal(d_eta_phi, 0.3) * (1 - np.eye(N=len(d_eta_phi)))  * energies[np.newaxis, ...], axis=1)
 
         truth_nodes_2 = []
         for i, t in enumerate(truth_nodes):
-            truth_nodes_2.append((t[0],dict(**t[1],**({'local_shower_energy_fraction':lsf[i]}))))
+            truth_nodes_2.append((t[0],dict(**t[1],**({'local_shower_energy_fraction':lsf[i], 'energy_others_in_vicinity':e_other[i]}))))
 
         truth_graph.add_nodes_from(truth_nodes_2)
 
@@ -648,6 +653,7 @@ class OCRecoGraphAnalyzer:
             rechit_nodes.append((id_max, node))
             rechit_node_id.append(id_max)
             id_max += 1
+
         rechit_node_id = np.array(rechit_node_id)
 
         graph_2.add_nodes_from(rechit_nodes)
@@ -669,6 +675,9 @@ class OCRecoGraphAnalyzer:
                 graph_2.add_edge(n, i)
 
             graph_2.add_nodes_from(rechit_nodes)
+
+        # print(graph_2)
+
         return graph_2
 
     def _match_multipass(self, return_rechit_data=False):
@@ -968,6 +977,9 @@ class OCMatchingVisualizer():
         self.number_of_passes = self.slider_num_passes.val
         self.update_network()
 
+    def draw_network_for_plotly(self):
+        pass
+
     def draw_network(self):
         network = self.graph_showers_only
         self.node_positions = nx.spring_layout(network)
@@ -1027,6 +1039,116 @@ class OCMatchingVisualizer():
     def visualize(self):
         # self.draw_calo(self.graph_data)
         self.draw_network()
+
+    def draw_to_plotly(self, fig, ax, graph, title, html_path):
+        showers = [x for x, y in graph.nodes(data=True) if y['type'] == 0 or y['type'] == 1]
+
+        X = []
+        Y = []
+        Z = []
+        E = []
+        C = []
+        CI = []
+
+        Energy = []
+
+        for s in showers:
+            if graph.nodes[s]['visible'] == False:
+                continue
+
+            recs = list(graph.neighbors(s))
+            x = [graph.nodes[x]['rechit_x'] for x in recs]
+            y = [graph.nodes[x]['rechit_y'] for x in recs]
+            z = [graph.nodes[x]['rechit_z'] for x in recs]
+            e = [graph.nodes[x]['rechit_energy'] for x in recs]
+            c = [self.cmap(graph.nodes[s]['secondary_color_id'])] * len(e)
+            ci = [graph.nodes[s]['secondary_color_id']] * len(e)
+
+            X += x
+            Y += y
+            Z += z
+            C += c
+            E += e
+            CI += ci
+            Energy += [graph.nodes[s]['energy']] * len(e)
+
+        noise = list(nx.isolates(graph))
+        x = [graph.nodes[x]['rechit_x'] for x in noise]
+        y = [graph.nodes[x]['rechit_y'] for x in noise]
+        z = [graph.nodes[x]['rechit_z'] for x in noise]
+        e = [graph.nodes[x]['rechit_energy'] for x in noise]
+        # c = [self.cmap(graph.nodes[s]['secondary_color_id'])] * len(e)
+        ci = [-1] * len(e)
+
+
+        X += x
+        Y += y
+        Z += z
+        # C += c
+        E += e
+        CI += ci
+        Energy += [0 for _ in e]
+
+        E = np.array(E)
+
+
+        # S = 100 * np.power(E, (3./2.))
+        S = np.log(E+1)
+
+        print("Drawing with nodes = ", len(X))
+
+        df = pd.DataFrame({
+            'x': X,
+            'y': Y,
+            'z': Z,
+            'color': CI,
+            'size': S,
+            'energy': Energy,
+        })
+
+        fig = px.scatter_3d(df, x="x", y="z", z="y",
+                            color="color", size="size",
+                            # symbol="recHitID",
+                            hover_data=['energy'],
+                            template='plotly_dark',
+                            color_continuous_scale=px.colors.sequential.Rainbow)
+        fig.update_traces(marker=dict(line=dict(width=0)))
+        fig.update_traces(marker=dict(line=dict(width=0)))
+        fig.write_html(html_path)
+
+        # ax.scatter(Z, X, Y, s=S, c=C)
+
+
+
+        # plt.show()
+
+    def write_to_html(self, html):
+        edges_removed_graph = self.graph_showers_only.copy()
+        for node1, node2, data in self.graph_showers_only.edges(data=True):
+            attached_in_pass = data['attached_in_pass']
+            if attached_in_pass >= self.number_of_passes:
+                edges_removed_graph.remove_edge(node1, node2)
+        connected_components = list(nx.connected_components(edges_removed_graph))
+        for c in connected_components:
+            center_node = self.find_center_node_of_star_graph(self.graph_showers_only, c)
+            for node in c:
+                self.graph_showers_only.nodes[node]['secondary_color_id'] = self.graph_showers_only.nodes[center_node][
+                    'color_id']
+
+        graph_truth_and_hits_induced = self.graph_data.copy()
+        graph_pred_and_hits_induced = self.graph_data.copy()
+
+        for node, att in self.graph_showers_only.nodes(data=True):
+            if att['type'] == NODE_TYPE_TRUTH_SHOWER:
+                graph_pred_and_hits_induced.remove_node(node)
+            if att['type'] == NODE_TYPE_PRED_SHOWER:
+                graph_truth_and_hits_induced.remove_node(node)
+
+        # graph_pred_and_hits_induced.remove_nodes_from(list(nx.isolates(graph_pred_and_hits_induced)))
+        # graph_truth_and_hits_induced.remove_nodes_from(list(nx.isolates(graph_truth_and_hits_induced)))
+
+        self.draw_to_plotly(fig=None, ax=None, graph=graph_truth_and_hits_induced, title='Truth', html_path=html+'_truth.html')
+        self.draw_to_plotly(fig=None, ax=None, graph=graph_pred_and_hits_induced, title='Pred', html_path=html+'_pred.html')
 
 
 class OCAnlayzerWrapper():

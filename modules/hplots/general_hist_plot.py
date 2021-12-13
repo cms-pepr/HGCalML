@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 
 class GeneralHistogramPlot():
-    def __init__(self, bins, x_label='Values', y_label='Frequency', title='', histogram_log=False):
+    def __init__(self, bins, x_label='Values', y_label='Frequency', title='', histogram_log=False, histogram_fractions=True):
         self.models_data = list()
         self.e_bins = bins
 
@@ -14,6 +14,7 @@ class GeneralHistogramPlot():
         self.y_label = y_label
         self.title = title
         self.histogram_log=histogram_log
+        self.histogram_fractions=True
         # self.e_bins = [0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]
 
 
@@ -80,14 +81,16 @@ class GeneralHistogramPlot():
             e_bins_n = np.array(e_bins)
             e_bins_n = (e_bins_n - e_bins_n.min()) / (e_bins_n.max() - e_bins_n.min())
 
+            if self.histogram_fractions:
+                hist_values = (hist_values / (e_bins_n[1:] - e_bins_n[:-1])).tolist()
+                hist_values = (hist_values / np.sum(hist_values))
+
             tags = model_data['tags']
 
             if name_tag_formatter is None:
                 name_of_plot = ''
             else:
                 name_of_plot = name_tag_formatter(tags)
-
-            print(name_of_plot)
 
             hist_values = hist_values.tolist()
 

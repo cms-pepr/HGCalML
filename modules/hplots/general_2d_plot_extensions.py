@@ -6,8 +6,6 @@ import hplots.response_scale
 hplots.response_scale.register()
 
 
-
-
 class EfficiencyFoLocalFractionPlot(General2dBinningPlot):
     def __init__(self, bins=np.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]), x_label='Local shower fraction', y_label='Efficiency', title='Local shower fraction', y_label_hist='Histogram (fraction)'):
         super().__init__(bins, x_label, y_label, title, y_label_hist)
