@@ -9,10 +9,23 @@ from initializers import EyeInitializer
 
 
 from datastructures import TrainData_OC,TrainData_NanoML
+
+
+def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name=None):
+    if n_cluster_space_coordinates > 3:
+        extendcoords = Dense(n_cluster_space_coordinates-3,
+                             use_bias=False,
+                             name=name,
+                             kernel_initializer='zeros'
+                             )(x)
+        coords = Concatenate()([coords, extendcoords])
+    return coords
+
 #new format!
 def create_outputs(x, feat, energy=None, n_ccoords=3, 
                    n_classes=4, td=TrainData_NanoML(), add_features=True, 
                    fix_distance_scale=False,
+                   wide_distance_scale=False,
                    scale_energy=True,
                    energy_factor=False,
                    energy_proxy=None,
@@ -20,7 +33,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
-    
+    from GravNetLayersRagged import LocalDistanceScaling
     assert scale_energy != energy_factor
     
     feat = td.createFeatureDict(feat)
@@ -58,7 +71,11 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     
     pred_dist = OnesLike()(pred_time)
     if not fix_distance_scale:
-        pred_dist = Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x) 
+        if wide_distance_scale:
+            scaling = Dense(1,name = name_prefix+'_distscale')(x)
+            pred_dist = LocalDistanceScaling(10.)([pred_dist,scaling])
+        else:
+            pred_dist = Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x) 
         #this needs to be bound otherwise fully anti-correlated with coordates scale
     return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id
     
@@ -106,12 +123,15 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                 debug_outdir,
                                 trainable,
                                 name='first_coords',
-                                 debugplots_after=-1): 
+                                n_coords=3,
+                                debugplots_after=-1): 
     
     from GravNetLayersRagged import ElementScaling, KNN, DistanceWeightedMessagePassing, RecalcDistances
     from debugLayers import PlotCoordinates
     
     coords = ElementScaling(name=name+'es1',trainable=trainable)(coords)
+    
+    coords = extent_coords_if_needed(coords, x, n_coords, name=name+'_coord_ext')
 
     if debugplots_after>0:
         coords = PlotCoordinates(debugplots_after,
@@ -137,11 +157,11 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
     x = Dense(64,activation='relu',name=name+'dense1b',trainable=trainable)(x)
     x = Dense(32,activation='relu',name=name+'dense1c',trainable=trainable)(x)
     
-    learnedcoorddiff = Dense(3,kernel_initializer='zeros',use_bias=False,
+    learnedcoorddiff = Dense(n_coords,kernel_initializer='zeros',use_bias=False,
                              name=name+'dense2',trainable=trainable)(x)
     
     coords = Concatenate()([coords,learnedcoorddiff])                             
-    coords = Dense(3,kernel_initializer=EyeInitializer(mean=0,stddev=0.1),
+    coords = Dense(n_coords,kernel_initializer=EyeInitializer(mean=0,stddev=0.1),
                    use_bias=False)(coords)
     
     if debugplots_after>0:
@@ -271,6 +291,8 @@ def pre_selection_model_full(orig_inputs,
                              reduction_threshold=0.5,
                              noise_threshold = 0.025,
                              use_edges=True,
+                             n_coords=3,
+                             pass_through=False,
                              omit_reduction=False #only trains coordinate transform. useful for pretrain phase
                              ):
     
@@ -282,6 +304,8 @@ def pre_selection_model_full(orig_inputs,
     
     rs = CastRowSplits()(orig_inputs['row_splits'])
     t_idx = orig_inputs['t_idx']
+    
+        
 
     x = ProcessFeatures()(orig_inputs['features'])
     energy = SelectFeatures(0, 1)(orig_inputs['features'])
@@ -292,13 +316,30 @@ def pre_selection_model_full(orig_inputs,
         coords = PlotCoordinates(debugplots_after,outdir=debug_outdir,name=name+'_initial')([coords,energy,t_idx,rs])
     ############## Keep this part to reload the noise filter with pre-trained weights for other trainings
     
+    out={}
+    if pass_through: #do nothing but make output compatible
+        for k in orig_inputs.keys():
+            out[k] = orig_inputs[k]
+        out['features'] = x
+        out['coords'] = coords
+        out['addfeat'] = x #add more
+        out['energy'] = energy
+        out['not_noise_score']=Dense(1,name=name+'_passthrough_noise')(x)
+        out['orig_t_idx'] = orig_inputs['t_idx']
+        out['orig_t_energy'] = orig_inputs['t_energy'] #for validation
+        out['orig_dim_coords'] = coords
+        out['rs']=rs
+        out['orig_row_splits'] = rs
+        return out
+    
     #this takes O(200ms) for 100k hits
     coords,nidx,dist, x = first_coordinate_adjustment(
         coords, x, energy, rs, t_idx, 
         debug_outdir,
         trainable=trainable,
         name=name+'_first_coords',
-        debugplots_after=debugplots_after
+        debugplots_after=debugplots_after,
+        n_coords=n_coords
         )
     #create the gradients
     coords = LLClusterCoordinates(
@@ -339,7 +380,7 @@ def pre_selection_model_full(orig_inputs,
            return_backscatter=False)
     
     
-    out={}
+    
     #do it explicitly
     
     selfeat = orig_inputs['features']
@@ -410,14 +451,6 @@ def pre_selection_model_full(orig_inputs,
 
     return out
     
-def extent_coords_if_needed(coords, x, n_cluster_space_coordinates):
-    if n_cluster_space_coordinates > 3:
-        extendcoords = Dense(n_cluster_space_coordinates-3,
-                             use_bias=False,
-                             kernel_initializer='zeros'
-                             )(x)
-        coords = Concatenate()([coords, extendcoords])
-    return coords
 
 
 def re_integrate_to_full_hits(
