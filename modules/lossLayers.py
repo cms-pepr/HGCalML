@@ -762,11 +762,10 @@ class LLFullObjectCondensation(LossLayerBase):
             depe.append(dep)
         dep_energies = tf.concat(depe,axis=0)
         
-        #corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
-        #corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
-        #
-        #corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
-        #corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
+        corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
+        corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
+        corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
+        corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
         
         #calo-like
         ediff = (t_energy - pred_energy*dep_energies)/tf.sqrt(t_energy+1e-3)
