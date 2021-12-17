@@ -778,8 +778,6 @@ class LLFullObjectCondensation(LossLayerBase):
             eloss = tf.math.log(ediff**2 + 1. + 1e-5)
         
         euncloss=None
-        #l_low = corrtruth - pred_energy_low_quantile
-        #l_high = corrtruth - pred_energy_high_quantile
         resolution =(1-pred_energy/corrtruth) 
         l_low =  resolution - pred_energy_low_quantile
         l_high = resolution - pred_energy_high_quantile
@@ -892,11 +890,18 @@ class LLFullObjectCondensation(LossLayerBase):
                                                                                             pred_energy_high_quantile,
                                                                                             rowsplits)
             energy_loss *= self.energy_loss_weight 
-            energy_quantiles_loss *= self.energy_loss_weight/2. #to start with divide over two
-
         else:
             energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
-            
+            _, energy_quantiles_loss =  self.calc_energy_correction_factor_loss(t_energy, 
+                                                                                t_idx, 
+                                                                                rechit_energy, 
+                                                                                pred_energy,
+                                                                                pred_energy_low_quantile,
+                                                                                pred_energy_high_quantile,
+                                                                                rowsplits)
+
+        energy_quantiles_loss *= self.energy_loss_weight/2. #to start with divide over two
+
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
         classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id)
