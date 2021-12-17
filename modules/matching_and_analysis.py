@@ -25,8 +25,23 @@ NODE_TYPE_PRED_SHOWER = 1
 NODE_TYPE_RECHIT = 7
 
 
+ENERGY_GATHER_TYPE_PRED_ENERGY = 0
+ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT = 1
+ENERGY_GATHER_TYPE_CORRECTION_FACTOR_PER_HIT = 2
+
+
 HIT_WEIGHT_TYPE_RECHIT_ENERGY = 0
 HIT_WEIGHT_TYPE_ONES = 1
+
+def one_hot_encode_id(t_pid, n_classes):
+    t_pid = t_pid[:, tf.newaxis]
+    valued_pids = tf.zeros_like(t_pid) + 3  # defaults to 3 as that is the highest showerType value
+    valued_pids = tf.where(tf.math.logical_or(t_pid == 22, tf.abs(t_pid) == 11), 0, valued_pids)  # isEM
+    valued_pids = tf.where(tf.abs(t_pid) == 211, 1, valued_pids)  # isHad
+    valued_pids = tf.where(tf.abs(t_pid) == 13, 2, valued_pids)  # isMIP
+    valued_pids = tf.cast(valued_pids, tf.int32)[:, 0]
+    depth = n_classes  # If n_classes=pred_id.shape[1], should we add an assert statement?
+    return tf.one_hot(valued_pids, depth).numpy()
 
 def angle(p, t):
     t = np.array([t['x'], t['y'], t['z']])
@@ -35,8 +50,6 @@ def angle(p, t):
     angle = np.arccos(np.sum(t*p) / (np.sqrt(np.sum(t*t))*np.sqrt(np.sum(p*p))))
 
     return angle
-
-
 
 def precision_function(x, y, angle_threshold):
     e1 = max(x['energy'], 0)
@@ -105,7 +118,8 @@ def get_pred_matched_attribute(graphs_list, attribute_name_truth, attribute_name
 def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshold=0.0001, matching_type=MATCHING_TYPE_MAX_FOUND,
                         with_local_distance_scaling=False, beta_weighting_param=1, angle_threshold=0.08, precision_threshold=0.2,
                         passes=5, max_hits_per_shower=-1, hit_weight_for_intersection=HIT_WEIGHT_TYPE_RECHIT_ENERGY,
-                        log_of_distributions=0):
+                        log_of_distributions=0, energy_gather_type=ENERGY_GATHER_TYPE_PRED_ENERGY,
+                        classes=['EM', 'Hadronic', 'MIP', 'Undef']):
     metadata = dict()
     metadata['beta_threshold'] = beta_threshold
     metadata['distance_threshold'] = distance_threshold
@@ -122,6 +136,9 @@ def build_metadeta_dict(beta_threshold=0.5, distance_threshold=0.5, iou_threshol
     metadata['max_hits_per_shower'] = max_hits_per_shower
     metadata['hit_weight_for_intersection'] = hit_weight_for_intersection
     metadata['log_of_distributions'] = log_of_distributions
+
+    metadata['energy_type'] = energy_gather_type
+    metadata['classes'] = classes
 
 
     metadata['beta_weighting_param'] = beta_weighting_param # This is not beta threshold
@@ -209,6 +226,8 @@ class OCRecoGraphAnalyzer:
             node_attributes['pid'] = truth_dict['truthHitAssignedPIDs'][truth_shower_idx[i], 0].item()\
                 if 'truthHitAssignedPIDs' in truth_dict  else 0
 
+            # print("Truth pid", node_attributes['pid'])
+
             node_attributes['type'] = NODE_TYPE_TRUTH_SHOWER
 
             node = (int(truth_shower_sid[i]), node_attributes)
@@ -286,20 +305,26 @@ class OCRecoGraphAnalyzer:
                 if 'pred_pos' in pred_dict else 0
             node_attributes['time']  = pred_dict['pred_time'][pred_shower_alpha_idx[i]][0].item()\
                 if 'pred_time' in pred_dict else 0
-            node_attributes['pid']  = np.argmax(pred_dict['pred_id'][pred_shower_alpha_idx[i]]).item()\
+            # node_attributes['pid']  = np.argmax(pred_dict['pred_id'][pred_shower_alpha_idx[i]]).item()\
+            #     if 'pred_id' in pred_dict else 0
+
+            # node_attributes['pid_probability'] = np.array([0.25,2.25,0.25,0.25])
+            node_attributes['pid_probability']  = pred_dict['pred_id'][pred_shower_alpha_idx[i]]\
                 if 'pred_id' in pred_dict else 0
 
+            # print("PID", node_attributes['pid_probability'])
+
             node_attributes['dep_energy'] = np.sum(feat_dict['recHitEnergy'][pred_sid==sid]).item()
-            #node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
-            #    if 'pred_energy' in pred_dict else node_attributes['dep_energy']
 
-            #this one-liner should work, but for some reason it does not..
-            #node_attributes['energy']  = {'pred_energy' in pred_dict : max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0), 
-            #                             'pred_energy_corr_factor' in pred_dict : node_attributes['dep_energy']*max(pred_dict['pred_energy_corr_factor'][pred_shower_alpha_idx[i]][0].item(), 0)
-            #                             }.get(True,node_attributes['dep_energy'])
-
-            node_attributes['energy']  = node_attributes['dep_energy']*max(pred_dict['pred_energy_corr_factor'][pred_shower_alpha_idx[i]][0].item(), 0)
-
+            if self.metadata['energy_type'] == ENERGY_GATHER_TYPE_PRED_ENERGY:
+                node_attributes['energy']  = max(pred_dict['pred_energy'][pred_shower_alpha_idx[i]][0].item(), 0)\
+                    if 'pred_energy' in pred_dict else node_attributes['dep_energy']
+            elif self.metadata['energy_type'] == ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT:
+                node_attributes['energy']  = max(pred_dict['pred_energy_corr_factor'][pred_shower_alpha_idx[i]][0].item(), 0) * node_attributes['dep_energy']
+            elif self.metadata['energy_type'] == ENERGY_GATHER_TYPE_CORRECTION_FACTOR_PER_HIT:
+                node_attributes['energy']  = np.sum(pred_dict['pred_energy_corr_factor'][pred_sid==sid] * feat_dict['recHitEnergy'][pred_sid==sid])
+            else:
+                raise RuntimeError("Wrong energy gather type")
             node_attributes['energy_unc']  =(max(pred_dict['pred_energy_high_quantile'][pred_shower_alpha_idx[i]][0].item(), 0) -  max(pred_dict['pred_energy_low_quantile'][pred_shower_alpha_idx[i]][0].item(), 0))/2.
 
             rechit_energy = feat_dict['recHitEnergy'][pred_sid==sid]

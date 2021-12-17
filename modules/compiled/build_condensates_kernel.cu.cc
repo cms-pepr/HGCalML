@@ -237,6 +237,7 @@ static void check_and_collect(
         const float ref_beta,
         const float *d_ccoords,
         const float *d_betas,
+        const float *d_dist,
 
         int *asso_idx,
         float * temp_betas,
@@ -254,22 +255,32 @@ static void check_and_collect(
     if(i_v>=end_vertex)
         return;
 
+    float distmod = d_dist[ref_vertex];
+    distmod *= distmod;// squared, as distsq and radius
+
     if(asso_idx[i_v] < 0){
         float distsq = distancesq(ref_vertex,i_v,d_ccoords,n_ccoords);
 
         if(soft){
             //should the reduction in beta be using the original betas or the modified ones...?
             //go with original betas
-            float moddist = 1 - (distsq / radius );
-            if(moddist < 0)
-                moddist = 0;
+            float scaleddist = distmod * distsq ;
+            float moddist = std::exp(-std::log(1./min_beta)*scaleddist*scaleddist / (radius*radius));//2 sigma at radius
+            //float moddist = std::exp(-scaleddist / (radius));//2 sigma at radius
+
+
+            //becomes normal reduction at radius
             float subtract =  moddist * ref_beta;
-            temp_betas[i_v] -= subtract;
-            if(temp_betas[i_v] <= min_beta && moddist)
+            float prebeta = temp_betas[i_v];
+            float subbeta = prebeta-subtract;
+            if(scaleddist < 2.*radius)//reduce mem access
+                temp_betas[i_v] = subbeta;
+            if((subbeta <= min_beta && scaleddist < radius)){
                 asso_idx[i_v] = ref_vertex;
+            }
         }
         else{
-            if(distsq <= radius){ //sum features in parallel?
+            if(distmod*distsq <= radius){ //sum features in parallel?
                 asso_idx[i_v] = ref_vertex;
             }
         }
@@ -289,6 +300,7 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
 
             const float *d_ccoords,
             const float *d_betas,
+            const float *d_dist,
             const int *row_splits,
 
             int *asso_idx,
@@ -324,7 +336,8 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
 
             grid_and_block gb_vert(end_vertex-start_vertex, 512);
 //
-            set_defaults<<<gb_vert.grid(),gb_vert.block()>>>(asso_idx,is_cpoint,d_betas,temp_betas,start_vertex,end_vertex,n_vert);
+            set_defaults<<<gb_vert.grid(),gb_vert.block()>>>(asso_idx,
+                    is_cpoint,d_betas,temp_betas,start_vertex,end_vertex,n_vert);
 
             cudaDeviceSynchronize();
 
@@ -347,6 +360,7 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
                         ref_beta,
                         d_ccoords,
                         d_betas,
+                        d_dist,
                         asso_idx,
                         temp_betas,
                         n_vert,

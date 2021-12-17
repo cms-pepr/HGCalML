@@ -1,4 +1,5 @@
-from condensate_op import BuildCondensates
+from assign_condensate_op import BuildAndAssignCondensates as BuildCondensates
+#from condensate_op import BuildCondensates
 import tensorflow as tf
 import matplotlib
 from ragged_plotting_tools import make_cluster_coordinates_plot
@@ -16,12 +17,12 @@ radius=0.7
 
 #betas = tf.random.uniform((n_vert,1), dtype='float32',minval=0.01 , maxval=0.1+1e-3,seed=2)
 
-dist = None #tf.random.uniform((n_vert,1), dtype='float32',minval=0.5 , maxval=1.5,seed=2)
+dist = tf.random.uniform((n_vert,1), dtype='float32',minval=0.5 , maxval=1.5,seed=2)
 ccoords = 3.*tf.random.uniform((n_vert,n_ccoords), dtype='float32',seed=1)
 row_splits = tf.constant([0,n_vert//2,n_vert], dtype='int32')
 
 
-def makebetas(ccoords_in,row_splits, ncenters=5):
+def makebetas(ccoords_in,row_splits, ncenters=8):
     #overlay some gaussians plus random
     allbetas=[]
     for i in range(len(row_splits)-1):
@@ -41,7 +42,7 @@ def makebetas(ccoords_in,row_splits, ncenters=5):
     return tf.concat(allbetas,axis=0)
     
     
-betas = makebetas(ccoords,row_splits,7)
+betas = makebetas(ccoords,row_splits,12)
     
 
 print('first call')
@@ -128,10 +129,10 @@ for radius in [0.25, 0.5, 0.8]:
         ax2.scatter(predCCoords[:,0], predCCoords[:,1],
                     c=predBeta)
         plt.show()
-        plt.savefig("plot_"+str(i)+"_rad_"+str(radius)+".pdf")
+        #plt.savefig("plot_"+str(i)+"_rad_"+str(radius)+".pdf")
         #fig.clear()
         plt.close(fig)
-        break
+        #break
         #exit()
     
     

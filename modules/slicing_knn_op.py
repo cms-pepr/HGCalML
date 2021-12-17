@@ -91,9 +91,11 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
                     tf.constant([50,50], dtype=tf.int32))) # limit the number of bins to min 3x3 and max 50x50
     else:
         _n_bins = tf.constant(n_bins, dtype=tf.int32) # cast tuple to Tensor to match required argument type
-
-    return _nknn_op.SlicingKnn(n_neighbours=K, coords=coords, row_splits=row_splits, n_bins=_n_bins, features_to_bin_on=features_to_bin_on, coord_min=r_min, coord_max=r_max)
-
+    
+    idx, dist = _nknn_op.SlicingKnn(n_neighbours=K, coords=coords, row_splits=row_splits, n_bins=_n_bins, features_to_bin_on=features_to_bin_on, coord_min=r_min, coord_max=r_max)
+    #safety guard
+    tf.assert_equal(tf.range(tf.shape(idx)[0]), idx[:,0])
+    return idx, dist
 
 _sknn_grad_op = tf.load_op_library('select_knn_grad.so')
 

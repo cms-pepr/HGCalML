@@ -5,7 +5,10 @@ from tensorflow.python.framework import ops
 _bc_op = tf.load_op_library('build_condensates.so')
 
 #@tf.function
-def BuildCondensates(ccoords, betas, row_splits, radius=0.8, min_beta=0.1, soft=False):
+def BuildCondensates(ccoords, betas, row_splits, 
+                     radius=0.8, min_beta=0.1, 
+                     dist=None,
+                     soft=False):
     '''
     betas are sum(V) x 1
     
@@ -21,8 +24,14 @@ def BuildCondensates(ccoords, betas, row_splits, radius=0.8, min_beta=0.1, soft=
 
 
     '''
+    if dist is None:
+        dist = tf.ones_like(betas)
+    else:
+        tf.assert_equal(tf.shape(betas),tf.shape(dist))
     
-    return _bc_op.BuildCondensates(ccoords=ccoords, betas=betas, row_splits=row_splits, 
+    return _bc_op.BuildCondensates(ccoords=ccoords, betas=betas, 
+                                   dist=dist,
+                                   row_splits=row_splits, 
                                    radius=radius, min_beta=min_beta,soft=soft)
     
     

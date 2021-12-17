@@ -16,21 +16,24 @@ import setGPU
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         'Analyse predictions from object condensation and plot relevant results')
-    parser.add_argument('output',
-                        help='Output directory with .bin.gz files or a txt file with full paths of the bin gz files')
+    parser.add_argument('inputdir',
+                        help='Directory with .bin.gz files or a txt file with full paths of the bin gz files from the prediction.')
     parser.add_argument('-p',
-                        help='Path of analysis pdf file (otherwise, it won\'t be produced)',
+                        help='Output directory for the final analysis pdf file (otherwise, it won\'t be produced)',
                         default='')
-    parser.add_argument('-database_table_prefix',
+    parser.add_argument('--database_table_prefix',
                         help='Database table prefix if you wish to write plots to the database. Leave empty if you don\'t wanna write to database',
+                        default='')
+    parser.add_argument('--database_file', help='database file, otherwise remote server',
                         default='')
     parser.add_argument('-b', help='Beta threshold (default 0.1)', default='0.1')
     parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
-    parser.add_argument('-v', help='Leave at 0, functionality removed', default='0')
+    parser.add_argument('-v', help='Ignore, functionality removed', default='0')
     parser.add_argument('-m', help='Matching type. 0 for IOU based matching, 1 for f score based matching', default='2')
+    parser.add_argument('--et', help='Energy type. See matching_and_analysis.py for options. Control+F for \'ENERGY_GATHER_TYPE_PRED_ENERGY\'', default='1')
     parser.add_argument('--soft', help='uses soft object condensation', action='store_true')
-    parser.add_argument('--analysisoutpath', help='Can be used to remake plots. Will dump analysis to a file.',
+    parser.add_argument('--analysisoutpath', help='Will dump analysis to a file to remake plots without re-running everything.',
                         default='')
     parser.add_argument('--gpu', help='GPU', default='')
     args = parser.parse_args()
@@ -45,30 +48,33 @@ if __name__ == '__main__':
     database_table_prefix = args.database_table_prefix
 
     matching_type = int(args.m)
-    matching_type = matching_and_analysis.MATCHING_TYPE_IOU_MAX if matching_type==0 else matching_and_analysis.MATCHING_TYPE_MAX_FOUND
+    # matching_type = matching_and_analysis.MATCHING_TYPE_IOU_MAX if matching_type==0 else matching_and_analysis.MATCHING_TYPE_MAX_FOUND
+
+    energy_gather_type = int(args.et)
 
     metadata = matching_and_analysis.build_metadeta_dict(beta_threshold=beta_threshold,
                                                          distance_threshold=distance_threshold,
                                                          iou_threshold=iou_threshold,
                                                          matching_type=matching_type,
-                                                         with_local_distance_scaling=False
+                                                         with_local_distance_scaling=False,
+                                                         energy_gather_type=energy_gather_type
                                                          )
 
     files_to_be_tested = []
     pdfpath = ''
-    if os.path.isdir(args.output):
-        for x in os.listdir(args.output):
+    if os.path.isdir(args.inputdir):
+        for x in os.listdir(args.inputdir):
             if x.endswith('.bin.gz'):
-                files_to_be_tested.append(os.path.join(args.output, x))
-        pdfpath = args.output
-    elif os.path.isfile(args.output):
-        with open(args.output) as f:
+                files_to_be_tested.append(os.path.join(args.inputdir, x))
+        pdfpath = args.inputdir
+    elif os.path.isfile(args.inputdir):
+        with open(args.inputdir) as f:
             content = f.readlines()
         # you may also want to remove whitespace characters like `\n` at the end of each line
         files_to_be_tested = [x.strip() for x in content]
         pdfpath = os.path.split(pdfpath)[0]
     else:
-        raise Exception('Error: couldn\'t locate output folder/file')
+        raise Exception('Error: couldn\'t locate input folder/file')
 
     print(files_to_be_tested)
     pdfpath = ''
@@ -101,7 +107,13 @@ if __name__ == '__main__':
 
     if len(database_table_prefix) != 0:
         print("Will write plots to database")
-        database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
+        database_file = args.database_file
+
+        if len(database_file) == 0:
+            database_manager = ExperimentDatabaseManager(mysql_credentials=sql_credentials.credentials, cache_size=40)
+        else:
+            database_manager = ExperimentDatabaseManager(file=database_file, cache_size=40)
+
         database_manager.set_experiment('analysis_plotting_experiments')
         plotter.write_data_to_database(database_manager, database_table_prefix)
         database_manager.close()

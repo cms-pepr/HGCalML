@@ -5,6 +5,25 @@ from oc_helper_ops import SelectWithDefault
 from oc_helper_ops import CreateMidx
 import time
 
+def one_hot_encode_id(t_pid, n_classes):
+    valued_pids = tf.zeros_like(t_pid)+3 #defaults to 3 as that is the highest showerType value
+    valued_pids = tf.where(tf.math.logical_or(t_pid==22, tf.abs(t_pid) == 11), 0, valued_pids) #isEM
+    
+    valued_pids = tf.where(tf.abs(t_pid)==211, 1, valued_pids) #isHad
+    valued_pids = tf.where(tf.abs(t_pid)==2212, 1, valued_pids) #proton isChHad
+    valued_pids = tf.where(tf.abs(t_pid)==321, 1, valued_pids) #K+
+    
+    valued_pids = tf.where(tf.abs(t_pid)==13, 2, valued_pids) #isMIP
+    
+    valued_pids = tf.where(tf.abs(t_pid)==111, 3, valued_pids) #pi0 isNeutrHadOrOther
+    valued_pids = tf.where(tf.abs(t_pid)==2112, 3, valued_pids) #neutron isNeutrHadOrOther
+    valued_pids = tf.where(tf.abs(t_pid)==130, 3, valued_pids) #K0 isNeutrHadOrOther
+    valued_pids = tf.where(tf.abs(t_pid)==310, 3, valued_pids) #K0 short
+    valued_pids = tf.where(tf.abs(t_pid)==3122, 3, valued_pids) #lambda isNeutrHadOrOther
+    
+    valued_pids = tf.cast(valued_pids, tf.int32)[:,0]
+    depth = n_classes #If n_classes=pred_id.shape[1], should we add an assert statement? 
+    return tf.one_hot(valued_pids, depth)
 
 def huber(x, d):
     losssq  = x**2   
@@ -145,6 +164,7 @@ class LLFillSpace(LossLayerBase):
         Outputs:
          - coordinates (unchanged)
         '''
+        print('INFO: LLFillSpace: this is actually a regulariser: move to right file soon.')
         assert maxhits>0
         self.maxhits = maxhits
         self.runevery = runevery
@@ -568,6 +588,7 @@ class LLFullObjectCondensation(LossLayerBase):
 
     def __init__(self, *, energy_loss_weight=1., 
                  use_energy_weights=True, 
+                 alt_energy_weight=False,
                  train_energy_correction=True,
                  q_min=0.1, no_beta_norm=False,
                  potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
@@ -696,7 +717,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.super_attraction = super_attraction
         self.div_repulsion=div_repulsion
         self.dynamic_payload_scaling_onset = dynamic_payload_scaling_onset
-        
+        self.alt_energy_weight = alt_energy_weight
         self.loc_time=time.time()
         self.call_count=0
         
@@ -706,10 +727,19 @@ class LLFullObjectCondensation(LossLayerBase):
             raise NotImplemented('Not implemented yet')
         
         
-    def calc_energy_weights(self, t_energy):
+    def calc_energy_weights(self, t_energy, t_pid):
+        if self.alt_energy_weight:
+            p0=1.49224
+            p1=0.000581188
+            p2=2.31003
+            w = 1./tf.exp( - (p0* tf.math.log(p1*t_energy+1e-6) + p2))/0.161885;#average weight is one
+            w = tf.where(tf.abs(t_pid)==13, w+0.05, w)#otherwise muons (with assigned dep weight) are too low
+            return w
         lower_cut = 0.5
         w = tf.where(t_energy > 10., 1., ((t_energy-lower_cut) / 10.)*10./(10.-lower_cut))
         return tf.nn.relu(w)
+        #flatten energy weights
+        
     
     def softclip(self, toclip, startclipat):
         toclip /= startclipat
@@ -732,14 +762,20 @@ class LLFullObjectCondensation(LossLayerBase):
             depe.append(dep)
         dep_energies = tf.concat(depe,axis=0)
         
-        corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
-        corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
+        #corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
+        #corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
+        #
+        #corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
+        #corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
+        
+        #calo-like
+        ediff = (t_energy - pred_energy*dep_energies)/tf.sqrt(t_energy+1e-3)
         
         eloss = None
         if self.huber_energy_scale>0:
-            eloss = huber(corrtruth-pred_energy, self.huber_energy_scale)
+            eloss = huber(ediff, self.huber_energy_scale)
         else:
-            eloss = (corrtruth-pred_energy)**2 #V X 1
+            eloss = tf.math.log(ediff**2 + 1. + 1e-5)
         
         euncloss=None
         #l_low = corrtruth - pred_energy_low_quantile
@@ -812,11 +848,13 @@ class LLFullObjectCondensation(LossLayerBase):
         return self.softclip(tloss, 6.) 
     
     def calc_classification_loss(self, t_pid, pred_id):
-        '''
-        to be implemented, t_pid is not one-hot encoded
-        '''
-        return 1e-8*tf.reduce_mean(pred_id**2,axis=-1,keepdims=True) #V x 1
-    
+        depth = pred_id.shape[1]#add n_classes here?
+        truthclass  = one_hot_encode_id(t_pid, depth)
+        
+        #FIXME: add class weights here
+        
+        return tf.expand_dims(tf.keras.metrics.categorical_crossentropy(truthclass, pred_id), axis=1)
+
     def loss(self, inputs):
         
         assert len(inputs) == 17
@@ -830,10 +868,12 @@ class LLFullObjectCondensation(LossLayerBase):
         t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
         rowsplits = inputs
                     
+        tf.assert_equal(rowsplits[-1], pred_beta.shape[0])#guard
+        
         if rowsplits.shape[0] is None:
             return tf.constant(0,dtype='float32')
         
-        energy_weights = self.calc_energy_weights(t_energy)
+        energy_weights = self.calc_energy_weights(t_energy,t_pid)
         if not self.use_energy_weights:
             energy_weights = tf.zeros_like(energy_weights)+1.
             
@@ -961,6 +1001,7 @@ class LLFullObjectCondensation(LossLayerBase):
     def get_config(self):
         config = {
             'energy_loss_weight': self.energy_loss_weight,
+            'alt_energy_weight': self.alt_energy_weight,
             'use_energy_weights': self.use_energy_weights,
             'train_energy_correction': self.train_energy_correction,
             'q_min': self.q_min,

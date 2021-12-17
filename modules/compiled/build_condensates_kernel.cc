@@ -90,6 +90,7 @@ static void check_and_collect(
         const float ref_beta,
         const float *d_ccoords,
         const float *d_betas,
+        const float *d_dist,
 
         int *asso_idx,
         float * temp_betas,
@@ -103,6 +104,9 @@ static void check_and_collect(
         const float min_beta,
         const bool soft){
 
+    float distmod = d_dist[ref_vertex];
+    distmod *= distmod;// squared, as distsq and radius
+
     for(size_t i_v=start_vertex;i_v<end_vertex;i_v++){
 
         if(asso_idx[i_v] < 0){
@@ -111,16 +115,23 @@ static void check_and_collect(
             if(soft){
                 //should the reduction in beta be using the original betas or the modified ones...?
                 //go with original betas
-                float moddist = 1 - (distsq / radius );
-                if(moddist < 0)
-                    moddist = 0;
+                float scaleddist = distmod * distsq ;
+                float moddist = std::exp(-std::log(1./min_beta)*scaleddist*scaleddist / (radius*radius));//2 sigma at radius
+                //float moddist = std::exp(-scaleddist / (radius));//2 sigma at radius
+
+
+                //becomes normal reduction at radius
                 float subtract =  moddist * ref_beta;
-                temp_betas[i_v] -= subtract;
-                if(temp_betas[i_v] <= min_beta && moddist)
+                float prebeta = temp_betas[i_v];
+                float subbeta = prebeta-subtract;
+                if(scaleddist < 2.*radius)//reduce mem access
+                    temp_betas[i_v] = subbeta;
+                if((subbeta <= min_beta && scaleddist < radius)){
                     asso_idx[i_v] = ref_vertex;
+                }
             }
             else{
-                if(distsq <= radius){ //sum features in parallel?
+                if(distmod * distsq <= radius){ //sum features in parallel?
                     asso_idx[i_v] = ref_vertex;
                 }
             }
@@ -141,6 +152,7 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
 
             const float *d_ccoords,
             const float *d_betas,
+            const float *d_dist,
             const int *row_splits,
 
 
@@ -159,7 +171,7 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
             const bool soft) {
 
 
-
+std::cout << "using soft "<<soft << std::endl;
         //copy RS to CPU
 
         for(size_t j_rs=0;j_rs<n_rs-1;j_rs++){
@@ -187,6 +199,7 @@ struct BuildCondensatesOpFunctor<CPUDevice, dummy> {
                         ref_beta,
                         d_ccoords,
                         d_betas,
+                        d_dist,
                         asso_idx,
                         temp_betas,
                         n_vert,
@@ -251,7 +264,8 @@ REGISTER_OP("BuildCondensates")
 
         const Tensor &t_ccoords = context->input(0);
         const Tensor &t_betas = context->input(1);
-        const Tensor &t_row_splits = context->input(2);
+        const Tensor &t_dist = context->input(2);
+        const Tensor &t_row_splits = context->input(3);
 
         const int n_vert = t_ccoords.dim_size(0);
         const int n_ccoords = t_ccoords.dim_size(1);
@@ -297,6 +311,7 @@ REGISTER_OP("BuildCondensates")
                 //                                                                                                     /
                 t_ccoords.flat<float>().data(),                     //   const float *d_ccoords,
                 t_betas.flat<float>().data(),                       //   const float *d_betas,
+                t_dist.flat<float>().data(),
                 t_row_splits.flat<int>().data(),                    //   const int *row_splits,
 
                 t_asso_idx->flat<int>().data(), //                  int *asso_idx,

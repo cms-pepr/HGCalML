@@ -66,40 +66,42 @@ class PlotCoordinates(tf.keras.layers.Layer):
         tidx = tidx[0:rs[1]]
         features = features[0:rs[1]]
         
-        data={
-            'X':  coords[:,0:1].numpy(),
-            'Y':  coords[:,1:2].numpy(),
-            'Z':  coords[:,2:3].numpy(),
-            'tIdx': tidx[:,0:1].numpy(),
-            'features': features[:,0:1].numpy()
-            }
-        
-        df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
-        df['orig_tIdx']=df['tIdx']
-        rdst = np.random.RandomState(1234567890)#all the same
-        shuffle_truth_colors(df,'tIdx',rdst)
-        
-        hover_data=['orig_tIdx']
-        fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
-                            color="tIdx",
-                            size='features',
-                            hover_data=hover_data,
-                            template='plotly_dark',
-                color_continuous_scale=px.colors.sequential.Rainbow)
-        fig.update_traces(marker=dict(line=dict(width=0)))
-        fig.write_html(self.outdir+'/'+self.name+".html")
-        
-        df = df[df['orig_tIdx']>=0]
-        
-        fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
-                            color="tIdx",
-                            size='features',
-                            hover_data=hover_data,
-                            template='plotly_dark',
-                color_continuous_scale=px.colors.sequential.Rainbow)
-        fig.update_traces(marker=dict(line=dict(width=0)))
-        fig.write_html(self.outdir+'/'+self.name+"_no_noise.html")
-        
+        #just project
+        for i in range(coords.shape[1]-2):
+            data={
+                'X':  coords[:,0+i:1+i].numpy(),
+                'Y':  coords[:,1+i:2+i].numpy(),
+                'Z':  coords[:,2+i:3+i].numpy(),
+                'tIdx': tidx[:,0:1].numpy(),
+                'features': features[:,0:1].numpy()
+                }
+            
+            df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
+            df['orig_tIdx']=df['tIdx']
+            rdst = np.random.RandomState(1234567890)#all the same
+            shuffle_truth_colors(df,'tIdx',rdst)
+            
+            hover_data=['orig_tIdx']
+            fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
+                                color="tIdx",
+                                size='features',
+                                hover_data=hover_data,
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            fig.write_html(self.outdir+'/'+self.name+'_'+str(i)+".html")
+            
+            df = df[df['orig_tIdx']>=0]
+            
+            fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
+                                color="tIdx",
+                                size='features',
+                                hover_data=hover_data,
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            fig.write_html(self.outdir+'/'+self.name+'_'+str(i)+"_no_noise.html")
+            
         
         return inputs[0]
         

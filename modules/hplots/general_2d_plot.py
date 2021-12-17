@@ -43,7 +43,6 @@ class General2dBinningPlot():
 
 
             m = np.mean(filtered_y_values)
-            print(l,h, m)
             mean.append(m)
             # print(np.sum(filtered_found), len(filtered_found), m, l, h)
             lows.append(l)
@@ -77,7 +76,7 @@ class General2dBinningPlot():
     def add_processed_data(self, processed_data):
         self.models_data.append(processed_data)
 
-    def draw(self, name_tag_formatter=None, return_fig=False):
+    def draw(self, name_tag_formatter=None, return_fig=True):
         """
 
         :param name_tag_formatter: a function to which tags dict is given and it returns the name
@@ -87,8 +86,8 @@ class General2dBinningPlot():
         ax2 = ax1.twinx()
 
         max_of_hist_values = 0
-        for model_data in self.models_data:
 
+        for model_data in self.models_data:
             error_exists = 'error' in model_data
             lows = model_data['bin_lower_energy']
             highs = model_data['bin_upper_energy']
@@ -111,13 +110,9 @@ class General2dBinningPlot():
             else:
                 name_of_plot = name_tag_formatter(tags)
 
-            print(name_of_plot)
-
-
 
             hist_values = hist_values.tolist()
             mean = mean.tolist()
-            print(mean)
 
             e_bins = np.concatenate(([lows[0]], highs), axis=0)
             max_of_hist_values = max(max_of_hist_values, np.max(hist_values))

@@ -8,8 +8,9 @@ parser.add_argument('inputModel')
 parser.add_argument('data_collection',
                     help="Data collection file in djcdc format from which to pick files to run inference on. "
                          "You can use valsamples.djcdc in training folder as a starter.")
-parser.add_argument('data_dir',
-                    help="Directory in which data (in form of djctd format files) is located.")
+parser.add_argument('--data_dir',
+                    help="Directory in which data (in form of djctd format files) is located. (default will be read from data collection)",
+                    default=None)
 parser.add_argument('output_dir', help="will be created if it doesn't exist.")
 parser.add_argument("--unbuffered",
                     help="do not read input in memory buffered mode (for lower memory consumption on fast disks)",

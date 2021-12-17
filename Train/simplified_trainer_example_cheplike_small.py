@@ -44,9 +44,11 @@ from model_blocks import create_outputs, noise_pre_filter
 from Regularizers import AverageDistanceRegularizer
 
 from model_blocks import first_coordinate_adjustment, reduce, pre_selection_model_full
+from model_blocks import extent_coords_if_needed, re_integrate_to_full_hits
 
 from lossLayers import LLNeighbourhoodClassifier, LLNotNoiseClassifier
 from lossLayers import LLFullObjectCondensation, LLClusterCoordinates,LLEdgeClassifier
+from lossLayers import LLFillSpace
 
 from debugLayers import PlotCoordinates
 
@@ -62,11 +64,12 @@ make this about coordinate shifts
 
 def gravnet_model(Inputs,
                   td,
-                  viscosity=0.8,
+                  viscosity=0.2,
                   print_viscosity=False,
-                  fluidity_decay=5e-4,  # reaches after about 7k batches
-                  max_viscosity=0.95,
-                  debug_outdir=None
+                  fluidity_decay=1e-3,  # reaches after about 7k batches
+                  max_viscosity=0.99,
+                  debug_outdir=None,
+                  plot_debug_every=1000,
                   ):
     # Input preprocessing below. Not much to change here
 
@@ -78,7 +81,7 @@ def gravnet_model(Inputs,
                                                      active=True
                                                      )([orig_inputs['t_spectator'], 
                                                         orig_inputs['t_idx']])
-                                                     
+    orig_inputs['t_spectator_weight'] = orig_t_spectator_weight                                                 
     #can be loaded - or use pre-selected dataset (to be made)
     pre_selection = pre_selection_model_full(orig_inputs,
                              debug_outdir,
@@ -126,153 +129,181 @@ def gravnet_model(Inputs,
                                                      )([pre_selection['t_spectator'], 
                                                         pre_selection['t_idx']])
     rs = pre_selection['rs']
-    x = Concatenate()([pre_selection['coords'],
+    x_in = Concatenate()([pre_selection['coords'],
                        pre_selection['features'],
                        pre_selection['addfeat']])
+    x = x_in
     energy = pre_selection['energy']
     coords = pre_selection['coords']
     t_idx = pre_selection['t_idx']
     
                    
-    scatterids = [pre_selection['group_backgather'], [
-        pre_selection['noise_backscatter_N'],pre_selection['noise_backscatter_idx']
-        ]] #add them here directly
+    #scatterids = [pre_selection['group_backgather'], [
+    #    pre_selection['noise_backscatter_N'],pre_selection['noise_backscatter_idx']
+    #    ]] #add them here directly
         
     allfeat = []
-    energysums = []
-    allcoords= [pre_selection['orig_dim_coords']]
     
-
     n_cluster_space_coordinates = 3
     
-    total_iterations=4
+    #extend coordinates already here if needed
+    coords = extent_coords_if_needed(coords, x, n_cluster_space_coordinates)
+    
+    pre_coords = coords
+    total_iterations=2
 
     for i in range(total_iterations):
-
-        # derive new coordinates for clustering
+            
         x = RaggedGlobalExchange()([x, rs])
         
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
-        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
+        x = GooeyBatchNorm(viscosity=viscosity, 
+                           max_viscosity=max_viscosity, 
+                           fluidity_decay=fluidity_decay)(x)
         ### reduction done
         
+        n_dimensions = 6
+        #in standard configuration with i<2
+        n_neighbours = 64
+        
         #exchange information, create coordinates
-        x = Concatenate()([coords,x])
-        x, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=32,
-                                                 n_dimensions=7,
+        x = Concatenate()([coords,coords,x])
+        x, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=n_neighbours,
+                                                 n_dimensions=n_dimensions,
                                                  n_filters=128,
                                                  n_propagate=64,
+                                                 coord_initialiser_noise=1e-3,
+                                                 use_approximate_knn=False #faster on reduced data for now
                                                  )([x, rs])
+                                                 
+        #just keep them in a reasonable range  
+        #safeguard against diappearing gradients on coordinates                                       
+        gndist = AverageDistanceRegularizer(strength=0.01,
+                                            printout=True
+                                            )(gndist)
+        
+        #enforce dimensions to be used and avoid (hyper) planes                                   
+        gncoords = LLFillSpace(print_loss = True,
+                               active = True,
+                               scale=0.005,#just mild
+                               #runevery=1, 
+                               )([gncoords,rs]) 
+        
+        gncoords = PlotCoordinates(plot_debug_every, outdir = debug_outdir)([gncoords, 
+                                                                    energy,
+                                                                    t_idx,
+                                                                    rs])
+        x = Concatenate()([StopGradient()(ScalarMultiply(1e-6)(gncoords)),x])
 
-        x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
+        if i > 1:
+            for _ in range(4): #consider different ranges
+                dscaling = Dense(1)(x)
+                ld = LocalDistanceScaling()([gndist,dscaling])
+                x = DistanceWeightedMessagePassing([32,16])([x,gnnidx,ld])
+            
+        else: #in standard configuration with i<2
+            x = DistanceWeightedMessagePassing([64,64,32,32,16,16,8,8])([x,gnnidx,gndist])
+            
+        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
+        
+        #                     
+        #compress output
+        x = Dense(96,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
-        allfeat.append(MultiBackScatterOrGather()([x, scatterids]))
         
-        #now create coordinates for grouping
-        x = Concatenate()([coords,gncoords,x])
-        coords = Dense(n_cluster_space_coordinates,
-                       kernel_initializer=
-                       EyeInitializer(stddev=1e-5),
-                       use_bias=False)(x)#carefully turn it on
+        #allfeat.append(MultiBackScatterOrGather()([x, scatterids]))
+        allfeat.append(x)
         
-        if n_cluster_space_coordinates==3:
-            coords = PlotCoordinates(500,outdir=debug_outdir,name='c_it'+str(i))([coords,energy,t_idx,rs])
-        
-        coords = LLClusterCoordinates(
-                print_loss=True,
-                scale=1.
-            )([coords,t_idx,rs])
-        
-        #basically gravnet with fixed coordinates
-        nidx, dist = KNN(K=16,radius=1.)([coords,rs])
-        x = DistanceWeightedMessagePassing([32,32])([x,nidx,dist])
-        x = Dense(64,activation='relu')(x)
-        
-        x,coords,energy, rs, bg, t_idx, t_spectator_weight = reduce(
-            x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight, 
-           threshold = 0.5,
-           print_reduction=True,
-           name='reduce_'+str(i),
-           trainable=True,
-           use_edges = True,
-           return_backscatter=False)  
-        
-        scatterids.append(bg)
-        x = Concatenate()([x,energy])
-        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
-        
-        allfeat.append(MultiBackScatterOrGather()([x, scatterids]))
-        energysums.append(MultiBackScatterOrGather()([energy, scatterids]))
-        allcoords.append(MultiBackScatterOrGather()([coords, scatterids]))
-        
+    
+    ## add coordinate differences
+    #coords = Add()([coords, ScalarMultiply(-1.)(pre_coords)])
+    
     
     ####### back to non-reduced space
     
-    #x = MultiBackScatterOrGather()([x, scatterids])
-    x = Concatenate()(allfeat+allcoords+energysums)
+    #extend coordinate list
+    #coords = MultiBackScatterOrGather()([coords, scatterids])
+    #pre_coords = extent_coords_if_needed(pre_selection['orig_dim_coords'], x, n_cluster_space_coordinates)
+    #coords = Add()([coords,pre_coords])
+    
+    x = Concatenate()(allfeat+[pre_selection['not_noise_score']])
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
     #do one more exchange with all
     x = Dense(64,activation='relu')(x)
     x = Dense(64,activation='relu')(x)
     x = Dense(64,activation='relu')(x)
     x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, fluidity_decay=fluidity_decay)(x)
-    x = Concatenate()(allcoords+[x])
+    x = Concatenate()([coords]+[x])
     
-    
-    pred_beta, pred_ccoords, pred_dist, \
-    pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile, \
-    pred_pos, pred_time, pred_id = create_outputs(x, orig_inputs['features'], 
+    pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
+    pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['features'], 
                                                   fix_distance_scale=False,
                                                   scale_energy=False,
                                                   energy_factor=True,
+                                                  wide_distance_scale=True,
                                                   n_ccoords=n_cluster_space_coordinates)
-    row_splits = CastRowSplits()(orig_inputs['row_splits'])
+    
     # loss
-    pred_beta = LLFullObjectCondensation(print_loss=True, scale=2.,
-                                         energy_loss_weight=5.,
+    pred_beta = LLFullObjectCondensation(print_loss=True, scale=.8,
+                                         energy_loss_weight=2.2,
                                          position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
-                                         beta_loss_scale=1.,
+                                         classification_loss_weight=1e-4,
+                                         beta_loss_scale=3.,
                                          too_much_beta_scale=.0001,
                                          use_energy_weights=True,
+                                         alt_energy_weight=True,
                                          q_min=2.5,
                                          #div_repulsion=True,
                                          # cont_beta_loss=True,
                                          # beta_gradient_damping=0.999,
                                          # phase_transition=1,
-                                         huber_energy_scale=0.1,
-                                         use_average_cc_pos=0.5,  # smoothen it out a bit
+                                         #huber_energy_scale=0.1,
+                                         use_average_cc_pos=0.75,  # smoothen it out a bit
                                          name="FullOCLoss"
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
-         pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile,
-         pred_pos, pred_time, pred_id] +
-        [orig_inputs['rechit_energy']]+
+         pred_energy_corr, pred_pos, pred_time, pred_id] +
+        [energy]+
         # truth information
-        [orig_inputs['t_idx'] ,
-         orig_inputs['t_energy'] ,
-         orig_inputs['t_pos'] ,
-         orig_inputs['t_time'] ,
-         orig_inputs['t_pid'] ,
-         orig_t_spectator_weight ,
-         row_splits])
+        [pre_selection['t_idx'] ,
+         pre_selection['t_energy'] ,
+         pre_selection['t_pos'] ,
+         pre_selection['t_time'] ,
+         pre_selection['t_pid'] ,
+         pre_selection['t_spectator_weight'] ,
+         pre_selection['rs']])
+                                         
+    #fast feedback
+    pred_ccoords = PlotCoordinates(plot_debug_every, outdir = debug_outdir,
+                    name='condensation')([pred_ccoords, pred_beta,pre_selection['t_idx'],
+                                          rs])                                    
 
-    model_outputs = [('pred_beta', pred_beta), 
-                     ('pred_ccoords', pred_ccoords),
-                     ('pred_energy_corr_factor', pred_energy_corr),
-                     ('pred_energy_low_quantile',pred_energy_low_quantile),
-                     ('pred_energy_high_quantile',pred_energy_high_quantile),
-                     ('pred_pos', pred_pos),
-                     ('pred_time', pred_time),
-                     ('pred_id', pred_id),
-                     ('pred_dist', pred_dist),
-                     ('row_splits', row_splits)]
-
+    #model_outputs = [('pred_beta', pred_beta), 
+    #                 ('pred_ccoords', pred_ccoords),
+    #                 ('pred_energy_corr_factor', pred_energy_corr),
+    #                 ('pred_pos', pred_pos),
+    #                 ('pred_time', pred_time),
+    #                 ('pred_id', pred_id),
+    #                 ('pred_dist', pred_dist),
+    #                 ('row_splits', row_splits)]
+    #
+    
+    model_outputs = re_integrate_to_full_hits(
+        pre_selection,
+        pred_ccoords,
+        pred_beta,
+        pred_energy_corr,
+        pred_pos,
+        pred_time,
+        pred_id,
+        pred_dist
+        )
     return RobustModel(model_inputs=Inputs, model_outputs=model_outputs)
 
 
@@ -283,7 +314,7 @@ if not train.modelSet():
     train.setModel(gravnet_model,
                    td=train.train_data.dataclass(),
                    debug_outdir=train.outputDir+'/intplots')
-    train.setCustomOptimizer(tf.keras.optimizers.Adam(
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam(
         #larger->slower forgetting
         #beta_1: linear
         #beta_2: sq
@@ -296,11 +327,13 @@ if not train.modelSet():
         ))
 
     #get pretrained preselection weights
+    
     from model_tools import apply_weights_from_path
     import os
     path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection/KERAS_check_model_last.h5'
     train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
     
+    #
     train.compileModel(learningrate=1e-4,
                        loss=None)
 
@@ -353,15 +386,15 @@ for i in range(5)
 #
 
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
 #cb=[]
-learningrate = 1e-4
-nbatch = 90000
+learningrate = 4e-5
+nbatch = 360000
 
 train.change_learning_rate(learningrate)
 
-model, history = train.trainModel(nepochs=3,
+model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
@@ -371,16 +404,15 @@ model, history = train.trainModel(nepochs=3,
                                   backup_after_batches=500,
                                   additional_callbacks=cb)
 
-print("freeze BN")
+print("ALMOST freeze BN")
 # Note the submodel here its not just train.keras_model
 for l in train.keras_model.model.layers:
     if 'gooey_batch_norm' in l.name:
         l.max_viscosity = 0.99
-        l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
-
+        #l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
+    
 #also stop GravNetLLLocalClusterLoss* from being evaluated
-learningrate/=10.
-nbatch = 120000
+learningrate/=5.
 
 train.change_learning_rate(learningrate)
 

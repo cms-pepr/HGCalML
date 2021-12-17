@@ -365,25 +365,29 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
                  max_viscosity=1.,
                  epsilon=1e-4,
                  print_viscosity=False,
+                 soften_update: float = 0.,
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
         
         assert viscosity >= 0 and viscosity <= 1.
         assert fluidity_decay >= 0 and fluidity_decay <= 1.
         assert max_viscosity >= viscosity
+        assert soften_update >= 0
         
         self.fluidity_decay = fluidity_decay
         self.max_viscosity = max_viscosity
         self.viscosity_init = viscosity
         self.epsilon = epsilon
         self.print_viscosity = print_viscosity
+        self.soften_update = soften_update
         
     def get_config(self):
         config = {'viscosity': self.viscosity_init,
                   'fluidity_decay': self.fluidity_decay,
                   'max_viscosity': self.max_viscosity,
                   'epsilon': self.epsilon,
-                  'print_viscosity': self.print_viscosity
+                  'print_viscosity': self.print_viscosity,
+                  'soften_update': self.soften_update
                   }
         base_config = super(GooeyBatchNorm, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -410,6 +414,15 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
             
         super(GooeyBatchNorm, self).build(input_shapes)
     
+    def _calc_soft_update(self, old, new, training):
+        delta = new-old
+        #soft update, avoid too strong jumps
+        if self.soften_update>0:
+            #scale down relative change
+            delta = tf.nn.softsign(tf.math.divide_no_nan(self.soften_update*delta,old))*old
+            delta /= self.soften_update
+        update = old + (1. - self.viscosity)*delta
+        return tf.keras.backend.in_train_phase(update,old,training=training)
 
     def call(self, inputs, training=None):
         #x, _ = inputs
@@ -418,14 +431,12 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
         #update only if trainable flag is set, AND in training mode
         if self.trainable:
             newmean = tf.reduce_mean(x,axis=0,keepdims=True) #FIXME
-            newmean = (1. - self.viscosity)*newmean + self.viscosity*self.mean
-            updated_mean = tf.keras.backend.in_train_phase(newmean,self.mean,training=training)
-            tf.keras.backend.update(self.mean,updated_mean)
+            update = self._calc_soft_update(self.mean,newmean,training)
+            tf.keras.backend.update(self.mean,update)
             
             newvar = tf.math.reduce_std(x-self.mean,axis=0,keepdims=True) #FIXME
-            newvar = (1. - self.viscosity)*newvar + self.viscosity*self.variance
-            updated_var = tf.keras.backend.in_train_phase(newvar,self.variance,training=training)
-            tf.keras.backend.update(self.variance,updated_var)
+            update = self._calc_soft_update(self.variance,newvar,training)
+            tf.keras.backend.update(self.variance,update)
             
             #increase viscosity
             if self.fluidity_decay > 0:
@@ -438,6 +449,9 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
         #apply
         x -= self.mean
         x = tf.math.divide_no_nan(x, self.variance + self.epsilon)
+        
+        #print(self.name,'corr x mean', tf.reduce_mean(x))
+        #print(self.name,'corr x var', tf.math.reduce_std(x))
         
         return x
 
@@ -882,7 +896,7 @@ class LocalDistanceScaling (tf.keras.layers.Layer):
         """
         Inputs: 
         - distances (V x N)
-        - scaling (V x 1)
+        - scaling (V x 1): (linear activation)
         
         Returns:
         distances * scaling : V x N x 1
@@ -1211,7 +1225,7 @@ class MultiBackScatter(tf.keras.layers.Layer):
         return xnew
         
 class MultiBackScatterOrGather(tf.keras.layers.Layer):  
-    def __init__(self, **kwargs):    
+    def __init__(self, default: float=0., **kwargs):    
         """
         
         Either applies a scattering or gathering operation depending on the inputs
@@ -1219,16 +1233,24 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
         
         In general preferred
         
+        Inputs:
+        - data
+        - scatter or gather indices
+        
         """  
-        self.gathers=[]
+        self.default = default
         if 'dynamic' in kwargs:
             super(MultiBackScatterOrGather, self).__init__(**kwargs) 
         else:
             super(MultiBackScatterOrGather, self).__init__(dynamic=False,**kwargs) 
         
+    def get_config(self):
+        config = {'default': self.default}
+        base_config = super(MultiBackScatterOrGather, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
         
     @staticmethod 
-    def raw_call(x, scatters):
+    def raw_call(x, scatters, default=0.):
         xin=x
         for k in range(len(scatters)):
             l = len(scatters) - k - 1
@@ -1237,7 +1259,10 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
                 #print('scatters[l]',scatters[l])
                 #cast is needed because keras layer out dtypes are not really working
                 shape = tf.concat([tf.expand_dims(V,axis=0), tf.shape(x)[1:]],axis=0)
-                x = tf.scatter_nd(scidx, x, shape)
+                if default:
+                    x = tf.tensor_scatter_nd_update(tf.zeros(shape, x.dtype)+default, scidx, x)
+                else:
+                    x = tf.scatter_nd(scidx, x, shape)
             else:
                 x = SelectFromIndices.raw_call(tf.cast(scatters[l],tf.int32), 
                                            [x], [ [-1]+list(x.shape[1:]) ])
@@ -1248,7 +1273,7 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
         x, scatters = inputs
         if x.shape[0] is None:
             return tf.reshape(x,[-1 ,x.shape[1]])
-        xnew = MultiBackScatterOrGather.raw_call(x,scatters)
+        xnew = MultiBackScatterOrGather.raw_call(x,scatters,self.default)
         return xnew    
         
         
@@ -1317,7 +1342,7 @@ class KNN(tf.keras.layers.Layer):
         return idx,dist
 
     def update_dynamic_radius(self, dist, training=None):
-        if self.dynamic_radius is None:
+        if self.dynamic_radius is None or not self.trainable:
             return
         #update slowly, with safety margin
         update = tf.reduce_max(dist)*1.2
@@ -2008,6 +2033,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  sumwnorm=False,
                  feature_activation='relu',
                  use_approximate_knn=True,
+                 coord_initialiser_noise=1e-2,
+                 use_dynamic_knn=True,
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -2022,6 +2049,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         :param sumwnorm: normalise distance weights such that their sum is 1. (default False)
         :param feature_activation: activation to be applied to feature creation (F_LR) (default relu)
         :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
+        :param use_dynamic_knn: uses dynamic adjustment of kNN binning derived from previous batches (only in effect together with use_approximate_knn)
         :param kwargs:
         """
         super(RaggedGravNet, self).__init__(**kwargs)
@@ -2036,7 +2064,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.sumwnorm = sumwnorm
         self.feature_activation = feature_activation
         self.use_approximate_knn = use_approximate_knn
-
+        self.use_dynamic_knn = use_dynamic_knn
+        
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
 
@@ -2046,11 +2075,14 @@ class RaggedGravNet(tf.keras.layers.Layer):
         with tf.name_scope(self.name + "/2/"):
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,
                                                                  #very slow turn on
-                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=1e-6),
+                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=coord_initialiser_noise),
                                                                  use_bias=False)
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='relu')#changed to relu
+            
+        with tf.name_scope(self.name + "/4/"):
+            self.dynamic_radius = tf.Variable(initial_value=1.,trainable=False,dtype='float32')
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]
@@ -2066,6 +2098,20 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         super(RaggedGravNet, self).build(input_shape)
 
+    def update_dynamic_radius(self, dist, training):
+        if not self.use_dynamic_knn or not self.trainable:
+            return
+        #update slowly, with safety margin
+        update = tf.reduce_max(dist)*1.2
+        mean_dist = tf.reduce_mean(dist)
+        low_update = tf.where(update>2.,2.,update)#receptive field ends at 1.
+        update = tf.where(low_update>2.*mean_dist,low_update,2.*mean_dist)#safety setting to not loose all neighbours
+        update += 1e-3
+        update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
+        updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
+        #print('updated_radius',updated_radius)
+        tf.keras.backend.update(self.dynamic_radius,updated_radius)
+        
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
@@ -2080,12 +2126,12 @@ class RaggedGravNet(tf.keras.layers.Layer):
         features = tf.concat(allfeat + [x], axis=-1)
         return self.output_feature_transform(features)
 
-    def priv_call(self, inputs):
+    def priv_call(self, inputs, training=None):
         x = inputs[0]
         row_splits = inputs[1]
         
         coordinates = self.input_spatial_transform(x)
-        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits)
+        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits, training)
         neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours-1]) #for proper output shape for keras
         distancesq = tf.reshape(distancesq, [-1, self.n_neighbours-1])
 
@@ -2094,8 +2140,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
             neighbour_indices, distancesq = sidx, sdist
         return outfeats, coordinates, neighbour_indices, distancesq
 
-    def call(self, inputs):
-        return self.priv_call(inputs)
+    def call(self, inputs, training):
+        return self.priv_call(inputs, training)
 
     def compute_output_shape(self, input_shapes):
         if self.return_self:
@@ -2111,9 +2157,9 @@ class RaggedGravNet(tf.keras.layers.Layer):
               
     
 
-    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits, training):
         if self.use_approximate_knn:
-            bin_width = 1.0 # default value for SlicingKnn kernel
+            bin_width = self.dynamic_radius # default value for SlicingKnn kernel
             idx,dist = SlicingKnn(self.n_neighbours, coordinates,  row_splits,
                                   features_to_bin_on = (0,1),
                                   bin_width=(bin_width,bin_width))
@@ -2122,6 +2168,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
                                  max_radius= -1.0, tf_compatible=False)
         idx = tf.reshape(idx, [-1, self.n_neighbours])
         dist = tf.reshape(dist, [-1, self.n_neighbours])
+        
+        dist = tf.where(idx<0,0.,dist)
+        
+        self.update_dynamic_radius(dist,training)
+        
         if self.return_self:
             return idx[:, 1:], dist[:, 1:], idx, dist
         return idx[:, 1:], dist[:, 1:], None, None

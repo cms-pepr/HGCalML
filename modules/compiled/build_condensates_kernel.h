@@ -13,6 +13,7 @@ struct BuildCondensatesOpFunctor {
 
             const float *d_ccoords,
             const float *d_betas,
+            const float *d_dist,
             const int *row_splits,
 
             int *asso_idx,

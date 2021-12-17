@@ -62,7 +62,9 @@ class HGCalPredictor():
             self.inputdir = inputdir
 
         self.model_path = model_path
-        self.input_data_files = self.input_data_files[0:min(max_files, len(self.input_data_files))]
+        if max_files > 0:
+            self.input_data_files = self.input_data_files[0:min(max_files, len(self.input_data_files))]
+        
 
     def predict(self, model=None, model_path=None, output_to_file=True):
         if model_path==None:

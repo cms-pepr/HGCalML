@@ -54,7 +54,6 @@ class EffFakeRatePlot(General2dBinningPlot):
 
 
             m = np.mean(filtered_y_values)
-            print(l,h, m)
             mean.append(m)
             # print(np.sum(filtered_found), len(filtered_found), m, l, h)
             lows.append(l)
@@ -89,9 +88,9 @@ class EfficiencyFoTruthEtaPlot(EffFakeRatePlot):
 
 class EfficiencyFoTruthPIDPlot(EffFakeRatePlot):
     def __init__(self, bins=np.array(
-        [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.5, 29.5, 30.5, 31.5, 32.5, 33.5, 34.5, 35.5, 36.5, 37.5, 38.5, 39.5, 40.5, 41.5]
+        [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.5, 29.5, 30.5, 31.5, 32.5, 33.5, 34.5, 35.5, 36.5, 37.5, 38.5, 39.5, 40.5, 41.5, 42.5, 43.5, 44.5, 45.5, 46.5, 47.5, 48.5, 49.5]
     ),
-                 x_label='abs(PID) (29 for 29 to 100; 111 = 31, 211 = 32, 113=33 ... 219 = 40; rest = 41)', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)',histogram_log=True):
+                 x_label='abs(PID) (29 for 29 to 100; 111 = 31, 211 = 32, 113=33 ... 219 = 40; K = 41 to 44, p = 46, n = 47; rest = 49)', y_label='Reconstruction efficiency', title='Efficiency comparison', y_label_hist='Histogram (fraction)',histogram_log=True):
         super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_log=histogram_log)
 
 
@@ -173,7 +172,6 @@ class EnergyFoundFoTruthEnergyPlot(General2dBinningPlot):
 
 
             mean = mean.tolist()
-            print(mean)
 
             e_bins = np.concatenate(([lows[0]], highs), axis=0)
 
@@ -262,7 +260,6 @@ class ResponseFoEnergyPlot(General2dBinningPlot):
             filtered_y_values = y_values[filter].astype(float)
 
             m = np.mean(filtered_y_values)
-            print(l,h, m)
             mean.append(m)
             # print(np.sum(filtered_found), len(filtered_found), m, l, h)
             lows.append(l)
@@ -299,8 +296,8 @@ class ResponseFoTruthEtaPlot(ResponseFoEnergyPlot):
 
 class ResponseFoTruthPIDPlot(ResponseFoEnergyPlot):
     def __init__(self,
-            bins=np.array([-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.5, 29.5, 30.5, 31.5, 32.5, 33.5, 34.5, 35.5, 36.5, 37.5, 38.5, 39.5, 40.5, 41.5]),
-            x_label='abs(PID) (29 for 29 to 100; 111 = 31, 211 = 32, 113=33 ... 219 = 40; rest = 41)', y_label='Response', title='Response comparison',
+            bins=np.array([-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.5, 29.5, 30.5, 31.5, 32.5, 33.5, 34.5, 35.5, 36.5, 37.5, 38.5, 39.5, 40.5, 41.5, 42.5, 43.5, 44.5, 45.5, 46.5, 47.5, 48.5, 49.5]),
+            x_label='abs(PID) (29 for 29 to 100; 111 = 31, 211 = 32, 113=33 ... 219 = 40; K = 41 to 44, p = 46, n = 47; rest = 49)', y_label='Response', title='Response comparison',
             y_label_hist='Histogram (fraction)', histogram_log=True):
          super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_log=histogram_log)
 
@@ -355,3 +352,22 @@ class ResolutionFoEnergyPlot(General2dBinningPlot):
         processed_data['error'] = np.array(error)
 
         return processed_data
+
+
+class ResolutionFoLocalShowerEnergyFraction(ResolutionFoEnergyPlot):
+    def __init__(self,
+                 bins=np.array([0, 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]),
+                 x_label='Local Shower Energy Fraction', y_label='Resolution', title='Resolution comparison',
+                 y_label_hist='Histogram (fraction)'
+                 , histogram_log=True):
+        super().__init__(bins, x_label, y_label, title, y_label_hist,histogram_log=histogram_log)
+
+
+class ResolutionFoTruthEta(ResolutionFoEnergyPlot):
+    def __init__(self,
+                 bins=np.array([1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0,2.25,2.5,2.75,3,3.1]),
+                 x_label='$|\\eta|$', y_label='Resolution', title='Resolution comparison',
+                 y_label_hist='Histogram (fraction)'
+                 , histogram_log=True):
+        super().__init__(bins, x_label, y_label, title, y_label_hist, histogram_log=histogram_log)
+
