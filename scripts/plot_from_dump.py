@@ -11,9 +11,7 @@ import hplots.hgcal_analysis_plotter as hp
 import hplots.trackml_plotter as tp
 
 with gzip.open(sys.argv[1], 'rb') as f:
-    out = pickle.load(f)
-print(len(out))
-graphs, metadata = out
+    graphs, metadata = pickle.load(f)
 
 type = 'hgcal'
 if len(sys.argv) == 4:
