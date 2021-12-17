@@ -46,9 +46,9 @@ class HGCalAnalysisPlotter:
         self.energy_found_fo_pred_plot = EnergyFoundFoPredEnergyPlot()
 
         #self.resolution_histogram_plot = GeneralHistogramPlot(bins=np.linspace(0,2,50),x_label='Energy Resolution', y_label='Frequency', title='Energy resolution', histogram_log=False)
-        self.resolution_histogram_plot = GeneralHistogramPlot(bins=np.linspace(-1,1,50),x_label='Energy Resolution', y_label='Frequency', title='Energy resolution', histogram_log=False)
-        self.resolution_estimator_histogram_plot = GeneralHistogramPlot(bins=np.linspace(0,0.5,50),x_label='Energy Resolution Estimator', y_label='Frequency', title='Energy resolution estimator', histogram_log=False)
-        self.resolution_estimator_correlation_plot = GeneralGraphPlot(x_label='Average Energy Resolution Estimator', y_label='True Energy Resolution', title='Energy Resolution Correlation', histogram_log=False)
+        self.resolution_histogram_plot = GeneralHistogramPlot(bins=np.linspace(-1,1,50),x_label=r'Energy Resolution $\frac{E_{true}-E_{pred}}{E_{true}}$', y_label='Counts', title='', histogram_log=False)
+        self.resolution_estimator_histogram_plot = GeneralHistogramPlot(bins=np.linspace(0,0.3,50),x_label='Energy Resolution Estimator', y_label='Counts', title='', histogram_log=False)
+        self.resolution_estimator_correlation_plot = GeneralGraphPlot(x_label='Average Energy Resolution Estimator', y_label=r'Energy Resolution $\frac{E_{true}-E_{pred}}{E_{true}}$', title='', histogram_log=False)
 
         self.dist_thresholds = []
         self.beta_thresholds = []
@@ -322,7 +322,7 @@ class HGCalAnalysisPlotter:
             true_resolution = (truth_energy[filter]-pred_energy[filter])/truth_energy[filter] #proper resolution deffinition
             #true_resolution = (truth_energy[filter]-pred_energy[filter])/pred_energy[filter] #v2 just to compare
             #true_resolution = (truth_energy[filter])/pred_energy[filter] # v3 following the derivation of estimator
-            res_estim_values, res_true_quantiles = utils.profile(true_resolution,energy_res_pred,bins=30,range=[0,0.3],moments=False,average=True,quantiles=np.array([0.16,0.84])) 
+            res_estim_values, res_true_quantiles = utils.profile(true_resolution,energy_res_pred,bins=30,range=[0,0.3],moments=False,average=True,quantiles=np.array([0.25,0.75])) 
             res_true_values =  0.5*(res_true_quantiles[1]-res_true_quantiles[0])
             self.resolution_estimator_correlation_plot.add_raw_values(res_estim_values,res_true_values, tags) #plot predicted resolution for truth matched showers
 

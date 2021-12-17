@@ -742,8 +742,11 @@ class LLFullObjectCondensation(LossLayerBase):
             eloss = (corrtruth-pred_energy)**2 #V X 1
         
         euncloss=None
-        l_low = corrtruth - pred_energy_low_quantile
-        l_high = corrtruth - pred_energy_high_quantile
+        #l_low = corrtruth - pred_energy_low_quantile
+        #l_high = corrtruth - pred_energy_high_quantile
+        resolution =(1-pred_energy/corrtruth) 
+        l_low =  resolution - pred_energy_low_quantile
+        l_high = resolution - pred_energy_high_quantile
         euncloss = quantile(l_low,self.low_energy_tau) + quantile(l_high,self.high_energy_tau) 
         return eloss, euncloss
         

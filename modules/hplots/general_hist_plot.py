@@ -65,7 +65,7 @@ class GeneralHistogramPlot():
         :param name_tag_formatter: a function to which tags dict is given and it returns the name
         :return:
         """
-        fig, ax1 = plt.subplots(1, 1, figsize=(9, 6))
+        fig, ax1 = plt.subplots(1, 1, figsize=(6, 6))
 
         max_of_hist_values = 0
         for model_data in self.models_data:
@@ -94,15 +94,17 @@ class GeneralHistogramPlot():
             max_of_hist_values = max(max_of_hist_values, np.max(hist_values))
 
             ax1.step(e_bins, [hist_values[0]] + hist_values, color='tab:gray', alpha=0)
-            ax1.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre", alpha=0.2)
+            ax1.fill_between(e_bins, [hist_values[0]] + hist_values, step="pre",color='#5790fc', alpha=0.8)
 
             if self.histogram_log:
                 ax1.set_yscale('log')
-            ax1.set_title(self.title)
+            ax1.set_title(self.title, fontsize=14)
 
-            ax1.set_xlabel(self.x_label)
-            ax1.set_ylabel(self.y_label)
-            ax1.legend(loc='center right')
+            ax1.set_xlabel(self.x_label, fontsize=14)
+            ax1.set_ylabel(self.y_label, fontsize=14)
+           # ax1.legend(loc='center right')
+            plt.subplots_adjust(left=0.15)
+
 
         # ax1.set_ylim(0, 1.04)
         # ax2.set_ylim(0, max_of_hist_values * 1.3)
