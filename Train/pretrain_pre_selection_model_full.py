@@ -23,7 +23,7 @@ from datastructures import TrainData_NanoML
 
 
 #from tensorflow.keras import Model
-from Layers import RobustModel
+from Layers import DictModel, PrintMeanAndStd
 
 from model_blocks import create_outputs, noise_pre_filter, first_coordinate_adjustment, reduce_indices
 from tensorflow.keras.layers import Dense, Concatenate
@@ -40,8 +40,8 @@ from debugLayers import PlotCoordinates
 
 from clr_callback import CyclicLR
 
-
-from model_blocks import pre_selection_model_full
+from MetricsLayers import MLReductionMetrics
+from model_blocks import pre_selection_model_full, pre_selection_staged
 
 def pretrain_model(Inputs,
                    td,
@@ -49,22 +49,22 @@ def pretrain_model(Inputs,
 
     orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
 
-    out = pre_selection_model_full(orig_inputs,
+    presel = pre_selection_model_full(orig_inputs,
                              debug_outdir,
-                             reduction_threshold=0.55,
+                             reduction_threshold=0.75,#high threshold
                              use_edges=True,
                              trainable=True,
                              debugplots_after=1500,
-                             #n_coords=4,
-                             #name='pre_selection4D',
-                             omit_reduction=False
+                             omit_reduction=False,
+                             record_metrics=True,
                              )
-
-    #same outputs as the model block
-    model_outputs = [(k,out[k]) for k in out.keys()]
-
-    return RobustModel(model_inputs=Inputs, model_outputs=model_outputs)
-
+    
+    
+    # this will create issues with the output and is only needed if used in a full dim model.
+    # so it's ok to pop it here for training
+    presel.pop('scatterids')#just for testing
+    
+    return DictModel(inputs=Inputs, outputs=presel)
 
 import training_base_hgcal
 train = training_base_hgcal.HGCalTraining(testrun=False, resumeSilently=True, renewtokens=False)
@@ -74,7 +74,7 @@ if not train.modelSet():
                    td = train.train_data.dataclass(),
                    debug_outdir=train.outputDir+'/intplots')
     
-    train.setCustomOptimizer(tf.keras.optimizers.Nadam(
+    train.setCustomOptimizer(tf.keras.optimizers.Adam(
         #larger->slower forgetting
         #beta_1: linear
         #beta_2: sq
@@ -85,7 +85,7 @@ if not train.modelSet():
         #amsgrad=True,
         #epsilon=1e-2
         ))
-
+    
     train.compileModel(learningrate=1e-4,
                        loss=None)
 
@@ -101,47 +101,78 @@ from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Dec2021/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
+
+plot_frequency=100
 cb = [
     
     simpleMetricsCallback(
         output_file=train.outputDir+'/reduction_metrics.html',
-        record_frequency= 1,
-        plot_frequency = 5,
-        select_metrics='*_reduction_*',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='*reduction*',
         publish=publishpath #no additional directory here (scp cannot create one)
-        )
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/knn_metrics.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='*slicing*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/noise_metrics.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='*noise*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/space_metrics.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='*cluster*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/regularizers.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='*regularizer*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/multiattention.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='*coord_add*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/losses.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='*loss',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
     
     ]
-
 
 
 #cb += build_callbacks(train)
 
 #cb=[]
-nbatch = 200000 #why not
+nbatch = 400000 
 train.change_learning_rate(5e-5)
 
-
-
-model, history = train.trainModel(nepochs=1,
-                                  run_eagerly=True,
-                                  batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
-                                  batchsize_use_sum_of_squares=False,
-                                  checkperiod=1,  # saves a checkpoint model every N epochs
-                                  verbose=verbosity,
-                                  backup_after_batches=2500,
-                                  additional_callbacks=cb)
+train.trainModel(nepochs=1,batchsize=nbatch,additional_callbacks=cb)
 
 print('reducing learning rate to 1e-5')
 train.change_learning_rate(1e-5)
 
-model, history = train.trainModel(nepochs=100,
-                                  run_eagerly=True,
-                                  batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
-                                  batchsize_use_sum_of_squares=False,
-                                  checkperiod=1,  # saves a checkpoint model every N epochs
-                                  verbose=verbosity,
-                                  backup_after_batches=2500,
-                                  additional_callbacks=cb)
+train.trainModel(nepochs=100,batchsize=nbatch,additional_callbacks=cb)
