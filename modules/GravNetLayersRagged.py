@@ -2324,11 +2324,10 @@ class MultiAttentionGravNetAdd(LayerWithMetrics):
     def call(self, inputs):
         assert len(inputs)==3
         feat, coord, nidx = inputs
-        used_for_accumulators = tf.concat([feat,coord],axis=-1)#also use coordinates here
         #coord = tf.stop_gradient(coord) #avoid coordinate gradient
         outfeat = []
         for di in range(len(self.kernel_coord_dense)):
-            refcadd = self.kernel_coord_dense[di](used_for_accumulators)
+            refcadd = self.kernel_coord_dense[di](feat)
             
             for i in range(coord.shape[-1]):
                 meancoord = tf.reduce_mean(refcadd[:,i])
