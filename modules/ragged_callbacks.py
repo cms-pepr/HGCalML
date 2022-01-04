@@ -15,12 +15,11 @@ from multiprocessing import Process
 import numpy as np
 import tempfile
 import os
-from keras.callbacks import Callback
 from DeepJetCore.TrainData import TrainData
 from DeepJetCore.dataPipeline import TrainDataGenerator
-from LayersRagged import RaggedConstructTensor
 import tensorflow as tf
 import copy
+
 
 
 class plotEventDuringTraining(PredictCallback):

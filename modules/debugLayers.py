@@ -12,8 +12,10 @@ from plotting_callbacks import shuffle_truth_colors
     
 class PlotCoordinates(tf.keras.layers.Layer):
     
-    def __init__(self, plot_every: int=100,
-                 outdir :str='.', **kwargs):
+    def __init__(self,
+                 plot_every: int,
+                 outdir :str='' , 
+                 **kwargs):
         '''
         Takes as input
          - coordinate 
@@ -34,12 +36,14 @@ class PlotCoordinates(tf.keras.layers.Layer):
         self.outdir = outdir
         self.counter=-1
         import os
-        if plot_every > 0:
+        if plot_every > 0 and len(self.outdir):
             os.system('mkdir -p '+self.outdir)
+        if not os.path.isdir(os.path.dirname(self.outdir)): #could not be created
+            self.outdir=''
     
     def get_config(self):
         config = {'plot_every': self.plot_every,
-                  'outdir': self.outdir
+                  #'outdir': '' #needs to be set again every time
                   }
         base_config = super(PlotCoordinates, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -47,18 +51,27 @@ class PlotCoordinates(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes):
         return input_shapes[0]
     
-    def call(self, inputs):
+    def build(self,input_shape):
+        super(PlotCoordinates, self).build(input_shape)
+        
+    def call(self, inputs, training=None):
         
         coords, features, tidx, rs = inputs
         if self.plot_every <=0:
             return coords
         if not hasattr(coords, 'numpy'): #only in eager
             return coords
+        if training is None or training == False:#only run in training mode
+            return coords
         
         #plot initial state
         if self.counter>=0 and self.counter < self.plot_every:
             self.counter+=1
             return inputs[0]
+        
+        if len(self.outdir)<1:
+            return inputs[0]
+        
         print('making debug plot')
         self.counter=0
         #just select first
@@ -105,4 +118,3 @@ class PlotCoordinates(tf.keras.layers.Layer):
         
         return inputs[0]
         
-

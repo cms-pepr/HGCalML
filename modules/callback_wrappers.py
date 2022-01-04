@@ -11,13 +11,26 @@ from running_full_validation import RunningFullValidation
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
 from plotting_callbacks import plotClusterSummary
 
-def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_distance_threshold=0.5,
-                    running_plots_iou_threshold=0.1,
+def build_callbacks(train, 
+                    running_plots_beta_threshold=0.1, 
+                    running_plots_distance_threshold=0.5,
+                    running_plots_iou_threshold=0.4,
                     running_plots_matching_type=matching_and_analysis.MATCHING_TYPE_IOU_MAX,
-                    running_plots_write_after_iterations=200, full_analysis_num_hyperparam_optimization_iterations=-1,
-                    test_on_points=[(0.2,0.2), (0.8,0.8),(0.2,0.8),(0.8,0.2),(0.5,0.5)],
-                    full_analysis_num_hyperparam_optimization_endcaps=-1, should_write_to_file=True,
-                    should_write_to_remote_server=False, full_analysis_after_batches=5000,
+                    running_plots_write_after_iterations=200, 
+                    full_analysis_num_hyperparam_optimization_iterations=-1,
+                    test_on_points=[(0.1,0.2), 
+                                    (0.1,0.5),
+                                    (0.1,0.8),
+                                    (0.1,1.0),
+                                    
+                                    (0.3,0.2), 
+                                    (0.3,0.5),
+                                    (0.3,0.8),
+                                    (0.3,1.0)],
+                    full_analysis_num_hyperparam_optimization_endcaps=-1, 
+                    should_write_to_file=True,
+                    should_write_to_remote_server=False, 
+                    full_analysis_after_batches=5000,
                     running_plots_energy_gather_type=matching_and_analysis.ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT):
     """
 
@@ -101,6 +114,7 @@ def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_dista
     analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
     cb += [RunningMetricsDatabaseAdditionCallback(td, database_manager=database_manager,
                                                   analyzer=analyzer)]
+    
     cb += [RunningMetricsPlotterCallback(after_n_batches=running_plots_write_after_iterations, database_reading_manager=database_reading_manager,
                                          output_html_location=os.path.join(train.outputDir, "training_metrics.html"),
                                          publish=None)]
@@ -141,6 +155,8 @@ def build_callbacks(train, running_plots_beta_threshold=0.2, running_plots_dista
         after_n_batches=800
         )
     ]
+    
+    print('HGCalML callbacks setup')
 
     return cb
 

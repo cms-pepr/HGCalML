@@ -7,8 +7,11 @@ import os
 
 def apply_weights_from_path(path_to_weight_model, existing_model):
     if not isinstance(existing_model, (RobustModel,ExtendedMetricsModel)):
-        raise ValueError("Only works for RobustModel,ExtendedMetricsModel")
+        weightmodel = tf.keras.models.load_model(path_to_weight_model, custom_objects=get_custom_objects())
+        existing_model = apply_weights_where_possible(existing_model, weightmodel)
+        return existing_model
     
+    print('INFO: apply_weights_from_path: RobustModel deprecated ')
     newfilename=path_to_weight_model
     if str(newfilename).endswith('.h5'):
         newfilename = os.path.splitext(newfilename)[0] + '_save'

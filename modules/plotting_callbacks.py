@@ -58,6 +58,10 @@ def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx",rdst=None):
         out[ta ==unta[i]]=i
     df[qualifier] = out
        
+       
+
+       
+       
         
 class plotDuringTrainingBase(PredictCallback):
     def __init__(self,
@@ -179,24 +183,24 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             feats = td.createFeatureDict(feat,addxycomb=False)
             truths = td.createTruthDict(feat)
             
-            predBeta = predicted[0]
+            predBeta = predicted['pred_beta']
             
             print('>>>> plotting cluster coordinates... average beta',np.mean(predBeta), ' lowest beta ', 
                   np.min(predBeta), 'highest beta', np.max(predBeta))
             
             
             #for later
-            predEnergy = predicted[2]
-            predX = predicted[3][:,0:1]
-            predY = predicted[3][:,1:2]
-            predT = predicted[4]
-            predD = predicted[6]
+            predEnergy = predicted['pred_energy']
+            predX = predicted['pred_pos'][:,0:1]
+            predY = predicted['pred_pos'][:,1:2]
+            predT = predicted['pred_time']
+            predD = predicted['pred_dist']
             
             data = {}
             data.update(feats)
             data.update(truths)
             
-            predCCoords = predicted[1]
+            predCCoords = predicted['pred_ccoords']
             
             
             data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)

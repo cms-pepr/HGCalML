@@ -75,6 +75,7 @@ def oc_per_batch_element(
         is_spectator,
         payload_loss,
         S_B=1.,
+        noise_q_min=None,
         distance_scale=None,
         payload_weight_function = None,  #receives betas as K x V x 1 as input, and a threshold val
         payload_weight_threshold = 0.8,
@@ -117,6 +118,10 @@ def oc_per_batch_element(
     beta *= (1. - is_spectator)
     qraw = tf.math.atanh(beta)**2 
     
+    is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32')+1., 0.)#V x 1
+    if noise_q_min is not None:
+        q_min = (1.-is_noise)*q_min + is_noise*noise_q_min
+    
     if soft_q_scaling:
         qraw = tf.math.atanh(beta_in/1.002)**2 #beta_in**4 *20.
         beta = beta_in*(1. - is_spectator) # no need for clipping
@@ -125,7 +130,6 @@ def oc_per_batch_element(
     #q = tf.where(beta_in<1.-1e-4, q, tf.math.atanh(1.-1e-4)**2 + q_min + beta_in) #just give the rest above clip a gradient
     
     N = tf.cast(beta.shape[0], dtype='float32')
-    is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32')+1., 0.)#V x 1
     
     Msel, M_not, N_per_obj = CreateMidx(truth_idx, calc_m_not=True)
     #use eager here
@@ -325,6 +329,7 @@ def oc_loss(
         payload_loss,
         Q_MIN=0.1, 
         S_B=1.,
+        noise_q_min=None,
         distance_scale=None,
         energyweights=None,
         use_average_cc_pos=False,
@@ -375,6 +380,7 @@ def oc_loss(
             use_mean_x=use_average_cc_pos,
             cont_beta_loss=cont_beta_loss,
             S_B=S_B,
+            noise_q_min=noise_q_min,
             distance_scale=distance_scale,
             prob_repulsion=prob_repulsion,
             phase_transition=phase_transition,

@@ -3,6 +3,20 @@
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
+#base modules
+
+from baseModules import PromptMetric
+global_layers_list['PromptMetric'] = PromptMetric
+
+from baseModules import LayerWithMetrics
+global_layers_list['LayerWithMetrics'] = LayerWithMetrics
+
+#metrics layers
+
+from MetricsLayers import MLReductionMetrics
+global_layers_list['MLReductionMetrics'] = MLReductionMetrics
+
+#older layers
 
 from LayersRagged import RaggedSumAndScatter
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -130,6 +144,9 @@ global_layers_list['SoftPixelCNN']=SoftPixelCNN
 from GravNetLayersRagged import RaggedGravNet
 global_layers_list['RaggedGravNet']=RaggedGravNet
 
+from GravNetLayersRagged import MultiAttentionGravNetAdd
+global_layers_list['MultiAttentionGravNetAdd']=MultiAttentionGravNetAdd
+
 from GravNetLayersRagged import DynamicDistanceMessagePassing
 global_layers_list['DynamicDistanceMessagePassing']=DynamicDistanceMessagePassing
 
@@ -176,11 +193,14 @@ global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier
 global_layers_list['LLEdgeClassifier']=LLEdgeClassifier
 
 ####### other stuff goes here
-from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer
+from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer,MeanMaxDistanceRegularizer
 
 global_layers_list['OffDiagonalRegularizer']=OffDiagonalRegularizer
 global_layers_list['WarpRegularizer']=WarpRegularizer
 global_layers_list['AverageDistanceRegularizer']=AverageDistanceRegularizer
+global_layers_list['MeanMaxDistanceRegularizer']=MeanMaxDistanceRegularizer
+
+
 
 
 #also this one needs to be passed
@@ -701,3 +721,101 @@ class RobustModel(tf.keras.Model):
 
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel
 global_layers_list['RobustModel']=RobustModel
+
+
+
+#new implementation of RobustModel. Keep RobustModel for backwards-compat
+class DictModel(tf.keras.Model):
+    def __init__(self, 
+                 inputs,
+                 outputs: dict, #force to be dict
+                 skip_non_finite=5,
+                 *args, **kwargs):
+        """
+        :param skip_non_finite: Number of consecutive times to skip nans/inf loss and gradient values
+        """
+        
+        self.skip_non_finite = skip_non_finite
+        self.non_finite_count = 0
+        
+        super(DictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
+
+    def get_config(self):
+        config = {'skip_non_finite': self.skip_non_finite}
+        base_config = super(DictModel, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+
+
+    #compat functions
+    def call_with_dict_as_output(self, inputs, numpy=False):
+        print("DEPRECATION WARNING: Please use direct call here and convert to numpy afterwards. Not part of model functionality! This will become an exception soon.")
+        outputs = self.call(inputs)
+        if numpy:
+            for k in outputs.keys():
+                outputs[k] = outputs[k].numpy()
+        return outputs
+
+    def convert_output_to_dict(self, outputs):
+        print("DEPRECATION WARNING: DictModel outputs are already dicts, no need to convert. Remove! This will become an exception soon.")
+        if isinstance(outputs, dict):
+            return outputs
+        else:
+            raise ValueError("DictModel outputs must be dicts already")
+        
+
+    def train_step(self, data):
+        # Unpack the data. Its structure depends on your model and
+        # on what you pass to `fit()`.
+        x, y = data
+
+
+        is_valid = True
+        loss = None
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)  # Forward pass
+            # Compute the loss value
+            # (the loss function is configured in `compile()`)
+            try:
+                loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+            except Exception as e:
+                is_valid = False
+                print(e)
+                traceback.print_stack()
+
+        # Compute gradients
+        trainable_vars = self.trainable_variables
+
+        is_valid = is_valid and bool(tf.math.is_finite(loss))
+        if is_valid:
+            gradients = tape.gradient(loss, trainable_vars)
+            is_valid = is_valid and not bool(tf.reduce_any([_grad is None for _grad in gradients]))
+
+        if is_valid:
+            num_non_finite_tensors = float(tf.reduce_sum(tf.cast([tf.reduce_any(tf.math.logical_not(tf.math.is_finite(_grad))) for _grad in gradients], tf.float32)))
+            is_valid = is_valid and num_non_finite_tensors == 0.0
+
+        if is_valid:
+            self.non_finite_count = 0
+            # Update weights
+            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        else:
+            if self.non_finite_count < self.skip_non_finite:
+                print("\n\nWARNING: loss or gradient is not finite or error in loss. \nSkipping optimizer step %d/%d\n\n" % (self.non_finite_count+1, self.skip_non_finite))
+            else:
+                print("\n\nERROR: loss or gradient is not finite or error in loss. \nThrowing exception.\n\n")
+                raise RuntimeError("Loss or gradient is not finite")
+
+            self.non_finite_count += 1
+
+        # Update metrics (includes the metric that tracks the loss)
+        self.compiled_metrics.update_state(y, y_pred)
+        # Return a dict mapping metric names to current value
+
+        ret_dict = {m.name: m.result() for m in self.metrics}
+
+        self.data_x = x
+        self.data_y_pred = y_pred
+
+        return ret_dict
+
+global_layers_list['DictModel']=DictModel

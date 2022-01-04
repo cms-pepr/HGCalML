@@ -626,7 +626,6 @@ class TrainData_NanoML(TrainData):
         _, _, t_idx, _, t_energy, _, t_pos, _, t_time, _, t_pid, _,\
         t_spectator, _, t_fully_contained,_ = allfeat
         
-        
         out={
             'truthHitAssignementIdx': t_idx,
             'truthHitAssignedEnergies': t_energy,
@@ -663,12 +662,21 @@ class TrainData_NanoML(TrainData):
         
         featd['recHitLogEnergy'] = np.log(featd['recHitEnergy']+1.+1e-8)
         
-        allarr = []
-        for k in featd:
-            allarr.append(featd[k])
-        allarr = np.concatenate(allarr,axis=1)
+        #allarr = []
+        #for k in featd:
+        #    allarr.append(featd[k])
+        #allarr = np.concatenate(allarr,axis=1)
+        #
+        #frame = pd.DataFrame (allarr, columns = [k for k in featd])
+        #for k in featd.keys():
+        #    featd[k] = [featd[k]]
+        #frame = pd.DataFrame()
+        for k in featd.keys():
+            #frame.insert(0,k,featd[k])
+            featd[k] = np.squeeze(featd[k],axis=1)
         
-        frame = pd.DataFrame (allarr, columns = [k for k in featd])
+        frame = pd.DataFrame.from_records(featd)
+        
         if eventno>=0:
             return frame
         else:

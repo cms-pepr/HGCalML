@@ -11,6 +11,7 @@ On flatiron:
 not compatible with datasets before end of October 2021
 
 '''
+
 from callback_wrappers import build_callbacks
 from experiment_database_manager import ExperimentDatabaseManager
 import tensorflow as tf
@@ -50,10 +51,12 @@ def pretrain_model(Inputs,
 
     out = pre_selection_model_full(orig_inputs,
                              debug_outdir,
-                             reduction_threshold=0.5,
+                             reduction_threshold=0.55,
                              use_edges=True,
                              trainable=True,
                              debugplots_after=1500,
+                             #n_coords=4,
+                             #name='pre_selection4D',
                              omit_reduction=False
                              )
 
@@ -71,7 +74,7 @@ if not train.modelSet():
                    td = train.train_data.dataclass(),
                    debug_outdir=train.outputDir+'/intplots')
     
-    train.setCustomOptimizer(tf.keras.optimizers.Adam(
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam(
         #larger->slower forgetting
         #beta_1: linear
         #beta_2: sq
@@ -93,23 +96,32 @@ import os
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
+from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 
-cb = []
+publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Dec2021/"
+publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
+
+cb = [
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/reduction_metrics.html',
+        record_frequency= 1,
+        plot_frequency = 5,
+        select_metrics='*_reduction_*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        )
+    
+    ]
 
 
 
 #cb += build_callbacks(train)
 
 #cb=[]
-learningrate = 1e-3
-nbatch = 300000 #why not
+nbatch = 200000 #why not
+train.change_learning_rate(5e-5)
 
 
-
-train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
-                          loss=None,
-                          metrics=None,
-                          )
 
 model, history = train.trainModel(nepochs=1,
                                   run_eagerly=True,
@@ -121,16 +133,10 @@ model, history = train.trainModel(nepochs=1,
                                   backup_after_batches=2500,
                                   additional_callbacks=cb)
 
-print('reducing learning rate to 1e-3')
-learningrate = 1e-4
-nbatch = 300000 #why not
+print('reducing learning rate to 1e-5')
+train.change_learning_rate(1e-5)
 
-train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
-                          loss=None,
-                          metrics=None,
-                          )
-
-model, history = train.trainModel(nepochs=1,
+model, history = train.trainModel(nepochs=100,
                                   run_eagerly=True,
                                   batchsize=nbatch,
                                   extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
@@ -138,23 +144,4 @@ model, history = train.trainModel(nepochs=1,
                                   checkperiod=1,  # saves a checkpoint model every N epochs
                                   verbose=verbosity,
                                   backup_after_batches=2500,
-                                  additional_callbacks=cb)
-
-print('reducing learning rate to 1e-4')
-learningrate = 5e-5
-nbatch = 300000 #why not
-
-train.compileModel(learningrate=learningrate, #gets overwritten by CyclicLR callback anyway
-                          loss=None,
-                          metrics=None,
-                          )
-
-model, history = train.trainModel(nepochs=10,
-                                  run_eagerly=True,
-                                  batchsize=nbatch,
-                                  extend_truth_list_by = len(train.keras_model.outputs_keys), #just adapt truth list to avoid keras error (no effect on model)
-                                  batchsize_use_sum_of_squares=False,
-                                  checkperiod=1,  # saves a checkpoint model every N epochs
-                                  verbose=verbosity,
-                                  backup_after_batches=500,
                                   additional_callbacks=cb)

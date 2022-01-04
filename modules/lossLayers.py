@@ -4,6 +4,7 @@ from betaLosses import obj_cond_loss
 from oc_helper_ops import SelectWithDefault
 from oc_helper_ops import CreateMidx
 import time
+from baseModules import LayerWithMetrics
 
 def one_hot_encode_id(t_pid, n_classes):
     valued_pids = tf.zeros_like(t_pid)+3 #defaults to 3 as that is the highest showerType value
@@ -31,7 +32,7 @@ def huber(x, d):
     losslin = d**2 + 2. * d * (absx - d)
     return tf.where(absx < d, losssq, losslin)
 
-class LossLayerBase(tf.keras.layers.Layer):
+class LossLayerBase(LayerWithMetrics):
     """Base class for HGCalML loss layers.
     
     Use the 'active' switch to switch off the loss calculation.
@@ -67,6 +68,9 @@ class LossLayerBase(tf.keras.layers.Layer):
         base_config = super(LossLayerBase, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
+    def build(self, input_shape):
+        super(LossLayerBase, self).build(input_shape)
+    
     def call(self, inputs):
         lossval = tf.constant([0.],dtype='float32')
         if self.active:
@@ -94,7 +98,9 @@ class LossLayerBase(tf.keras.layers.Layer):
                 tf.print(self.name, 'loss', lossval)
         
         if self.print_batch_time:
-            print(self.name,'batch time',round((time.time()-self.time)*1000.),'ms')
+            batchtime = round((time.time()-self.time)*1000.)
+            print(self.name,'batch time',batchtime,'ms')
+            self.add_prompt_metric(batchtime, self.name+'_batch_time')
             self.time = time.time()
 
     def compute_output_shape(self, input_shapes):
@@ -224,6 +230,7 @@ class LLFillSpace(LossLayerBase):
             self.counter = 0
         lossval = LLFillSpace.raw_loss(coords, rs, self.maxhits)
         self.maybe_print_loss(lossval)
+        self.add_prompt_metric(lossval, self.name+'_loss')
         return lossval
     
     
@@ -247,7 +254,7 @@ class LLClusterCoordinates(LossLayerBase):
     def get_config(self):
         base_config = super(LLClusterCoordinates, self).get_config()
         return dict(list(base_config.items()) + list({'downsample':self.downsample}.items()))
-         
+             
     @staticmethod
     def _rs_loop(coords, tidx):
         Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
@@ -286,7 +293,9 @@ class LLClusterCoordinates(LossLayerBase):
         lossval = tf.zeros_like(acoords[0,0])
         reploss = tf.zeros_like(acoords[0,0])
         distloss = tf.zeros_like(acoords[0,0])
-        for i in range(len(rs)-1):
+        
+        nbatches = rs.shape[0]-1
+        for i in range(nbatches):
             coords = acoords[rs[i]:rs[i+1]]
             tidx = atidx[rs[i]:rs[i+1]]
             
@@ -302,8 +311,8 @@ class LLClusterCoordinates(LossLayerBase):
             lossval += tlv
             distloss += tdl
             reploss += trl
-        
-        return lossval, distloss, reploss
+        nbatches = tf.cast(nbatches,dtype='float32')
+        return lossval/nbatches, distloss/nbatches, reploss/nbatches
 
     def maybe_print_loss(self, lossval,distloss, reploss, tidx):
         LossLayerBase.maybe_print_loss(self, lossval)
@@ -318,7 +327,13 @@ class LLClusterCoordinates(LossLayerBase):
         assert len(inputs) == 3
         coords, tidx, rs = inputs
         lossval,distloss, reploss = LLClusterCoordinates.raw_loss(coords, tidx, rs, self.downsample)
+        
+        self.add_prompt_metric(lossval, self.name+'_loss')
+        self.add_prompt_metric(distloss, self.name+'_att_loss')
+        self.add_prompt_metric(reploss, self.name+'_rep_loss')
+        
         self.maybe_print_loss(lossval,distloss, reploss, tidx)
+        
         return lossval
     
 
@@ -450,6 +465,12 @@ class LLNotNoiseClassifier(LossLayerBase):
         else:
             score, tidx, specweight = inputs
         lossval = LLNotNoiseClassifier.raw_loss(score, tidx, specweight)
+        
+        isnotnoise = tf.cast(tidx>=0,dtype='float32')
+        accuracy = tf.reduce_sum(isnotnoise * tf.cast(score>0.5,dtype='float32'))/tf.reduce_sum(isnotnoise)
+        self.add_prompt_metric(accuracy,self.name+'_accuracy')
+        self.add_prompt_metric(lossval,self.name+'_loss')
+        
         self.maybe_print_loss(lossval)
         return lossval
         
@@ -567,6 +588,7 @@ class LLEdgeClassifier(LossLayerBase):
         else:
             score, nidx, tidx, specweight = inputs
         lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight)
+        self.add_prompt_metric(lossval, self.name+'_loss')
         self.maybe_print_loss(lossval)
         return lossval
 
@@ -587,6 +609,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  alt_energy_weight=False,
                  train_energy_correction=True,
                  q_min=0.1, no_beta_norm=False,
+                 noise_q_min=None,
                  potential_scaling=1., repulsion_scaling=1., s_b=1., position_loss_weight=1.,
                  classification_loss_weight=1., timing_loss_weight=1., use_spectators=True, beta_loss_scale=1.,
                  use_average_cc_pos=0.,
@@ -668,6 +691,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.use_energy_weights = use_energy_weights
         self.train_energy_correction = train_energy_correction
         self.q_min = q_min
+        self.noise_q_min = noise_q_min
         self.no_beta_norm = no_beta_norm
         self.potential_scaling = potential_scaling
         self.repulsion_scaling = repulsion_scaling
@@ -829,10 +853,21 @@ class LLFullObjectCondensation(LossLayerBase):
         tloss = huber((t_time - pred_time),2.) 
         return self.softclip(tloss, 6.) 
     
-    def calc_classification_loss(self, t_pid, pred_id):
+    def calc_classification_loss(self, t_idx, t_pid, pred_id, row_splits):
         depth = pred_id.shape[1]#add n_classes here?
         truthclass  = one_hot_encode_id(t_pid, depth)
         
+        #cpclass=[]
+        #for b in tf.range(row_splits.shape[0]-1):
+        #    rstidx = t_idx[row_splits[b]:row_splits[b + 1]]
+        #    objsel, _, _ = CreateMidx(rstidx, calc_m_not=False)
+        #    objsel = objsel[:,0:1] 
+        #    tclasses = SelectWithDefault(objsel, truthclass, 0.)#K x 1 x 1
+        #    tclasses = tf.
+        #    rstidx,uvidx = tf.unique(rstidx)
+        #    _, bgidxs, _ = tf.unique_with_counts(rstidx[:,0])
+        #    gtclass = truthclass
+        #
         #FIXME: add class weights here
         
         return tf.expand_dims(tf.keras.metrics.categorical_crossentropy(truthclass, pred_id), axis=1)
@@ -876,7 +911,7 @@ class LLFullObjectCondensation(LossLayerBase):
             
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
-        classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id)
+        classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_idx, t_pid, pred_id, rowsplits)
         
         full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss], axis=-1)
         
@@ -897,6 +932,7 @@ class LLFullObjectCondensation(LossLayerBase):
                                            payload_loss=full_payload,
                                            Q_MIN=q_min,
                                            S_B=self.s_b,
+                                           noise_q_min = self.noise_q_min,
                                            distance_scale=pred_distscale,
                                            energyweights=energy_weights,
                                            use_average_cc_pos=self.use_average_cc_pos,
@@ -945,6 +981,17 @@ class LLFullObjectCondensation(LossLayerBase):
             
         lossval = tf.reduce_mean(lossval)
         
+        self.add_prompt_metric(lossval,self.name+'_loss')
+        self.add_prompt_metric(att,self.name+'_attractive_loss')
+        self.add_prompt_metric(rep,self.name+'_repulsive_loss')
+        self.add_prompt_metric(min_b,self.name+'_min_beta_loss')
+        self.add_prompt_metric(noise,self.name+'_noise_loss')
+        self.add_prompt_metric(energy_loss,self.name+'_energy_loss')
+        self.add_prompt_metric(pos_loss,self.name+'_position_loss')
+        self.add_prompt_metric(time_loss,self.name+'_time_loss')
+        self.add_prompt_metric(class_loss,self.name+'_class_loss')
+        self.add_prompt_metric(exceed_beta,self.name+'_exceed_beta_loss')
+        
         #loss should be <1 pretty quickly in most cases; avoid very hard hits from high LRs shooting to the moon
         
         
@@ -985,6 +1032,7 @@ class LLFullObjectCondensation(LossLayerBase):
             'potential_scaling': self.potential_scaling,
             'repulsion_scaling': self.repulsion_scaling,
             's_b': self.s_b,
+            'noise_q_min': self.noise_q_min,
             'position_loss_weight': self.position_loss_weight,
             'classification_loss_weight' : self.classification_loss_weight,
             'timing_loss_weight': self.timing_loss_weight,

@@ -68,7 +68,7 @@ def shuffle_truth_colors(df, qualifier="t_idx"):
     return dfo
     
 def toDataFrame(thegen, thetd):
-    
+    raise ValueError("FIXME: bug, see data frame creation")
     def popRSAndSqueeze(df):
         for k in df.keys():
             if "_rowsplits" in k:

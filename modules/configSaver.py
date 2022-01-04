@@ -5,6 +5,11 @@ def copyModules(target_dir: str):
     if not os.path.isdir(target_dir):
         raise ValueError("copyModules: "+target_dir+' does not exist')
     
-    target_dir+='/modules/'
-    os.system('mkdir -p '+target_dir)
-    os.system('cp -r '+subpack+'/modules/* '+target_dir)
+    add=0
+    savedir = target_dir+'/modules_backup'
+    while os.path.isdir(savedir):
+        savedir=target_dir+'/modules_backup'+str(add)
+        add+=1
+        
+    os.system('mkdir -p '+savedir)
+    os.system('cp -r '+subpack+'/modules/* '+savedir+'/')
