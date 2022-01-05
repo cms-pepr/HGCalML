@@ -2280,7 +2280,8 @@ class MultiAttentionGravNetAdd(LayerWithMetrics):
         within the neighbour groups than just the centre
         
         Inputs:
-        - features
+        - features used to derive the coordinate offsets (can be larger)
+        - features that are accumulated (should be smaller as it grows with number of kernels)
         - coordinates
         - neighbour indices
         
@@ -2302,14 +2303,14 @@ class MultiAttentionGravNetAdd(LayerWithMetrics):
         return dict(list(base_config.items()) + list(config.items()))
 
     def compute_output_shape(self, input_shapes): # data, idxs
-        featshape = input_shapes[0]
+        featshape = input_shapes[1]
         featshape[-1] *= (self.n_attention_kernels+1)
         return featshape
         
     def build(self, input_shapes): 
-        assert len(input_shapes)==3
+        assert len(input_shapes)==4
         featshape = input_shapes[0]
-        ncoords = input_shapes[1][-1]
+        ncoords = input_shapes[2][-1]
         
         for i in range(self.n_attention_kernels):
             with tf.name_scope(self.name + "/"+str(i)+"/"):
@@ -2322,8 +2323,8 @@ class MultiAttentionGravNetAdd(LayerWithMetrics):
                 self.kernel_coord_dense[-1].build(featshape)
     
     def call(self, inputs):
-        assert len(inputs)==3
-        feat, coord, nidx = inputs
+        assert len(inputs)==4
+        feat, passfeat, coord, nidx = inputs
         #coord = tf.stop_gradient(coord) #avoid coordinate gradient
         outfeat = []
         for di in range(len(self.kernel_coord_dense)):
@@ -2338,8 +2339,8 @@ class MultiAttentionGravNetAdd(LayerWithMetrics):
             refcoord = tf.expand_dims(refcoord,axis=1)#V x 1 x C
             othercoord = SelectWithDefault(nidx, coord, 0.)#V x K x C
             dist = tf.reduce_sum((othercoord - refcoord)**2,axis=2)
-            acc,_ = AccumulateKnn(10.*dist, feat, nidx, mean_and_max=False)
-            acc = tf.reshape(acc, tf.shape(feat))
+            acc,_ = AccumulateKnn(10.*dist, passfeat, nidx, mean_and_max=False)
+            acc = tf.reshape(acc, tf.shape(passfeat))
             outfeat.append(acc)
         return tf.concat(outfeat,axis=1)    
         

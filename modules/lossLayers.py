@@ -98,8 +98,8 @@ class LossLayerBase(LayerWithMetrics):
                 tf.print(self.name, 'loss', lossval)
         
         if self.print_batch_time:
-            batchtime = round((time.time()-self.time)*1000.)
-            print(self.name,'batch time',batchtime,'ms')
+            batchtime = round((time.time()-self.time)*1000.)/1000.
+            print(self.name,'batch time',batchtime*1000.,'ms')
             self.add_prompt_metric(batchtime, self.name+'_batch_time')
             self.time = time.time()
 

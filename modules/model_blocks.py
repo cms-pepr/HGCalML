@@ -125,9 +125,10 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                 name='first_coords',
                                 n_coords=3,
                                 record_metrics=False,
-                                debugplots_after=-1): 
+                                debugplots_after=-1,
+                                use_multigrav=False): 
     
-    from GravNetLayersRagged import ElementScaling, KNN, DistanceWeightedMessagePassing, RecalcDistances
+    from GravNetLayersRagged import ElementScaling, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
     from debugLayers import PlotCoordinates
     
     coords = ElementScaling(name=name+'es1',trainable=trainable)(coords)
@@ -148,7 +149,17 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
     
     x = Dense(32,activation='relu',name=name+'dense1',trainable=trainable)(x)
     #the last 8 and 4 just add 5% more gpu
-    x = DistanceWeightedMessagePassing([32,32,8,8], #sumwnorm=True,
+    if use_multigrav:
+        x = DistanceWeightedMessagePassing([16], #sumwnorm=True,
+                                       name=name+'matt_dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
+        x_matt = Dense(8,activation='relu',name=name+'dense_matt_1',trainable=trainable)(x)
+        x_matt = MultiAttentionGravNetAdd(
+            4,record_metrics=record_metrics,name=name+'multi_att_gn')([x,x_matt,coords,nidx])
+        x = Concatenate()([x,x_matt])
+        x = DistanceWeightedMessagePassing([16], #sumwnorm=True,
+                                       name=name+'matt_dmp2',trainable=trainable)([x,nidx,dist])# hops are rather light 
+    else:
+        x = DistanceWeightedMessagePassing([32,32,8,8], #sumwnorm=True,
                                        name=name+'dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
     
     
@@ -300,7 +311,8 @@ def pre_selection_model_full(orig_inputs,
                              pass_through=False,
                              print_info=False,
                              record_metrics=False,
-                             omit_reduction=False #only trains coordinate transform. useful for pretrain phase
+                             omit_reduction=False, #only trains coordinate transform. useful for pretrain phase
+                             use_multigrav=False
                              ):
     
     from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices
@@ -350,7 +362,8 @@ def pre_selection_model_full(orig_inputs,
         name=name+'_first_coords',
         debugplots_after=debugplots_after,
         n_coords=n_coords,
-        record_metrics=record_metrics
+        record_metrics=record_metrics,
+        use_multigrav=use_multigrav
         )
     #create the gradients
     coords = LLClusterCoordinates(
@@ -596,7 +609,7 @@ def pre_selection_staged(indict,
     
     x_matt = Dense(16,activation='elu',name=name+'_matt_dense')(x)
                                        
-    x_matt = MultiAttentionGravNetAdd(5,name=name+'_att_gn1',record_metrics=record_metrics)([x_matt,coords,nidx])
+    x_matt = MultiAttentionGravNetAdd(5,name=name+'_att_gn1',record_metrics=record_metrics)([x,x_matt,coords,nidx])
     x = Concatenate()([x,x_matt]) 
     x = Dense(64,activation='elu',name=name+'_bef_coord_dense')(x)
     

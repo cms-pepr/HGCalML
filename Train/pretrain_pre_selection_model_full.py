@@ -57,12 +57,13 @@ def pretrain_model(Inputs,
                              debugplots_after=1500,
                              omit_reduction=False,
                              record_metrics=True,
+                             use_multigrav=True,
                              )
     
     
     # this will create issues with the output and is only needed if used in a full dim model.
     # so it's ok to pop it here for training
-    presel.pop('scatterids')#just for testing
+    presel.pop('scatterids')
     
     return DictModel(inputs=Inputs, outputs=presel)
 
@@ -90,6 +91,10 @@ if not train.modelSet():
                        loss=None)
 
 
+
+from configSaver import copyModules
+copyModules(train.outputDir)#save the modules
+
 verbosity = 2
 import os
 
@@ -98,7 +103,7 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 
-publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Dec2021/"
+publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 
@@ -168,11 +173,11 @@ cb = [
 
 #cb=[]
 nbatch = 400000 
-train.change_learning_rate(5e-5)
+train.change_learning_rate(2e-4)
 
-train.trainModel(nepochs=1,batchsize=nbatch,additional_callbacks=cb)
+train.trainModel(nepochs=2,batchsize=nbatch,additional_callbacks=cb)
 
 print('reducing learning rate to 1e-5')
-train.change_learning_rate(1e-5)
+train.change_learning_rate(5e-5)
 
 train.trainModel(nepochs=100,batchsize=nbatch,additional_callbacks=cb)
