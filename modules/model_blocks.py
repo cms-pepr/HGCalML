@@ -141,7 +141,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                  name=name+'plt1')([coords,energy,t_idx,rs])
     
     
-    nidx,dist = KNN(K=24,radius='dynamic', #use dynamic feature
+    nidx,dist = KNN(K=24,radius='dynamic', #use dynamic feature # 24
                     record_metrics=record_metrics,
                     name=name+'_knn',
                     min_bins=[7,7]
@@ -150,14 +150,14 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
     x = Dense(32,activation='relu',name=name+'dense1',trainable=trainable)(x)
     #the last 8 and 4 just add 5% more gpu
     if use_multigrav:
-        x = DistanceWeightedMessagePassing([16], #sumwnorm=True,
+        x = DistanceWeightedMessagePassing([16,16], #sumwnorm=True,
                                        name=name+'matt_dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
         x_matt = Dense(8,activation='relu',name=name+'dense_matt_1',trainable=trainable)(x)
         x_matt = MultiAttentionGravNetAdd(
             4,record_metrics=record_metrics,name=name+'multi_att_gn')([x,x_matt,coords,nidx])
         x = Concatenate()([x,x_matt])
-        x = DistanceWeightedMessagePassing([16], #sumwnorm=True,
-                                       name=name+'matt_dmp2',trainable=trainable)([x,nidx,dist])# hops are rather light 
+        #x = DistanceWeightedMessagePassing([16], #sumwnorm=True,
+        #                               name=name+'matt_dmp2',trainable=trainable)([x,nidx,dist])# hops are rather light 
     else:
         x = DistanceWeightedMessagePassing([32,32,8,8], #sumwnorm=True,
                                        name=name+'dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
@@ -374,12 +374,6 @@ def pre_selection_model_full(orig_inputs,
         scale=5.
         )([coords,t_idx,rs])
     
-    coords = LLFillSpace(
-        print_loss = trainable and print_info,
-        active = trainable,
-        scale=0.1,#just mild
-        runevery=20, #give it a kick only every now and then - hat's enough
-        )([coords,rs])
     
     if debugplots_after>0:
         coords = PlotCoordinates(debugplots_after,outdir=debug_outdir,name=name+'_bef_red')([coords,
@@ -479,6 +473,15 @@ def pre_selection_model_full(orig_inputs,
         
     for k in out.keys():
         out[k] = SelectFromIndices()([sel,out[k]])
+        
+    
+    out['coords'] = LLFillSpace(
+        print_loss = trainable and print_info,
+        active = trainable,
+        record_metrics = record_metrics,
+        scale=0.1,#just mild
+        runevery=-1, #give it a kick only every now and then - hat's enough
+        )([out['coords'],rs])
         
     
     out['scatterids'] = [group_backgather, noise_backscatter] #add them here directly
