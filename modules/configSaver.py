@@ -12,4 +12,9 @@ def copyModules(target_dir: str):
         add+=1
         
     os.system('mkdir -p '+savedir)
-    os.system('cp -r '+subpack+'/modules/* '+savedir+'/')
+    os.system('mkdir -p '+savedir+'/compiled')
+    #limit to necessary packages to rerun in same conditions
+    os.system('cp -r '+subpack+'/modules/*.py '+savedir+'/') 
+    os.system('cp -r '+subpack+'/modules/*.so '+savedir+'/') 
+    os.system('cp -r '+subpack+'/modules/compiled/*.cc '+savedir+'/compiled/') 
+    os.system('cp -r '+subpack+'/modules/compiled/*.h '+savedir+'/compiled/') 
