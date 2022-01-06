@@ -126,7 +126,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                 n_coords=3,
                                 record_metrics=False,
                                 debugplots_after=-1,
-                                use_multigrav=False): 
+                                use_multigrav=True): 
     
     from GravNetLayersRagged import ElementScaling, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
     from debugLayers import PlotCoordinates
@@ -141,7 +141,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                  name=name+'plt1')([coords,energy,t_idx,rs])
     
     
-    nidx,dist = KNN(K=24,radius='dynamic', #use dynamic feature # 24
+    nidx,dist = KNN(K=32,radius='dynamic', #use dynamic feature # 24
                     record_metrics=record_metrics,
                     name=name+'_knn',
                     min_bins=[7,7]
@@ -313,7 +313,7 @@ def pre_selection_model_full(orig_inputs,
                              print_info=False,
                              record_metrics=False,
                              omit_reduction=False, #only trains coordinate transform. useful for pretrain phase
-                             use_multigrav=False
+                             use_multigrav=True
                              ):
     
     from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices

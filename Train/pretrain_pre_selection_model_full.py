@@ -107,22 +107,14 @@ publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 
-plot_frequency=100
+plot_frequency=200
 cb = [
     
     simpleMetricsCallback(
         output_file=train.outputDir+'/reduction_metrics.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics='*reduction*',
-        publish=publishpath #no additional directory here (scp cannot create one)
-        ),
-    
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/knn_metrics.html',
-        record_frequency= 2,
-        plot_frequency = plot_frequency,
-        select_metrics='*slicing*',
+        select_metrics=['*reduction*','*cluster*time'],#includes time
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -130,7 +122,7 @@ cb = [
         output_file=train.outputDir+'/noise_metrics.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics='*noise*',
+        select_metrics=['*noise*accuracy','*noise*loss','*noise*reduction'],
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -138,23 +130,7 @@ cb = [
         output_file=train.outputDir+'/space_metrics.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics='*cluster*',
-        publish=publishpath #no additional directory here (scp cannot create one)
-        ),
-    
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/regularizers.html',
-        record_frequency= 2,
-        plot_frequency = plot_frequency,
-        select_metrics='*regularizer*',
-        publish=publishpath #no additional directory here (scp cannot create one)
-        ),
-    
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/multiattention.html',
-        record_frequency= 2,
-        plot_frequency = plot_frequency,
-        select_metrics='*coord_add*',
+        select_metrics='*cluster*loss',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -162,7 +138,15 @@ cb = [
         output_file=train.outputDir+'/losses.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics='*loss',
+        select_metrics=['ll_edge_classifier_loss','ll_cluster_coordinates_loss','ll_not_noise_classifier_loss'],
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/coord_losses.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='ll_cluster_coordinates_*loss',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -172,8 +156,8 @@ cb = [
 #cb += build_callbacks(train)
 
 #cb=[]
-nbatch = 400000 
-train.change_learning_rate(2e-4)
+nbatch = 350000 
+train.change_learning_rate(8e-4)
 
 train.trainModel(nepochs=2,batchsize=nbatch,additional_callbacks=cb)
 
