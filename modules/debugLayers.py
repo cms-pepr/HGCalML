@@ -72,7 +72,7 @@ class PlotCoordinates(tf.keras.layers.Layer):
         if len(self.outdir)<1:
             return inputs[0]
         
-        print('making debug plot')
+        #print('making debug plot')
         self.counter=0
         #just select first
         coords = coords[0:rs[1]]

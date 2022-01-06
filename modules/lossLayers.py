@@ -57,7 +57,10 @@ class LossLayerBase(LayerWithMetrics):
         self.print_loss = print_loss
         self.print_batch_time = print_batch_time
         self.return_lossval=return_lossval
-        self.time = time.time()
+        with tf.init_scope():
+            now = tf.timestamp()
+        self.time = tf.Variable(-now, name=self.name+'_time', 
+                                trainable=False)
         
     def get_config(self):
         config = {'active': self.active ,
@@ -97,11 +100,16 @@ class LossLayerBase(LayerWithMetrics):
             else:
                 tf.print(self.name, 'loss', lossval)
         
-        if self.print_batch_time:
-            batchtime = round((time.time()-self.time)*1000.)/1000.
-            print(self.name,'batch time',batchtime*1000.,'ms')
+        if self.print_batch_time or self.record_metrics:
+            now = tf.timestamp() 
+            prev = self.time
+            prev = tf.where(prev<0.,now,prev)
+            batchtime = now - prev            #round((time.time()-self.time)*1000.)/1000.
+            tf.keras.backend.update(self.time,now)
+            if self.print_batch_time:
+                print(self.name,'batch time',batchtime*1000.,'ms')
             self.add_prompt_metric(batchtime, self.name+'_batch_time')
-            self.time = time.time()
+            
 
     def compute_output_shape(self, input_shapes):
         if self.return_lossval:
@@ -162,7 +170,7 @@ class LLFillSpace(LossLayerBase):
         Reduces the risk of falling back to a (hyper)surface
         
         Inputs:
-         - coordinates, row splits
+         - coordinates, row splits, (truth index - optional. then only applied to non-noise)
         Outputs:
          - coordinates (unchanged)
         '''
@@ -170,9 +178,9 @@ class LLFillSpace(LossLayerBase):
         assert maxhits>0
         self.maxhits = maxhits
         self.runevery = runevery
-        self.counter=0
+        self.counter=-1
         if runevery < 0:
-            self.counter = -1
+            self.counter = -2
         if 'dynamic' in kwargs:
             super(LLFillSpace, self).__init__(**kwargs)
         else:
@@ -186,7 +194,7 @@ class LLFillSpace(LossLayerBase):
         return dict(list(base_config.items()) + list(config.items()))
     
     @staticmethod
-    def _rs_loop(coords, maxhits=1000):
+    def _rs_loop(coords, tidx, maxhits=1000):
         #only select a few hits to keep memory managable
         nhits = coords.shape[0]
         sel = None
@@ -196,6 +204,8 @@ class LLFillSpace(LossLayerBase):
             sel = tf.range(coords.shape[0], dtype=tf.int32)
         sel = tf.expand_dims(sel,axis=1)
         coords = tf.gather_nd(coords, sel) # V' x C
+        if tidx is not None:
+            coords = coords[tidx>=0]
         #print('coords',coords.shape)
         means = tf.reduce_mean(coords,axis=0,keepdims=True)#1 x C
         coords -= means # V' x C
@@ -213,24 +223,31 @@ class LLFillSpace(LossLayerBase):
         
         
     @staticmethod
-    def raw_loss(coords, rs, maxhits=1000):
+    def raw_loss(coords, rs, tidx, maxhits=1000):
         loss = tf.zeros_like(coords[0,0])
         for i in range(len(rs)-1):
             rscoords = coords[rs[i]:rs[i+1]]
-            loss += LLFillSpace._rs_loop(rscoords, maxhits)
+            loss += LLFillSpace._rs_loop(rscoords, tidx, maxhits)
         return tf.math.divide_no_nan(loss ,tf.cast(rs.shape[0],dtype='float32'))
     
     def loss(self, inputs):
-        assert len(inputs) == 2 #coords, rs
-        coords, rs = inputs
+        assert len(inputs) == 2 or len(inputs) == 3 #coords, rs
+        tidx = None
+        if len(inputs) == 3:
+            coords, rs, tidx = inputs
+        else:
+            coords, rs = inputs
         if self.counter >= 0: #completely optimise away increment
             if self.counter < self.runevery:
                 self.counter+=1
                 return tf.zeros_like(coords[0,0])
             self.counter = 0
-        lossval = LLFillSpace.raw_loss(coords, rs, self.maxhits)
+        lossval = LLFillSpace.raw_loss(coords, rs, tidx, self.maxhits)
         self.maybe_print_loss(lossval)
         self.add_prompt_metric(lossval, self.name+'_loss')
+        
+        if self.counter == -1:
+            self.counter+=1
         return lossval
     
     

@@ -154,7 +154,8 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                        name=name+'matt_dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
         x_matt = Dense(8,activation='relu',name=name+'dense_matt_1',trainable=trainable)(x)
         x_matt = MultiAttentionGravNetAdd(
-            4,record_metrics=record_metrics,name=name+'multi_att_gn')([x,x_matt,coords,nidx])
+            4,record_metrics=False,#gets too big
+            name=name+'multi_att_gn')([x,x_matt,coords,nidx])
         x = Concatenate()([x,x_matt])
         #x = DistanceWeightedMessagePassing([16], #sumwnorm=True,
         #                               name=name+'matt_dmp2',trainable=trainable)([x,nidx,dist])# hops are rather light 
@@ -369,7 +370,7 @@ def pre_selection_model_full(orig_inputs,
     coords = LLClusterCoordinates(
         print_loss = trainable and print_info,
         active = trainable,
-        print_batch_time=trainable,
+        print_batch_time=False,
         record_metrics = record_metrics,
         scale=5.
         )([coords,t_idx,rs])
@@ -637,7 +638,7 @@ def pre_selection_staged(indict,
         print_loss = print_info,
         record_metrics=record_metrics,
         active = trainable,
-        print_batch_time=trainable,
+        print_batch_time=False,
         scale=5.
         )([coords,t_idx,rs])
         
