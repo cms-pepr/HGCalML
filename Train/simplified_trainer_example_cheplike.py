@@ -19,7 +19,7 @@ from argparse import ArgumentParser
 import numpy as np
 from tensorflow.keras.layers import Reshape,BatchNormalization, Dropout, Add
 from LayersRagged  import RaggedConstructTensor
-from GravNetLayersRagged import WeightFeatures,WeightedNeighbourMeans,DownSample, CreateIndexFromMajority, ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
+from GravNetLayersRagged import MultiAttentionGravNetAdd,WeightFeatures,WeightedNeighbourMeans,DownSample, CreateIndexFromMajority, ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
 from initializers import EyeInitializer
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from datastructures import TrainData_NanoML
@@ -63,6 +63,7 @@ make this about coordinate shifts
 
 def gravnet_model(Inputs,
                   td,
+                  use_multigrav = True,
                   viscosity=0.1,
                   print_viscosity=False,
                   fluidity_decay=1e-3,  # reaches after about 7k batches
@@ -85,7 +86,7 @@ def gravnet_model(Inputs,
                                                      
     orig_inputs['t_spectator_weight'] = orig_t_spectator_weight                                                 
     #can be loaded - or use pre-selected dataset (to be made)
-    pre_selection = pre_selection_model_full(orig_inputs,trainable=True)
+    pre_selection = pre_selection_model_full(orig_inputs,trainable=False)
     
     #just for info what's available
     print([k for k in pre_selection.keys()])
@@ -118,8 +119,9 @@ def gravnet_model(Inputs,
     #extend coordinates already here if needed
     coords = extent_coords_if_needed(coords, x, n_cluster_space_coordinates)
         
-    
     total_iterations=5
+    if use_multigrav:
+        total_iterations=4
 
     for i in range(total_iterations):
 
@@ -133,10 +135,13 @@ def gravnet_model(Inputs,
                            record_metrics=True,fluidity_decay=fluidity_decay)(x)
         ### reduction done
         
+        n_dims = 6
+        if use_multigrav:
+            n_dims=3
         #exchange information, create coordinates
         x = Concatenate()([coords,coords,x])
         x, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
-                                                 n_dimensions=6,
+                                                 n_dimensions=n_dims,
                                                  n_filters=128,
                                                  n_propagate=64,
                                                  record_metrics=True
@@ -147,8 +152,17 @@ def gravnet_model(Inputs,
         gndist = AverageDistanceRegularizer(strength=0.01,
                                             record_metrics=True
                                             )(gndist)
-
-        x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
+                           
+        if use_multigrav:   
+            x = DistanceWeightedMessagePassing([32,32])([x,gnnidx,gndist])                
+            x_matt = Dense(16,activation='relu')(x)
+            x_matt = MultiAttentionGravNetAdd(5)([x,x_matt,gncoords,gnnidx])
+            x = Concatenate()([x,x_matt])
+            x = DistanceWeightedMessagePassing([32,32])([x,gnnidx,gndist])   
+            
+        else:
+            x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
+            
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, 
                            record_metrics=True,
                            fluidity_decay=fluidity_decay)(x)
@@ -195,6 +209,7 @@ def gravnet_model(Inputs,
     # loss
     pred_beta = LLFullObjectCondensation(scale=1.,
                                          energy_loss_weight=2.,
+                                         #print_batch_time=True,
                                          position_loss_weight=1e-1,
                                          timing_loss_weight=1e-2,
                                          classification_loss_weight=0.25,
@@ -202,7 +217,7 @@ def gravnet_model(Inputs,
                                          too_much_beta_scale=.001,
                                          use_energy_weights=True,
                                          record_metrics=True,
-                                         q_min=2.5,
+                                         q_min=1.0,
                                          #div_repulsion=True,
                                          # cont_beta_loss=True,
                                          # beta_gradient_damping=0.999,
@@ -373,12 +388,11 @@ print("freeze BN")
 # Note the submodel here its not just train.keras_model
 for l in train.keras_model.layers:
     if 'gooey_batch_norm' in l.name:
-        l.max_viscosity = 0.999
+        l.max_viscosity = 0.9999
         l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
     
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=5.
-nbatch = 120000
 
 train.change_learning_rate(learningrate)
 
