@@ -57,6 +57,8 @@ class MLReductionMetrics(MLBase):
         
         alltruthcount = None
         seltruthcount = None
+        nonoisecounts_bef = []
+        nonoisecounts_after = []
         
         if rs.shape[0] is None:
             return
@@ -66,17 +68,22 @@ class MLReductionMetrics(MLBase):
         if self.active:
             stidx, sten = SelIdx.raw_call(gsel,[tidx,ten])
             for i in tf.range(rs.shape[0]-1):
-                u,_ = tf.unique(tidx[rs[i]:rs[i+1],0])
+                u,_,c = tf.unique_with_counts(tidx[rs[i]:rs[i+1],0])
+                nonoisecounts_bef.append(c[u>=0])
                 if alltruthcount is None:
                     alltruthcount = u.shape[0]
                 else:
                     alltruthcount += u.shape[0]
             
-                u,_ = tf.unique(stidx[srs[i]:srs[i+1],0])
+                u,_,c = tf.unique_with_counts(stidx[srs[i]:srs[i+1],0])
+                nonoisecounts_after.append(c[u>=0])
                 if seltruthcount is None:
                     seltruthcount = u.shape[0]
                 else:
                     seltruthcount += u.shape[0]
+        
+        nonoisecounts_bef = tf.concat(nonoisecounts_bef,axis=0)
+        nonoisecounts_after = tf.concat(nonoisecounts_after,axis=0)
         
         lostfraction = 1. - tf.cast(seltruthcount,dtype='float32')/(tf.cast(alltruthcount,dtype='float32'))
         self.add_prompt_metric(lostfraction,self.name+'_lost_objects')
@@ -92,6 +99,12 @@ class MLReductionMetrics(MLBase):
         
         lostenergies = ue[c<2]
         #print(lostenergies)
+        
+        self.add_prompt_metric(tf.reduce_mean(nonoisecounts_bef),self.name+'_hits_pobj_bef_mean')
+        self.add_prompt_metric(tf.reduce_max(nonoisecounts_bef),self.name+'_hits_pobj_bef_max')
+        
+        self.add_prompt_metric(tf.reduce_mean(nonoisecounts_after),self.name+'_hits_pobj_after_mean')
+        self.add_prompt_metric(tf.reduce_max(nonoisecounts_after),self.name+'_hits_pobj_after_max')
 
         self.add_prompt_metric(tf.reduce_mean(lostenergies),self.name+'_lost_energy_mean')
         self.add_prompt_metric(tf.reduce_max(lostenergies),self.name+'_lost_energy_max')

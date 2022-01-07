@@ -7,7 +7,7 @@ class HGCalTraining(training_base):
         '''
         Adds file logging
         '''
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, resumeSilently=True,**kwargs)
         
         if redirect_stdout:
             print('>>> redirecting the following stdout and stderr to logs in',self.outputDir)

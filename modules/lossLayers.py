@@ -637,7 +637,6 @@ class LLFullObjectCondensation(LossLayerBase):
                  phase_transition=0.,
                  phase_transition_double_weight=False,
                  alt_potential_norm=True,
-                 print_time=True,
                  payload_beta_gradient_damping_strength=0.,
                  payload_beta_clip=0.,
                  kalpha_damping_strength=0.,
@@ -736,7 +735,6 @@ class LLFullObjectCondensation(LossLayerBase):
         self.phase_transition = phase_transition
         self.phase_transition_double_weight = phase_transition_double_weight
         self.alt_potential_norm = alt_potential_norm
-        self.print_time = print_time
         self.payload_beta_gradient_damping_strength = payload_beta_gradient_damping_strength
         self.payload_beta_clip = payload_beta_clip
         self.kalpha_damping_strength = kalpha_damping_strength
@@ -892,9 +890,6 @@ class LLFullObjectCondensation(LossLayerBase):
     def loss(self, inputs):
         
         assert len(inputs) == 15
-        start_time = 0
-        if self.print_time:
-            start_time = time.time()
         
         
         pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
@@ -1009,32 +1004,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.add_prompt_metric(class_loss,self.name+'_class_loss')
         self.add_prompt_metric(exceed_beta,self.name+'_exceed_beta_loss')
         
-        #loss should be <1 pretty quickly in most cases; avoid very hard hits from high LRs shooting to the moon
-        
-        
-        if self.print_time:
-            print('loss layer',self.name,'took',int((time.time()-start_time)*100000.)/100.,'ms',' call ',self.call_count)
-            print('loss layer info:',self.name,'batch took',int((time.time()-self.loc_time)*100000.)/100.,'ms',
-                  'for',len(rowsplits.numpy())-1,'batch element(s), and total ', pred_beta.shape[0], 'points')
-            self.loc_time = time.time()
-            self.call_count+=1
-            
-        if self.print_loss:
-            minbtext = 'min_beta_loss'
-            if self.phase_transition>0:
-                minbtext = 'phase transition loss'
-            print('avg beta', tf.reduce_mean(pred_beta))
-            print('loss', lossval.numpy(),
-                  'attractive_loss', att.numpy(),
-                  'rep_loss', rep.numpy(),
-                  minbtext, min_b.numpy(),
-                  'noise_loss', noise.numpy(),
-                  'energy_loss', energy_loss.numpy(),
-                  'pos_loss', pos_loss.numpy(),
-                  'time_loss', time_loss.numpy(),
-                  'class_loss', class_loss.numpy(),
-                  'exceed_beta',exceed_beta.numpy(),
-                  'ccdamp', ccdamp.numpy(),'\n')
+        self.maybe_print_loss(lossval)
 
         return lossval
 
@@ -1073,7 +1043,6 @@ class LLFullObjectCondensation(LossLayerBase):
             'phase_transition': self.phase_transition,
             'phase_transition_double_weight': self.phase_transition_double_weight,
             'alt_potential_norm': self.alt_potential_norm,
-            'print_time' : self.print_time,
             'payload_beta_gradient_damping_strength': self.payload_beta_gradient_damping_strength,
             'payload_beta_clip' : self.payload_beta_clip,
             'kalpha_damping_strength' : self.kalpha_damping_strength,

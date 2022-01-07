@@ -80,14 +80,8 @@ def gravnet_model(Inputs,
                                                         orig_inputs['t_idx']])
                                                      
     #can be loaded - or use pre-selected dataset (to be made)
-    pre_selection = pre_selection_model_full(orig_inputs,
-                             debug_outdir,
-                             reduction_threshold=0.5,
-                             use_edges=True,
-                             trainable=False, #use this as a static model
-                             debugplots_after=-1, #no debug plots
-                             omit_reduction=False
-                             )
+    #standard options are always the defaults. No need to configure anything
+    pre_selection = pre_selection_model_full(orig_inputs)
     
     '''
     pre_selection has the following dict items:
@@ -116,6 +110,9 @@ def gravnet_model(Inputs,
     full N_hits dimension!! 
     out['orig_t_idx'] = orig_inputs['t_idx']
     out['orig_t_energy'] = orig_inputs['t_energy'] #for validation
+    
+    The maximum number of hits per shower is reduced from about 1.6k to about 350.
+    
     '''                                                 
     
     ########## from here on everything is based on the pre-selection; only extend at the very end for the loss

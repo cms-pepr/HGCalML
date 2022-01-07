@@ -83,53 +83,14 @@ def gravnet_model(Inputs,
                                                      active=True
                                                      )([orig_inputs['t_spectator'], 
                                                         orig_inputs['t_idx']])
+                                                     
     orig_inputs['t_spectator_weight'] = orig_t_spectator_weight                                                 
     #can be loaded - or use pre-selected dataset (to be made)
-    pre_selection = pre_selection_model_full(orig_inputs,
-                             debug_outdir,
-                             reduction_threshold=0.65,
-                             use_edges=True,
-                             trainable=False, #use this as a static model
-                             debugplots_after=-1, #no debug plots
-                             omit_reduction=False
-                             )
+    pre_selection = pre_selection_model_full(orig_inputs)
     
-    
-    pre_selection = pre_selection_staged(
-        pre_selection,
-        debug_outdir=debug_outdir,
-        trainable=True
-        )
-    
-    '''
-    pre_selection has the following dict items:
-    
-    ['features'] = selfeat
-    ['coords'] = coords
-    ['addfeat'] = x (pre-processed features)
-    ['energy'] = energy (energy sums in case there was a grouping)
-    
-    ['group_backgather']=group_backgather
-    ['noise_backscatter_N']=noise_backscatter[0]
-    ['noise_backscatter_idx']=noise_backscatter[1]
-    
-    ['rs']=rs
-    
-    Selected truth information:
-    
-    ['t_idx'], 
-    ['t_energy'], 
-    ['t_pos'], 
-    ['t_time'], 
-    ['t_pid'], 
-    ['t_spectator'], 
-    ['t_fully_contained'] 
-    
-    full N_hits dimension!! 
-    out['orig_t_idx'] = orig_inputs['t_idx']
-    out['orig_t_energy'] = orig_inputs['t_energy'] #for validation
-    '''                                                 
-    
+    #just for info what's available
+    print([k for k in pre_selection.keys()])
+                                          
     ########## from here on everything is based on the pre-selection; only extend at the very end for the loss
     
     t_spectator_weight = CreateTruthSpectatorWeights(threshold=3.,
@@ -142,23 +103,15 @@ def gravnet_model(Inputs,
     x_in = Concatenate()([pre_selection['coords'],
                           pre_selection['features'],
                           pre_selection['addfeat']])
-    
-    x_in = GooeyBatchNorm(viscosity=0.1, 
-                           max_viscosity=1., 
-                           fluidity_decay=1e-2,#can be fast
-                           record_metrics=True,
-                           name='gooey_pre_x'
-                           )(x_in)
                            
     x = x_in
     energy = pre_selection['energy']
     coords = pre_selection['coords']
     t_idx = pre_selection['t_idx']
     
-                   
-    #scatterids = [pre_selection['group_backgather'], [
-    #    pre_selection['noise_backscatter_N'],pre_selection['noise_backscatter_idx']
-    #    ]] #add them here directly
+    
+    ##################### now the actual model goes below
+    
         
     allfeat = []
     
@@ -283,7 +236,7 @@ def gravnet_model(Inputs,
     x = Concatenate()([coords]+[x])
     
     pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
-    pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['orig_features'], 
+    pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['unproc_features'], 
                                                   fix_distance_scale=False,
                                                   scale_energy=False,
                                                   energy_factor=True,
@@ -354,7 +307,7 @@ def gravnet_model(Inputs,
 
 
 import training_base_hgcal
-train = training_base_hgcal.HGCalTraining(testrun=False, resumeSilently=True, renewtokens=False)
+train = training_base_hgcal.HGCalTraining(redirect_stdout=False)
 
 if not train.modelSet():
     train.setModel(gravnet_model,
@@ -376,7 +329,7 @@ if not train.modelSet():
     
     from model_tools import apply_weights_from_path
     import os
-    path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection/KERAS_check_model_last.h5'
+    path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_multigrav/KERAS_model.h5'
     train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
     
     #
@@ -484,7 +437,7 @@ cb += [
     ]
 #cb=[]
 learningrate = 5e-5
-nbatch = 300000
+nbatch = 200000
 
 train.change_learning_rate(learningrate)
 

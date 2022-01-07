@@ -190,7 +190,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             
             
             #for later
-            predEnergy = predicted['pred_energy']
+            predEnergy = predicted['pred_energy_corr_factor']
             predX = predicted['pred_pos'][:,0:1]
             predY = predicted['pred_pos'][:,1:2]
             predT = predicted['pred_time']

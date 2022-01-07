@@ -51,11 +51,8 @@ def pretrain_model(Inputs,
 
     presel = pre_selection_model_full(orig_inputs,
                              debug_outdir,
-                             reduction_threshold=0.75,#high threshold
-                             use_edges=True,
                              trainable=True,
                              debugplots_after=1500,
-                             omit_reduction=False,
                              record_metrics=True,
                              use_multigrav=True,
                              )
@@ -114,7 +111,16 @@ cb = [
         output_file=train.outputDir+'/reduction_metrics.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics=['*reduction*','*cluster*time'],#includes time
+        select_metrics=['*_reduction','*_reduction*lost*','*cluster*time'],#includes time
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/hit_reduction_metrics.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='*reduction*hits*',#includes time
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -131,6 +137,14 @@ cb = [
         record_frequency= 2,
         plot_frequency = plot_frequency,
         select_metrics='*cluster*loss',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/fillspace_metrics.html',
+        record_frequency= 2,
+        plot_frequency = plot_frequency,
+        select_metrics='ll_fill_space_loss',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -156,7 +170,7 @@ cb = [
 #cb += build_callbacks(train)
 
 #cb=[]
-nbatch = 350000 
+nbatch = 150000 
 train.change_learning_rate(8e-4)
 
 train.trainModel(nepochs=2,batchsize=nbatch,additional_callbacks=cb)

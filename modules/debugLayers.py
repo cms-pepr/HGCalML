@@ -33,6 +33,8 @@ class PlotCoordinates(tf.keras.layers.Layer):
             
         
         self.plot_every = plot_every
+        if len(outdir) < 1:
+            self.plot_every=0
         self.outdir = outdir
         self.counter=-1
         import os
@@ -42,9 +44,7 @@ class PlotCoordinates(tf.keras.layers.Layer):
             self.outdir=''
     
     def get_config(self):
-        config = {'plot_every': self.plot_every,
-                  #'outdir': '' #needs to be set again every time
-                  }
+        config = {'plot_every': self.plot_every}#outdir is explicitly not saved and needs to be set again every time
         base_config = super(PlotCoordinates, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     

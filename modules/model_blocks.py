@@ -11,12 +11,13 @@ from initializers import EyeInitializer
 from datastructures import TrainData_OC,TrainData_NanoML
 
 
-def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name=None):
+def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_extend'):
     if n_cluster_space_coordinates > 3:
+        x = Concatenate()([coords,x])
         extendcoords = Dense(n_cluster_space_coordinates-3,
                              use_bias=False,
-                             name=name,
-                             kernel_initializer='zeros'
+                             name=name+'_dense',
+                             kernel_initializer=EyeInitializer(stddev=0.001)
                              )(x)
         coords = Concatenate()([coords, extendcoords])
     return coords
@@ -301,11 +302,11 @@ def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight,
     
     
 def pre_selection_model_full(orig_inputs,
-                             debug_outdir,
-                             trainable,
+                             debug_outdir='',
+                             trainable=False,
                              name='pre_selection',
                              debugplots_after=-1,
-                             reduction_threshold=0.5,
+                             reduction_threshold=0.75,
                              noise_threshold = 0.025,
                              use_edges=True,
                              n_coords=3,
