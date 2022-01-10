@@ -267,6 +267,8 @@ class LLClusterCoordinates(LossLayerBase):
             super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
             
         self.downsample = downsample
+        
+        #self.built = True #not necessary for loss layers
 
     def get_config(self):
         base_config = super(LLClusterCoordinates, self).get_config()

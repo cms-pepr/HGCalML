@@ -1634,7 +1634,12 @@ class NoiseFilter(LayerWithMetrics):
         base_config = super(NoiseFilter, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
         
-    
+    def compute_output_shape(self, input_shape):
+        if self.return_backscatter:
+            return (None,1), (None,1), [(None, 1), (None,1)]
+        else:
+            return (None,1), (None,1), (None, 1)
+        
     
     def call(self, inputs):
         
@@ -1702,8 +1707,8 @@ class EdgeCreator(tf.keras.layers.Layer):
     
     def compute_output_shape(self, input_shapes): 
         if self.addself:
-            return (input_shapes[0][-1], input_shapes[1][-1]) 
-        return (input_shapes[0][-1]-1, input_shapes[1][-1]) # K x F
+            return (None, input_shapes[0][-1], input_shapes[1][-1]) 
+        return (None, input_shapes[0][-1]-1, input_shapes[1][-1]) # K x F
     
     def call(self, inputs):
         selffeat = tf.expand_dims(inputs[1],axis=1)
@@ -1732,6 +1737,9 @@ class EdgeSelector(tf.keras.layers.Layer):
             super(EdgeSelector, self).__init__(**kwargs)
         else:
             super(EdgeSelector, self).__init__(dynamic=False,**kwargs)
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape[1]
     
     def get_config(self):
         config = {'threshold': self.threshold}
@@ -1787,7 +1795,7 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
             super(GroupScoreFromEdgeScores, self).__init__(dynamic=False,**kwargs)
     
     def compute_output_shape(self, input_shapes): 
-        return (1,)
+        return (None,1)
             
         #no config
     def call(self, inputs): 
@@ -1922,7 +1930,7 @@ class NeighbourGroups(LayerWithMetrics):
     def compute_output_shape(self, input_shapes):
         score, nidxs, row_splits = input_shapes
         if self.return_backscatter:
-            return nidxs, score, [(1, ), score], row_splits #first dim omitted
+            return nidxs, score, [(None, 1), score], row_splits #first dim omitted
         else:
             return nidxs, score, score, row_splits
         
@@ -1956,9 +1964,9 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
         if self.mode == 'mean' or self.mode == 'sum' or self.mode == 'min' or  self.mode == 'max':
             return fshape
         elif self.mode == 'minmeanmax':
-            return (3*fshape[1], )
+            return (None, 3*fshape[1])
         else:
-            return (2*fshape[1], )
+            return (None, 2*fshape[1])
 
     def get_min(self,ndix,feat):
         out,_ = AccumulateKnn(tf.zeros_like(ndix,dtype='float32'), 
@@ -2340,7 +2348,7 @@ class MultiAttentionGravNetAdd(LayerWithMetrics):
 
     def compute_output_shape(self, input_shapes): # data, idxs
         featshape = input_shapes[1]
-        featshape[-1] *= (self.n_attention_kernels+1)
+        featshape = (featshape[0], featshape[-1]*(self.n_attention_kernels))
         return featshape
         
     def build(self, input_shapes): 
@@ -2571,7 +2579,10 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
 
         super(DistanceWeightedMessagePassing, self).build(input_shapes)
 
-
+    def compute_output_shape(self, inputs_shapes):
+        fshape = inputs_shapes[0][-1]
+        return (None, fshape + 2*sum(self.n_feature_transformation))
+        
     def get_config(self):
         config = {'n_feature_transformation': self.n_feature_transformation,
                   'sumwnorm':self.sumwnorm
