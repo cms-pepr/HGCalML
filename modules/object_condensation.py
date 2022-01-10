@@ -162,6 +162,8 @@ def oc_per_batch_element(
     object_weights_m = SelectWithDefault(Msel, object_weights, 0.)
     distance_scale_m = SelectWithDefault(Msel, distance_scale, 1.)
     
+    tf.assert_greater(distance_scale_m, 0.,message="predicted distances must be greater zero")
+    
     kalpha_m = tf.argmax((1.-is_spectator_m)*beta_m, axis=1) # K x 1
     
     x_kalpha_m = tf.gather_nd(x_m,kalpha_m, batch_dims=1) # K x C
@@ -182,14 +184,14 @@ def oc_per_batch_element(
     distance_scale_kalpha_m = tf.math.divide_no_nan(
         tf.reduce_sum(distance_scale_m*beta_m*padmask_m, axis=1),
         tf.reduce_sum(beta_m*padmask_m,axis=1)+1e-3
-        )#K x 1
+        )+1e-3 #K x 1
     #distance_scale_kalpha_m = tf.gather_nd(distance_scale_m,kalpha_m, batch_dims=1) # K x 1
     
     
     distance_scale_kalpha_m_exp = tf.expand_dims(distance_scale_kalpha_m, axis=2) # K x 1 x 1
     
     distancesq_m = tf.reduce_sum( (tf.expand_dims(x_kalpha_m, axis=1) - x_m)**2, axis=-1, keepdims=True) #K x V-obj x 1
-    distancesq_m /= 2.*distance_scale_kalpha_m_exp**2
+    distancesq_m = tf.math.divide_no_nan(distancesq_m, 2.*distance_scale_kalpha_m_exp**2+1e-6)
     
     absdist = tf.sqrt(distancesq_m + 1e-6)
     huberdistsq = huber(absdist, d=4) #acts at 4
@@ -225,8 +227,8 @@ def oc_per_batch_element(
     Mnot_distances = Mnot_distances - tf.expand_dims(x, axis=0) #K x V x C
     
     rep_distances = tf.reduce_sum(Mnot_distances**2, axis=-1, keepdims=True)  #K x V x 1
-        
-    rep_distances /= 2.*distance_scale_kalpha_m_exp**2  #K x V x 1 , same scaling as attractive potential
+    
+    rep_distances = tf.math.divide_no_nan(rep_distances, 2.*distance_scale_kalpha_m_exp**2+1e-6)
     
     V_rep =  tf.math.exp(-rep_distances) #1. / (V_rep + 0.1) #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
     

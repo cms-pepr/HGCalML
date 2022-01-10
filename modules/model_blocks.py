@@ -70,7 +70,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     
     pred_dist = OnesLike()(pred_time)
     if not fix_distance_scale:
-        pred_dist = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x))
+        pred_dist = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x))+1e-2
         #this needs to be bound otherwise fully anti-correlated with coordates scale
     return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id
     
