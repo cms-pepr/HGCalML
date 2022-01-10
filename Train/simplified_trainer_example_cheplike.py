@@ -266,7 +266,7 @@ def gravnet_model(Inputs,
 
 
 import training_base_hgcal
-train = training_base_hgcal.HGCalTraining(redirect_stdout=False)
+train = training_base_hgcal.HGCalTraining(redirect_stdout=True)
 
 if not train.modelSet():
     train.setModel(gravnet_model,
