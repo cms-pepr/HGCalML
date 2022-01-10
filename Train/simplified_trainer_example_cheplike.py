@@ -1,12 +1,10 @@
 '''
 
 Compatible with the dataset here:
-/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Oct2021_production/Gun20Part_CHEPDef_NoPropagate/NanoML
-and (soon)
-/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Oct2021_production/Gun20Part_CHEPDef_NoPropagate/NanoMLTracks
+/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Dec2021_production
 
 On flatiron:
-/mnt/ceph/users/jkieseler/HGCalML_data/OctProd/NanoML
+/mnt/ceph/users/jkieseler/HGCalML_data/Dec2021_production
 
 not compatible with datasets before end of October 2021
 
