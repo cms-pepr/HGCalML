@@ -300,7 +300,7 @@ import os
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
-plotfrequency=2
+plotfrequency=200
 
 publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
