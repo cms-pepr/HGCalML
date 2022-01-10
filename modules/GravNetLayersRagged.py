@@ -389,6 +389,7 @@ class GooeyBatchNorm(LayerWithMetrics):
                  max_viscosity=1.,
                  epsilon=1e-4,
                  print_viscosity=False,
+                 variance_only=False,
                  soften_update: float = 0.,
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
@@ -404,6 +405,7 @@ class GooeyBatchNorm(LayerWithMetrics):
         self.epsilon = epsilon
         self.print_viscosity = print_viscosity
         self.soften_update = soften_update
+        self.variance_only = variance_only
 
         
     def get_config(self):
@@ -412,6 +414,7 @@ class GooeyBatchNorm(LayerWithMetrics):
                   'max_viscosity': self.max_viscosity,
                   'epsilon': self.epsilon,
                   'print_viscosity': self.print_viscosity,
+                  'variance_only': self.variance_only,
                   'soften_update': self.soften_update
                   }
         base_config = super(GooeyBatchNorm, self).get_config()
@@ -482,6 +485,8 @@ class GooeyBatchNorm(LayerWithMetrics):
         #apply
         x -= self.mean
         x = tf.math.divide_no_nan(x, self.variance + self.epsilon)
+        if self.variance_only:
+            x += self.mean
         
         #x_mean = tf.reduce_mean(x)
         #
@@ -2173,7 +2178,7 @@ class RaggedGravNet(LayerWithMetrics):
         low_update = tf.where(update>2.,2.,update)#receptive field ends at 1.
         update = tf.where(low_update>2.*mean_dist,low_update,2.*mean_dist)#safety setting to not loose all neighbours
         update += 1e-3
-        update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
+        update = self.dynamic_radius + 0.05*(update-self.dynamic_radius)
         updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
         #print('updated_radius',updated_radius)
         tf.keras.backend.update(self.dynamic_radius,updated_radius)

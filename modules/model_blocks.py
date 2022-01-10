@@ -334,6 +334,7 @@ def pre_selection_model_full(orig_inputs,
     x = orig_processed_features
     energy = SelectFeatures(0, 1)(orig_inputs['features'])
     coords = SelectFeatures(5, 8)(x)
+    phys_coords = coords
 
     # here the actual network starts
     if debugplots_after>0:
@@ -421,6 +422,10 @@ def pre_selection_model_full(orig_inputs,
     #add more useful things
     coords = AccumulateNeighbours('mean')([coords, gnidx])
     coords = SelectFromIndices()([gsel,coords])
+    
+    phys_coords = AccumulateNeighbours('mean')([phys_coords, gnidx])
+    phys_coords = SelectFromIndices()([gsel,phys_coords])
+    
     energy = AccumulateNeighbours('sum')([energy, gnidx])
     energy = SelectFromIndices()([gsel,energy])
     
@@ -428,6 +433,7 @@ def pre_selection_model_full(orig_inputs,
     out['features'] = selfeat
     out['unproc_features'] = unproc_features
     out['coords'] = coords
+    out['phys_coords'] = phys_coords
     out['addfeat'] = GooeyBatchNorm(trainable=trainable)(x) #norm them
     out['energy'] = energy
     

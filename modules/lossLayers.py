@@ -772,9 +772,10 @@ class LLFullObjectCondensation(LossLayerBase):
         #flatten energy weights
         
     
-    def softclip(self, toclip, startclipat):
+    def softclip(self, toclip, startclipat,softness=0.1):
         toclip /= startclipat
-        toclip = tf.where(toclip>1, tf.math.log(toclip+1.), toclip)
+        soft = softness*tf.math.log((toclip-(1.-softness))/softness)+1.
+        toclip = tf.where(toclip>1, soft , toclip)
         toclip *= startclipat
         return toclip
         
@@ -807,7 +808,8 @@ class LLFullObjectCondensation(LossLayerBase):
             eloss = huber(ediff, self.huber_energy_scale)
         else:
             eloss = tf.math.log(ediff**2 + 1. + 1e-5)
-        
+            
+        eloss = self.softclip(eloss, 0.2) 
         return eloss
         
     def _calc_and_scatter_dep_energy_pre_rs(self, t_energy, t_idx, hit_energy, pred_energy):   
@@ -843,8 +845,7 @@ class LLFullObjectCondensation(LossLayerBase):
         else:
             eloss = tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))
         
-        if self.dynamic_payload_scaling_onset<=0:
-            eloss = self.softclip(eloss, 10.) 
+        eloss = self.softclip(eloss, 0.2) 
         return eloss
 
     def calc_qmin_weight(self, hitenergy):
@@ -965,6 +966,7 @@ class LLFullObjectCondensation(LossLayerBase):
                                            dynamic_payload_scaling_onset=self.dynamic_payload_scaling_onset
                                            )
 
+        self.add_prompt_metric(att+rep,self.name+'_dynamic_payload_scaling')
         
         att *= self.potential_scaling
         rep *= self.potential_scaling * self.repulsion_scaling
