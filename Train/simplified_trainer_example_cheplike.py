@@ -223,12 +223,12 @@ def gravnet_model(Inputs,
                                          too_much_beta_scale=1e-4,
                                          use_energy_weights=True,
                                          record_metrics=True,
-                                         q_min=1.0,
+                                         q_min=0.2,
                                          #div_repulsion=True,
                                          # cont_beta_loss=True,
                                          # beta_gradient_damping=0.999,
                                          # phase_transition=1,
-                                         huber_energy_scale=0.1,
+                                         #huber_energy_scale=0.1,
                                          use_average_cc_pos=0.2,  # smoothen it out a bit
                                          name="FullOCLoss"
                                          )(  # oc output and payload
