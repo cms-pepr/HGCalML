@@ -323,8 +323,8 @@ class RecHitCollection(CollectionBase):
         recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_pdgId",nonSplitRecHitSimClusIdx)
         recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitRecHitSimClusIdx)
         
+        recHitDepEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_recEnergy",nonSplitRecHitSimClusIdx)
         if not self.use_true_muon_momentum:
-            recHitDepEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_recEnergy",nonSplitRecHitSimClusIdx)
             recHitTruthEnergy = ak1.where(np.abs(recHitTruthPID[:,:,0])==13, recHitDepEnergy, recHitTruthEnergy)
             
         recHitTruthX      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_x",nonSplitRecHitSimClusIdx)
@@ -351,6 +351,7 @@ class RecHitCollection(CollectionBase):
         recHitTruthY = ak1.where(recHitSimClusIdx<0, recHitY, recHitTruthY)
         recHitTruthZ = ak1.where(recHitSimClusIdx<0, recHitZ, recHitTruthZ)
         recHitTruthTime = ak1.where(recHitSimClusIdx<0, recHitTime, recHitTruthTime)
+        recHitDepEnergy = ak1.where(recHitSimClusIdx<0, recHitEnergy, recHitDepEnergy)
 
         recHitSpectatorFlag = self._createSpectators(tree)
         #remove spectator flag for noise
@@ -364,6 +365,7 @@ class RecHitCollection(CollectionBase):
         self.truth['t_pid'] = recHitTruthPID
         self.truth['t_spectator'] = recHitSpectatorFlag
         self.truth['t_fully_contained'] = fullyContained
+        self.truth['t_rec_energy'] = recHitDepEnergy
         
         
 
@@ -517,6 +519,7 @@ class TrackCollection(CollectionBase):
         self.truth['t_pid'] = truthPID
         self.truth['t_spectator'] = spectator
         self.truth['t_fully_contained'] = zeros+1
+        self.truth['t_rec_energy'] = trackMom
         
     
 ####################### end helpers        
@@ -561,7 +564,7 @@ class TrainData_NanoML(TrainData):
         
         return [farr, 
                 t['t_idx'], t['t_energy'], t['t_pos'], t['t_time'], 
-                t['t_pid'], t['t_spectator'], t['t_fully_contained'] ],[], []
+                t['t_pid'], t['t_spectator'], t['t_fully_contained'],t['t_rec_energy'] ],[], []
     
 
     def interpretAllModelInputs(self, ilist, returndict=False):
@@ -581,7 +584,7 @@ class TrainData_NanoML(TrainData):
         (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator ,t_fully_contained, row_splits)
         '''
         if returndict:
-            return {
+            out = {
                 'features':ilist[0],
                 'rechit_energy': ilist[0][:,0:1], #this is hacky. FIXME
                 't_idx':ilist[2],
@@ -593,6 +596,10 @@ class TrainData_NanoML(TrainData):
                 't_fully_contained':ilist[14],
                 'row_splits':ilist[1]
                 }
+            if len(ilist)>16:
+                out['t_rec_energy'] = ilist[16]
+            return out
+        print('interpretAllModelInputs: Non-dict output is DEPRECATED. PLEASE REMOVE')    
         return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1] 
      
     def createFeatureDict(self,infeat,addxycomb=True):
