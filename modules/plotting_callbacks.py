@@ -116,6 +116,8 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
             backgather = predicted[self.use_backgather_idx]
             truths = td.createTruthDict(feat)
             
+            
+            
             data = {}
             data.update(feats)
             data.update(truths)
@@ -125,6 +127,15 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
             
             data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
             data['hitBackGatherIdx'] = backgather
+            
+            from globals import removed_noise_coordinate
+            removednoise = np.logical_and(data["recHitX"] == removed_noise_coordinate, 
+                                          data["recHitY"] == removed_noise_coordinate)
+            removednoise = np.logical_and(data["recHitZ"] == removed_noise_coordinate, 
+                                          removednoise)
+            #remove removed noise
+            for k in data.keys():
+                data[k] = data[k][not removednoise]
             
             df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
             
@@ -223,8 +234,17 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             data['predCCoordsY'] = predCCoords[:,1:2]
             data['predCCoordsZ'] = predCCoords[:,2:3]
             
-            #for k in data:
-            #    print(k, data[k].shape)
+            from globals import removed_noise_coordinate
+            removednoise = np.logical_and(data["predCCoordsX"] == removed_noise_coordinate, 
+                                          data["predCCoordsY"] == removed_noise_coordinate)
+            removednoise = np.logical_and(data["predCCoordsZ"] == removed_noise_coordinate, 
+                                          removednoise)
+            removednoise = np.where(removednoise[:,0],False,True)
+            #remove removed noise
+            
+            for k in data.keys():
+                data[k] = data[k][removednoise]
+            
             
             df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
             

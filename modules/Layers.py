@@ -41,6 +41,9 @@ global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 from GravNetLayersRagged import CastRowSplits
 global_layers_list['CastRowSplits']=CastRowSplits
 
+from GravNetLayersRagged import MaskTracksAsNoise
+global_layers_list['MaskTracksAsNoise']=MaskTracksAsNoise
+
 from GravNetLayersRagged import ScaleBackpropGradient
 global_layers_list['ScaleBackpropGradient']=ScaleBackpropGradient
 

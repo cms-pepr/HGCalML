@@ -559,6 +559,8 @@ class LLEdgeClassifier(LossLayerBase):
     
     def __init__(self, **kwargs):
         '''
+        Noise hits (truth index < 0) are never classified as belonging together
+        
         Inputs:
         - score
         - neighbour index
@@ -579,7 +581,8 @@ class LLEdgeClassifier(LossLayerBase):
         n_tidxs = SelectWithDefault(nidx, tidx, -1)# V x K x 1
         tf.assert_equal(tidx,n_tidxs[:,0]) #check that the nidxs have self-reference
         
-        n_tidxs = tf.where(n_tidxs<0,-20,n_tidxs)#set to -20 for noise
+        #int32 goes up to -2.something e-9
+        n_tidxs = tf.where(n_tidxs<0,-1000000000,n_tidxs)#set to -V for noise
         
         n_active = tf.where(nidx>=0, tf.ones_like(nidx,dtype='float32'), 0.)[:,1:] # V x K-1
         specweight = tf.clip_by_value(specweight,0.,1.)

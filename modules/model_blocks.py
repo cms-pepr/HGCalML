@@ -26,15 +26,13 @@ def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_e
 def create_outputs(x, feat, energy=None, n_ccoords=3, 
                    n_classes=4, td=TrainData_NanoML(), add_features=True, 
                    fix_distance_scale=False,
-                   wide_distance_scale=False,
-                   scale_energy=True,
-                   energy_factor=False,
+                   scale_energy=False,
+                   energy_factor=True,
                    energy_proxy=None,
                    name_prefix="output_module"):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
     '''
-    from GravNetLayersRagged import LocalDistanceScaling
     assert scale_energy != energy_factor
     
     feat = td.createFeatureDict(feat)
@@ -42,7 +40,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     pred_beta = Dense(1, activation='sigmoid',name = name_prefix+'_beta')(x)
     pred_ccoords = Dense(n_ccoords,
                          #this initialisation is much better than standard glorot
-                         kernel_initializer=EyeInitializer(stddev=0.01),
+                         kernel_initializer=EyeInitializer(stddev=0.001),
                          use_bias=False,
                          name = name_prefix+'_clustercoords'
                          )(x) #bias has no effect
@@ -72,11 +70,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     
     pred_dist = OnesLike()(pred_time)
     if not fix_distance_scale:
-        if wide_distance_scale:
-            scaling = Dense(1,name = name_prefix+'_distscale')(x)
-            pred_dist = LocalDistanceScaling(10.)([pred_dist,scaling])
-        else:
-            pred_dist = Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x) 
+        pred_dist = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x))
         #this needs to be bound otherwise fully anti-correlated with coordates scale
     return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id
     
@@ -197,7 +191,7 @@ def reduce_indices(x,dist, nidx, rs, t_idx,
            record_metrics=False,
            return_backscatter=False):   
     
-    from tensorflow.keras.layers import Reshape, Flatten
+    from tensorflow.keras.layers import Reshape
     from GravNetLayersRagged import EdgeCreator, RemoveSelfRef
     from GravNetLayersRagged import EdgeSelector, GroupScoreFromEdgeScores
     from GravNetLayersRagged import NeighbourGroups
@@ -320,7 +314,7 @@ def pre_selection_model_full(orig_inputs,
     from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices
     from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
     from GravNetLayersRagged import CastRowSplits, ProcessFeatures
-    from GravNetLayersRagged import GooeyBatchNorm
+    from GravNetLayersRagged import GooeyBatchNorm, MaskTracksAsNoise
     from debugLayers import PlotCoordinates
     from lossLayers import LLClusterCoordinates, LLNotNoiseClassifier, LLFillSpace
     from MetricsLayers import MLReductionMetrics
@@ -334,6 +328,7 @@ def pre_selection_model_full(orig_inputs,
     x = orig_processed_features
     energy = SelectFeatures(0, 1)(orig_inputs['features'])
     coords = SelectFeatures(5, 8)(x)
+    track_charge = SelectFeatures(2,3)(orig_inputs['features']) #zero for calo hits
     phys_coords = coords
 
     # here the actual network starts
@@ -391,9 +386,14 @@ def pre_selection_model_full(orig_inputs,
     '''
     run a full reduction block
     return the noise score in addition - don't select yet
+    
+    do not cluster tracks with anything here
     '''
+    
+    cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
+    
     unred_rs = rs
-    gnidx, gsel, group_backgather, rs = reduce_indices(x,dist, nidx, rs, t_idx, 
+    gnidx, gsel, group_backgather, rs = reduce_indices(x,dist, nidx, rs, cluster_tidx, 
            threshold = reduction_threshold,
            print_reduction=print_info,
            trainable=trainable,
@@ -563,7 +563,7 @@ def pre_selection_staged(indict,
     '''
     
     from GravNetLayersRagged import RaggedGravNet, DistanceWeightedMessagePassing, ElementScaling
-    from GravNetLayersRagged import SelectFromIndices, GooeyBatchNorm
+    from GravNetLayersRagged import SelectFromIndices, GooeyBatchNorm, MaskTracksAsNoise
     from GravNetLayersRagged import AccumulateNeighbours, KNN, MultiAttentionGravNetAdd
     from lossLayers import LLClusterCoordinates
     from debugLayers import PlotCoordinates
@@ -575,6 +575,8 @@ def pre_selection_staged(indict,
     rs = indict['rs']
     t_idx = indict['t_idx']
     
+    
+    track_charge = SelectFeatures(2,3)(indict['unproc_features']) #zero for calo hits
     x = Concatenate()([indict['features'] , indict['addfeat']])
     x = Dense(64,activation='elu',trainable=trainable)(x)
     gn_pre_coords = indict['coords']
@@ -651,8 +653,9 @@ def pre_selection_staged(indict,
         
     unred_rs=rs
     
+    cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
     
-    gnidx, gsel, group_backgather, rs = reduce_indices(x,dist, nidx, rs, t_idx, 
+    gnidx, gsel, group_backgather, rs = reduce_indices(x,dist, nidx, rs, cluster_tidx, 
            threshold = reduction_threshold,
            print_reduction=print_info,
            trainable=trainable,
@@ -779,10 +782,10 @@ def re_integrate_to_full_hits(
     ('row_splits', row_splits)
     '''
     from GravNetLayersRagged import MultiBackScatterOrGather
-    
+    from globals import removed_noise_coordinate
     
     scatterids = pre_selection['scatterids']
-    pred_ccoords = MultiBackScatterOrGather(default=100.)([pred_ccoords, scatterids])#set it far away for noise
+    pred_ccoords = MultiBackScatterOrGather(default=removed_noise_coordinate)([pred_ccoords, scatterids])#set it far away for noise
     pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
     pred_energy_corr = MultiBackScatterOrGather(default=1.)([pred_energy_corr, scatterids])
     pred_pos = MultiBackScatterOrGather(default=0.)([pred_pos, scatterids])

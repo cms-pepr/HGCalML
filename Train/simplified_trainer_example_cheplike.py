@@ -147,7 +147,13 @@ def gravnet_model(Inputs,
                                                  n_propagate=64,
                                                  record_metrics=True
                                                  )([x, rs])
-                                                 
+        
+        
+        gncoords = PlotCoordinates(plot_debug_every, outdir = debug_outdir,
+                                   name='gn_coords_'+str(i))([gncoords, 
+                                                                    energy,
+                                                                    t_idx,
+                                                                    rs])                                       
         #just keep them in a reasonable range  
         #safeguard against diappearing gradients on coordinates                                       
         gndist = AverageDistanceRegularizer(strength=0.01,
@@ -204,10 +210,6 @@ def gravnet_model(Inputs,
     
     pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
     pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['unproc_features'], 
-                                                  fix_distance_scale=False,
-                                                  scale_energy=False,
-                                                  energy_factor=True,
-                                                  wide_distance_scale=True,
                                                   n_ccoords=n_cluster_space_coordinates)
     
     # loss
@@ -264,7 +266,7 @@ def gravnet_model(Inputs,
 
 
 import training_base_hgcal
-train = training_base_hgcal.HGCalTraining(redirect_stdout=True)
+train = training_base_hgcal.HGCalTraining(redirect_stdout=False)
 
 if not train.modelSet():
     train.setModel(gravnet_model,
@@ -300,7 +302,7 @@ import os
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
-plotfrequency=200
+plotfrequency=2
 
 publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 

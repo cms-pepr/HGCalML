@@ -159,7 +159,38 @@ class CastRowSplits(tf.keras.layers.Layer):
         assert len(inputs.shape)==2
         return tf.cast(inputs[:,0],dtype='int32')
         
+
+class MaskTracksAsNoise(tf.keras.layers.Layer):
+    def __init__(self, 
+                 active=True,
+                 **kwargs):
+        '''
+        Inputs:
+        - truth index
+        - track_charge
+        '''
+        super(MaskTracksAsNoise, self).__init__(**kwargs)
+        self.active = active
     
+    def get_config(self):
+        base_config = super(MaskTracksAsNoise, self).get_config()
+        return dict(list(base_config.items()) + list({'active': self.active }.items()))
+
+    def build(self, input_shape):
+        super(MaskTracksAsNoise, self).build(input_shape)
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0]
+            
+    def call(self,inputs):
+        assert len(inputs)==2
+        assert inputs[0].dtype=='int32'
+        tidx, trackcharge = inputs
+        if self.active:
+            tidx = tf.where(trackcharge, -1, tidx)
+        return tidx
+        
+        
 
 class ScaleBackpropGradient(tf.keras.layers.Layer):
     def __init__(self, scale, **kwargs):

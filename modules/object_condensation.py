@@ -189,7 +189,7 @@ def oc_per_batch_element(
     distance_scale_kalpha_m_exp = tf.expand_dims(distance_scale_kalpha_m, axis=2) # K x 1 x 1
     
     distancesq_m = tf.reduce_sum( (tf.expand_dims(x_kalpha_m, axis=1) - x_m)**2, axis=-1, keepdims=True) #K x V-obj x 1
-    distancesq_m *= distance_scale_kalpha_m_exp**2
+    distancesq_m /= 2.*distance_scale_kalpha_m_exp**2
     
     absdist = tf.sqrt(distancesq_m + 1e-6)
     huberdistsq = huber(absdist, d=4) #acts at 4
@@ -226,7 +226,7 @@ def oc_per_batch_element(
     
     rep_distances = tf.reduce_sum(Mnot_distances**2, axis=-1, keepdims=True)  #K x V x 1
         
-    rep_distances *= distance_scale_kalpha_m_exp**2  #K x V x 1 , same scaling as attractive potential
+    rep_distances /= 2.*distance_scale_kalpha_m_exp**2  #K x V x 1 , same scaling as attractive potential
     
     V_rep =  tf.math.exp(-rep_distances) #1. / (V_rep + 0.1) #-2.*tf.math.log(1.-tf.math.exp(-V_rep/2.)+1e-5)
     

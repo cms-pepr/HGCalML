@@ -65,7 +65,7 @@ def pretrain_model(Inputs,
     return DictModel(inputs=Inputs, outputs=presel)
 
 import training_base_hgcal
-train = training_base_hgcal.HGCalTraining(testrun=False, resumeSilently=True, renewtokens=False)
+train = training_base_hgcal.HGCalTraining()
 
 if not train.modelSet():
     train.setModel(pretrain_model,
