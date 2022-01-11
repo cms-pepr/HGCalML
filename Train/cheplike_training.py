@@ -143,7 +143,8 @@ def gravnet_model(Inputs,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
-                                                 record_metrics=True
+                                                 record_metrics=True,
+                                                 #use_approximate_knn=True #weird issue with that for now
                                                  )([x, rs])
         
         
@@ -374,11 +375,11 @@ cb += [
     #    ),
     ]
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 5e-5
-nbatch = 220000
+nbatch = 120000
 
 train.change_learning_rate(learningrate)
 

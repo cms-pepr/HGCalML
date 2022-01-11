@@ -143,7 +143,8 @@ def gravnet_model(Inputs,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
-                                                 record_metrics=True
+                                                 record_metrics=True,
+                                                 use_approximate_knn=False #weird issue with that for now
                                                  )([x, rs])
         
         
