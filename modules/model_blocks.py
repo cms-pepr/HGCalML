@@ -4,11 +4,11 @@ from Layers import OnesLike, ExpMinusOne
 from DeepJetCore.DJCLayers import  StopGradient, SelectFeatures, ScalarMultiply
 
 import tensorflow as tf
-from initializers import EyeInitializer
+from Initializers import EyeInitializer
 
 
 
-from datastructures import TrainData_OC,TrainData_NanoML
+from datastructures import TrainData_NanoML
 
 
 def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_extend'):
@@ -124,7 +124,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                 use_multigrav=True): 
     
     from GravNetLayersRagged import ElementScaling, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
-    from debugLayers import PlotCoordinates
+    from DebugLayers import PlotCoordinates
     
     coords = ElementScaling(name=name+'es1',trainable=trainable)(coords)
     
@@ -196,7 +196,7 @@ def reduce_indices(x,dist, nidx, rs, t_idx,
     from GravNetLayersRagged import EdgeSelector, GroupScoreFromEdgeScores
     from GravNetLayersRagged import NeighbourGroups
     
-    from lossLayers import LLEdgeClassifier, LLNeighbourhoodClassifier
+    from LossLayers import LLEdgeClassifier, LLNeighbourhoodClassifier
     
     goodneighbours = x
     groupthreshold=threshold
@@ -315,8 +315,8 @@ def pre_selection_model_full(orig_inputs,
     from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
     from GravNetLayersRagged import CastRowSplits, ProcessFeatures
     from GravNetLayersRagged import GooeyBatchNorm, MaskTracksAsNoise
-    from debugLayers import PlotCoordinates
-    from lossLayers import LLClusterCoordinates, LLNotNoiseClassifier, LLFillSpace
+    from DebugLayers import PlotCoordinates
+    from LossLayers import LLClusterCoordinates, LLNotNoiseClassifier, LLFillSpace
     from MetricsLayers import MLReductionMetrics
     
     rs = CastRowSplits()(orig_inputs['row_splits'])
@@ -565,8 +565,8 @@ def pre_selection_staged(indict,
     from GravNetLayersRagged import RaggedGravNet, DistanceWeightedMessagePassing, ElementScaling
     from GravNetLayersRagged import SelectFromIndices, GooeyBatchNorm, MaskTracksAsNoise
     from GravNetLayersRagged import AccumulateNeighbours, KNN, MultiAttentionGravNetAdd
-    from lossLayers import LLClusterCoordinates
-    from debugLayers import PlotCoordinates
+    from LossLayers import LLClusterCoordinates
+    from DebugLayers import PlotCoordinates
     from MetricsLayers import MLReductionMetrics
     from Regularizers import MeanMaxDistanceRegularizer, AverageDistanceRegularizer
     

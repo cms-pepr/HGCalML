@@ -7,9 +7,8 @@ import uuid
 
 from hgcal_predictor import HGCalPredictor
 from hyperparam_optimizer import OCHyperParamOptimizer
-from running_full_validation import RunningFullValidation
-from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
-from plotting_callbacks import plotClusterSummary
+from callbacks import RunningFullValidation
+from callbacks import plotClusterSummary
 
 def build_callbacks(train, 
                     running_plots_beta_threshold=0.1, 
@@ -112,12 +111,6 @@ def build_callbacks(train,
                                                          matching_type=running_plots_matching_type,
                                                          energy_gather_type=running_plots_energy_gather_type)
     analyzer = matching_and_analysis.OCAnlayzerWrapper(metadata)
-    cb += [RunningMetricsDatabaseAdditionCallback(td, database_manager=database_manager,
-                                                  analyzer=analyzer)]
-    
-    cb += [RunningMetricsPlotterCallback(after_n_batches=running_plots_write_after_iterations, database_reading_manager=database_reading_manager,
-                                         output_html_location=os.path.join(train.outputDir, "training_metrics.html"),
-                                         publish=None)]
 
     if full_analysis_after_batches != -1:
         predictor = HGCalPredictor(os.path.join(train.outputDir, 'valsamples.djcdc'),

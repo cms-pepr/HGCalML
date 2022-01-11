@@ -8,7 +8,7 @@ import tensorflow as tf
 import plotly.express as px
 import pandas as pd
 import numpy as np
-from plotting_callbacks import shuffle_truth_colors
+from plotting_tools import shuffle_truth_colors
     
 class PlotCoordinates(tf.keras.layers.Layer):
     

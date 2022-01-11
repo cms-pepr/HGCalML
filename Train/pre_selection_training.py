@@ -30,13 +30,12 @@ from tensorflow.keras.layers import Dense, Concatenate
 from Layers import ProcessFeatures, CastRowSplits
 from DeepJetCore.DJCLayers import SelectFeatures
 
-from lossLayers import LLLocalClusterCoordinates,LLNotNoiseClassifier, LLClusterCoordinates
-from lossLayers import LLNeighbourhoodClassifier, CreateTruthSpectatorWeights
+from LossLayers import LLLocalClusterCoordinates,LLNotNoiseClassifier, LLClusterCoordinates
+from LossLayers import LLNeighbourhoodClassifier, CreateTruthSpectatorWeights
 
 from Regularizers import AverageDistanceRegularizer
-from initializers import EyeInitializer
 
-from debugLayers import PlotCoordinates
+from DebugLayers import PlotCoordinates
 
 from clr_callback import CyclicLR
 

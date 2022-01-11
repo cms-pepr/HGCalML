@@ -4,6 +4,8 @@ import datetime
 import threading
 
 
+print("MODULE OBSOLETE?",__name__)
+
 class TensorBoardManager():
     def __init__(self, output_dir):
 

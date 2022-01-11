@@ -1,4 +1,7 @@
 
+print("MODULE OBSOLETE?",__name__)
+raise ImportError("MODULE",__name__,"will be removed")
+
 from DeepJetCore.modeltools import load_model
 import os
 

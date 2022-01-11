@@ -1,5 +1,6 @@
 
 print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL","move implementations to callbacks")
+raise ImportError("MODULE",__name__,"will be removed")
 
 import matplotlib
 matplotlib.use('Agg')

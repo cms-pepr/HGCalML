@@ -1,3 +1,7 @@
+
+print("MODULE OBSOLETE?",__name__)
+raise ImportError("MODULE",__name__,"will be removed")
+
 import traceback
 
 import numpy as np
@@ -6,7 +10,7 @@ import tensorboard_manager as tm
 import threading
 import queue
 import graph_functions
-from plotting_callbacks import publish
+from callbacks import publish
 from importlib import reload
 
 from training_metrics_plots import TrainingMetricPlots

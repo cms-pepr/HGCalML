@@ -19,7 +19,7 @@ import matching_and_analysis
 from experiment_database_reading_manager import ExperimentDatabaseReadingManager
 from hgcal_predictor import HGCalPredictor
 from hyperparam_optimizer import OCHyperParamOptimizer
-from running_full_validation import RunningFullValidation
+from callbacks import RunningFullValidation
 from tensorboard_manager import TensorBoardManager
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
 import tensorflow.keras as keras
@@ -32,11 +32,11 @@ from DeepJetCore.training.training_base import custom_objects_list
 
 # from tensorflow.keras.optimizer_v2 import Adam
 
-from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining
+from callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining
 from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
 
 from clr_callback import CyclicLR
-from lossLayers import LLFullObjectCondensation, LLClusterCoordinates
+from LossLayers import LLFullObjectCondensation, LLClusterCoordinates
 
 from model_blocks import create_outputs
 

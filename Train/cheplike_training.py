@@ -16,13 +16,13 @@ from argparse import ArgumentParser
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import Reshape,BatchNormalization, Dropout, Add
-from LayersRagged  import RaggedConstructTensor
+
 from GravNetLayersRagged import MultiAttentionGravNetAdd,WeightFeatures,WeightedNeighbourMeans,DownSample, CreateIndexFromMajority, ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
-from initializers import EyeInitializer
+
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
 from datastructures import TrainData_NanoML
 
-from plotting_callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining, plotClusterSummary
+from callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining, plotClusterSummary
 from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
 
 from clr_callback import CyclicLR
@@ -44,10 +44,10 @@ from Regularizers import AverageDistanceRegularizer
 from model_blocks import first_coordinate_adjustment, reduce, pre_selection_model_full
 from model_blocks import extent_coords_if_needed, re_integrate_to_full_hits
 
-from lossLayers import LLNeighbourhoodClassifier, LLNotNoiseClassifier
-from lossLayers import LLFullObjectCondensation, LLClusterCoordinates,LLEdgeClassifier
+from LossLayers import LLNeighbourhoodClassifier, LLNotNoiseClassifier
+from LossLayers import LLFullObjectCondensation, LLClusterCoordinates,LLEdgeClassifier
 
-from debugLayers import PlotCoordinates
+from DebugLayers import PlotCoordinates
 
 '''
 

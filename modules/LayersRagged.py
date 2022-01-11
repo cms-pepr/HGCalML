@@ -1,9 +1,8 @@
 
-print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL", "move layers still in usage to GravNetLayersRagged")
+print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL", "move layers still in usage or restructure all the layer files")
 
 import tensorflow as tf
 import tensorflow.keras as keras
-from caloGraphNN import gauss_of_lin
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
 from condensate_op import BuildCondensates
@@ -11,7 +10,6 @@ from pseudo_rs_op import CreatePseudoRS
 from select_threshold_op import SelectThreshold
 
 from latent_space_grid_op import LatentSpaceGrid
-from tensorflow.keras.layers import MaxPooling2D, MaxPooling3D
 
 
 class RaggedSumAndScatter(keras.layers.Layer):
@@ -158,24 +156,6 @@ class GridMaxPoolReduction(keras.layers.Layer):
         return tf.reshape(back_sorted_max_feat, tf.shape(feat))
         
 
-
-
-
-class RaggedConstructTensor(keras.layers.Layer):
-    """
-    
-
-    """
-
-
-    def __init__(self, **kwargs):
-        super(RaggedConstructTensor, self).__init__(**kwargs)
-        print(">>>> WARNING: RaggedConstructTensor is deprecated. Please just cast the row splits (CastRowSplits layer).")
-        self.num_features = -1
-
-    def call(self,inputs):
-        rs = tf.cast(inputs[1][:,0],dtype='int32')
-        return inputs[0],rs #so that models can still be loaded
 
 
 

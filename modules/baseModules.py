@@ -1,3 +1,5 @@
+print(__name__,">>> move to DeepJetCore soon")
+
 import tensorflow as tf
 
 #for metric layers

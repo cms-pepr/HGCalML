@@ -1,6 +1,5 @@
 import tensorflow as tf
 from object_condensation import oc_loss
-from betaLosses import obj_cond_loss
 from oc_helper_ops import SelectWithDefault
 from oc_helper_ops import CreateMidx
 import time

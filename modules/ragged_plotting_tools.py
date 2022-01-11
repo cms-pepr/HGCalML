@@ -1,3 +1,8 @@
+
+
+print("MODULE OBSOLETE?",__name__)
+raise ImportError("MODULE",__name__,"will be removed")
+
 import matplotlib
 matplotlib.rcParams.update({'figure.max_open_warning': 0})
 import warnings

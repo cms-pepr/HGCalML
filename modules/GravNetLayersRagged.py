@@ -13,8 +13,8 @@ from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
 #### helper###
-from datastructures import TrainData_OC,TrainData_NanoML
-from initializers import EyeInitializer
+from datastructures import TrainData_NanoML
+from Initializers import EyeInitializer
 
 from oc_helper_ops import SelectWithDefault
 

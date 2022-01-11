@@ -2,6 +2,9 @@ import tensorflow as tf
 import numpy as np
 
 
+print("MODULE OBSOLETE?",__name__)
+raise ImportError("MODULE",__name__,"will be removed")
+
 def lovasz_grad_x(gt_sorted):
     """
     Computes gradient of the Lovasz extension w.r.t sorted errors
