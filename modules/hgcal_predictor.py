@@ -1,7 +1,4 @@
 
-'''
-JK: What are all these useless imports?
-'''
 
 from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator

@@ -2,6 +2,7 @@
 
 from argparse import ArgumentParser
 from hgcal_predictor import HGCalPredictor
+import setGPU
 
 parser = ArgumentParser('Apply a model to a (test) source sample.')
 parser.add_argument('inputModel')
