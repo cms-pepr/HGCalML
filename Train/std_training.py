@@ -265,7 +265,7 @@ def gravnet_model(Inputs,
 
 
 import training_base_hgcal
-train = training_base_hgcal.HGCalTraining(redirect_stdout=False)
+train = training_base_hgcal.HGCalTraining(redirect_stdout=True)
 
 if not train.modelSet():
     train.setModel(gravnet_model,
@@ -375,11 +375,11 @@ cb += [
     #    ),
     ]
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 5e-5
-nbatch = 220000
+nbatch = 120000
 
 train.change_learning_rate(learningrate)
 
