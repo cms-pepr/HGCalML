@@ -61,8 +61,8 @@ make this about coordinate shifts
 
 def gravnet_model(Inputs,
                   td,
-                  use_multigrav = True,
-                  total_iterations=2,
+                  use_multigrav = False,
+                  total_iterations=5,
                   variance_only=True,
                   viscosity=0.1,
                   print_viscosity=False,
