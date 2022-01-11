@@ -264,7 +264,7 @@ def gravnet_model(Inputs,
 
 
 import training_base_hgcal
-train = training_base_hgcal.HGCalTraining(redirect_stdout=True)
+train = training_base_hgcal.HGCalTraining(redirect_stdout=False)
 
 if not train.modelSet():
     train.setModel(gravnet_model,
@@ -282,7 +282,6 @@ if not train.modelSet():
         #epsilon=1e-2
         ))
 
-    #get pretrained preselection weights
     
     from model_tools import apply_weights_from_path
     import os
