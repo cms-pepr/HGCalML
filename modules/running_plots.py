@@ -6,7 +6,6 @@ import traceback
 
 import numpy as np
 import tensorflow as tf
-import tensorboard_manager as tm
 import threading
 import queue
 import graph_functions
@@ -17,7 +16,7 @@ from training_metrics_plots import TrainingMetricPlots
 
 graph_functions = reload(graph_functions)
 
-import matching_and_analysis
+from Layers import DictModel
 
 
 class Worker(threading.Thread):
@@ -106,6 +105,9 @@ class RunningMetricsDatabaseAdditionCallback(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, batch, logs=None):
         # y_pred = logs['y_pred']
         # x = logs['x']
+        
+        if not isinstance(self.model , DictModel):
+            raise ValueError("RunningMetricsDatabaseAdditionCallback: requires DictModel")
 
         x = self.model.data_x
         y_pred = self.model.data_y_pred
@@ -123,7 +125,7 @@ class RunningMetricsDatabaseAdditionCallback(tf.keras.callbacks.Callback):
         # print(t_fully_contained.shape)
         # 0/0
         #
-        predictions_dict = self.model.convert_output_to_dict(y_pred)
+        predictions_dict = y_pred #DictModel
         truth_dict = dict()
         truth_dict['truthHitAssignementIdx'] = t_idx
         truth_dict['truthHitAssignedEnergies'] = t_energy

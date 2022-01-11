@@ -702,18 +702,20 @@ class DictModel(tf.keras.Model):
                  inputs,
                  outputs: dict, #force to be dict
                  skip_non_finite=5,
+                 train_step_idx=0,
                  *args, **kwargs):
         """
         :param skip_non_finite: Number of consecutive times to skip nans/inf loss and gradient values
         """
         
         self.skip_non_finite = skip_non_finite
+        self.train_step_idx = train_step_idx
         self.non_finite_count = 0
         
         super(DictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
 
     def get_config(self):
-        config = {'skip_non_finite': self.skip_non_finite}
+        config = {'skip_non_finite': self.skip_non_finite,'train_step_idx':self.train_step_idx}
         base_config = super(DictModel, self).get_config()
         return dict(list(base_config.items()) + list(config.items() ))
 
@@ -721,6 +723,7 @@ class DictModel(tf.keras.Model):
     #compat functions
     def call_with_dict_as_output(self, inputs, numpy=False):
         print("DEPRECATION WARNING: Please use direct call here and convert to numpy afterwards. Not part of model functionality! This will become an exception soon.")
+        raise ValueError("call_with_dict_as_output: not supported, use direct call")
         outputs = self.call(inputs)
         if numpy:
             for k in outputs.keys():
@@ -729,6 +732,7 @@ class DictModel(tf.keras.Model):
 
     def convert_output_to_dict(self, outputs):
         print("DEPRECATION WARNING: DictModel outputs are already dicts, no need to convert. Remove! This will become an exception soon.")
+        raise ValueError("convert_output_to_dict: not supported, use direct call")
         if isinstance(outputs, dict):
             return outputs
         else:
@@ -740,6 +744,7 @@ class DictModel(tf.keras.Model):
         # on what you pass to `fit()`.
         x, y = data
 
+        self.train_step_idx += 1
 
         is_valid = True
         loss = None
