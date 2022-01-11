@@ -532,6 +532,7 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
         self.after_n_batches = after_n_batches
         self.predictor = predictor
         self.optimizer = optimizer
+        self.batch_idx = 0
         self.hyper_param_points=test_on_points
         self.database_manager = database_manager
         self.table_prefix = table_prefix
@@ -560,9 +561,10 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
             print("Running full validation test to see if it fits resource requirements.")
             runcallback = True
             
-        if self.model.train_step_idx and (not self.model.train_step_idx % self.after_n_batches):
+        if self.batch_idx and (not self.batch_idx % self.after_n_batches):
             runcallback = True
         
+        self.batch_idx+=1
         if not runcallback:
             return
             
@@ -595,7 +597,7 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
             else:
                 tags['iteration'] = -1
 
-            tags['training_iteration'] = int(self.model.train_step_idx)
+            tags['training_iteration'] = int(self.batch_idx)
 
             plotter.add_data_from_analysed_graph_list(graphs, metadata, additional_tags=tags)
 
@@ -604,7 +606,7 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
                 print("Written to database")
 
             if self.pdfs_path is not None:
-                plotter.write_to_pdf(pdfpath=os.path.join(self.pdfs_path, 'validation_results_%07d_%.2f_%.2f.pdf'%(self.model.train_step_idx, b,d)))
+                plotter.write_to_pdf(pdfpath=os.path.join(self.pdfs_path, 'validation_results_%07d_%.2f_%.2f.pdf'%(self.batch_idx, b,d)))
 
         print('finished full validation callback, proceeding with training.')
         

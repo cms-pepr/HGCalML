@@ -701,98 +701,13 @@ class DictModel(tf.keras.Model):
     def __init__(self, 
                  inputs,
                  outputs: dict, #force to be dict
-                 skip_non_finite=5,
-                 train_step_idx=0,
                  *args, **kwargs):
         """
-        :param skip_non_finite: Number of consecutive times to skip nans/inf loss and gradient values
+        Just forces dictionary output
         """
-        
-        self.skip_non_finite = skip_non_finite
-        self.train_step_idx = train_step_idx
-        self.non_finite_count = 0
         
         super(DictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
 
-    def get_config(self):
-        config = {'skip_non_finite': self.skip_non_finite,'train_step_idx':self.train_step_idx}
-        base_config = super(DictModel, self).get_config()
-        return dict(list(base_config.items()) + list(config.items() ))
-
-
-    #compat functions
-    def call_with_dict_as_output(self, inputs, numpy=False):
-        print("DEPRECATION WARNING: Please use direct call here and convert to numpy afterwards. Not part of model functionality! This will become an exception soon.")
-        raise ValueError("call_with_dict_as_output: not supported, use direct call")
-        outputs = self.call(inputs)
-        if numpy:
-            for k in outputs.keys():
-                outputs[k] = outputs[k].numpy()
-        return outputs
-
-    def convert_output_to_dict(self, outputs):
-        print("DEPRECATION WARNING: DictModel outputs are already dicts, no need to convert. Remove! This will become an exception soon.")
-        raise ValueError("convert_output_to_dict: not supported, use direct call")
-        if isinstance(outputs, dict):
-            return outputs
-        else:
-            raise ValueError("DictModel outputs must be dicts already")
-        
-
-    def train_step(self, data):
-        # Unpack the data. Its structure depends on your model and
-        # on what you pass to `fit()`.
-        x, y = data
-
-        self.train_step_idx += 1
-
-        is_valid = True
-        loss = None
-        with tf.GradientTape() as tape:
-            y_pred = self(x, training=True)  # Forward pass
-            # Compute the loss value
-            # (the loss function is configured in `compile()`)
-            try:
-                loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
-            except Exception as e:
-                is_valid = False
-                print(e)
-                traceback.print_stack()
-
-        # Compute gradients
-        trainable_vars = self.trainable_variables
-
-        is_valid = is_valid and bool(tf.math.is_finite(loss))
-        if is_valid:
-            gradients = tape.gradient(loss, trainable_vars)
-            is_valid = is_valid and not bool(tf.reduce_any([_grad is None for _grad in gradients]))
-
-        if is_valid:
-            num_non_finite_tensors = float(tf.reduce_sum(tf.cast([tf.reduce_any(tf.math.logical_not(tf.math.is_finite(_grad))) for _grad in gradients], tf.float32)))
-            is_valid = is_valid and num_non_finite_tensors == 0.0
-
-        if is_valid:
-            self.non_finite_count = 0
-            # Update weights
-            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-        else:
-            if self.non_finite_count < self.skip_non_finite:
-                print("\n\nWARNING: loss or gradient is not finite or error in loss. \nSkipping optimizer step %d/%d\n\n" % (self.non_finite_count+1, self.skip_non_finite))
-            else:
-                print("\n\nERROR: loss or gradient is not finite or error in loss. \nThrowing exception.\n\n")
-                raise RuntimeError("Loss or gradient is not finite")
-
-            self.non_finite_count += 1
-
-        # Update metrics (includes the metric that tracks the loss)
-        self.compiled_metrics.update_state(y, y_pred)
-        # Return a dict mapping metric names to current value
-
-        ret_dict = {m.name: m.result() for m in self.metrics}
-
-        self.data_x = x
-        self.data_y_pred = y_pred
-
-        return ret_dict
+    
 
 global_layers_list['DictModel']=DictModel
