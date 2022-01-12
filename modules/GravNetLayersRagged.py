@@ -417,10 +417,11 @@ class GooeyBatchNorm(LayerWithMetrics):
     def __init__(self,
                  viscosity=0.2,
                  fluidity_decay=1e-4,
-                 max_viscosity=1.,
+                 max_viscosity=0.99,
                  epsilon=1e-4,
                  print_viscosity=False,
                  variance_only=False,
+                 soft_mean=False,
                  soften_update: float = 0.,
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
@@ -437,7 +438,10 @@ class GooeyBatchNorm(LayerWithMetrics):
         self.print_viscosity = print_viscosity
         self.soften_update = soften_update
         self.variance_only = variance_only
+        self.soft_mean = soft_mean
 
+        if soften_update > 0:
+            print(self.name,'has been configured for soften_update. Function not implemented yet. Will have no effect.')
         
     def get_config(self):
         config = {'viscosity': self.viscosity_init,
@@ -446,6 +450,7 @@ class GooeyBatchNorm(LayerWithMetrics):
                   'epsilon': self.epsilon,
                   'print_viscosity': self.print_viscosity,
                   'variance_only': self.variance_only,
+                  'soft_mean': self.soft_mean,
                   'soften_update': self.soften_update
                   }
         base_config = super(GooeyBatchNorm, self).get_config()
@@ -473,16 +478,16 @@ class GooeyBatchNorm(LayerWithMetrics):
             
         super(GooeyBatchNorm, self).build(input_shapes)
     
-    def _calc_soft_update(self, old, new, training, stat):
+    def _calc_update(self, old, new, training, ismean):
         delta = new-old
-        delta *= stat #weight by stat
-        #soft update, avoid too strong jumps
-        if self.soften_update>0:
-            #scale down relative change
-            delta = tf.nn.softsign(tf.math.divide_no_nan(self.soften_update*delta,old))*old
-            delta /= self.soften_update
         update = old + (1. - self.viscosity)*delta
         return tf.keras.backend.in_train_phase(update,old,training=training)
+
+    def _calc_soft_diff(self,x, hardness=3.,turnon=6.):
+        possig = tf.nn.sigmoid(hardness*(x-turnon))
+        negsig = tf.nn.sigmoid(-hardness*(x+turnon))
+        mod = tf.where(x>0,possig,negsig)
+        return x*mod
 
     def call(self, inputs, training=None):
         #x, _ = inputs
@@ -491,14 +496,16 @@ class GooeyBatchNorm(LayerWithMetrics):
         #update only if trainable flag is set, AND in training mode
         if self.trainable:
             
-            stat = 1. #tf.sqrt(tf.cast(tf.shape(x)[0],dtype='float32')+1e-3)/300.#assume order 100k as normal
-            
-            newmean = tf.reduce_mean(x,axis=0,keepdims=True) #FIXME
-            update = self._calc_soft_update(self.mean,newmean,training,stat)
+            currentmean = tf.reduce_mean(x,axis=0,keepdims=True) #FIXME
+            newmean = currentmean
+            if self.soft_mean: #soft diff between current mean and zero
+                newmean = self._calc_soft_diff(newmean)
+            update = self._calc_update(self.mean,newmean,training,ismean=True)
             tf.keras.backend.update(self.mean,update)
             
-            newvar = tf.math.reduce_std(x-newmean,axis=0,keepdims=True) #FIXME
-            update = self._calc_soft_update(self.variance,newvar,training,stat)
+            #use the actual mean here, not self.mean
+            newvar = tf.math.reduce_std(x-currentmean,axis=0,keepdims=True) #FIXME
+            update = self._calc_update(self.variance,newvar,training,ismean=False)
             tf.keras.backend.update(self.variance,update)
             
             #increase viscosity
