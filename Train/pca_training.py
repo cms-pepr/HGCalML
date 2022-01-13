@@ -16,7 +16,7 @@ from argparse import ArgumentParser
 # from K import Layer
 import numpy as np
 from tensorflow.keras.layers import Reshape,BatchNormalization, Dropout, Add
-from LayersRagged  import RaggedConstructTensor
+
 from GravNetLayersRagged import MultiAttentionGravNetAdd,WeightFeatures,WeightedNeighbourMeans,DownSample, CreateIndexFromMajority, ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing
 
 from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
