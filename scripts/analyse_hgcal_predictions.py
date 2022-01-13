@@ -30,7 +30,7 @@ if __name__ == '__main__':
     parser.add_argument('-v', help='Ignore, functionality removed', default='0')
     parser.add_argument('-m', help='Matching type. 0 for IOU based matching, 1 for f score based matching', default='2')
     parser.add_argument('--et', help='Energy type. See matching_and_analysis.py for options. Control+F for \'ENERGY_GATHER_TYPE_PRED_ENERGY\'', default='1')
-    parser.add_argument('--soft', help='uses soft object condensation', action='store_true')
+    #not forwarded right now parser.add_argument('--soft', help='uses soft object condensation', action='store_true')
     parser.add_argument('--analysisoutpath', help='Will dump analysis to a file to remake plots without re-running everything.',
                         default='')
     parser.add_argument('--gpu', help='GPU', default='')
@@ -54,7 +54,7 @@ if __name__ == '__main__':
                                                          distance_threshold=distance_threshold,
                                                          iou_threshold=iou_threshold,
                                                          matching_type=matching_type,
-                                                         with_local_distance_scaling=False,
+                                                         with_local_distance_scaling=True,
                                                          energy_gather_type=energy_gather_type
                                                          )
 

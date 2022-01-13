@@ -8,7 +8,7 @@ from graph_functions import *
 import networkx as nx
 import gzip
 import scalar_metrics
-
+import time
 
 
 # Matching types
@@ -267,12 +267,12 @@ class OCRecoGraphAnalyzer:
         if self.with_local_distance_scaling:
             # print("Doing with pred dist")
             pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
-                                                                  pred_dict['pred_beta'][:,0],
+                                                                  pred_dict['pred_beta'],
                                                                   self.beta_threshold,
                                                                   self.distance_threshold,
                                                                   max_hits_per_shower=self.metadata['max_hits_per_shower'],
                                                                   return_alpha_indices=True,
-                                                                  limit=1000, pred_dist=pred_dict['pred_dist'][:, 0])
+                                                                  limit=1000, pred_dist=pred_dict['pred_dist'])
         else:
             # print(pred_dict['pred_ccoords'].shape, pred_dict['pred_beta'][:,0].shape, self.beta_threshold, self.distance_threshold)
             pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
@@ -983,7 +983,7 @@ class OCAnlayzerWrapper():
         return analysed_graphs, metadata
 
 
-    def analyse_from_data(self, data, beta_threshold=-1, distance_threshold=-1, limit_endcaps=-1):
+    def analyse_from_data(self, data, beta_threshold=-1, distance_threshold=-1, limit_endcaps=-1, limit_endcaps_by_time=-1):
         """
         This function is used in hyper param optimizer potentially so it gives an option to override beta threshold and distance threshold.
         Leave -1 for normal functioning otherwise change them both together.
@@ -998,8 +998,10 @@ class OCAnlayzerWrapper():
         analysed_graphs = []
         done=False
         nendcaps_done = 0
+        
         for i, file_data in enumerate(data):
             # print("Analysing file", i)
+            starttime = time.time()
             for j, endcap_data in enumerate(file_data):
                 # print("\tAnalysing Endcap", j)
                 x = self.graph_analyzer.analyse(endcap_data[0], endcap_data[2], endcap_data[1])
@@ -1007,8 +1009,10 @@ class OCAnlayzerWrapper():
                 nendcaps_done += 1
                 if nendcaps_done == limit_endcaps and limit_endcaps != -1:
                     done = True
+                if limit_endcaps_by_time>0 and limit_endcaps_by_time < time.time() - starttime:
+                    done=True
+                if done:
                     break
-
             if done:
                 break
 

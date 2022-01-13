@@ -130,7 +130,10 @@ def build_callbacks(train,
                                      pdfs_path=os.path.join(train.outputDir,
                                                             'full_validation_plots'), min_batch=8,
                                      run_optimization_loop_for=full_analysis_num_hyperparam_optimization_iterations,
-                                     optimization_loop_num_init_points=5, trial_batch=10)]
+                                     optimization_loop_num_init_points=5, 
+                                     trial_batch=10,
+                                     limit_endcaps_by_time=180 #3 minutes per point max
+                                     )]
     cb += [
     plotClusterSummary(
         outputfile=train.outputDir + "/clustering/",

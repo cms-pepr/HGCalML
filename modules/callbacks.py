@@ -516,6 +516,8 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
     def __init__(self, after_n_batches, predictor, analyzer, optimizer=None, test_on_points=None,
                  database_manager=None, pdfs_path=None, min_batch=0, table_prefix='gamma_full_validation',
                  run_optimization_loop_for=80, optimization_loop_num_init_points=5, 
+                 limit_endcaps = -1,#all endcaps in file
+                 limit_endcaps_by_time = 600,#in seconds, don't spend more than 10 minutes on this
                  trial_batch=10):
         """
         :param analyzer:
@@ -534,6 +536,8 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
         self.optimizer = optimizer
         self.batch_idx = 0
         self.hyper_param_points=test_on_points
+        self.limit_endcaps = limit_endcaps
+        self.limit_endcaps_by_time = limit_endcaps_by_time
         self.database_manager = database_manager
         self.table_prefix = table_prefix
         self.pdfs_path = pdfs_path
@@ -591,8 +595,12 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
         else:
             test_on = self.hyper_param_points
 
+
+        #TBI: this should be sent to a thread and not block main execution
         for b, d in test_on:
-            graphs, metadata = self.analyzer.analyse_from_data(all_data, b, d)
+            graphs, metadata = self.analyzer.analyse_from_data(all_data, b, d, 
+                                                               limit_endcaps=self.limit_endcaps,
+                                                               limit_endcaps_by_time=self.limit_endcaps_by_time)
             if self.optimizer is not None:
                 self.optimizer.remove_data() # To save memory
 
