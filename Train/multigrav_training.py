@@ -57,17 +57,29 @@ make this about coordinate shifts
 '''
 
 
+batchnorm_options={
+    'viscosity': 0.2,
+    'fluidity_decay': 5e-4,
+    'max_viscosity': 0.95,
+    'soft_mean': True,
+    'variance_only': False,
+    'record_metrics': True,
+    'soft_mean_turn_on': 10.,
+    }
+
+#loss options:
+loss_options={
+    'q_min': 2.5,
+    'alt_energy_weight': False,
+    'use_average_cc_pos': 0.99
+    }
+
 
 
 def gravnet_model(Inputs,
                   td,
                   use_multigrav = True,
                   total_iterations=2,
-                  variance_only=True,
-                  viscosity=0.1,
-                  print_viscosity=False,
-                  fluidity_decay=5e-4,  # reaches after about 7k batches
-                  max_viscosity=0.95,
                   debug_outdir=None,
                   plot_debug_every=1000,
                   ):
@@ -118,7 +130,7 @@ def gravnet_model(Inputs,
     n_cluster_space_coordinates = 3
     
     #extend coordinates already here if needed
-    coords = extent_coords_if_needed(coords, x, n_cluster_space_coordinates)
+    c_coords = extent_coords_if_needed(c_coords, x, n_cluster_space_coordinates)
         
 
     for i in range(total_iterations):
@@ -129,14 +141,10 @@ def gravnet_model(Inputs,
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
-        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, 
-                           variance_only=variance_only,
-                           record_metrics=True,fluidity_decay=fluidity_decay)(x)
+        x = GooeyBatchNorm(**batchnorm_options)(x)
         ### reduction done
         
         n_dims = 6
-        if use_multigrav:
-            n_dims=3
         #exchange information, create coordinates
         x = Concatenate()([coords,coords,c_coords,x])
         x, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
@@ -158,29 +166,20 @@ def gravnet_model(Inputs,
         gndist = AverageDistanceRegularizer(strength=0.01,
                                             record_metrics=True
                                             )(gndist)
-                           
-        if use_multigrav:   
-            x = DistanceWeightedMessagePassing([32,32])([x,gnnidx,gndist])                
-            x_matt = Dense(16,activation='relu')(x)
-            x_matt = MultiAttentionGravNetAdd(5)([x,x_matt,gncoords,gnnidx])
-            x = Concatenate()([x,x_matt])
-            x = DistanceWeightedMessagePassing([32,32])([x,gnnidx,gndist])   
+                            
+        x = DistanceWeightedMessagePassing([32,32])([x,gnnidx,gndist])                
+        x_matt = Dense(16,activation='relu')(x)
+        x_matt = MultiAttentionGravNetAdd(n_dims+1)([x,x_matt,gncoords,gnnidx])
+        x = Concatenate()([x,x_matt])
+        x = DistanceWeightedMessagePassing([32,32])([x,gnnidx,gndist])   
             
-        else:
-            x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
-            
-        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, 
-                           record_metrics=True,
-                           variance_only=variance_only,
-                           fluidity_decay=fluidity_decay)(x)
+        x = GooeyBatchNorm(**batchnorm_options)(x)
         
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         x = Dense(64,activation='relu')(x)
         
-        x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, 
-                           variance_only=variance_only,
-                           record_metrics=True,fluidity_decay=fluidity_decay)(x)
+        x = GooeyBatchNorm(**batchnorm_options)(x)
         
         allfeat.append(x)
         
@@ -199,12 +198,7 @@ def gravnet_model(Inputs,
     ########### weights                                       #############
     #######################################################################
     
-    x = GooeyBatchNorm(viscosity=viscosity, 
-                       max_viscosity=max_viscosity, 
-                       fluidity_decay=fluidity_decay,
-                           record_metrics=True,
-                           variance_only=variance_only,
-                       name='gooey_pre_out')(x)
+    x = GooeyBatchNorm(**batchnorm_options)(x)
     x = Concatenate()([c_coords]+[x])
     
     pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
@@ -222,14 +216,8 @@ def gravnet_model(Inputs,
                                          too_much_beta_scale=1e-4,
                                          use_energy_weights=True,
                                          record_metrics=True,
-                                         q_min=0.2,
-                                         #div_repulsion=True,
-                                         # cont_beta_loss=True,
-                                         # beta_gradient_damping=0.999,
-                                         # phase_transition=1,
-                                         #huber_energy_scale=0.1,
-                                         use_average_cc_pos=0.2,  # smoothen it out a bit
-                                         name="FullOCLoss"
+                                         name="FullOCLoss",
+                                         **loss_options
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
          pred_energy_corr, pred_pos, pred_time, pred_id] +
@@ -379,7 +367,7 @@ cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 5e-5
-nbatch = 120000
+nbatch = 220000
 
 train.change_learning_rate(learningrate)
 

@@ -65,6 +65,22 @@ batchnorm_options={
     'record_metrics': True
     }
 
+#loss options:
+loss_options={
+    'q_min': 2.5,
+    'alt_energy_weight': False,
+    'use_average_cc_pos': 0.99
+    }
+
+dense_activation='relu'
+
+
+learningrate = 5e-5
+nbatch = 200000
+
+#iterations of gravnet blocks
+total_iterations = 2
+
 
 def gravnet_model(Inputs,
                   td,
@@ -116,7 +132,7 @@ def gravnet_model(Inputs,
     allfeat = []
     
     n_cluster_space_coordinates = 3
-    total_iterations = 2
+    
     
     #extend coordinates already here if needed
     c_coords = extent_coords_if_needed(c_coords, x, n_cluster_space_coordinates)
@@ -127,27 +143,28 @@ def gravnet_model(Inputs,
         # derive new coordinates for clustering
         x = RaggedGlobalExchange()([x, rs])
         
-        x = Dense(64,activation='relu')(x)
-        x = Dense(64,activation='relu')(x)
-        x = Dense(64,activation='relu')(x)
+        x = Dense(64,activation=dense_activation)(x)
+        x = Dense(64,activation=dense_activation)(x)
+        x = Dense(64,activation=dense_activation)(x)
         x = GooeyBatchNorm(**batchnorm_options)(x)
         ### reduction done
         
         n_dims = 6
         #exchange information, create coordinates
-        x = Concatenate()([c_coords,c_coords,c_coords,x])
-        x, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
+        x = Concatenate()([c_coords,c_coords,c_coords,coords,x])
+        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
                                                  record_metrics=True,
+                                                 coord_initialiser_noise=1e-3,
                                                  use_approximate_knn=False #weird issue with that for now
                                                  )([x, rs])
         
-                                                              
+        x = Concatenate()([x,xgn])                                                      
         #just keep them in a reasonable range  
         #safeguard against diappearing gradients on coordinates                                       
-        gndist = AverageDistanceRegularizer(strength=0.01,
+        gndist = AverageDistanceRegularizer(strength=1e-4,
                                             record_metrics=True
                                             )(gndist)
                                             
@@ -158,13 +175,15 @@ def gravnet_model(Inputs,
                                                                     rs]) 
         x = Concatenate()([gncoords,x])           
         
-        x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
+        x = DistanceWeightedMessagePassing([64,64,32,32,16,16],
+                                           activation=dense_activation
+                                           )([x,gnnidx,gndist])
             
         x = GooeyBatchNorm(**batchnorm_options)(x)
         
-        x = Dense(64,activation='relu')(x)
-        x = Dense(64,activation='relu')(x)
-        x = Dense(64,activation='relu')(x)
+        x = Dense(64,activation=dense_activation)(x)
+        x = Dense(64,activation=dense_activation)(x)
+        x = Dense(64,activation=dense_activation)(x)
         
         x = GooeyBatchNorm(**batchnorm_options)(x)
         
@@ -174,9 +193,9 @@ def gravnet_model(Inputs,
     
     x = Concatenate()([c_coords]+allfeat+[pre_selection['not_noise_score']])
     #do one more exchange with all
-    x = Dense(64,activation='relu')(x)
-    x = Dense(64,activation='relu')(x)
-    x = Dense(64,activation='relu')(x)
+    x = Dense(64,activation=dense_activation)(x)
+    x = Dense(64,activation=dense_activation)(x)
+    x = Dense(64,activation=dense_activation)(x)
     
     
     #######################################################################
@@ -195,7 +214,6 @@ def gravnet_model(Inputs,
     # loss
     pred_beta = LLFullObjectCondensation(scale=1.,
                                          energy_loss_weight=1.,
-                                         #print_batch_time=True,
                                          position_loss_weight=1e-5,
                                          timing_loss_weight=1e-5,
                                          classification_loss_weight=1e-5,
@@ -203,14 +221,8 @@ def gravnet_model(Inputs,
                                          too_much_beta_scale=1e-4,
                                          use_energy_weights=True,
                                          record_metrics=True,
-                                         q_min=2.5,
-                                         #div_repulsion=True,
-                                         # cont_beta_loss=True,
-                                         # beta_gradient_damping=0.999,
-                                         # phase_transition=1,
-                                         #huber_energy_scale=0.1,
-                                         use_average_cc_pos=0.99,  # smoothen it out a bit
-                                         name="FullOCLoss"
+                                         name="FullOCLoss",
+                                         **loss_options
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
          pred_energy_corr, pred_pos, pred_time, pred_id] +
@@ -246,7 +258,7 @@ def gravnet_model(Inputs,
 
 
 import training_base_hgcal
-train = training_base_hgcal.HGCalTraining(redirect_stdout=False)
+train = training_base_hgcal.HGCalTraining(redirect_stdout=True)
 
 if not train.modelSet():
     train.setModel(gravnet_model,
@@ -327,6 +339,14 @@ cb += [
         select_metrics='average_distance_*',
         publish=publishpath
         ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/val_metrics.html',
+        call_on_epoch=True,
+        select_metrics='val_*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
     #if approxime knn is used
     #simpleMetricsCallback(
     #    output_file=train.outputDir+'/slicing_knn_metrics.html',
@@ -339,11 +359,9 @@ cb += [
     
     ]
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
 #cb=[]
-learningrate = 1e-4
-nbatch = 200000
 
 train.change_learning_rate(learningrate)
 

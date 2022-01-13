@@ -72,12 +72,12 @@ class HGCalPredictor():
         all_data = []
         for inputfile in self.input_data_files:
 
-            print('predicting ', self.inputdir + "/" + inputfile)
-
             use_inputdir = self.inputdir
             if inputfile[0] == "/":
                 use_inputdir = ""
             outfilename = "pred_" + os.path.basename(inputfile)
+            
+            print('predicting ', use_inputdir +'/' + inputfile)
 
             td = self.dc.dataclass()
 

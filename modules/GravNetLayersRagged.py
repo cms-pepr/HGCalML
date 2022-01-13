@@ -423,6 +423,8 @@ class GooeyBatchNorm(LayerWithMetrics):
                  variance_only=False,
                  soft_mean=False,
                  soften_update: float = 0.,
+                 soft_mean_hardness=3.,
+                 soft_mean_turn_on=6.,
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
         
@@ -439,6 +441,8 @@ class GooeyBatchNorm(LayerWithMetrics):
         self.soften_update = soften_update
         self.variance_only = variance_only
         self.soft_mean = soft_mean
+        self.soft_mean_hardness = soft_mean_hardness
+        self.soft_mean_turn_on = soft_mean_turn_on
 
         if soften_update > 0:
             print(self.name,'has been configured for soften_update. Function not implemented yet. Will have no effect.')
@@ -451,7 +455,9 @@ class GooeyBatchNorm(LayerWithMetrics):
                   'print_viscosity': self.print_viscosity,
                   'variance_only': self.variance_only,
                   'soft_mean': self.soft_mean,
-                  'soften_update': self.soften_update
+                  'soften_update': self.soften_update,
+                  'soft_mean_hardness': self.soft_mean_hardness,
+                  'soft_mean_turn_on': self.soft_mean_turn_on,
                   }
         base_config = super(GooeyBatchNorm, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -483,7 +489,9 @@ class GooeyBatchNorm(LayerWithMetrics):
         update = old + (1. - self.viscosity)*delta
         return tf.keras.backend.in_train_phase(update,old,training=training)
 
-    def _calc_soft_diff(self,x, hardness=3.,turnon=6.):
+    def _calc_soft_diff(self,x):
+        turnon = self.soft_mean_turn_on
+        hardness = self.soft_mean_hardness
         possig = tf.nn.sigmoid(hardness*(x-turnon))
         negsig = tf.nn.sigmoid(-hardness*(x+turnon))
         mod = tf.where(x>0,possig,negsig)
@@ -2563,6 +2571,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
 
     def __init__(self, n_feature_transformation,
                  sumwnorm=False,
+                 activation='relu',
                  **kwargs):
         super(DistanceWeightedMessagePassing, self).__init__(**kwargs)
 
@@ -2572,7 +2581,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         for i in range(len(self.n_feature_transformation)):
             with tf.name_scope(self.name + "/5/" + str(i)):
                 self.feature_tranformation_dense.append(tf.keras.layers.Dense(self.n_feature_transformation[i],
-                                                                              activation='relu'))  # restrict variations a bit
+                                                                              activation=activation))  # restrict variations a bit
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]

@@ -18,14 +18,16 @@ def build_callbacks(train,
                                     (0.1,0.5),
                                     (0.1,0.8),
                                     (0.1,1.0),
+                                    (0.1,1.5),
                                     
                                     (0.3,0.2), 
                                     (0.3,0.5),
                                     (0.3,0.8),
-                                    (0.3,1.0)],
+                                    (0.3,1.0),
+                                    (0.3,1.5)],
                     full_analysis_num_hyperparam_optimization_endcaps=-1, 
-                    full_analysis_after_batches=5000,
-                    cluster_summary_after_batches=200,
+                    full_analysis_after_batches=7000,
+                    cluster_summary_after_batches=400,
                     running_plots_energy_gather_type=matching_and_analysis.ENERGY_GATHER_TYPE_CORRECTION_FACTOR_FROM_CONDENSATION_POINT):
     """
 

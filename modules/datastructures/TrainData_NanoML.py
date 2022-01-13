@@ -564,7 +564,8 @@ class TrainData_NanoML(TrainData):
         
         return [farr, 
                 t['t_idx'], t['t_energy'], t['t_pos'], t['t_time'], 
-                t['t_pid'], t['t_spectator'], t['t_fully_contained'],t['t_rec_energy'] ],[], []
+                t['t_pid'], t['t_spectator'], t['t_fully_contained'] ],[], []
+                #,t['t_rec_energy'] ],[], []
     
 
     def interpretAllModelInputs(self, ilist, returndict=False):
@@ -630,6 +631,7 @@ class TrainData_NanoML(TrainData):
         return d
     
     def createTruthDict(self, allfeat, truthidx=None):
+        #print(__name__,'needs fix')
         _, _, t_idx, _, t_energy, _, t_pos, _, t_time, _, t_pid, _,\
         t_spectator, _, t_fully_contained,_ = allfeat
         

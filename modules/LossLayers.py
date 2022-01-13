@@ -813,7 +813,7 @@ class LLFullObjectCondensation(LossLayerBase):
         else:
             eloss = tf.math.log(ediff**2 + 1. + 1e-5)
             
-        eloss = self.softclip(eloss, 0.2) 
+        eloss = self.softclip(eloss, 0.4) 
         return eloss
         
     def _calc_and_scatter_dep_energy_pre_rs(self, t_energy, t_idx, hit_energy, pred_energy):   

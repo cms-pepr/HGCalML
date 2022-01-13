@@ -163,6 +163,13 @@ cb = [
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/val_metrics.html',
+        call_on_epoch=True,
+        select_metrics='val_*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
     ]
 
 

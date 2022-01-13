@@ -548,7 +548,14 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
         if optimizer is None != test_on_points is None: # Just an xor
             raise RuntimeError("Can either do optimization or run at specific points")
 
+    #there is a lot that can go wrong but should not kill the training
     def on_train_batch_end(self, batch, logs=None):
+        try:
+            self._on_train_batch_end(batch, logs)
+        except:
+            return
+        
+    def _on_train_batch_end(self, batch, logs=None):
         
         runcallback = False
         
