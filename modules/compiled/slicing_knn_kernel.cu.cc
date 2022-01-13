@@ -583,6 +583,15 @@ void perform_kNN_search(
             }
         }
 
+        if (nfilled==0){
+            // the closest vertex is the vertex itself
+            // prefill all relevant matrices
+            neigh_idx[I2D(i_v,0,K)] = i_v;
+            neigh_dist[I2D(i_v,0,K)] = 0.0;
+            d_farthest_neighbour[i_v] = 0;
+            nfilled += 1;
+        }
+
         int vtx_bin = d_vtx_bin_assoc[i_v];
         int target_bin = d_bin_neighbours[bin_index_to_use + 9*vtx_bin];
         if (target_bin<0) // can happen when bin has less than 8 neighbour bins
@@ -601,6 +610,8 @@ void perform_kNN_search(
         }
         
         for(size_t j_v=target_bin_start_vert;j_v<target_bin_end_vert;j_v++){
+            if (i_v==j_v)
+                continue;
             float distsq = calculateDistance(i_v,j_v,d_coords_sorted,n_coords);
 
             if(nfilled<max_neighbours){
