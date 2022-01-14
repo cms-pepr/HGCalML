@@ -264,24 +264,14 @@ class OCRecoGraphAnalyzer:
             # Set to something very large so it doesn't come into receptive field of any predicted showers
             self.pred_dict['pred_ccoords'] = np.where(pred_dict['pred_isnoise']!=0, self.pred_dict['pred_ccoords'], self.pred_dict['pred_ccoords']*10000)
 
-        if self.with_local_distance_scaling:
-            # print("Doing with pred dist")
-            pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
+        pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
                                                                   pred_dict['pred_beta'],
                                                                   self.beta_threshold,
                                                                   self.distance_threshold,
                                                                   max_hits_per_shower=self.metadata['max_hits_per_shower'],
                                                                   return_alpha_indices=True,
                                                                   limit=1000, pred_dist=pred_dict['pred_dist'])
-        else:
-            # print(pred_dict['pred_ccoords'].shape, pred_dict['pred_beta'][:,0].shape, self.beta_threshold, self.distance_threshold)
-            pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
-                                                                  pred_dict['pred_beta'][:,0],
-                                                                  self.beta_threshold,
-                                                                  self.distance_threshold,
-                                                                  max_hits_per_shower=self.metadata['max_hits_per_shower'],
-                                                                  return_alpha_indices=True, limit=1000)
-
+        
         pred_sid += start_indicing_from
 
         pred_shower_sid = []

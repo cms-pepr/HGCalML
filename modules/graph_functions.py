@@ -116,14 +116,14 @@ def calculate_eiou(truth_sid,
     return all_iou, overlap_matrix, pred_sum_matrix.numpy(), truth_sum_matrix.numpy(), intersection_sum_matrix.numpy()
 
 
-def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=500, return_alpha_indices=False, pred_dist=None, max_hits_per_shower=-1):
+def _reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=500, return_alpha_indices=False, pred_dist=None, max_hits_per_shower=-1):
     # print(beta.shape, cc.shape, type(beta), type(cc))
     
     if pred_dist is None:
         pred_dist = np.ones_like(beta)
         
-    #pred_dist = pred_dist[:,0]
-    #beta = beta[:,0]
+    pred_dist = pred_dist[:,0]
+    beta = beta[:,0]
     
     beta_filtered_indices = np.argwhere(beta>beta_threshold)
     beta_filtered = np.array(beta[beta_filtered_indices])
@@ -133,7 +133,6 @@ def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=
     pred_sid = pred_sid.astype(np.int32)
     
         
-
     max_index = 0
     alpha_indices = []
 
@@ -159,7 +158,7 @@ def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=
     else:
         return pred_sid
     
-def _tbi_reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, 
+def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, 
                         limit=500, return_alpha_indices=False, pred_dist=None, 
                         max_hits_per_shower=-1):
     
@@ -167,9 +166,9 @@ def _tbi_reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5,
 
     asso, iscond, _ = BuildAndAssignCondensates(
         tf.convert_to_tensor(tf.convert_to_tensor(cc)),
-        tf.convert_to_tensor(tf.convert_to_tensor(beta[..., np.newaxis])),
+        tf.convert_to_tensor(tf.convert_to_tensor(beta)),
         row_splits=tf.convert_to_tensor(np.array([0, len(cc)], np.int32)),
-        dist=tf.convert_to_tensor(pred_dist[..., np.newaxis]) if pred_dist is not None else None,
+        dist=tf.convert_to_tensor(pred_dist) if pred_dist is not None else None,
         min_beta=beta_threshold,
         radius=dist_threshold)
 
