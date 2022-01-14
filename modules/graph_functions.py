@@ -122,8 +122,8 @@ def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=
     if pred_dist is None:
         pred_dist = np.ones_like(beta)
         
-    pred_dist = pred_dist[:,0]
-    beta = beta[:,0]
+    #pred_dist = pred_dist[:,0]
+    #beta = beta[:,0]
     
     beta_filtered_indices = np.argwhere(beta>beta_threshold)
     beta_filtered = np.array(beta[beta_filtered_indices])
@@ -160,35 +160,32 @@ def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=
         return pred_sid
     
 def _tbi_reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, 
-                        limit=500, return_alpha_indices=False, pred_dist=None, max_hits_per_shower=-1):
-    # print(beta.shape, cc.shape, type(beta), type(cc))
+                        limit=500, return_alpha_indices=False, pred_dist=None, 
+                        max_hits_per_shower=-1):
     
-    # the following is not working yet - unclear why. the op itself is well tested
-    
-    #this is per event so row splits don't matter
-    print("N",beta.shape[0])
-    row_splits = tf.constant([0, beta.shape[0]],dtype='int32')
     from assign_condensate_op import BuildAndAssignCondensates
-    pred_sid, is_cpoint,N = BuildAndAssignCondensates(ccoords=cc, 
-                                             betas=beta,  
-                                             dist=pred_dist,
-                                             row_splits=row_splits, 
-                                             radius=dist_threshold, 
-                                             min_beta=beta_threshold, 
-                                             soft=False)
-    
-    pred_sid = pred_sid.numpy()
-    is_cpoint = is_cpoint.numpy()
-    alpha_indices = np.arange(0,beta.shape[0])[is_cpoint]
-    
-    #pred_sid is not sorted or starting at 0. That seems to be necessary for further processing?
-    s, idx = np.unique(pred_sid, return_inverse=True)
-    pred_sid = idx
+
+    asso, iscond, _ = BuildAndAssignCondensates(
+        tf.convert_to_tensor(tf.convert_to_tensor(cc)),
+        tf.convert_to_tensor(tf.convert_to_tensor(beta[..., np.newaxis])),
+        row_splits=tf.convert_to_tensor(np.array([0, len(cc)], np.int32)),
+        dist=tf.convert_to_tensor(pred_dist[..., np.newaxis]) if pred_dist is not None else None,
+        min_beta=beta_threshold,
+        radius=dist_threshold)
+
+    asso = asso.numpy().tolist()
+    iscond = iscond.numpy()
+
+    pred_shower_alpha_idx = np.argwhere(iscond==1)[:, 0].tolist()
+
+    map_fn = {x:i for i,x in enumerate(pred_shower_alpha_idx)}
+    map_fn[-1] = -1
+    pred_sid = [map_fn[x] for x in asso]
+
     if return_alpha_indices:
-        return pred_sid, alpha_indices
-    else:
-        return pred_sid
-    
+        return pred_sid, pred_shower_alpha_idx
+
+    return pred_sid
 
 
 def match(truth_sid, pred_sid, energy, iou_threshold=0.1):
