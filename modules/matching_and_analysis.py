@@ -177,6 +177,9 @@ class OCRecoGraphAnalyzer:
         # A disconnected graph with all the nodes with truth information
         truth_graph = nx.Graph()
 
+        # this should be read from a global "name" for truthHitAssignementIdx in case it changes
+        # e.g. from globals.py
+        
         truth_sid = truth_dict['truthHitAssignementIdx'][:, 0].astype(np.int32)
         truth_shower_sid, truth_shower_idx = np.unique(truth_sid, return_index=True)
 
@@ -185,6 +188,11 @@ class OCRecoGraphAnalyzer:
         for i in range(len(truth_shower_sid)):
             if truth_shower_sid[i] == -1:
                 continue
+            
+            '''
+            here it is much cleaner to just pass-through the truth dicts instead of 
+            creating more hard coded dependencies
+            '''
 
             node_attributes = dict()
 
@@ -233,17 +241,19 @@ class OCRecoGraphAnalyzer:
             node = (int(truth_shower_sid[i]), node_attributes)
             truth_nodes.append(node)
 
+            #what is this used for actually?
             num_vertices_per_truth.append(np.sum(truth_sid==truth_shower_sid[i]))
             node_attributes['num_hits'] = np.sum(truth_sid==truth_shower_sid[i])
 
 
 
-        energies = np.array([x[1]['energy'] for x in truth_nodes])
-        etas = np.array([x[1]['eta'] for x in truth_nodes])
-        phis = np.array([x[1]['phi'] for x in truth_nodes])
+        #energies = np.array([x[1]['energy'] for x in truth_nodes])
+        #etas = np.array([x[1]['eta'] for x in truth_nodes])
+        #phis = np.array([x[1]['phi'] for x in truth_nodes])
 
-        d_eta_phi = (etas[..., np.newaxis] - etas[np.newaxis, ...])**2 + (phis[..., np.newaxis] - phis[np.newaxis, ...])
-        lsf = energies / np.sum(np.less_equal(d_eta_phi, 0.5)  * energies[np.newaxis, ...], axis=1)
+        #?? also the formula is wrong
+        #d_eta_phi = (etas[..., np.newaxis] - etas[np.newaxis, ...])**2 + (phis[..., np.newaxis] - phis[np.newaxis, ...])
+        #lsf = energies / np.sum(np.less_equal(d_eta_phi, 0.5)  * energies[np.newaxis, ...], axis=1)
 
         truth_nodes_2 = []
         for i, t in enumerate(truth_nodes):
@@ -279,6 +289,13 @@ class OCRecoGraphAnalyzer:
             pred_shower_sid.append(pred_sid[i])
 
         pred_nodes = []
+        
+        '''
+        with the exception of the energy treatment, this should also 
+        be just a pass through of dict items.
+        but I would have a dedicated function to add these node attributes
+        to keep it more transparent what's going on.
+        '''
 
         mean_vertices_per_pred = []
         for i in range(len(pred_shower_sid)):
@@ -422,6 +439,10 @@ class OCRecoGraphAnalyzer:
             return None
         if len(truth_nodes) == 1:
             return truth_nodes[0]
+        
+        '''
+        what does this function do? What is it for?
+        '''
 
         node_attributes = dict()
 
@@ -508,6 +529,12 @@ class OCRecoGraphAnalyzer:
 
     def attach_rechit_data(self, g):
         id_max = np.max(g.nodes()) + 1000
+        
+        '''
+        Here we are attaching rechits again? Didn't we do that already?
+        Also, this "+1000" is dangerous - what is it for? does it need to be 1000?
+        What happens if it's 1001?
+        '''
 
         graph_2 = g.copy()
 
