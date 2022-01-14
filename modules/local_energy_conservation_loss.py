@@ -95,7 +95,7 @@ def get_local_energy_conservation_loss_per_batch_element(
 
     # TODO calculate loss (as the sum of energy differences for each shower?)
     shower_energy_sq_diff = tf.math.squared_difference(local_shower_energy_sum_truth, local_shower_energy_sum_pred)
-    local_energy_conservation_loss = tf.reduce_sum(shower_energy_sq_diff, axis=0)
+    local_energy_conservation_loss = tf.reduce_sum(shower_energy_sq_diff, axis=0) / shower_energy_sq_diff.shape[0]
 
     return local_energy_conservation_loss
 
