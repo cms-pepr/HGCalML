@@ -71,20 +71,13 @@ if not train.modelSet():
                    td = train.train_data.dataclass(),
                    debug_outdir=train.outputDir+'/intplots')
     
-    train.setCustomOptimizer(tf.keras.optimizers.Adam(
-        #larger->slower forgetting
-        #beta_1: linear
-        #beta_2: sq
-        #make it slower for our weird fluctuating batches
-        #beta_1=0.99, #0.9
-        #beta_2=0.99999 #0.999
-        #clipnorm=0.001
-        #amsgrad=True,
-        #epsilon=1e-2
-        ))
     
-    train.compileModel(learningrate=1e-4,
-                       loss=None)
+    train.setCustomOptimizer(tf.keras.optimizers.Adam())
+    #
+    train.compileModel(learningrate=1e-4)
+    
+    train.keras_model.summary()
+    
 
 
 

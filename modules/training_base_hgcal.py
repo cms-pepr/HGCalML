@@ -15,6 +15,10 @@ class HGCalTraining(training_base):
             sys.stdout = open(self.outputDir+'/stdout.txt', 'w')
             sys.stderr = open(self.outputDir+'/stderr.txt', 'w')
 
+    def compileModel(self, **kwargs):
+        super().compileModel(is_eager=True,
+                       loss=None,
+                       **kwargs)
     
     def trainModel(self,
                    nepochs,
