@@ -77,10 +77,10 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
             data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
             data['hitBackGatherIdx'] = backgather
             
-            from globals import removed_noise_coordinate
-            removednoise = np.logical_and(data["recHitX"] == removed_noise_coordinate, 
-                                          data["recHitY"] == removed_noise_coordinate)
-            removednoise = np.logical_and(data["recHitZ"] == removed_noise_coordinate, 
+            from globals import cluster_space as cs 
+            removednoise = np.logical_and(data["recHitX"] == cs.noise_coord, 
+                                          data["recHitY"] == cs.noise_coord)
+            removednoise = np.logical_and(data["recHitZ"] == cs.noise_coord, 
                                           removednoise)
             #remove removed noise
             for k in data.keys():
@@ -183,10 +183,10 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             data['predCCoordsY'] = predCCoords[:,1:2]
             data['predCCoordsZ'] = predCCoords[:,2:3]
             
-            from globals import removed_noise_coordinate
-            removednoise = np.logical_and(data["predCCoordsX"] == removed_noise_coordinate, 
-                                          data["predCCoordsY"] == removed_noise_coordinate)
-            removednoise = np.logical_and(data["predCCoordsZ"] == removed_noise_coordinate, 
+            from globals import cluster_space as cs 
+            removednoise = np.logical_and(data["predCCoordsX"] == cs.noise_coord, 
+                                          data["predCCoordsY"] == cs.noise_coord)
+            removednoise = np.logical_and(data["predCCoordsZ"] == cs.noise_coord, 
                                           removednoise)
             removednoise = np.where(removednoise[:,0],False,True)
             #remove removed noise

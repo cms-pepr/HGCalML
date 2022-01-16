@@ -782,10 +782,10 @@ def re_integrate_to_full_hits(
     ('row_splits', row_splits)
     '''
     from GravNetLayersRagged import MultiBackScatterOrGather
-    from globals import removed_noise_coordinate
+    from globals import cluster_space as  cs
     
     scatterids = pre_selection['scatterids']
-    pred_ccoords = MultiBackScatterOrGather(default=removed_noise_coordinate)([pred_ccoords, scatterids])#set it far away for noise
+    pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
     pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
     pred_energy_corr = MultiBackScatterOrGather(default=1.)([pred_energy_corr, scatterids])
     pred_pos = MultiBackScatterOrGather(default=0.)([pred_pos, scatterids])

@@ -168,8 +168,8 @@ def oc_per_batch_element(
     
     x_kalpha_m = tf.gather_nd(x_m,kalpha_m, batch_dims=1) # K x C
     if use_mean_x>0:
-        x_kalpha_m_m = tf.reduce_sum(q_m * x_m * padmask_m,axis=1) # K x C
-        x_kalpha_m_m = tf.math.divide_no_nan(x_kalpha_m_m, tf.reduce_sum(q_m * padmask_m, axis=1)+1e-9)
+        x_kalpha_m_m = tf.reduce_sum(beta_m * q_m * x_m * padmask_m,axis=1) # K x C
+        x_kalpha_m_m = tf.math.divide_no_nan(x_kalpha_m_m, tf.reduce_sum(beta_m * q_m * padmask_m, axis=1)+1e-9)
         x_kalpha_m = use_mean_x * x_kalpha_m_m + (1. - use_mean_x)*x_kalpha_m
     
     if kalpha_damping_strength > 0:

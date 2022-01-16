@@ -69,7 +69,7 @@ batchnorm_options={
 loss_options={
     'q_min': 2.5,
     'alt_energy_weight': False,
-    'use_average_cc_pos': 0.99
+    'use_average_cc_pos': 0.1
     }
 
 dense_activation='relu'
@@ -80,6 +80,7 @@ nbatch = 200000
 
 #iterations of gravnet blocks
 total_iterations = 2
+double_mp=True
 
 
 def gravnet_model(Inputs,
@@ -152,7 +153,7 @@ def gravnet_model(Inputs,
         n_dims = 6
         #exchange information, create coordinates
         x = Concatenate()([c_coords,c_coords,c_coords,coords,x])
-        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
+        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=256,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
@@ -175,13 +176,21 @@ def gravnet_model(Inputs,
                                                                     rs]) 
         x = Concatenate()([gncoords,x])           
         
-        x = DistanceWeightedMessagePassing([64,64,32,32,16,16],
+        if double_mp:
+            for m in [64,64,32,32,16,16]:
+                dscale=Dense(1)(x)
+                gndist = LocalDistanceScaling(4.)([gndist,dscale])
+                x = DistanceWeightedMessagePassing([m],
+                                           activation=dense_activation
+                                           )([x,gnnidx,gndist])
+        else:        
+            x = DistanceWeightedMessagePassing([64,64,32,32,16,16],
                                            activation=dense_activation
                                            )([x,gnnidx,gndist])
             
         x = GooeyBatchNorm(**batchnorm_options)(x)
         
-        x = Dense(64,activation=dense_activation)(x)
+        x = Dense(64,name='dense_past_mp_'+str(i),activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         
@@ -270,7 +279,6 @@ if not train.modelSet():
     train.compileModel(learningrate=1e-4)
     
     train.keras_model.summary()
-    
     
     from model_tools import apply_weights_from_path
     import os

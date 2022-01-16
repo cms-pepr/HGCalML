@@ -564,8 +564,8 @@ class TrainData_NanoML(TrainData):
         
         return [farr, 
                 t['t_idx'], t['t_energy'], t['t_pos'], t['t_time'], 
-                t['t_pid'], t['t_spectator'], t['t_fully_contained'] ],[], []
-                #,t['t_rec_energy'] ],[], []
+                t['t_pid'], t['t_spectator'], t['t_fully_contained'] #],[], []
+                ,t['t_rec_energy'] ],[], []
     
 
     def interpretAllModelInputs(self, ilist, returndict=False):
@@ -631,23 +631,27 @@ class TrainData_NanoML(TrainData):
         return d
     
     def createTruthDict(self, allfeat, truthidx=None):
-        #print(__name__,'needs fix')
-        _, _, t_idx, _, t_energy, _, t_pos, _, t_time, _, t_pid, _,\
-        t_spectator, _, t_fully_contained,_ = allfeat
+        '''
+        This is deprecated and should be replaced by a more transparent way.
+        '''
+        print(__name__,'should be deprecated soon and replaced by a more uniform interface')
+        data = self.interpretAllModelInputs(allfeat,returndict=True)
         
         out={
-            'truthHitAssignementIdx': t_idx,
-            'truthHitAssignedEnergies': t_energy,
-            'truthHitAssignedX': t_pos[:,0:1],
-            'truthHitAssignedY': t_pos[:,1:2],
-            'truthHitAssignedZ': t_pos[:,2:3],
-            'truthHitAssignedEta': calc_eta(t_pos[:,0:1], t_pos[:,1:2], t_pos[:,2:3]),
-            'truthHitAssignedPhi': calc_phi(t_pos[:,0:1], t_pos[:,1:2], t_pos[:,2:3]),
-            'truthHitAssignedT': t_time,
-            'truthHitAssignedPIDs': t_pid,
-            'truthHitSpectatorFlag': t_spectator,
-            'truthHitFullyContainedFlag': t_fully_contained,
+            'truthHitAssignementIdx': data['t_idx'],
+            'truthHitAssignedEnergies': data['t_energy'],
+            'truthHitAssignedX': data['t_pos'][:,0:1],
+            'truthHitAssignedY': data['t_pos'][:,1:2],
+            'truthHitAssignedZ': data['t_pos'][:,2:3],
+            'truthHitAssignedEta': calc_eta(data['t_pos'][:,0:1], data['t_pos'][:,1:2], data['t_pos'][:,2:3]),
+            'truthHitAssignedPhi': calc_phi(data['t_pos'][:,0:1], data['t_pos'][:,1:2], data['t_pos'][:,2:3]),
+            'truthHitAssignedT': data['t_time'],
+            'truthHitAssignedPIDs': data['t_pid'],
+            'truthHitSpectatorFlag': data['t_spectator'],
+            'truthHitFullyContainedFlag': data['t_fully_contained'],
             }
+        if 't_rec_energy' in data.keys():
+            out['t_rec_energy']=data['t_rec_energy']
         return out
     
     def createPandasDataFrame(self, eventno=-1):
