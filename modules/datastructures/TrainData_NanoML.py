@@ -1,13 +1,10 @@
 from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore import SimpleArray 
 import uproot3 as uproot
-from uproot3_methods import TLorentzVectorArray
-import awkward0 as ak
 import awkward as ak1
 import pickle
 import gzip
 import numpy as np
-from numba import jit
 import mgzip
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -154,6 +151,28 @@ class CollectionBase(object):
             self._checkshapes(self.truth[k],rhs.truth[k])
             newtruth[k] = ak1.concatenate([self.truth[k], rhs.truth[k]],axis=1)
         self.truth = newtruth
+        
+    def addUniqueIndices(self):
+        '''
+        Adds a '1' to exactly one hit representing
+        a truth object, per truth object. such that
+        number of truth objects = sum(unique)
+        and 
+        object properties = truth_per_hit_property[unique]
+        This can be very helpful in loss functions etc.
+        '''
+        t_idx = self.truth['t_idx']
+        nplist=[]
+        for a in t_idx: #these are numpy arrays
+            a = a.to_numpy()
+            _,idx = np.unique(a,return_index=True)
+            un = np.zeros_like(a)
+            un[idx]=1
+            nplist.append(un)
+        akarr = ak1.from_iter(nplist)
+        self.truth['t_is_unique']=akarr
+        
+        
         
     def akToNumpyAndRs(self,awkarr):
         rs = np.array([0]+[len(a) for a in awkarr],dtype='int64')
@@ -558,17 +577,23 @@ class TrainData_NanoML(TrainData):
         if self.include_tracks:
             trackcoll = TrackCollection(tree=tree)
             rechitcoll.append(trackcoll)
-            
+        
+        # adds t_is_unique
+        rechitcoll.addUniqueIndices()
+        
+        # converts to DeepJetCore.SimpleArray
         farr = rechitcoll.getFinalFeaturesSA()
         t = rechitcoll.getFinalTruthDictSA()
         
         return [farr, 
                 t['t_idx'], t['t_energy'], t['t_pos'], t['t_time'], 
-                t['t_pid'], t['t_spectator'], t['t_fully_contained'] #],[], []
-                ,t['t_rec_energy'] ],[], []
+                t['t_pid'], t['t_spectator'], t['t_fully_contained'],
+                t['t_rec_energy'], t['t_is_unique'] ],[], []
     
 
-    def interpretAllModelInputs(self, ilist, returndict=False):
+    def interpretAllModelInputs(self, ilist, returndict=True):
+        if not returndict:
+            raise ValueError('interpretAllModelInputs: Non-dict output is DEPRECATED. PLEASE REMOVE') 
         '''
         input: the full list of keras inputs
         returns: td
@@ -577,31 +602,34 @@ class TrainData_NanoML(TrainData):
          - t_energy
          - t_pos
          - t_time
-         - t_pid
-         - t_spectator
-         - t_fully_contained
+         - t_pid :             non hot-encoded pid
+         - t_spectator :       spectator score, higher: further from shower core
+         - t_fully_contained : fully contained in calorimeter, no 'scraping'
+         - t_rec_energy :      the truth-associated deposited 
+                               (and rechit calibrated) energy, including fractional assignments)
+         - t_is_unique :       an index that is 1 for exactly one hit per truth shower
          - row_splits
          
-        (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator ,t_fully_contained, row_splits)
         '''
-        if returndict:
-            out = {
-                'features':ilist[0],
-                'rechit_energy': ilist[0][:,0:1], #this is hacky. FIXME
-                't_idx':ilist[2],
-                't_energy':ilist[4],
-                't_pos':ilist[6],
-                't_time':ilist[8],
-                't_pid':ilist[10],
-                't_spectator':ilist[12],
-                't_fully_contained':ilist[14],
-                'row_splits':ilist[1]
-                }
-            if len(ilist)>16:
-                out['t_rec_energy'] = ilist[16]
-            return out
-        print('interpretAllModelInputs: Non-dict output is DEPRECATED. PLEASE REMOVE')    
-        return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1] 
+        out = {
+            'features':ilist[0],
+            'rechit_energy': ilist[0][:,0:1], #this is hacky. FIXME
+            't_idx':ilist[2],
+            't_energy':ilist[4],
+            't_pos':ilist[6],
+            't_time':ilist[8],
+            't_pid':ilist[10],
+            't_spectator':ilist[12],
+            't_fully_contained':ilist[14],
+            'row_splits':ilist[1]
+            }
+        #keep length check for compatibility
+        if len(ilist)>16:
+            out['t_rec_energy'] = ilist[16]
+        if len(ilist)>18:
+            out['t_is_unique'] = ilist[18]
+        return out
+         
      
     def createFeatureDict(self,infeat,addxycomb=True):
         '''
@@ -652,6 +680,8 @@ class TrainData_NanoML(TrainData):
             }
         if 't_rec_energy' in data.keys():
             out['t_rec_energy']=data['t_rec_energy']
+        if 't_hit_unique' in data.keys():
+            out['t_is_unique']=data['t_hit_unique']
         return out
     
     def createPandasDataFrame(self, eventno=-1):
