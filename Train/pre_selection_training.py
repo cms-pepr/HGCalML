@@ -81,7 +81,7 @@ if not train.modelSet():
 
 
 
-from configSaver import copyModules
+from config_saver import copyModules
 copyModules(train.outputDir)#save the modules
 
 verbosity = 2

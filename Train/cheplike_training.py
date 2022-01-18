@@ -67,9 +67,9 @@ batchnorm_options={
 
 #loss options:
 loss_options={
-    'q_min': 2.5,
+    'q_min': .5,
     'alt_energy_weight': False,
-    'use_average_cc_pos': 0.1
+    'use_average_cc_pos': 0.5
     }
 
 dense_activation='relu'
@@ -153,7 +153,7 @@ def gravnet_model(Inputs,
         n_dims = 6
         #exchange information, create coordinates
         x = Concatenate()([c_coords,c_coords,c_coords,coords,x])
-        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=256,
+        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=96,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
