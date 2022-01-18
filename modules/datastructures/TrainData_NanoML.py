@@ -230,6 +230,7 @@ class CollectionBase(object):
 class RecHitCollection(CollectionBase):
     def __init__(self, use_true_muon_momentum=False, 
                  cp_plus_pu_mode=False,
+                 cp_plus_pu_mode_reduce=False,
                  **kwargs):
         '''
         Guideline: this is more about clarity than performance. 
@@ -237,6 +238,7 @@ class RecHitCollection(CollectionBase):
         '''
         self.use_true_muon_momentum = use_true_muon_momentum
         self.cp_plus_pu_mode = cp_plus_pu_mode
+        self.cp_plus_pu_mode_reduce = cp_plus_pu_mode_reduce
         
         #call this last!
         super(RecHitCollection, self).__init__(**kwargs)
@@ -399,6 +401,8 @@ class RecHitCollection(CollectionBase):
         self.truth['t_fully_contained'] = fullyContained
         self.truth['t_rec_energy'] = recHitDepEnergy
         
+        if not self.cp_plus_pu_mode_reduce:
+            return
         #return
         #now remove access particles around initial one
         #this might not work because of close by gun
