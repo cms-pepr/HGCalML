@@ -187,7 +187,7 @@ class MaskTracksAsNoise(tf.keras.layers.Layer):
         assert inputs[0].dtype=='int32'
         tidx, trackcharge = inputs
         if self.active:
-            tidx = tf.where(trackcharge, -1, tidx)
+            tidx = tf.where(tf.abs(trackcharge)>1e-3, -1, tidx)
         return tidx
         
         
