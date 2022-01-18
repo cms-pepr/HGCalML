@@ -34,9 +34,14 @@ def calc_eta(x, y, z):
     return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.+1e-3)
     
 def calc_phi(x, y, z):
-    return np.arctan2(x, y)
+    return np.arctan2(y,x)#cms like
     
 
+def deltaPhi(a,b):
+    d = a-b
+    d = np.where(d>2.*np.pi, d-2.*np.pi, d)
+    return np.where(d<-2.*np.pi,d+2.*np.pi, d)
+    
 ######## helper classes ###########
 
 class CollectionBase(object):
@@ -172,8 +177,6 @@ class CollectionBase(object):
         akarr = ak1.from_iter(nplist)
         self.truth['t_is_unique']=akarr
         
-        
-        
     def akToNumpyAndRs(self,awkarr):
         rs = np.array([0]+[len(a) for a in awkarr],dtype='int64')
         rs = np.cumsum(rs,axis=0)
@@ -225,12 +228,15 @@ class CollectionBase(object):
     
     
 class RecHitCollection(CollectionBase):
-    def __init__(self, use_true_muon_momentum=False, **kwargs):
+    def __init__(self, use_true_muon_momentum=False, 
+                 cp_plus_pu_mode=False,
+                 **kwargs):
         '''
         Guideline: this is more about clarity than performance. 
         If it improves clarity read stuff twice or more!
         '''
         self.use_true_muon_momentum = use_true_muon_momentum
+        self.cp_plus_pu_mode = cp_plus_pu_mode
         
         #call this last!
         super(RecHitCollection, self).__init__(**kwargs)
@@ -332,8 +338,120 @@ class RecHitCollection(CollectionBase):
         noSplitRecHitSimClusIdx = self._readArray(tree,"RecHitHGC_BestMergedSimClusterIdx")
         return self._maskNoiseSC(tree,noSplitRecHitSimClusIdx)
     
-    
-    def _assignTruth(self, tree):
+    def _assignTruth(self,tree):
+        if self.cp_plus_pu_mode:
+            self._assignTruthCPPU(tree)
+        else:
+            self._assignTruthDef(tree)
+            
+    def _assignTruthCPPU(self, tree):
+        '''
+        
+
+        '''
+        print('\n\n>>>>>>WARNING: using calo particle plus PU mode: unless this is a special testing sample, you should not be using this function!<<<<\n\n')
+        print('\n\n>>>>>> The configuration here also assumes exactly 1 non PU particle per endcap!<<<<<<<\n\n')
+        
+        
+        assert self.splitIdx is not None
+        
+        scidx = self._readArray(tree,"RecHitHGC_BestSimClusterIdx")
+        cpidx = self._readArray(tree,"SimCluster_CaloPartIdx")
+        nonSplitRecHitSimClusIdx = ak1.where(scidx >= 0, cpidx[scidx], -1)#mark noise
+        
+        non_pu_cp = (self._readArray(tree,"CaloPart_eventId")+self._readArray(tree,"CaloPart_bunchCrossing"))<1
+        
+        recHitNotPU = self._assignTruthByIndexAndSplit(tree,non_pu_cp,nonSplitRecHitSimClusIdx)
+        
+        recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"CaloPart_pdgId",nonSplitRecHitSimClusIdx)
+        recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"CaloPart_energy",nonSplitRecHitSimClusIdx)
+        
+        fzeros      = self._assignTruthByIndexAndSplit(tree,"CaloPart_pt",nonSplitRecHitSimClusIdx)*0.
+        recHitTruthX      = fzeros
+        recHitTruthY      = fzeros 
+        recHitTruthZ      = fzeros 
+        recHitTruthTime   = fzeros 
+        
+        recHitDepEnergy = fzeros
+        
+        fullyContained = ak1.ones_like(fzeros)
+        
+        
+        from globals import pu
+        recHitSimClusIdx = self._splitJaggedArray(nonSplitRecHitSimClusIdx)
+        recHitSimClusIdx = self._expand(recHitSimClusIdx)
+        recHitSimClusIdx = recHitSimClusIdx + pu.t_idx_offset*(1-recHitNotPU)*(recHitSimClusIdx>=0)#only for not noise
+        #pu_idx_offset[recHitNotPU[...,0]>0]=0
+        #recHitSimClusIdx += pu_idx_offset
+        #recHitSimClusIdx = recHitSimClusIdx + pu.t_idx_offset * (1-recHitNotPU[...,0])
+        #testing
+        #recHitSimClusIdx = recHitNotPU #(1+recHitSimClusIdx)*recHitNotPU[...,0]#[...,0]
+        
+        recHitSpectatorFlag = fzeros
+        
+        self.truth={}
+        self.truth['t_idx'] = recHitSimClusIdx
+        self.truth['t_energy'] = recHitTruthEnergy
+        self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
+        self.truth['t_time'] = recHitTruthTime
+        self.truth['t_pid'] = recHitTruthPID
+        self.truth['t_spectator'] = recHitSpectatorFlag
+        self.truth['t_fully_contained'] = fullyContained
+        self.truth['t_rec_energy'] = recHitDepEnergy
+        
+        #return
+        #now remove access particles around initial one
+        #this might not work because of close by gun
+        #.... it does not work....
+        #npu_cpeta = self._readArray(tree,"CaloPart_eta")
+        #npu_cpphi = self._readArray(tree,"CaloPart_phi")
+        
+        
+        recHitX = self._readSplitAndExpand(tree,"RecHitHGC_x")# EC x V x 1
+        recHitY = self._readSplitAndExpand(tree,"RecHitHGC_y")
+        recHitZ = self._readSplitAndExpand(tree,"RecHitHGC_z")
+        
+        cp_x = ak1.mean(recHitX[recHitNotPU[...,0]>0],axis=1)
+        cp_y = ak1.mean(recHitY[recHitNotPU[...,0]>0],axis=1)
+        cp_z = ak1.mean(recHitZ[recHitNotPU[...,0]>0],axis=1)
+        
+        recHitEta = calc_eta(recHitX, recHitY, recHitZ)
+        recHitPhi = calc_phi(recHitX, recHitY, recHitZ)
+        
+        #return
+        # ...
+        #just loop over EC, there are only very few
+        hitselector=[]
+        for i_endcap in range(len(recHitEta)):
+            
+            ecps_eta=calc_eta(cp_x[i_endcap], cp_y[i_endcap], cp_z[i_endcap])
+            ecps_phi=calc_phi(cp_x[i_endcap], cp_y[i_endcap], cp_z[i_endcap])
+            
+            ec_heta = recHitEta[i_endcap].to_numpy() # V x 1
+            ec_hphi = recHitPhi[i_endcap].to_numpy() 
+            
+            deta = ec_heta-ecps_eta
+            dphi = deltaPhi(ec_hphi,ecps_phi) # V x 1
+            
+            drsq = deta**2 + dphi**2  # V x 1
+            
+            close = np.array(drsq < 0.5**2,dtype='int')[...,0]
+            #either_close = np.sum(close, axis=1)#does sum work on bool?
+            #print(close.shape)
+            hitselector.append(close)
+            
+            #last
+        
+        hitselector = ak1.from_iter(hitselector) # EC x V'
+        #hitselector = recHitNotPU[...,0]
+        #print('hitselector',ak1.sum(hitselector))
+        
+        for k in self.truth.keys():
+            self.truth[k] = self.truth[k][hitselector>0]
+        self.features = self.features[hitselector>0]
+         
+            
+    def _assignTruthDef(self, tree):
         
         assert self.splitIdx is not None
         
@@ -445,10 +563,6 @@ class TrackCollection(CollectionBase):
     
     def _getMatchIdxs(self, tree):
         
-        #match by eta phi
-        def deltaPhi(a,b):
-            d = np.abs(a-b)
-            return np.where(d>np.pi,d-np.pi,d)
         
         #no split here
         truthMom    = self._readArray(tree,"MergedSimCluster_boundaryEnergy")
@@ -547,6 +661,7 @@ class TrainData_NanoML(TrainData):
     def __init__(self):
         TrainData.__init__(self)
         self.include_tracks = False
+        self.cp_plus_pu_mode = False
 
     
     def fileIsValid(self, filename):
@@ -571,7 +686,9 @@ class TrainData_NanoML(TrainData):
         tree = uproot.open(filename)[treename]
         
         
-        rechitcoll = RecHitCollection(use_true_muon_momentum=self.include_tracks,tree=tree)
+        rechitcoll = RecHitCollection(use_true_muon_momentum=self.include_tracks,
+                                      cp_plus_pu_mode=self.cp_plus_pu_mode,
+                                      tree=tree)
         
         #in a similar manner, we can also add tracks from conversions etc here
         if self.include_tracks:
@@ -755,6 +872,13 @@ class TrainData_NanoMLTracks(TrainData_NanoML):
     def __init__(self):
         TrainData_NanoML.__init__(self)
         self.include_tracks = True
+        
+        
+
+class TrainData_NanoMLCPPU(TrainData_NanoML):
+    def __init__(self):
+        TrainData_NanoML.__init__(self)
+        self.cp_plus_pu_mode=True
 
 
 def main():
