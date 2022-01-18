@@ -51,7 +51,12 @@ class hit_keys(_const):
     '''
     keys for features/pred/truth per hit that cannot be passed transparently
     as they need to be used in functions.
-    These should be used at any occurence to avoid issues when they're changed
+    These should be used at any occurence to avoid issues when they're changed.
+    
+    Another good (maybe better) place for them would be TrainData_NanoML.
+    Also, there use the inheritance from _const.
+    
+    So far, this is not used (yet)
     '''
     rec_energy = 'recHitEnergy'
     # ...
