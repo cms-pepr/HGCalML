@@ -1,12 +1,12 @@
 '''
 
 Compatible with the dataset here:
-/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Dec2021_production
+/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Jan2022_production_3
 
 On flatiron:
-/mnt/ceph/users/jkieseler/HGCalML_data/Dec2021_production
+/mnt/ceph/users/jkieseler/HGCalML_data/Jan2022_production_3
 
-not compatible with datasets before end of October 2021
+not compatible with datasets before end of Jan 2022
 
 '''
 from callback_wrappers import build_callbacks
@@ -245,7 +245,9 @@ def gravnet_model(Inputs,
          pre_selection['t_pos'] ,
          pre_selection['t_time'] ,
          pre_selection['t_pid'] ,
-         pre_selection['t_spectator_weight'] ,
+         pre_selection['t_spectator_weight'],
+         pre_selection['t_fully_contained'],
+         pre_selection['t_rec_energy'],
          pre_selection['rs']])
                                          
     #fast feedback

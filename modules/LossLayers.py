@@ -146,7 +146,7 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
     
     def compute_output_shape(self, input_shapes):
-        return input_shapes   
+        return input_shapes[0] 
     
     def call(self, inputs):
         if not self.active:
@@ -157,6 +157,8 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
         #noise can never be spectator
         return tf.where(abovethresh, tf.ones_like(inputs[0])-self.minimum, 0.)
     
+
+        
 
 class LLFillSpace(LossLayerBase):
     def __init__(self, 
@@ -894,12 +896,12 @@ class LLFullObjectCondensation(LossLayerBase):
 
     def loss(self, inputs):
         
-        assert len(inputs) == 15
+        assert len(inputs) == 17
         
         
         pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
         rechit_energy,\
-        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,\
+        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
         rowsplits = inputs
                     
         tf.assert_equal(rowsplits[-1], pred_beta.shape[0])#guard
@@ -911,6 +913,8 @@ class LLFullObjectCondensation(LossLayerBase):
         if not self.use_energy_weights:
             energy_weights = tf.zeros_like(energy_weights)+1.
             
+        #reduce weight on not fully contained showers
+        energy_weights = tf.where(t_fully_contained>0, energy_weights, energy_weights*0.01)
         
         
         q_min = self.q_min #self.calc_qmin_weight(rechit_energy)#FIXME
