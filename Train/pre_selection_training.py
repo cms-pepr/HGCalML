@@ -169,7 +169,7 @@ cb = [
 #cb += build_callbacks(train)
 
 #cb=[]
-nbatch = 150000 
+nbatch = 400000 
 train.change_learning_rate(8e-4)
 
 train.trainModel(nepochs=2,batchsize=nbatch,additional_callbacks=cb)
