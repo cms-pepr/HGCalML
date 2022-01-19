@@ -403,6 +403,7 @@ class RecHitCollection(CollectionBase):
         
         if not self.cp_plus_pu_mode_reduce:
             return
+        print('\n>>>reducing set by ∆R: handle with care<<<\n')
         #return
         #now remove access particles around initial one
         #this might not work because of close by gun

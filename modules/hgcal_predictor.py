@@ -7,7 +7,7 @@ from datastructures.TrainData_NanoML import TrainData_NanoML
 import os
 from DeepJetCore.modeltools import load_model
 from datastructures import TrainData_TrackML
-
+import time
 
 class HGCalPredictor():
     def __init__(self, input_source_files_list, training_data_collection, predict_dir, unbuffered=False, model_path=None, max_files=4, inputdir=None):
@@ -81,7 +81,8 @@ class HGCalPredictor():
 
             td = self.dc.dataclass()
 
-            if type(td) is not TrainData_NanoML  and type(td) is not TrainData_TrackML:
+            #also allows for inheriting classes now, like with tracks or special PU
+            if not isinstance(td, TrainData_NanoML)  and type(td) is not TrainData_TrackML:
                 raise RuntimeError("TODO: make sure this works for other traindata formats")
 
             if inputfile[-5:] == 'djctd':
@@ -105,6 +106,7 @@ class HGCalPredictor():
 
             dumping_data = []
 
+            thistime = time.time()
             for _ in range(num_steps):
                 data_in = next(generator)
                 predictions_dict = model(data_in[0])
@@ -114,6 +116,9 @@ class HGCalPredictor():
                 truth_dict = td.createTruthDict(data_in[0])
                 
                 dumping_data.append([features_dict, truth_dict, predictions_dict])
+                
+            totaltime = time.time() - thistime
+            print('took approx',totaltime/num_steps,'s per endcap (also includes dict building)')
 
             td.clear()
             gen.clear()

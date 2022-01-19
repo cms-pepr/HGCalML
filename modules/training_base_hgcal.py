@@ -23,6 +23,8 @@ class HGCalTraining(training_base):
     def trainModel(self,
                    nepochs,
                    batchsize,
+                   backup_after_batches=500,
+                   checkperiod=1, 
                    **kwargs):
         '''
         Just implements some defaults
@@ -33,6 +35,6 @@ class HGCalTraining(training_base):
                            verbose=2,
                            batchsize_use_sum_of_squares=False,
                            fake_truth=True,
-                           checkperiod=1, 
-                           backup_after_batches=500,
+                           backup_after_batches=backup_after_batches,
+                           checkperiod=checkperiod,
                             **kwargs)
