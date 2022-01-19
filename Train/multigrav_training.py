@@ -269,7 +269,7 @@ if not train.modelSet():
     
     from model_tools import apply_weights_from_path
     import os
-    path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_multigrav/KERAS_model.h5'
+    path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
     train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
     
 
