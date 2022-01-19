@@ -247,17 +247,21 @@ class OCRecoGraphAnalyzer:
 
 
 
-        #energies = np.array([x[1]['energy'] for x in truth_nodes])
-        #etas = np.array([x[1]['eta'] for x in truth_nodes])
-        #phis = np.array([x[1]['phi'] for x in truth_nodes])
+        energies = np.array([x[1]['energy'] for x in truth_nodes])
+        etas = np.array([x[1]['eta'] for x in truth_nodes])
+        phis = np.array([x[1]['phi'] for x in truth_nodes])
 
-        #?? also the formula is wrong
-        #d_eta_phi = (etas[..., np.newaxis] - etas[np.newaxis, ...])**2 + (phis[..., np.newaxis] - phis[np.newaxis, ...])
-        #lsf = energies / np.sum(np.less_equal(d_eta_phi, 0.5)  * energies[np.newaxis, ...], axis=1)
+        d_phi = phis[..., np.newaxis] - phis[np.newaxis, ...]
+        d_phi = np.where(d_phi> 2.*np.pi , d_phi-2.*np.pi, d_phi)
+        d_phi = np.where(d_phi<-2.*np.pi , d_phi+2.*np.pi, d_phi)
+        #there was a **2 missing
+        d_eta_phi = (etas[..., np.newaxis] - etas[np.newaxis, ...])**2 + d_phi**2
+        #0.5 also needs to be squared
+        lsf = energies / np.sum(np.less_equal(d_eta_phi, 0.5**2)  * energies[np.newaxis, ...], axis=1)
 
         truth_nodes_2 = []
         for i, t in enumerate(truth_nodes):
-            truth_nodes_2.append((t[0],dict(**t[1],**({'local_shower_energy_fraction':lsf[i]}))))
+            truth_nodes_2.append((t[0],dict(**t[1],**({'local_shower_energy_fraction': lsf[i]}))))
 
         truth_graph.add_nodes_from(truth_nodes_2)
 
