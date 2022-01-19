@@ -783,7 +783,7 @@ class TrainData_NanoML(TrainData):
         '''
         This is deprecated and should be replaced by a more transparent way.
         '''
-        print(__name__,'should be deprecated soon and replaced by a more uniform interface')
+        print(__name__,'createTruthDict: should be deprecated soon and replaced by a more uniform interface')
         data = self.interpretAllModelInputs(allfeat,returndict=True)
         
         out={
