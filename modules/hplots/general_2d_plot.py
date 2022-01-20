@@ -22,7 +22,7 @@ class General2dBinningPlot():
         # self.e_bins = [0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]
 
 
-    def _compute(self, x_values, y_values):
+    def _compute(self, x_values, y_values, weights=None):
         e_bins = self.e_bins
         e_bins_n = np.array(e_bins)
         e_bins_n = (e_bins_n - e_bins_n.min()) / (e_bins_n.max() - e_bins_n.min())
@@ -33,6 +33,9 @@ class General2dBinningPlot():
         lows = []
         highs = []
 
+        if weights is None:
+            weights = np.ones_like(y_values)
+
         for i in range(len(e_bins) - 1):
             l = e_bins[i]
             h = e_bins[i + 1]
@@ -40,9 +43,9 @@ class General2dBinningPlot():
 
             filter = np.argwhere(np.logical_and(x_values >= l, x_values < h))
             filtered_y_values = y_values[filter].astype(float)
+            filtered_weights = weights[filter].astype(float)
 
-
-            m = np.mean(filtered_y_values)
+            m = np.sum(filtered_y_values*filtered_weights)/np.sum(filtered_weights)
             mean.append(m)
             # print(np.sum(filtered_found), len(filtered_found), m, l, h)
             lows.append(l)
@@ -61,15 +64,18 @@ class General2dBinningPlot():
 
         return processed_data
 
-    def add_raw_values(self, x_values, y_values, tags={}):
+    def add_raw_values(self, x_values, y_values, tags={}, weights=None):
         if type(x_values) is not np.ndarray:
             raise ValueError("x values has to be numpy array")
         if type(y_values) is not np.ndarray:
             raise ValueError("y values has to be numpy array")
+        if weights is not None:
+            if type(weights) is not np.ndarray:
+                raise ValueError("weights has to be numpy array")
 
 
 
-        data = self._compute(x_values, y_values)
+        data = self._compute(x_values, y_values, weights=weights)
         data['tags'] = tags
         self.models_data.append(data)
 
@@ -86,6 +92,8 @@ class General2dBinningPlot():
         ax2 = ax1.twinx()
 
         max_of_hist_values = 0
+
+        do_legend = False
 
         for model_data in self.models_data:
             error_exists = 'error' in model_data
@@ -110,6 +118,7 @@ class General2dBinningPlot():
             else:
                 name_of_plot = name_tag_formatter(tags)
 
+            do_legend = do_legend or len(name_of_plot) > 0
 
             hist_values = hist_values.tolist()
             mean = mean.tolist()
@@ -133,9 +142,11 @@ class General2dBinningPlot():
             # else:
             else:
                 ax1.step(e_bins, [mean[0]] + mean, label=name_of_plot)
-            ax1.set_xlabel(self.x_label)
-            ax1.set_ylabel(self.y_label)
-            ax1.set_yscale(self.yscale)
+
+        ax1.set_xlabel(self.x_label)
+        ax1.set_ylabel(self.y_label)
+        ax1.set_yscale(self.yscale)
+        if do_legend:
             ax1.legend(loc='center right')
 
         # ax1.set_ylim(0, 1.04)

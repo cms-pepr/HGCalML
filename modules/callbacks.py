@@ -490,65 +490,36 @@ class plotGravNetCoordsDuringTraining(plotDuringTrainingBase):
             print(e)
             raise e
         
-        
-        
-############ from running_full_validation_callbacks
 
 
-import os
-import mgzip
 import tensorflow as tf
 
-import graph_functions
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 from plotting_tools import publish
-from importlib import reload
-
-
-graph_functions = reload(graph_functions)
 
 
 class RunningFullValidation(tf.keras.callbacks.Callback):
-    def __init__(self, after_n_batches, predictor, analyzer, optimizer=None, test_on_points=None,
-                 database_manager=None, pdfs_path=None, min_batch=0, table_prefix='gamma_full_validation',
-                 run_optimization_loop_for=80, optimization_loop_num_init_points=5, 
+    def __init__(self, after_n_batches, predictor, hits2showers, showers_matcher, test_on_points,
+                 pdfs_path, min_batch=0,
                  limit_endcaps = -1,#all endcaps in file
                  limit_endcaps_by_time = 600,#in seconds, don't spend more than 10 minutes on this
                  trial_batch=10):
-        """
-        :param analyzer:
-        :param after_n_batches: Run callback after n batches
-        :param predictor: Predictor class for HGCal
-        :param optimizer: Bayesian optimizer class for HGCal (OCHyperParamOptimizer)
-        :param database_manager: Database writing manager, where to write the data, leave None without proper understanding
-        of underlying database operations
-        :param pdfs_path: Where to
-        :param table_prefix: Adds this prefix to storage tables, leave None without proper understanding of underlying
-        database operations
-        """
+
         super().__init__()
         self.after_n_batches = after_n_batches
         self.predictor = predictor
-        self.optimizer = optimizer
         self.batch_idx = 0
         self.hyper_param_points=test_on_points
         self.limit_endcaps = limit_endcaps
         self.limit_endcaps_by_time = limit_endcaps_by_time
-        self.database_manager = database_manager
-        self.table_prefix = table_prefix
         self.pdfs_path = pdfs_path
-        self.run_optimization_loop_for = run_optimization_loop_for
-        self.optimization_loop_num_init_points = optimization_loop_num_init_points
         self.trial_batch = trial_batch
-        self.analyzer = analyzer
+        self.hits2showers = hits2showers
+        self.showers_matcher = showers_matcher
 
-        if database_manager is None and pdfs_path is None:
-            raise RuntimeError("Set either database manager or pdf output path")
+        if pdfs_path is None:
+            raise RuntimeError("Set pdf output path")
 
-        if optimizer is None != test_on_points is None: # Just an xor
-            raise RuntimeError("Can either do optimization or run at specific points")
-
-    #there is a lot that can go wrong but should not kill the training
     def on_train_batch_end(self, batch, logs=None):
         try:
             self._on_train_batch_end(batch, logs)
@@ -584,41 +555,45 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
             print("Model file not found. Will skip.")
             return
 
-        if self.optimizer is not None:
-            max_point = self.optimizer.optimize(all_data, num_iterations=self.run_optimization_loop_for, init_points=self.optimization_loop_num_init_points)
-            b = max_point['params']['b']
-            d = max_point['params']['d']
-            test_on = [(b,d)]
-        else:
-            test_on = self.hyper_param_points
-
+        test_on = self.hyper_param_points
+        showers_dataframe = pd.DataFrame()
+        event_id = 0
 
         #TBI: this should be sent to a thread and not block main execution
         for b, d in test_on:
-            graphs, metadata = self.analyzer.analyse_from_data(all_data, b, d, 
-                                                               limit_endcaps=self.limit_endcaps,
-                                                               limit_endcaps_by_time=self.limit_endcaps_by_time)
-            if self.optimizer is not None:
-                self.optimizer.remove_data() # To save memory
+            for file_data in all_data:
+                for endcap_data in file_data:
+                    features_dict, truth_dict, predictions_dict = endcap_data
+                    self.hits2showers.set_beta_threshold(b)
+                    self.hits2showers.set_distance_threshold(d)
+                    processed_pred_dict, pred_shower_alpha_idx = self.hits2showers.call(features_dict, predictions_dict)
+                    self.showers_matcher.set_inputs(
+                        features_dict=features_dict,
+                        truth_dict=truth_dict,
+                        predictions_dict=processed_pred_dict,
+                        pred_alpha_idx=pred_shower_alpha_idx
+                    )
+                    self.showers_matcher.process()
 
+                    dataframe = self.showers_matcher.get_result_as_dataframe()
+                    dataframe['event_id'] = event_id
+                    event_id += 1
+                    showers_dataframe = pd.concat((showers_dataframe, dataframe))
 
+            # This is only to write to pdf files
+            scalar_variables = {
+                'beta_threshold': str(b),
+                'distance_threshold': str(d),
+                'iou_threshold': str(self.showers_matcher.iou_threshold),
+                'matching_mode': str(self.showers_matcher.match_mode),
+                'is_soft': str(self.hits2showers.is_soft),
+                'de_e_cut': str(self.showers_matcher.de_e_cut),
+                'angle_cut': str(self.showers_matcher.angle_cut),
+            }
             plotter = HGCalAnalysisPlotter()
-            tags = dict()
-            if self.optimizer is not None:
-                tags['iteration'] = int(self.optimizer.iteration)
-            else:
-                tags['iteration'] = -1
-
-            tags['training_iteration'] = int(self.batch_idx)
-
-            plotter.add_data_from_analysed_graph_list(graphs, metadata, additional_tags=tags)
-
-            if self.database_manager is not None:
-                plotter.write_data_to_database(self.database_manager, self.table_prefix)
-                print("Written to database")
-
-            if self.pdfs_path is not None:
-                plotter.write_to_pdf(pdfpath=os.path.join(self.pdfs_path, 'validation_results_%07d_%.2f_%.2f.pdf'%(self.batch_idx, b,d)))
+            pdf_path = os.path.join(self.pdfs_path, 'validation_results_%07d_%.2f_%.2f.pdf'%(self.batch_idx, b,d))
+            plotter.set_data(showers_dataframe, None, '', pdf_path, scalar_variables=scalar_variables)
+            plotter.process()
 
         print('finished full validation callback, proceeding with training.')
         

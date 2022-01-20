@@ -1,3 +1,5 @@
+raise NotImplementedError('Needs to be revamped with the new code. To be done soon')
+
 import time
 
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter

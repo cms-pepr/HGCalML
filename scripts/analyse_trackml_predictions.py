@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+raise NotImplementedError('Needs to be revamped with the new code. To be done soon')
+
 import os
 import gzip
 import pickle

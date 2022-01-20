@@ -128,6 +128,7 @@ class HGCalPredictor():
             outputs.append(outfilename)
             if not output_to_file:
                 all_data.append(dumping_data)
+
         if output_to_file:
             with open(self.predict_dir + "/outfiles.txt", "w") as f:
                 for l in outputs:
