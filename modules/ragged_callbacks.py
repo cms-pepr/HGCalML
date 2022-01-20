@@ -1,5 +1,6 @@
 
 print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL","move implementations to callbacks")
+raise ImportError("MODULE",__name__,"will be removed")
 
 import matplotlib
 matplotlib.use('Agg')
@@ -15,12 +16,11 @@ from multiprocessing import Process
 import numpy as np
 import tempfile
 import os
-from keras.callbacks import Callback
 from DeepJetCore.TrainData import TrainData
 from DeepJetCore.dataPipeline import TrainDataGenerator
-from LayersRagged import RaggedConstructTensor
 import tensorflow as tf
 import copy
+
 
 
 class plotEventDuringTraining(PredictCallback):

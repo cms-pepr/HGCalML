@@ -6,6 +6,9 @@
 # host : XX.XXX.XX.XXX
 # database : database_XX 
 
+
+print("MODULE OBSOLETE?",__name__)
+
 import configparser
 import os
 

@@ -1,8 +1,26 @@
-
+'''
+Needs some cleaning.
+On the longer term, let's keep this just a wrapper module for layers,
+but the layers themselves to other files
+'''
 
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
+#base modules
+
+from baseModules import PromptMetric
+global_layers_list['PromptMetric'] = PromptMetric
+
+from baseModules import LayerWithMetrics
+global_layers_list['LayerWithMetrics'] = LayerWithMetrics
+
+#metrics layers
+
+from MetricsLayers import MLReductionMetrics
+global_layers_list['MLReductionMetrics'] = MLReductionMetrics
+
+#older layers
 
 from LayersRagged import RaggedSumAndScatter
 global_layers_list['RaggedSumAndScatter']=RaggedSumAndScatter
@@ -16,9 +34,6 @@ global_layers_list['CondensateToPseudoRS']=CondensateToPseudoRS
 from LayersRagged import GridMaxPoolReduction
 global_layers_list['GridMaxPoolReduction']=GridMaxPoolReduction
 
-from LayersRagged import RaggedConstructTensor
-global_layers_list['RaggedConstructTensor']=RaggedConstructTensor
-
 from LayersRagged import RaggedGlobalExchange
 global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 
@@ -26,6 +41,9 @@ global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 
 from GravNetLayersRagged import CastRowSplits
 global_layers_list['CastRowSplits']=CastRowSplits
+
+from GravNetLayersRagged import MaskTracksAsNoise
+global_layers_list['MaskTracksAsNoise']=MaskTracksAsNoise
 
 from GravNetLayersRagged import ScaleBackpropGradient
 global_layers_list['ScaleBackpropGradient']=ScaleBackpropGradient
@@ -130,6 +148,9 @@ global_layers_list['SoftPixelCNN']=SoftPixelCNN
 from GravNetLayersRagged import RaggedGravNet
 global_layers_list['RaggedGravNet']=RaggedGravNet
 
+from GravNetLayersRagged import MultiAttentionGravNetAdd
+global_layers_list['MultiAttentionGravNetAdd']=MultiAttentionGravNetAdd
+
 from GravNetLayersRagged import DynamicDistanceMessagePassing
 global_layers_list['DynamicDistanceMessagePassing']=DynamicDistanceMessagePassing
 
@@ -149,14 +170,14 @@ from GravNetLayersRagged import EdgeConvStatic
 global_layers_list['EdgeConvStatic']=EdgeConvStatic
 
 ### odd debug layers
-from debugLayers import PlotCoordinates
+from DebugLayers import PlotCoordinates
 global_layers_list['PlotCoordinates']=PlotCoordinates
 
 
-from lossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
-from lossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace
-from lossLayers import LossLayerBase, LLFullObjectCondensation,LLNeighbourhoodClassifier
-from lossLayers import LLEdgeClassifier
+from LossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
+from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace
+from LossLayers import LossLayerBase, LLFullObjectCondensation,LLNeighbourhoodClassifier
+from LossLayers import LLEdgeClassifier
 import traceback
 import os
 
@@ -176,15 +197,18 @@ global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier
 global_layers_list['LLEdgeClassifier']=LLEdgeClassifier
 
 ####### other stuff goes here
-from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer
+from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer,MeanMaxDistanceRegularizer
 
 global_layers_list['OffDiagonalRegularizer']=OffDiagonalRegularizer
 global_layers_list['WarpRegularizer']=WarpRegularizer
 global_layers_list['AverageDistanceRegularizer']=AverageDistanceRegularizer
+global_layers_list['MeanMaxDistanceRegularizer']=MeanMaxDistanceRegularizer
+
+
 
 
 #also this one needs to be passed
-from initializers import EyeInitializer
+from Initializers import EyeInitializer
 global_layers_list['EyeInitializer']=EyeInitializer
 
 ####### some implementations
@@ -194,7 +218,6 @@ global_layers_list['EyeInitializer']=EyeInitializer
 from tensorflow.keras.layers import Layer
 import tensorflow.keras.backend as K
 import tensorflow as tf
-from Loss_tools import deltaPhi
 
 
 class GausActivation(Layer):
@@ -271,37 +294,6 @@ class ExpMinusOne(Layer):
 global_layers_list['ExpMinusOne']=ExpMinusOne
 
 
-class CenterPhi(Layer):
-    '''
-    Centers phi to the first input vertex, such that the 2pi modulo behaviour
-    disappears for a small selection
-    '''
-    def __init__(self, phi_feature_index, **kwargs):
-        super(CenterPhi, self).__init__(**kwargs)
-        self.phi_feature_index=phi_feature_index
-
-    def compute_output_shape(self, input_shape):
-        return input_shape
-
-    def call(self, inputs):
-        phi = inputs[...,self.phi_feature_index:self.phi_feature_index+1]
-
-        reference = inputs[...,0:1,self.phi_feature_index:self.phi_feature_index+1]
-
-        n_phi = deltaPhi( reference, phi )
-
-        rest_left  = inputs[...,:self.phi_feature_index]
-        rest_right = inputs[...,self.phi_feature_index+1:]
-
-        return tf.concat( [rest_left, n_phi,rest_right ] , axis=-1 )
-
-    def get_config(self):
-        config = {'phi_feature_index': self.phi_feature_index}
-        base_config = super(CenterPhi, self).get_config()
-        return dict(list(base_config.items()) + list(config.items() ))
-
-
-global_layers_list['CenterPhi']=CenterPhi
 
 
 class CreateZeroMask(Layer):
@@ -701,3 +693,21 @@ class RobustModel(tf.keras.Model):
 
 global_layers_list['ExtendedMetricsModel']=ExtendedMetricsModel
 global_layers_list['RobustModel']=RobustModel
+
+
+
+#new implementation of RobustModel. Keep RobustModel for backwards-compat
+class DictModel(tf.keras.Model):
+    def __init__(self, 
+                 inputs,
+                 outputs: dict, #force to be dict
+                 *args, **kwargs):
+        """
+        Just forces dictionary output
+        """
+        
+        super(DictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
+
+    
+
+global_layers_list['DictModel']=DictModel

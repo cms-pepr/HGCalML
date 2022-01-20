@@ -1,5 +1,7 @@
 
 print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL")
+raise ImportError("MODULE",__name__,"will be removed")
+
 
 import tensorflow as tf
 import tensorflow.keras.backend as K

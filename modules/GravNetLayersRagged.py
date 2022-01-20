@@ -13,10 +13,12 @@ from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
 #### helper###
-from datastructures import TrainData_OC,TrainData_NanoML
-from initializers import EyeInitializer
+from datastructures import TrainData_NanoML
+from Initializers import EyeInitializer
 
 from oc_helper_ops import SelectWithDefault
+
+from baseModules import LayerWithMetrics
 
 #helper
 #def AccumulateKnnRS(distances,  features, indices, 
@@ -157,7 +159,38 @@ class CastRowSplits(tf.keras.layers.Layer):
         assert len(inputs.shape)==2
         return tf.cast(inputs[:,0],dtype='int32')
         
+
+class MaskTracksAsNoise(tf.keras.layers.Layer):
+    def __init__(self, 
+                 active=True,
+                 **kwargs):
+        '''
+        Inputs:
+        - truth index
+        - track_charge
+        '''
+        super(MaskTracksAsNoise, self).__init__(**kwargs)
+        self.active = active
     
+    def get_config(self):
+        base_config = super(MaskTracksAsNoise, self).get_config()
+        return dict(list(base_config.items()) + list({'active': self.active }.items()))
+
+    def build(self, input_shape):
+        super(MaskTracksAsNoise, self).build(input_shape)
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0]
+            
+    def call(self,inputs):
+        assert len(inputs)==2
+        assert inputs[0].dtype=='int32'
+        tidx, trackcharge = inputs
+        if self.active:
+            tidx = tf.where(tf.abs(trackcharge)>1e-3, -1, tidx)
+        return tidx
+        
+        
 
 class ScaleBackpropGradient(tf.keras.layers.Layer):
     def __init__(self, scale, **kwargs):
@@ -322,16 +355,38 @@ class DownSample(tf.keras.layers.Layer):
 ############# Some layers for convenience ############
 
 class PrintMeanAndStd(tf.keras.layers.Layer):
-    def __init__(self,**kwargs):
+    def __init__(self,
+                 print_mean=True,
+                 print_std=True,
+                 print_shape=True,
+                 **kwargs):
         super(PrintMeanAndStd, self).__init__(**kwargs)
+        self.print_mean = print_mean
+        self.print_std = print_std
+        self.print_shape = print_shape
         
+    def get_config(self):
+        config = {'print_mean': self.print_mean,
+                  'print_std': self.print_std,
+                  'print_shape': self.print_shape}
+        base_config = super(PrintMeanAndStd, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
     def compute_output_shape(self, input_shapes):
         #return input_shapes[0]
         return input_shapes
         
     def call(self, inputs):
-        tf.print(self.name,'mean',tf.reduce_mean(inputs,axis=0),summarize=100)
-        tf.print(self.name,'std',tf.math.reduce_std(inputs,axis=0),summarize=100)
+        try:
+            if self.print_mean:
+                tf.print(self.name,'mean',tf.reduce_mean(inputs),summarize=100)
+            if self.print_std:
+                tf.print(self.name,'std',tf.math.reduce_std(inputs),summarize=100)
+            if self.print_shape:
+                tf.print(self.name,'shape',inputs.shape,summarize=100)
+        except Exception as e:
+            print('exception in',self.name)
+            #raise e
         return inputs
 
 
@@ -358,14 +413,18 @@ class ElementScaling(tf.keras.layers.Layer):
         return inputs * self.scales
         
     
-class GooeyBatchNorm(tf.keras.layers.Layer):
+class GooeyBatchNorm(LayerWithMetrics):
     def __init__(self,
                  viscosity=0.2,
                  fluidity_decay=1e-4,
-                 max_viscosity=1.,
+                 max_viscosity=0.99,
                  epsilon=1e-4,
                  print_viscosity=False,
+                 variance_only=False,
+                 soft_mean=False,
                  soften_update: float = 0.,
+                 soft_mean_hardness=3.,
+                 soft_mean_turn_on=6.,
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
         
@@ -380,6 +439,13 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
         self.epsilon = epsilon
         self.print_viscosity = print_viscosity
         self.soften_update = soften_update
+        self.variance_only = variance_only
+        self.soft_mean = soft_mean
+        self.soft_mean_hardness = soft_mean_hardness
+        self.soft_mean_turn_on = soft_mean_turn_on
+
+        if soften_update > 0:
+            print(self.name,'has been configured for soften_update. Function not implemented yet. Will have no effect.')
         
     def get_config(self):
         config = {'viscosity': self.viscosity_init,
@@ -387,7 +453,11 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
                   'max_viscosity': self.max_viscosity,
                   'epsilon': self.epsilon,
                   'print_viscosity': self.print_viscosity,
-                  'soften_update': self.soften_update
+                  'variance_only': self.variance_only,
+                  'soft_mean': self.soft_mean,
+                  'soften_update': self.soften_update,
+                  'soft_mean_hardness': self.soft_mean_hardness,
+                  'soft_mean_turn_on': self.soft_mean_turn_on,
                   }
         base_config = super(GooeyBatchNorm, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -414,15 +484,18 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
             
         super(GooeyBatchNorm, self).build(input_shapes)
     
-    def _calc_soft_update(self, old, new, training):
+    def _calc_update(self, old, new, training, ismean):
         delta = new-old
-        #soft update, avoid too strong jumps
-        if self.soften_update>0:
-            #scale down relative change
-            delta = tf.nn.softsign(tf.math.divide_no_nan(self.soften_update*delta,old))*old
-            delta /= self.soften_update
         update = old + (1. - self.viscosity)*delta
         return tf.keras.backend.in_train_phase(update,old,training=training)
+
+    def _calc_soft_diff(self,x):
+        turnon = self.soft_mean_turn_on
+        hardness = self.soft_mean_hardness
+        possig = tf.nn.sigmoid(hardness*(x-turnon))
+        negsig = tf.nn.sigmoid(-hardness*(x+turnon))
+        mod = tf.where(x>0,possig,negsig)
+        return x*mod
 
     def call(self, inputs, training=None):
         #x, _ = inputs
@@ -430,12 +503,17 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
         
         #update only if trainable flag is set, AND in training mode
         if self.trainable:
-            newmean = tf.reduce_mean(x,axis=0,keepdims=True) #FIXME
-            update = self._calc_soft_update(self.mean,newmean,training)
+            
+            currentmean = tf.reduce_mean(x,axis=0,keepdims=True) #FIXME
+            newmean = currentmean
+            if self.soft_mean: #soft diff between current mean and zero
+                newmean = self._calc_soft_diff(newmean)
+            update = self._calc_update(self.mean,newmean,training,ismean=True)
             tf.keras.backend.update(self.mean,update)
             
-            newvar = tf.math.reduce_std(x-self.mean,axis=0,keepdims=True) #FIXME
-            update = self._calc_soft_update(self.variance,newvar,training)
+            #use the actual mean here, not self.mean
+            newvar = tf.math.reduce_std(x-currentmean,axis=0,keepdims=True) #FIXME
+            update = self._calc_update(self.variance,newvar,training,ismean=False)
             tf.keras.backend.update(self.variance,update)
             
             #increase viscosity
@@ -445,18 +523,26 @@ class GooeyBatchNorm(tf.keras.layers.Layer):
                 tf.keras.backend.update(self.viscosity,newvisc)
                 if self.print_viscosity:
                     tf.print(self.name, 'viscosity',newvisc)
+                    
+        
+        self.add_prompt_metric(tf.reduce_mean(self.variance), self.name+'_variance')
+        self.add_prompt_metric(tf.reduce_mean(self.mean), self.name+'_mean')
         
         #apply
         x -= self.mean
         x = tf.math.divide_no_nan(x, self.variance + self.epsilon)
+        if self.variance_only:
+            x += self.mean
+        
+        #x_mean = tf.reduce_mean(x)
+        #
+        #self.add_prompt_metric(x_mean, self.name+'_post_mean')
+        #self.add_prompt_metric(tf.math.reduce_std(x-x_mean), self.name+'_post_variance')
         
         #print(self.name,'corr x mean', tf.reduce_mean(x))
         #print(self.name,'corr x var', tf.math.reduce_std(x))
         
         return x
-
-        
-    
     
 
 class ProcessFeatures(tf.keras.layers.Layer):
@@ -501,6 +587,7 @@ class ProcessFeatures(tf.keras.layers.Layer):
         '''
         feat = None
         fdict = self.td.createFeatureDict(inputs, False)
+        
         if not self.newformat:
             #please make sure in TrainData_OC that this is consistent
             fdict['recHitR'] /= 100.
@@ -527,6 +614,7 @@ class ProcessFeatures(tf.keras.layers.Layer):
         else: #new std format
             fdict['recHitEta'] = tf.abs(fdict['recHitEta'])
             fdict['recHitZ'] =  tf.abs(fdict['recHitZ'])
+            fdict['recHitTheta'] = 2.*tf.math.atan(tf.exp(-fdict['recHitEta']))
             allf = []
             for k in fdict:
                 allf.append(fdict[k])
@@ -889,7 +977,7 @@ class ApproxPCA(tf.keras.layers.Layer):
     
     
     
-class LocalDistanceScaling (tf.keras.layers.Layer):
+class LocalDistanceScaling (LayerWithMetrics):
     def __init__(self,
                  max_scale = 10,
                  **kwargs):
@@ -928,11 +1016,15 @@ class LocalDistanceScaling (tf.keras.layers.Layer):
         #the derivative is continuous at 0
         scale_pos = a*tf.math.sigmoid(scale) +  1. - a/2.
         scale_neg = 2. * c * tf.math.sigmoid(b*scale) + 1. - c
-        return dist*tf.where(scale>=0,scale_pos, scale_neg)
+        scale = tf.where(scale>=0,scale_pos, scale_neg)
+        return dist*scale, scale
     
     def call(self, inputs):
         dist,scale = inputs
-        return LocalDistanceScaling.raw_call(dist,scale,self.max_scale,self.b,self.c)
+        newdist,scale = LocalDistanceScaling.raw_call(dist,scale,self.max_scale,self.b,self.c)
+        self.add_prompt_metric(tf.reduce_mean(scale), self.name+'_dist_scale')
+        self.add_prompt_metric(tf.math.reduce_std(scale), self.name+'_var_dist_scale')
+        return newdist
     
 
  
@@ -1280,9 +1372,10 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
 ############# Local clustering section ends
 
 
-class KNN(tf.keras.layers.Layer):
+class KNN(LayerWithMetrics):
     def __init__(self,K: int, radius=-1., 
                  use_approximate_knn=True,
+                 min_bins=[3,3],
                  **kwargs):
         """
         
@@ -1303,6 +1396,7 @@ class KNN(tf.keras.layers.Layer):
         self.K = K
         
         self.use_approximate_knn = use_approximate_knn
+        self.min_bins = min_bins
         
         if isinstance(radius,int):
             radius=float(radius)
@@ -1319,6 +1413,7 @@ class KNN(tf.keras.layers.Layer):
     def get_config(self):
         config = {'K': self.K,
                   'radius': self.radius,
+                  'min_bins':self.min_bins,
                   'use_approximate_knn': self.use_approximate_knn}
         base_config = super(KNN, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -1327,37 +1422,48 @@ class KNN(tf.keras.layers.Layer):
         return (None, self.K+1),(None, self.K+1)
 
     @staticmethod 
-    def raw_call(coordinates, row_splits, K, radius, use_approximate_knn):
+    def raw_call(coordinates, row_splits, K, radius, use_approximate_knn, min_bins):
+        nbins=None
         if use_approximate_knn:
             bin_width = radius # default value for SlicingKnn kernel
-            idx,dist = SlicingKnn(K+1, coordinates,  row_splits,
+            idx,dist,nbins = SlicingKnn(K+1, coordinates,  row_splits,
                                   features_to_bin_on = (0,1),
-                                  bin_width=(bin_width,bin_width))
+                                  bin_width=(bin_width,bin_width),
+                                  return_n_bins=True,
+                                  min_bins = min_bins)
         else:
             idx,dist = SelectKnn(K+1, coordinates,  row_splits,
                                  max_radius= radius, tf_compatible=False)
 
         idx = tf.reshape(idx, [-1,K+1])
         dist = tf.reshape(dist, [-1,K+1])
-        return idx,dist
+        return idx,dist,nbins
 
     def update_dynamic_radius(self, dist, training=None):
         if self.dynamic_radius is None or not self.trainable:
             return
         #update slowly, with safety margin
-        update = tf.reduce_max(dist)*1.2
+        update = tf.math.reduce_max(tf.sqrt(dist))*1.05 #can be inverted for performance TBI
         update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
         updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
         tf.keras.backend.update(self.dynamic_radius,updated_radius)
         
     def call(self, inputs, training=None):
         coordinates, row_splits = inputs
+        idx,dist = None, None
         if self.dynamic_radius is None:
-            return KNN.raw_call(coordinates, row_splits, self.K, self.radius, self.use_approximate_knn)
+            idx,dist,nbins = KNN.raw_call(coordinates, row_splits, self.K, 
+                                          self.radius, self.use_approximate_knn,
+                                          self.min_bins)
         else:
-            idx,dist = KNN.raw_call(coordinates, row_splits, self.K, self.dynamic_radius, self.use_approximate_knn)
+            idx,dist,nbins = KNN.raw_call(coordinates, row_splits, self.K, 
+                                          self.dynamic_radius, self.use_approximate_knn,
+                                          self.min_bins)
             self.update_dynamic_radius(dist,training)
-            return idx,dist
+            
+        if self.use_approximate_knn:
+            self.add_prompt_metric(nbins,self.name+'_slicing_bins')
+        return idx,dist
         
 
         
@@ -1500,7 +1606,7 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         
 
 
-class NoiseFilter(tf.keras.layers.Layer):
+class NoiseFilter(LayerWithMetrics):
     def __init__(self, 
                  threshold = 0.1, 
                  print_reduction=False,
@@ -1543,7 +1649,12 @@ class NoiseFilter(tf.keras.layers.Layer):
         base_config = super(NoiseFilter, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
         
-    
+    def compute_output_shape(self, input_shape):
+        if self.return_backscatter:
+            return (None,1), (None,1), [(None, 1), (None,1)]
+        else:
+            return (None,1), (None,1), (None, 1)
+        
     
     def call(self, inputs):
         
@@ -1578,6 +1689,8 @@ class NoiseFilter(tf.keras.layers.Layer):
         if self.print_reduction:
             print(self.name,' reduction from ', int(row_splits[-1]), ' to ', int(newrs[-1]), ': ', float(row_splits[-1])/float(newrs[-1]))
         
+        self.add_prompt_metric(tf.cast(newrs[-1],dtype='float32')/tf.cast(row_splits[-1],dtype='float32'),self.name+'_reduction')
+        
         return sel, newrs, allbackgather
         
         
@@ -1609,8 +1722,8 @@ class EdgeCreator(tf.keras.layers.Layer):
     
     def compute_output_shape(self, input_shapes): 
         if self.addself:
-            return (input_shapes[0][-1], input_shapes[1][-1]) 
-        return (input_shapes[0][-1]-1, input_shapes[1][-1]) # K x F
+            return (None, input_shapes[0][-1], input_shapes[1][-1]) 
+        return (None, input_shapes[0][-1]-1, input_shapes[1][-1]) # K x F
     
     def call(self, inputs):
         selffeat = tf.expand_dims(inputs[1],axis=1)
@@ -1639,6 +1752,9 @@ class EdgeSelector(tf.keras.layers.Layer):
             super(EdgeSelector, self).__init__(**kwargs)
         else:
             super(EdgeSelector, self).__init__(dynamic=False,**kwargs)
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape[1]
     
     def get_config(self):
         config = {'threshold': self.threshold}
@@ -1694,7 +1810,7 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
             super(GroupScoreFromEdgeScores, self).__init__(dynamic=False,**kwargs)
     
     def compute_output_shape(self, input_shapes): 
-        return (1,)
+        return (None,1)
             
         #no config
     def call(self, inputs): 
@@ -1710,7 +1826,7 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
 
 
 ### soft pixel section
-class NeighbourGroups(tf.keras.layers.Layer):
+class NeighbourGroups(LayerWithMetrics):
     def __init__(self, 
                  threshold = None, 
                  initial_threshold = None, #compatibility
@@ -1810,8 +1926,13 @@ class NeighbourGroups(tf.keras.layers.Layer):
             #rewrite Localgroup
             rs,dirnidx,sel,ggather = LocalGroup(nidxs, hierarchy_idxs, score, row_splits, 
                                         score_threshold=self.threshold.numpy())#force eager
+            preN = dirnidx.shape[0]
+            postN = sel.shape[0]
             if self.print_reduction:
-                print(self.name,'reduced from', dirnidx.shape[0] ,'to',sel.shape[0])
+                print(self.name,'reduced from', preN ,'to',postN)
+            
+            self.add_prompt_metric(postN/preN,self.name+'_reduction')
+            
         
         back = ggather
         if self.return_backscatter:
@@ -1824,7 +1945,7 @@ class NeighbourGroups(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes):
         score, nidxs, row_splits = input_shapes
         if self.return_backscatter:
-            return nidxs, score, [(1, ), score], row_splits #first dim omitted
+            return nidxs, score, [(None, 1), score], row_splits #first dim omitted
         else:
             return nidxs, score, score, row_splits
         
@@ -1858,9 +1979,9 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
         if self.mode == 'mean' or self.mode == 'sum' or self.mode == 'min' or  self.mode == 'max':
             return fshape
         elif self.mode == 'minmeanmax':
-            return (3*fshape[1], )
+            return (None, 3*fshape[1])
         else:
-            return (2*fshape[1], )
+            return (None, 2*fshape[1])
 
     def get_min(self,ndix,feat):
         out,_ = AccumulateKnn(tf.zeros_like(ndix,dtype='float32'), 
@@ -2023,7 +2144,7 @@ class SoftPixelCNN(tf.keras.layers.Layer):
 
 ######## generic neighbours
 
-class RaggedGravNet(tf.keras.layers.Layer):
+class RaggedGravNet(LayerWithMetrics):
     def __init__(self,
                  n_neighbours: int,
                  n_dimensions: int,
@@ -2038,6 +2159,9 @@ class RaggedGravNet(tf.keras.layers.Layer):
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
+        Inputs:
+        - features
+        - row splits
 
         :param n_neighbours: neighbors to do gravnet pass over
         :param n_dimensions: number of dimensions in spatial transformations
@@ -2102,12 +2226,13 @@ class RaggedGravNet(tf.keras.layers.Layer):
         if not self.use_dynamic_knn or not self.trainable:
             return
         #update slowly, with safety margin
-        update = tf.reduce_max(dist)*1.2
-        mean_dist = tf.reduce_mean(dist)
+        lindist = tf.sqrt(dist)
+        update = tf.reduce_max(lindist)*1.05 #can be inverted for performance TBI
+        mean_dist = tf.reduce_mean(lindist)
         low_update = tf.where(update>2.,2.,update)#receptive field ends at 1.
         update = tf.where(low_update>2.*mean_dist,low_update,2.*mean_dist)#safety setting to not loose all neighbours
         update += 1e-3
-        update = self.dynamic_radius + 0.1*(update-self.dynamic_radius)
+        update = self.dynamic_radius + 0.05*(update-self.dynamic_radius)
         updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
         #print('updated_radius',updated_radius)
         tf.keras.backend.update(self.dynamic_radius,updated_radius)
@@ -2160,9 +2285,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
     def compute_neighbours_and_distancesq(self, coordinates, row_splits, training):
         if self.use_approximate_knn:
             bin_width = self.dynamic_radius # default value for SlicingKnn kernel
-            idx,dist = SlicingKnn(self.n_neighbours, coordinates,  row_splits,
+            idx,dist,nbins = SlicingKnn(self.n_neighbours, coordinates,  row_splits,
                                   features_to_bin_on = (0,1),
-                                  bin_width=(bin_width,bin_width))
+                                  bin_width=(bin_width,bin_width),
+                                  return_n_bins=True)
+            self.add_prompt_metric(nbins, self.name+'_slicing_knn_bins')
         else:
             idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
                                  max_radius= -1.0, tf_compatible=False)
@@ -2199,6 +2326,83 @@ class RaggedGravNet(tf.keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+
+class MultiAttentionGravNetAdd(LayerWithMetrics):
+    def __init__(self,
+                 n_attention_kernels :int,
+                 **kwargs):
+        '''
+        To be used as an afterburned to GravNet or if neighbours have been 
+        built some other way and the distances normalised around 1.
+        
+        Creates (per vertex) learnable attention kernels that can 'look' somewhere else
+        within the neighbour groups than just the centre
+        
+        Inputs:
+        - features used to derive the coordinate offsets (can be larger)
+        - features that are accumulated (should be smaller as it grows with number of kernels)
+        - coordinates
+        - neighbour indices
+        
+        Parameters:
+        
+        :param n_attention_kernels: number of learnable attention kernels
+        
+        '''
+        assert n_attention_kernels>0
+        
+        super(MultiAttentionGravNetAdd, self).__init__(**kwargs)
+        self.n_attention_kernels = n_attention_kernels
+        self.kernel_coord_dense = []
+    
+    
+    def get_config(self):
+        config = {'n_attention_kernels': self.n_attention_kernels}
+        base_config = super(MultiAttentionGravNetAdd, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def compute_output_shape(self, input_shapes): # data, idxs
+        featshape = input_shapes[1]
+        featshape = (featshape[0], featshape[-1]*(self.n_attention_kernels))
+        return featshape
+        
+    def build(self, input_shapes): 
+        assert len(input_shapes)==4
+        featshape = input_shapes[0]
+        ncoords = input_shapes[2][-1]
+        
+        for i in range(self.n_attention_kernels):
+            with tf.name_scope(self.name + "/"+str(i)+"/"):
+                self.kernel_coord_dense.append( 
+                     tf.keras.layers.Dense(ncoords, 
+                                           kernel_initializer='zeros',
+                                           bias_initializer='glorot_uniform',
+                                           activation='tanh')#restrict to -1 1
+                     )
+                self.kernel_coord_dense[-1].build(featshape)
+    
+    def call(self, inputs):
+        assert len(inputs)==4
+        feat, passfeat, coord, nidx = inputs
+        #coord = tf.stop_gradient(coord) #avoid coordinate gradient
+        outfeat = []
+        for di in range(len(self.kernel_coord_dense)):
+            refcadd = self.kernel_coord_dense[di](feat)
+            
+            for i in range(coord.shape[-1]):
+                meancoord = tf.reduce_mean(refcadd[:,i])
+                self.add_prompt_metric(meancoord, self.name+'_coord_add_mean_'+str(di)+'_'+str(i))
+                self.add_prompt_metric(tf.math.reduce_std(refcadd[:,i]-meancoord), self.name+'_coord_add_var_'+str(di)+'_'+str(i))
+            
+            refcoord = refcadd + coord
+            refcoord = tf.expand_dims(refcoord,axis=1)#V x 1 x C
+            othercoord = SelectWithDefault(nidx, coord, 0.)#V x K x C
+            dist = tf.reduce_sum((othercoord - refcoord)**2,axis=2)
+            acc,_ = AccumulateKnn(10.*dist, passfeat, nidx, mean_and_max=False)
+            acc = tf.reshape(acc, tf.shape(passfeat))
+            outfeat.append(acc)
+        return tf.concat(outfeat,axis=1)    
+        
 
 class DynamicDistanceMessagePassing(tf.keras.layers.Layer):
     '''
@@ -2367,6 +2571,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
 
     def __init__(self, n_feature_transformation,
                  sumwnorm=False,
+                 activation='relu',
                  **kwargs):
         super(DistanceWeightedMessagePassing, self).__init__(**kwargs)
 
@@ -2376,7 +2581,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         for i in range(len(self.n_feature_transformation)):
             with tf.name_scope(self.name + "/5/" + str(i)):
                 self.feature_tranformation_dense.append(tf.keras.layers.Dense(self.n_feature_transformation[i],
-                                                                              activation='relu'))  # restrict variations a bit
+                                                                              activation=activation))  # restrict variations a bit
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]
@@ -2390,7 +2595,10 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
 
         super(DistanceWeightedMessagePassing, self).build(input_shapes)
 
-
+    def compute_output_shape(self, inputs_shapes):
+        fshape = inputs_shapes[0][-1]
+        return (None, fshape + 2*sum(self.n_feature_transformation))
+        
     def get_config(self):
         config = {'n_feature_transformation': self.n_feature_transformation,
                   'sumwnorm':self.sumwnorm

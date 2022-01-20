@@ -1,0 +1,3 @@
+
+Standard pre-selection model configuration (as of Jan 18th, 2022) trained on the sample:
+/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Jan2022_production_3

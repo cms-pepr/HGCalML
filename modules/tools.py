@@ -1,5 +1,5 @@
 print(">>>> WARNING: THE MODULE", __name__ ,"IS MARKED FOR REMOVAL","move implementations still in use to callbacks or plotting tools or wherever else they should go.")
-
+raise ImportError("MODULE",__name__,"will be removed")
 
 from plotting_tools import plotter_fraction_colors, snapshot_movie_maker_Nplots, plotter_2d, plotter_3d
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback

@@ -11,12 +11,12 @@ n_vert=50000
 n_ccoords=2
 n_feat=3
 soft=True
-min_beta=0.25
+min_beta=0.02
 radius=0.7
 
 #betas = tf.random.uniform((n_vert,1), dtype='float32',minval=0.01 , maxval=0.1+1e-3,seed=2)
 
-dist = None #tf.random.uniform((n_vert,1), dtype='float32',minval=0.5 , maxval=1.5,seed=2)
+#dist = None #tf.random.uniform((n_vert,1), dtype='float32',minval=0.5 , maxval=1.5,seed=2)
 ccoords = 3.*tf.random.uniform((n_vert,n_ccoords), dtype='float32',seed=1)
 row_splits = tf.constant([0,n_vert//2,n_vert], dtype='int32')
 
@@ -24,6 +24,7 @@ row_splits = tf.constant([0,n_vert//2,n_vert], dtype='int32')
 def makebetas(ccoords_in,row_splits, ncenters=5):
     #overlay some gaussians plus random
     allbetas=[]
+    alldistmod=[]
     for i in range(len(row_splits)-1):
         ccoords = ccoords_in[row_splits[i]:row_splits[i+1]]
         centers_x = tf.random.uniform((1,ncenters), dtype='float32',minval=tf.reduce_min(ccoords[:,0]) , 
@@ -31,18 +32,22 @@ def makebetas(ccoords_in,row_splits, ncenters=5):
         centers_y = tf.random.uniform((1,ncenters), dtype='float32',minval=tf.reduce_min(ccoords[:,1]) , 
                                       maxval=tf.reduce_max(ccoords[:,1]),seed=i+2)
         centers = tf.concat([centers_x,centers_y],axis=0)# 2 x 5
+        
+        distmod = tf.random.uniform(centers[0:1,:].shape, dtype='float32',minval=0.1 , maxval=.6,seed=2)
         #ccoords: V x 2
         distances = (tf.expand_dims(ccoords,axis=2)-tf.expand_dims(centers,axis=0))**2
         distances = tf.reduce_sum(distances,axis=1)#V x 5
-        beta = tf.reduce_sum(tf.exp(-5.*tf.sqrt(distances)),axis=1,keepdims=True) / ncenters#V x 1, max 1
+        beta = tf.reduce_sum(tf.exp(-distances/(2.*distmod**2)),axis=1,keepdims=True) / ncenters#V x 1, max 1
+        distmod = tf.reduce_sum(distmod*tf.exp(-distances/(2.*distmod)),axis=1,keepdims=True) / beta  / ncenters
         beta *= tf.random.uniform(beta.shape, dtype='float32',minval=0.9 , maxval=1.,seed=2)
         beta /= tf.reduce_max(beta)
         allbetas.append(beta)
-    return tf.concat(allbetas,axis=0)
+        alldistmod.append(distmod)
+    return tf.concat(allbetas,axis=0),tf.concat(alldistmod,axis=0)
     
     
-betas = makebetas(ccoords,row_splits,7)
-    
+betas,dist = makebetas(ccoords,row_splits,7)
+#dist=None  
 
 print('first call')
 asso_idx, is_cpoint,n = BuildCondensates(ccoords=ccoords, betas=betas,  dist=dist,row_splits=row_splits, radius=radius, min_beta=0.1, soft=soft)
@@ -54,9 +59,12 @@ asso_idx, is_cpoint,n = BuildCondensates(ccoords=ccoords, betas=betas,  dist=dis
 
 print('starting taking time')
 t0 = time.time()
-for _ in range(0):
-    asso_idx, is_cpoint,n = BuildCondensates(ccoords=ccoords, betas=betas,  dist=dist,row_splits=row_splits, radius=radius, min_beta=0.1, soft=soft)
-totaltime = (time.time()-t0)/100.
+for _ in range(20):
+    asso_idx, is_cpoint,n = BuildCondensates(ccoords=ccoords, 
+                                             betas=betas,  
+                                             dist=dist,row_splits=row_splits, 
+                                             radius=radius, min_beta=0.1, soft=soft)
+totaltime = (time.time()-t0)/20.
 
 
 
@@ -84,12 +92,26 @@ def makecolours(ta,rdst=None):
     return np.array(out,dtype='float32')
     
 
-
-for radius in [0.25, 0.5, 0.8]:
-    asso_idx, is_cpoint,n  = BuildCondensates(ccoords=ccoords, betas=betas, 
+#exit()
+for radius in [1.]:#, 0.5, 0.8]:
+    
+    feats = tf.ones_like(betas)
+    asso_idx, is_cpoint,n,sumfeat  = BuildCondensates(ccoords=ccoords, betas=betas, 
                                               dist = dist,
+                                              tosum=feats,
                                               row_splits=row_splits, 
                                             radius=radius, min_beta=min_beta, soft=soft)
+    
+    print(sumfeat[is_cpoint>0], tf.reduce_sum(sumfeat[is_cpoint>0]))
+    u,_,c = tf.unique_with_counts(asso_idx)
+    argu = tf.argsort(u)
+    u = np.array(u)
+    c = np.array(c)
+    argu = np.expand_dims(argu,axis=1)
+    
+    print(c[argu][u[argu]>=0],tf.reduce_sum(feats*betas))#,c[argu])
+    
+    
     print('refs', np.unique(asso_idx))
     print('N',n)
     for i in range(len(row_splits)-1):
@@ -127,11 +149,11 @@ for radius in [0.25, 0.5, 0.8]:
         
         ax2.scatter(predCCoords[:,0], predCCoords[:,1],
                     c=predBeta)
-        plt.show()
+        #plt.show()
         plt.savefig("plot_"+str(i)+"_rad_"+str(radius)+".pdf")
         #fig.clear()
         plt.close(fig)
-        break
+        #break
         #exit()
     
     

@@ -1,30 +1,19 @@
 
-from argparse import ArgumentParser
-from Layers import RobustModel
-import tensorflow.python.keras.saving.saved_model.load
 
-import tensorflow.python.keras.saving.save
-import tensorflow as tf
-import imp
 from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
-import tempfile
-import atexit
 from datastructures.TrainData_NanoML import TrainData_NanoML
 
 import os
-from DeepJetCore.customObjects import get_custom_objects
-from DeepJetCore.training.gpuTools import DJCSetGPUs
-from DeepJetCore.training.training_base import custom_objects_list
-from datastructures.TrainData_TrackML import TrainData_TrackML
-
+from DeepJetCore.modeltools import load_model
+from datastructures import TrainData_TrackML
+import time
 
 class HGCalPredictor():
-    def __init__(self, input_source_files_list, training_data_collection, predict_dir, batch_size=1, unbuffered=False, model_path=None, max_files=4, inputdir=None):
+    def __init__(self, input_source_files_list, training_data_collection, predict_dir, unbuffered=False, model_path=None, max_files=4, inputdir=None):
         self.input_data_files = []
         self.inputdir = None
         self.predict_dir = predict_dir
-        self.batch_size = batch_size
         self.unbuffered=unbuffered
         self.max_files = max_files
         print("Using HGCal predictor class")
@@ -52,9 +41,6 @@ class HGCalPredictor():
         self.dc = None
         if input_source_files_list[-6:] == ".djcdc" and not training_data_collection[-6:] == ".djcdc":
             self.dc = DataCollection(input_source_files_list)
-            if self.batch_size < 1:
-                self.batch_size = 1
-            print('No training data collection given. Using batch size of', self.batch_size)
         else:
             self.dc = DataCollection(training_data_collection)
 
@@ -81,21 +67,22 @@ class HGCalPredictor():
             os.system('mkdir -p ' + self.predict_dir)
 
         if model is None:
-            model = tf.keras.models.load_model(model_path, custom_objects=custom_objects_list)
+            model = load_model(model_path)
 
         all_data = []
         for inputfile in self.input_data_files:
-
-            print('predicting ', self.inputdir + "/" + inputfile)
 
             use_inputdir = self.inputdir
             if inputfile[0] == "/":
                 use_inputdir = ""
             outfilename = "pred_" + os.path.basename(inputfile)
+            
+            print('predicting ', use_inputdir +'/' + inputfile)
 
             td = self.dc.dataclass()
 
-            if type(td) is not TrainData_NanoML  and type(td) is not TrainData_TrackML:
+            #also allows for inheriting classes now, like with tracks or special PU
+            if not isinstance(td, TrainData_NanoML)  and type(td) is not TrainData_TrackML:
                 raise RuntimeError("TODO: make sure this works for other traindata formats")
 
             if inputfile[-5:] == 'djctd':
@@ -108,13 +95,9 @@ class HGCalPredictor():
                 td.readFromSourceFile(use_inputdir + "/" + inputfile, self.dc.weighterobjects, istraining=False)
 
             gen = TrainDataGenerator()
-            print(self.batch_size)
-            self.dc.setBatchSize(1)
-            self.batch_size = 1
-            if self.batch_size < 1:
-                self.batch_size = self.dc.getBatchSize()
-            gen.setBatchSize(self.batch_size)
-            gen.setSquaredElementsLimit(self.dc.batch_uses_sum_of_squares)
+            # the batch size must be one otherwise we need to play tricks with the row splits later on
+            gen.setBatchSize(1)
+            gen.setSquaredElementsLimit(False)
             gen.setSkipTooLargeBatches(False)
             gen.setBuffer(td)
 
@@ -123,15 +106,19 @@ class HGCalPredictor():
 
             dumping_data = []
 
-            for i in range(num_steps):
+            thistime = time.time()
+            for _ in range(num_steps):
                 data_in = next(generator)
-                predictions_dict = model.call_with_dict_as_output(data_in[0], numpy=True)
+                predictions_dict = model(data_in[0])
+                for k in predictions_dict.keys():
+                    predictions_dict[k] = predictions_dict[k].numpy()
                 features_dict = td.createFeatureDict(data_in[0])
                 truth_dict = td.createTruthDict(data_in[0])
-
-                print("Num rechits", len(features_dict['recHitX']), data_in[0][1])
-
+                
                 dumping_data.append([features_dict, truth_dict, predictions_dict])
+                
+            totaltime = time.time() - thistime
+            print('took approx',totaltime/num_steps,'s per endcap (also includes dict building)')
 
             td.clear()
             gen.clear()
@@ -141,6 +128,7 @@ class HGCalPredictor():
             outputs.append(outfilename)
             if not output_to_file:
                 all_data.append(dumping_data)
+
         if output_to_file:
             with open(self.predict_dir + "/outfiles.txt", "w") as f:
                 for l in outputs:

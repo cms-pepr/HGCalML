@@ -64,14 +64,18 @@ Go to the `Train` folder and then use the following command to start training. T
 
 ```
 cd Train
-
-python3 simplified_trainer_example.py /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop/dataCollection.djcdc /mnt/ceph/users/sqasim/trainings/training_folder
 ```
-
-After training the model for a while, navigate to scripts directory and do the inference. Please note that this is *different* from the standard DeepJetCore procedure.
+Look at the first lines of the file `std_training.py` containing a short description and where to find the dataset compatible with that training file. Then execute the following command to run a training.
 
 ```
-predict_hgcal.py /mnt/ceph/users/sqasim/trainings/training_folder/KERAS_check_model_last_save/ /mnt/ceph/users/sqasim/trainings/training_folder/valsamples.djcdc /mnt/ceph/users/sqasim/Datasets/hgcal_kenneth_test_april_20_prop /mnt/ceph/users/sqasim/trainings/training_folder/inference
+python3 std_training.py <path_to_dataset>/training_data.djcdc <training_output_path>
+```
+Please notice that the standard configuration might or might not include writing the printout to a file in the training output directory.
+
+For inference, the trained model can be applied to a different test dataset.  Please note that this is slightly *different* from the standard DeepJetCore procedure.
+
+```
+predict_hgcal.py <training_output_path>/KERAS_model.h5  <path_to_dataset>/testing_data.djcdc  <inference_output_folder>
 ```
 
 To analyse the prediction, use the `analyse_hgcal_predictions.py` script.

@@ -1,16 +1,16 @@
-import gzip
-import os
-import pickle
-import traceback
-import gc
 
+
+print("MODULE OBSOLETE",__name__,"functionality moved to callbacks module")
+raise ImportError("MODULE",__name__,"will be removed")
+
+
+import os
 import mgzip
-import numpy as np
 import tensorflow as tf
 
 import graph_functions
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
-from plotting_callbacks import publish
+from callbacks import publish
 from importlib import reload
 
 

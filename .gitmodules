@@ -1,3 +1,3 @@
 [submodule "HGCalML_data"]
 	path = HGCalML_data
-	url = git@github.com:phzehetn/HGCalML_data.git
+	url = https://github.com/phzehetn/HGCalML_data

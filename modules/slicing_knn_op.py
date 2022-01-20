@@ -25,7 +25,9 @@ def check_tuple(in_tuple, tuple_name: str, tuple_type, checkValue=True):
 
 
 
-def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None, bin_width=None):
+def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, 
+               n_bins=None, bin_width=None, return_n_bins: bool=False,
+               min_bins=[3,3]):
     '''
     Perform kNN search with slicing method
 
@@ -46,6 +48,13 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
 
     @type bin_width: Tuple[float, float] or Tuple[tf.Variable, tf.Variable]
     @param bin_width: width of phase-space bins
+    
+    @type return_n_bins: bool
+    @param return_n_bins: also returns the total number of bins used
+    
+    @type min_bins: list
+    @param min_bins: minimum binning (in 2D)
+    
     '''
 
     #  start_time_int = time.time()
@@ -85,7 +94,7 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
         else:
             bin_width = [tf.expand_dims(a,axis=0) for a in bin_width]
             bin_width = tf.concat(bin_width,axis=0)
-        _n_bins = tf.math.maximum(tf.constant([3,3], dtype=tf.int32),
+        _n_bins = tf.math.maximum(tf.constant(min_bins, dtype=tf.int32),
                 tf.math.minimum(
                     tf.cast(tf.math.ceil(tf.multiply(r_diff,1.0/bin_width)),tf.int32), 
                     tf.constant([50,50], dtype=tf.int32))) # limit the number of bins to min 3x3 and max 50x50
@@ -95,6 +104,8 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None, n_bins=None
     idx, dist = _nknn_op.SlicingKnn(n_neighbours=K, coords=coords, row_splits=row_splits, n_bins=_n_bins, features_to_bin_on=features_to_bin_on, coord_min=r_min, coord_max=r_max)
     #safety guard
     tf.assert_equal(tf.range(tf.shape(idx)[0]), idx[:,0])
+    if return_n_bins:
+        return idx, dist, tf.reduce_prod(_n_bins)
     return idx, dist
 
 _sknn_grad_op = tf.load_op_library('select_knn_grad.so')

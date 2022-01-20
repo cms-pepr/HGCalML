@@ -1,5 +1,5 @@
+raise ImportError("MODULE",__name__,"will be removed")
 
-from __future__ import print_function
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from index_dicts import create_index_dict, split_feat_pred, create_feature_dict

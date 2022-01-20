@@ -1,13 +1,10 @@
 from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore import SimpleArray 
 import uproot3 as uproot
-from uproot3_methods import TLorentzVectorArray
-import awkward0 as ak
 import awkward as ak1
 import pickle
 import gzip
 import numpy as np
-from numba import jit
 import mgzip
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -37,9 +34,14 @@ def calc_eta(x, y, z):
     return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.+1e-3)
     
 def calc_phi(x, y, z):
-    return np.arctan2(x, y)
+    return np.arctan2(y,x)#cms like
     
 
+def deltaPhi(a,b):
+    d = a-b
+    d = np.where(d>2.*np.pi, d-2.*np.pi, d)
+    return np.where(d<-2.*np.pi,d+2.*np.pi, d)
+    
 ######## helper classes ###########
 
 class CollectionBase(object):
@@ -155,6 +157,26 @@ class CollectionBase(object):
             newtruth[k] = ak1.concatenate([self.truth[k], rhs.truth[k]],axis=1)
         self.truth = newtruth
         
+    def addUniqueIndices(self):
+        '''
+        Adds a '1' to exactly one hit representing
+        a truth object, per truth object. such that
+        number of truth objects = sum(unique)
+        and 
+        object properties = truth_per_hit_property[unique]
+        This can be very helpful in loss functions etc.
+        '''
+        t_idx = self.truth['t_idx']
+        nplist=[]
+        for a in t_idx: #these are numpy arrays
+            a = a.to_numpy()
+            _,idx = np.unique(a,return_index=True)
+            un = np.zeros_like(a)
+            un[idx]=1
+            nplist.append(un)
+        akarr = ak1.from_iter(nplist)
+        self.truth['t_is_unique']=akarr
+        
     def akToNumpyAndRs(self,awkarr):
         rs = np.array([0]+[len(a) for a in awkarr],dtype='int64')
         rs = np.cumsum(rs,axis=0)
@@ -206,12 +228,17 @@ class CollectionBase(object):
     
     
 class RecHitCollection(CollectionBase):
-    def __init__(self, use_true_muon_momentum=False, **kwargs):
+    def __init__(self, use_true_muon_momentum=False, 
+                 cp_plus_pu_mode=False,
+                 cp_plus_pu_mode_reduce=False,
+                 **kwargs):
         '''
         Guideline: this is more about clarity than performance. 
         If it improves clarity read stuff twice or more!
         '''
         self.use_true_muon_momentum = use_true_muon_momentum
+        self.cp_plus_pu_mode = cp_plus_pu_mode
+        self.cp_plus_pu_mode_reduce = cp_plus_pu_mode_reduce
         
         #call this last!
         super(RecHitCollection, self).__init__(**kwargs)
@@ -313,8 +340,123 @@ class RecHitCollection(CollectionBase):
         noSplitRecHitSimClusIdx = self._readArray(tree,"RecHitHGC_BestMergedSimClusterIdx")
         return self._maskNoiseSC(tree,noSplitRecHitSimClusIdx)
     
-    
-    def _assignTruth(self, tree):
+    def _assignTruth(self,tree):
+        if self.cp_plus_pu_mode:
+            self._assignTruthCPPU(tree)
+        else:
+            self._assignTruthDef(tree)
+            
+    def _assignTruthCPPU(self, tree):
+        '''
+        
+
+        '''
+        print('\n\n>>>>>>WARNING: using calo particle plus PU mode: unless this is a special testing sample, you should not be using this function!<<<<\n\n')
+        print('\n\n>>>>>> The configuration here also assumes exactly 1 non PU particle per endcap!<<<<<<<\n\n')
+        
+        
+        assert self.splitIdx is not None
+        
+        scidx = self._readArray(tree,"RecHitHGC_BestSimClusterIdx")
+        cpidx = self._readArray(tree,"SimCluster_CaloPartIdx")
+        nonSplitRecHitSimClusIdx = ak1.where(scidx >= 0, cpidx[scidx], -1)#mark noise
+        
+        non_pu_cp = (self._readArray(tree,"CaloPart_eventId")+self._readArray(tree,"CaloPart_bunchCrossing"))<1
+        
+        recHitNotPU = self._assignTruthByIndexAndSplit(tree,non_pu_cp,nonSplitRecHitSimClusIdx)
+        
+        recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"CaloPart_pdgId",nonSplitRecHitSimClusIdx)
+        recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"CaloPart_energy",nonSplitRecHitSimClusIdx)
+        
+        fzeros      = self._assignTruthByIndexAndSplit(tree,"CaloPart_pt",nonSplitRecHitSimClusIdx)*0.
+        recHitTruthX      = fzeros
+        recHitTruthY      = fzeros 
+        recHitTruthZ      = fzeros 
+        recHitTruthTime   = fzeros 
+        
+        recHitDepEnergy = fzeros
+        
+        fullyContained = ak1.ones_like(fzeros)
+        
+        
+        from globals import pu
+        recHitSimClusIdx = self._splitJaggedArray(nonSplitRecHitSimClusIdx)
+        recHitSimClusIdx = self._expand(recHitSimClusIdx)
+        recHitSimClusIdx = recHitSimClusIdx + pu.t_idx_offset*(1-recHitNotPU)*(recHitSimClusIdx>=0)#only for not noise
+        #pu_idx_offset[recHitNotPU[...,0]>0]=0
+        #recHitSimClusIdx += pu_idx_offset
+        #recHitSimClusIdx = recHitSimClusIdx + pu.t_idx_offset * (1-recHitNotPU[...,0])
+        #testing
+        #recHitSimClusIdx = recHitNotPU #(1+recHitSimClusIdx)*recHitNotPU[...,0]#[...,0]
+        
+        recHitSpectatorFlag = fzeros
+        
+        self.truth={}
+        self.truth['t_idx'] = recHitSimClusIdx
+        self.truth['t_energy'] = recHitTruthEnergy
+        self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
+        self.truth['t_time'] = recHitTruthTime
+        self.truth['t_pid'] = recHitTruthPID
+        self.truth['t_spectator'] = recHitSpectatorFlag
+        self.truth['t_fully_contained'] = fullyContained
+        self.truth['t_rec_energy'] = recHitDepEnergy
+        
+        if not self.cp_plus_pu_mode_reduce:
+            return
+        print('\n>>>reducing set by ∆R: handle with care<<<\n')
+        #return
+        #now remove access particles around initial one
+        #this might not work because of close by gun
+        #.... it does not work....
+        #npu_cpeta = self._readArray(tree,"CaloPart_eta")
+        #npu_cpphi = self._readArray(tree,"CaloPart_phi")
+        
+        
+        recHitX = self._readSplitAndExpand(tree,"RecHitHGC_x")# EC x V x 1
+        recHitY = self._readSplitAndExpand(tree,"RecHitHGC_y")
+        recHitZ = self._readSplitAndExpand(tree,"RecHitHGC_z")
+        
+        cp_x = ak1.mean(recHitX[recHitNotPU[...,0]>0],axis=1)
+        cp_y = ak1.mean(recHitY[recHitNotPU[...,0]>0],axis=1)
+        cp_z = ak1.mean(recHitZ[recHitNotPU[...,0]>0],axis=1)
+        
+        recHitEta = calc_eta(recHitX, recHitY, recHitZ)
+        recHitPhi = calc_phi(recHitX, recHitY, recHitZ)
+        
+        #return
+        # ...
+        #just loop over EC, there are only very few
+        hitselector=[]
+        for i_endcap in range(len(recHitEta)):
+            
+            ecps_eta=calc_eta(cp_x[i_endcap], cp_y[i_endcap], cp_z[i_endcap])
+            ecps_phi=calc_phi(cp_x[i_endcap], cp_y[i_endcap], cp_z[i_endcap])
+            
+            ec_heta = recHitEta[i_endcap].to_numpy() # V x 1
+            ec_hphi = recHitPhi[i_endcap].to_numpy() 
+            
+            deta = ec_heta-ecps_eta
+            dphi = deltaPhi(ec_hphi,ecps_phi) # V x 1
+            
+            drsq = deta**2 + dphi**2  # V x 1
+            
+            close = np.array(drsq < 0.5**2,dtype='int')[...,0]
+            #either_close = np.sum(close, axis=1)#does sum work on bool?
+            #print(close.shape)
+            hitselector.append(close)
+            
+            #last
+        
+        hitselector = ak1.from_iter(hitselector) # EC x V'
+        #hitselector = recHitNotPU[...,0]
+        #print('hitselector',ak1.sum(hitselector))
+        
+        for k in self.truth.keys():
+            self.truth[k] = self.truth[k][hitselector>0]
+        self.features = self.features[hitselector>0]
+         
+            
+    def _assignTruthDef(self, tree):
         
         assert self.splitIdx is not None
         
@@ -323,8 +465,8 @@ class RecHitCollection(CollectionBase):
         recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_pdgId",nonSplitRecHitSimClusIdx)
         recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitRecHitSimClusIdx)
         
+        recHitDepEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_recEnergy",nonSplitRecHitSimClusIdx)
         if not self.use_true_muon_momentum:
-            recHitDepEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_recEnergy",nonSplitRecHitSimClusIdx)
             recHitTruthEnergy = ak1.where(np.abs(recHitTruthPID[:,:,0])==13, recHitDepEnergy, recHitTruthEnergy)
             
         recHitTruthX      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_x",nonSplitRecHitSimClusIdx)
@@ -351,6 +493,7 @@ class RecHitCollection(CollectionBase):
         recHitTruthY = ak1.where(recHitSimClusIdx<0, recHitY, recHitTruthY)
         recHitTruthZ = ak1.where(recHitSimClusIdx<0, recHitZ, recHitTruthZ)
         recHitTruthTime = ak1.where(recHitSimClusIdx<0, recHitTime, recHitTruthTime)
+        recHitDepEnergy = ak1.where(recHitSimClusIdx<0, recHitEnergy, recHitDepEnergy)
 
         recHitSpectatorFlag = self._createSpectators(tree)
         #remove spectator flag for noise
@@ -364,6 +507,7 @@ class RecHitCollection(CollectionBase):
         self.truth['t_pid'] = recHitTruthPID
         self.truth['t_spectator'] = recHitSpectatorFlag
         self.truth['t_fully_contained'] = fullyContained
+        self.truth['t_rec_energy'] = recHitDepEnergy
         
         
 
@@ -424,10 +568,6 @@ class TrackCollection(CollectionBase):
     
     def _getMatchIdxs(self, tree):
         
-        #match by eta phi
-        def deltaPhi(a,b):
-            d = np.abs(a-b)
-            return np.where(d>np.pi,d-np.pi,d)
         
         #no split here
         truthMom    = self._readArray(tree,"MergedSimCluster_boundaryEnergy")
@@ -517,6 +657,7 @@ class TrackCollection(CollectionBase):
         self.truth['t_pid'] = truthPID
         self.truth['t_spectator'] = spectator
         self.truth['t_fully_contained'] = zeros+1
+        self.truth['t_rec_energy'] = trackMom
         
     
 ####################### end helpers        
@@ -525,6 +666,7 @@ class TrainData_NanoML(TrainData):
     def __init__(self):
         TrainData.__init__(self)
         self.include_tracks = False
+        self.cp_plus_pu_mode = False
 
     
     def fileIsValid(self, filename):
@@ -549,22 +691,31 @@ class TrainData_NanoML(TrainData):
         tree = uproot.open(filename)[treename]
         
         
-        rechitcoll = RecHitCollection(use_true_muon_momentum=self.include_tracks,tree=tree)
+        rechitcoll = RecHitCollection(use_true_muon_momentum=self.include_tracks,
+                                      cp_plus_pu_mode=self.cp_plus_pu_mode,
+                                      tree=tree)
         
         #in a similar manner, we can also add tracks from conversions etc here
         if self.include_tracks:
             trackcoll = TrackCollection(tree=tree)
             rechitcoll.append(trackcoll)
-            
+        
+        # adds t_is_unique
+        rechitcoll.addUniqueIndices()
+        
+        # converts to DeepJetCore.SimpleArray
         farr = rechitcoll.getFinalFeaturesSA()
         t = rechitcoll.getFinalTruthDictSA()
         
         return [farr, 
                 t['t_idx'], t['t_energy'], t['t_pos'], t['t_time'], 
-                t['t_pid'], t['t_spectator'], t['t_fully_contained'] ],[], []
+                t['t_pid'], t['t_spectator'], t['t_fully_contained'],
+                t['t_rec_energy'], t['t_is_unique'] ],[], []
     
 
-    def interpretAllModelInputs(self, ilist, returndict=False):
+    def interpretAllModelInputs(self, ilist, returndict=True):
+        if not returndict:
+            raise ValueError('interpretAllModelInputs: Non-dict output is DEPRECATED. PLEASE REMOVE') 
         '''
         input: the full list of keras inputs
         returns: td
@@ -573,27 +724,34 @@ class TrainData_NanoML(TrainData):
          - t_energy
          - t_pos
          - t_time
-         - t_pid
-         - t_spectator
-         - t_fully_contained
+         - t_pid :             non hot-encoded pid
+         - t_spectator :       spectator score, higher: further from shower core
+         - t_fully_contained : fully contained in calorimeter, no 'scraping'
+         - t_rec_energy :      the truth-associated deposited 
+                               (and rechit calibrated) energy, including fractional assignments)
+         - t_is_unique :       an index that is 1 for exactly one hit per truth shower
          - row_splits
          
-        (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator ,t_fully_contained, row_splits)
         '''
-        if returndict:
-            return {
-                'features':ilist[0],
-                'rechit_energy': ilist[0][:,0:1], #this is hacky. FIXME
-                't_idx':ilist[2],
-                't_energy':ilist[4],
-                't_pos':ilist[6],
-                't_time':ilist[8],
-                't_pid':ilist[10],
-                't_spectator':ilist[12],
-                't_fully_contained':ilist[14],
-                'row_splits':ilist[1]
-                }
-        return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1] 
+        out = {
+            'features':ilist[0],
+            'rechit_energy': ilist[0][:,0:1], #this is hacky. FIXME
+            't_idx':ilist[2],
+            't_energy':ilist[4],
+            't_pos':ilist[6],
+            't_time':ilist[8],
+            't_pid':ilist[10],
+            't_spectator':ilist[12],
+            't_fully_contained':ilist[14],
+            'row_splits':ilist[1]
+            }
+        #keep length check for compatibility
+        if len(ilist)>16:
+            out['t_rec_energy'] = ilist[16]
+        if len(ilist)>18:
+            out['t_is_unique'] = ilist[18]
+        return out
+         
      
     def createFeatureDict(self,infeat,addxycomb=True):
         '''
@@ -623,23 +781,29 @@ class TrainData_NanoML(TrainData):
         return d
     
     def createTruthDict(self, allfeat, truthidx=None):
-        _, _, t_idx, _, t_energy, _, t_pos, _, t_time, _, t_pid, _,\
-        t_spectator, _, t_fully_contained,_ = allfeat
-        
+        '''
+        This is deprecated and should be replaced by a more transparent way.
+        '''
+        print(__name__,'createTruthDict: should be deprecated soon and replaced by a more uniform interface')
+        data = self.interpretAllModelInputs(allfeat,returndict=True)
         
         out={
-            'truthHitAssignementIdx': t_idx,
-            'truthHitAssignedEnergies': t_energy,
-            'truthHitAssignedX': t_pos[:,0:1],
-            'truthHitAssignedY': t_pos[:,1:2],
-            'truthHitAssignedZ': t_pos[:,2:3],
-            'truthHitAssignedEta': calc_eta(t_pos[:,0:1], t_pos[:,1:2], t_pos[:,2:3]),
-            'truthHitAssignedPhi': calc_phi(t_pos[:,0:1], t_pos[:,1:2], t_pos[:,2:3]),
-            'truthHitAssignedT': t_time,
-            'truthHitAssignedPIDs': t_pid,
-            'truthHitSpectatorFlag': t_spectator,
-            'truthHitFullyContainedFlag': t_fully_contained,
+            'truthHitAssignementIdx': data['t_idx'],
+            'truthHitAssignedEnergies': data['t_energy'],
+            'truthHitAssignedX': data['t_pos'][:,0:1],
+            'truthHitAssignedY': data['t_pos'][:,1:2],
+            'truthHitAssignedZ': data['t_pos'][:,2:3],
+            'truthHitAssignedEta': calc_eta(data['t_pos'][:,0:1], data['t_pos'][:,1:2], data['t_pos'][:,2:3]),
+            'truthHitAssignedPhi': calc_phi(data['t_pos'][:,0:1], data['t_pos'][:,1:2], data['t_pos'][:,2:3]),
+            'truthHitAssignedT': data['t_time'],
+            'truthHitAssignedPIDs': data['t_pid'],
+            'truthHitSpectatorFlag': data['t_spectator'],
+            'truthHitFullyContainedFlag': data['t_fully_contained'],
             }
+        if 't_rec_energy' in data.keys():
+            out['t_rec_energy']=data['t_rec_energy']
+        if 't_hit_unique' in data.keys():
+            out['t_is_unique']=data['t_hit_unique']
         return out
     
     def createPandasDataFrame(self, eventno=-1):
@@ -663,12 +827,21 @@ class TrainData_NanoML(TrainData):
         
         featd['recHitLogEnergy'] = np.log(featd['recHitEnergy']+1.+1e-8)
         
-        allarr = []
-        for k in featd:
-            allarr.append(featd[k])
-        allarr = np.concatenate(allarr,axis=1)
+        #allarr = []
+        #for k in featd:
+        #    allarr.append(featd[k])
+        #allarr = np.concatenate(allarr,axis=1)
+        #
+        #frame = pd.DataFrame (allarr, columns = [k for k in featd])
+        #for k in featd.keys():
+        #    featd[k] = [featd[k]]
+        #frame = pd.DataFrame()
+        for k in featd.keys():
+            #frame.insert(0,k,featd[k])
+            featd[k] = np.squeeze(featd[k],axis=1)
         
-        frame = pd.DataFrame (allarr, columns = [k for k in featd])
+        frame = pd.DataFrame.from_records(featd)
+        
         if eventno>=0:
             return frame
         else:
@@ -704,6 +877,13 @@ class TrainData_NanoMLTracks(TrainData_NanoML):
     def __init__(self):
         TrainData_NanoML.__init__(self)
         self.include_tracks = True
+        
+        
+
+class TrainData_NanoMLCPPU(TrainData_NanoML):
+    def __init__(self):
+        TrainData_NanoML.__init__(self)
+        self.cp_plus_pu_mode=True
 
 
 def main():

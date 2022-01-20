@@ -40,6 +40,25 @@ static void set_defaults(
 }
 
 
+__global__
+static void copy_to_sum_and_default(
+        const float * ref,
+        float * target,
+        float * target_to_zero,
+        const int n_vert,
+        const int n_f
+){
+    size_t i_v = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i_v>=n_vert)
+        return;
+
+    for(int i_f=0;i_f<n_f;i_f++){
+        target[I2D(i_v,i_f,n_f)] = ref[I2D(i_v,i_f,n_f)];
+        target_to_zero[I2D(i_v,i_f,n_f)]=0;
+    }
+}
+
+
 __device__
 static float distancesq(const int v_a,
         const int v_b,
@@ -238,53 +257,62 @@ static void check_and_collect(
         const float *d_ccoords,
         const float *d_betas,
         const float *d_dist,
+        const float *d_tosum,
 
         int *asso_idx,
         float * temp_betas,
+        float * temp_tosum,
+        float * summed,
 
         const int n_vert,
         const int n_ccoords,
+        const int n_sumf,
 
         const int start_vertex,
         const int end_vertex,
-        const float radius,
+        const float radiussq,
         const float min_beta,
-        const bool soft){
+        const bool soft,
+        const bool sum){
 
     int i_v = blockIdx.x * blockDim.x + threadIdx.x + start_vertex;
     if(i_v>=end_vertex)
         return;
 
-    float distmod = d_dist[ref_vertex];
-    distmod *= distmod;// squared, as distsq and radius
+    float modradiussq = d_dist[ref_vertex];
+    modradiussq *= modradiussq;// squared, as distsq and radius
+    modradiussq *= radiussq;
 
-    if(asso_idx[i_v] < 0){
+    if(asso_idx[i_v] < 0 || i_v == ref_vertex){
+
         float distsq = distancesq(ref_vertex,i_v,d_ccoords,n_ccoords);
-
+        float prob = std::exp(-distsq/(2.*modradiussq));//1 sigma at radius
         if(soft){
-            //should the reduction in beta be using the original betas or the modified ones...?
-            //go with original betas
-            float scaleddist = distmod * distsq ;
-            float moddist = std::exp(-std::log(1./min_beta)*scaleddist*scaleddist / (radius*radius));//2 sigma at radius
-            //float moddist = std::exp(-scaleddist / (radius));//2 sigma at radius
-
-
-            //becomes normal reduction at radius
-            float subtract =  moddist * ref_beta;
+            float subtract =  prob * ref_beta;
             float prebeta = temp_betas[i_v];
-            float subbeta = prebeta-subtract;
-            if(scaleddist < 2.*radius)//reduce mem access
-                temp_betas[i_v] = subbeta;
-            if((subbeta <= min_beta && scaleddist < radius)){
-                asso_idx[i_v] = ref_vertex;
-            }
+            float newbeta = prebeta-subtract;
+            temp_betas[i_v] = newbeta;
         }
-        else{
-            if(distmod*distsq <= radius){ //sum features in parallel?
-                asso_idx[i_v] = ref_vertex;
-            }
+        if(distsq <= modradiussq){
+            asso_idx[i_v] = ref_vertex;
         }
-    }
+        if(sum){
+            if(prob>1e-7){//make atomic faster by making these bits a bit async
+                for(int i_f=0;i_f<n_sumf;i_f++){
+                    float tmpfeat = temp_tosum[I2D(i_v,i_f,n_sumf)];
+                    float origfeat = d_tosum[I2D(i_v,i_f,n_sumf)];
+                    if(tmpfeat > 0){
+                        float contrib = prob*origfeat;
+                        if(contrib>tmpfeat)//larger than what's left
+                            contrib = tmpfeat;
+
+                        atomicAdd(&summed[I2D(ref_vertex,i_f,n_sumf)] , contrib);//otherwise race issues
+                        temp_tosum[I2D(i_v,i_f,n_sumf)] -= contrib;
+                    }
+                }
+            }
+        }//sum
+    }//asso
 
 
 }
@@ -301,24 +329,34 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
             const float *d_ccoords,
             const float *d_betas,
             const float *d_dist,
+            const float *d_tosum,
             const int *row_splits,
 
             int *asso_idx,
             int *is_cpoint,
             float * temp_betas,
             int *n_condensates,
+            float *temp_tosum,
+            float *summed,
 
             const int n_vert,
             const int n_ccoords,
+            const int n_sumf,
 
             const int n_rs,
 
             const float radius,
             const float min_beta,
-            const bool soft
+            const bool soft,
+            const bool sum
 
 ) {
 
+
+        if(sum){
+            grid_and_block defgb(n_vert, 512);
+            copy_to_sum_and_default<<<defgb.grid(),defgb.block()>>>(d_tosum,temp_tosum,summed,n_vert,n_sumf);
+        }
 
         std::vector<int> cpu_rowsplits(n_rs);
         cudaMemcpy(&cpu_rowsplits.at(0),row_splits,n_rs*sizeof(int),cudaMemcpyDeviceToHost); //Async if needed, but these are just a few kB
@@ -361,15 +399,20 @@ struct BuildCondensatesOpFunctor<GPUDevice, dummy> {
                         d_ccoords,
                         d_betas,
                         d_dist,
+                        d_tosum,
                         asso_idx,
                         temp_betas,
+                        temp_tosum,
+                        summed,
                         n_vert,
                         n_ccoords,
+                        n_sumf,
                         start_vertex,
                         end_vertex,
                         radius,
                         min_beta,
-                        soft);
+                        soft,
+                        sum);
 
                 cudaDeviceSynchronize();
 

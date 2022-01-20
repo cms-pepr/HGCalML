@@ -1,662 +1,269 @@
 import os
 import shutil
 
-from matplotlib.backends.backend_pdf import PdfPages
-
-from hplots.general_2d_plot_extensions import EfficiencyFoTruthEnergyPlot, ResolutionFoEnergyPlot, ResolutionFoTruthEta, \
-    ResolutionFoLocalShowerEnergyFraction
-from hplots.general_2d_plot_extensions import FakeRateFoPredEnergyPlot
-from hplots.general_2d_plot_extensions import ResponseFoEnergyPlot
-from hplots.general_2d_plot_extensions import EnergyFoundFoPredEnergyPlot
-from hplots.general_2d_plot_extensions import EnergyFoundFoTruthEnergyPlot
-from hplots.general_2d_plot_extensions import ResponseFoLocalShowerEnergyFractionPlot
-from hplots.general_2d_plot_extensions import EfficiencyFoLocalShowerEnergyFractionPlot
-from hplots.general_2d_plot_extensions import EfficiencyFoTruthEtaPlot
-from hplots.general_2d_plot_extensions import FakeRateFoPredEtaPlot
-from hplots.general_2d_plot_extensions import ResponseFoTruthEtaPlot
-from hplots.general_2d_plot_extensions import EfficiencyFoTruthPIDPlot
-from hplots.general_2d_plot_extensions import ResponseFoTruthPIDPlot
 import numpy as np
 import matplotlib.pyplot as plt
-import experiment_database_reading_manager
-from hplots.general_hist_plot import GeneralHistogramPlot
-import matching_and_analysis
-from matching_and_analysis import one_hot_encode_id
+from matplotlib.backends.backend_pdf import PdfPages
 
-from hplots.pid_plots import ConfusionMatrixPlot, RocCurvesPlot
+from hplots.general_2d_plot_extensions_2 import EfficiencyFakeRatePlot, ResponsePlot, ResolutionPlot
+from hplots.general_hist_extensions import ResponseHisto, Multi4HistEnergy
 
+def eta_transform(eta):
+    eta = np.abs(eta)
+    eta[eta > 3] = 3.01
+    return eta
 
 class HGCalAnalysisPlotter:
-    def __init__(self, plots = ['settings', 'efficiency_fo_truth', 'fake_rate_fo_pred', 'response_fo_truth',
-                                'response_fo_pred', 'response_sum_fo_truth', 'energy_resolution',
-                                'energy_found_fo_truth', 'energy_found_fo_pred','efficiency_fo_local_shower_energy_fraction','response_fo_local_shower_energy_fraction',
-                                'efficiency_fo_truth_eta','fake_rate_fo_pred_eta', 'response_fo_truth_eta', 'response_fo_pred_eta',
-                                'efficiency_fo_truth_pid', 'response_fo_truth_pid',
-                                'confusion_matrix', 'roc_curves',
-                                'resolution_fo_true_energy',
-                                'resolution_fo_local_shower_fraction',
-                                'resolution_fo_eta',
-                                'resolution_sum_fo_true_energy',
-                                'resolution_sum_fo_local_shower_fraction',
-                                'resolution_sum_fo_eta',
-                                ],log_of_distributions=True):
+    def __init__(self):
+        self.energy_bins = np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200])
+        self.local_shower_fraction_bins = np.array([0, 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0])
+        self.eta_bins = np.array([1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0,2.25,2.5,2.75,3,3.1])
+        self.pt_bins = np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80])
+
+    def set_energy_bins(self, energy_bins):
+        self.energy_bins = energy_bins
+
+    def set_local_shower_fraction_bins(self, local_shower_fraction_bins):
+        self.local_shower_fraction_bins = local_shower_fraction_bins
+
+    def set_eta_bins(self, eta_bins):
+        self.eta_bins = eta_bins
+
+    def set_pt_bins(self, pt_bins):
+        self.pt_bins = pt_bins
 
 
-        self.efficiency_plot = EfficiencyFoTruthEnergyPlot(histogram_log=log_of_distributions)
-        self.fake_rate_plot = FakeRateFoPredEnergyPlot(histogram_log=log_of_distributions)
-        self.response_plot = ResponseFoEnergyPlot(histogram_log=log_of_distributions)
-        self.response_fo_pred_plot = ResponseFoEnergyPlot(x_label='Pred energy [GeV]', y_label='Response mean (pred energy/truth energy)', histogram_log=log_of_distributions)
-        self.response_sum_plot = ResponseFoEnergyPlot(y_label='Response (sum/truth)', histogram_log=log_of_distributions)
-        self.response_fo_local_shower_energy_fraction = ResponseFoLocalShowerEnergyFractionPlot()
-        self.efficiency_fo_local_shower_energy_fraction = EfficiencyFoLocalShowerEnergyFractionPlot()
-        self.efficiency_fo_truth_eta_plot = EfficiencyFoTruthEtaPlot(histogram_log=log_of_distributions)
-        self.fake_rate_fo_pred_eta_plot = FakeRateFoPredEtaPlot(histogram_log=log_of_distributions)
-        self.response_fo_truth_eta_plot = ResponseFoTruthEtaPlot(histogram_log=log_of_distributions)
-        self.response_fo_pred_eta_plot = ResponseFoTruthEtaPlot(x_label='abs(Pred eta)', y_label='Response mean (pred energy/truth energy)', histogram_log=log_of_distributions)
-        self.efficiency_fo_truth_pid_plot = EfficiencyFoTruthPIDPlot(histogram_log=log_of_distributions)
-        self.response_fo_truth_pid_plot = ResponseFoTruthPIDPlot(histogram_log=log_of_distributions)
-        self.energy_found_fo_truth_plot = EnergyFoundFoTruthEnergyPlot()
-        self.energy_found_fo_pred_plot = EnergyFoundFoPredEnergyPlot()
-        self.confusion_matrix_plot = ConfusionMatrixPlot()
-        self.roc_curves = RocCurvesPlot()
+    def _make_pdfs(self, ):
+        if os.path.exists(self.pdf_path):
+            if os.path.isdir(self.pdf_path):
+                shutil.rmtree(self.pdf_path)
+            else:
+                os.unlink(self.pdf_path)
 
+        os.mkdir(self.pdf_path)
 
-        self.resolution_fo_true_energy = ResolutionFoEnergyPlot()
-        self.resolution_fo_true_eta = ResolutionFoTruthEta()
-        self.resolution_fo_local_shower_energy_fraction = ResolutionFoLocalShowerEnergyFraction()
+        self.pdf_efficiency = PdfPages(os.path.join(self.pdf_path,'efficiency.pdf'))
+        self.pdf_response = PdfPages(os.path.join(self.pdf_path,'response.pdf'))
+        # self.pdf_pid = PdfPages(os.path.join(self.pdf_path,'pid.pdf'))
+        self.pdf_fake_rate = PdfPages(os.path.join(self.pdf_path,'fake_rate.pdf'))
+        self.pdf_others = PdfPages(os.path.join(self.pdf_path,'others.pdf'))
+        self.pdf_resolution = PdfPages(os.path.join(self.pdf_path,'resolution.pdf'))
+        self.pdf_response_histos = PdfPages(os.path.join(self.pdf_path,'response_histos.pdf'))
 
-        self.resolution_sum_fo_true_energy = ResolutionFoEnergyPlot(y_label='Resolution (truth, dep pred)')
-        self.resolution_sum_fo_true_eta = ResolutionFoTruthEta(y_label='Resolution (truth, dep pred)')
-        self.resolution_sum_fo_local_shower_energy_fraction = ResolutionFoLocalShowerEnergyFraction(y_label='Resolution (truth, dep pred)')
+    def _close_pdfs(self):
+        self.pdf_efficiency.close()
+        self.pdf_response.close()
+        self.pdf_fake_rate.close()
+        self.pdf_others.close()
+        # self.pdf_pid.close()
+        self.pdf_resolution.close()
+        self.pdf_response_histos.close()
+        plt.close('all')
 
-        # TODO: for Nadya
-        self.resolution_histogram_plot = GeneralHistogramPlot(bins=np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 120,140,160,180,200]),x_label='Resolution (to be done)', y_label='Frequency', title='Energy resolution (to be done, placeholder)')
+    def _make_efficiency_plots(self):
+        filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull()
+        found = self.showers_dataframe['pred_sid'][filter_has_truth].notnull().to_numpy()
 
-        self.dist_thresholds = []
-        self.beta_thresholds = []
-        self.iou_thresholds = []
-        self.matching_types = []
+        # Efficiency fo true energy
+        plot = EfficiencyFakeRatePlot(bins=self.energy_bins, x_label='True Energy [GeV]', y_label='Efficiency')
+        plot.add_raw_values(self.showers_dataframe['truthHitAssignedEnergies'][filter_has_truth].to_numpy(), found)
+        self.pdf_efficiency.savefig(plot.draw())
 
-        self.plots = set(plots)
+        # Efficiency fo pT
+        plot = EfficiencyFakeRatePlot(bins=self.pt_bins, x_label='pT [GeV]', y_label='Efficiency')
+        plot.add_raw_values(self.showers_dataframe['truth_pt'][filter_has_truth].to_numpy(), found)
+        self.pdf_efficiency.savefig(plot.draw())
 
-        self.pred_energy_matched = []
-        self.truth_energy_matched = []
-        self.reco_scores = []
+        # Efficiency fo local shower energy fraction
+        plot = EfficiencyFakeRatePlot(bins=self.local_shower_fraction_bins, x_label='Local shower energy fraction', y_label='Efficiency')
+        x = self.showers_dataframe['truth_local_shower_energy_fraction'][filter_has_truth].to_numpy()
+        plot.add_raw_values(self.showers_dataframe['truth_local_shower_energy_fraction'][filter_has_truth].to_numpy(), found)
+        self.pdf_efficiency.savefig(plot.draw())
 
-    def _draw_numerics(self):
+        # Efficiency fo eta
+        plot = EfficiencyFakeRatePlot(bins=self.eta_bins, x_label='$|\\eta_{true}|$', y_label='Efficiency')
+        plot.add_raw_values(eta_transform(self.showers_dataframe['truthHitAssignedEta'][filter_has_truth].to_numpy()), found)
+        self.pdf_efficiency.savefig(plot.draw())
+
+    def _make_fake_rate_plots(self):
+        filter_has_pred = self.showers_dataframe['pred_sid'].notnull()
+        fake = np.logical_not(self.showers_dataframe['truthHitAssignementIdx'][filter_has_pred].notnull().to_numpy())
+
+        # Efficiency fo true energy
+        plot = EfficiencyFakeRatePlot(bins=self.energy_bins, x_label='Pred Energy [GeV]', y_label='Fake rate')
+        plot.add_raw_values(self.showers_dataframe['pred_energy'][filter_has_pred].to_numpy(), fake)
+        self.pdf_fake_rate.savefig(plot.draw())
+
+        # Fake rate fo pT
+        plot = EfficiencyFakeRatePlot(bins=self.pt_bins, x_label='pT [GeV]', y_label='Fake rate')
+        plot.add_raw_values(self.showers_dataframe['pred_energy'][filter_has_pred].to_numpy(), fake)
+        self.pdf_fake_rate.savefig(plot.draw())
+
+        # Fake rate fo eta
+        plot = EfficiencyFakeRatePlot(bins=self.eta_bins, x_label='$|\\eta_{true}|$', y_label='Fake rate')
+        plot.add_raw_values(
+            eta_transform(self.showers_dataframe['pred_energy'][filter_has_pred].to_numpy()), fake)
+        self.pdf_fake_rate.savefig(plot.draw())
+
+    def _make_resolution_plots(self):
+        filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull()
+        filter_has_pred = self.showers_dataframe['pred_sid'].notnull()
+        filter = np.logical_and(filter_has_truth, filter_has_pred)
+        response = self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy() \
+                   / self.showers_dataframe['pred_energy'][filter].to_numpy()
+
+        # Resolution fo true energy
+        plot = ResolutionPlot(bins=self.energy_bins, x_label='True Energy [GeV]', y_label='Resolution')
+        plot.add_raw_values(self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy(), response)
+        self.pdf_resolution.savefig(plot.draw())
+
+        # Resolution fo pT
+        plot = ResolutionPlot(bins=self.pt_bins, x_label='pT [GeV]', y_label='Resolution')
+        plot.add_raw_values(self.showers_dataframe['truth_pt'][filter].to_numpy(), response)
+        self.pdf_resolution.savefig(plot.draw())
+
+        # Resolution fo local shower energy fraction
+        plot = ResolutionPlot(bins=self.local_shower_fraction_bins, x_label='Local shower energy fraction',
+                                      y_label='Resolution')
+        plot.add_raw_values(self.showers_dataframe['truth_local_shower_energy_fraction'][filter].to_numpy(),
+                            response)
+        self.pdf_resolution.savefig(plot.draw())
+
+        # Resolution fo e other
+        plot = ResolutionPlot(bins=self.energy_bins, x_label='$E_{other}$ [GeV]', y_label='Resolution')
+        plot.add_raw_values(self.showers_dataframe['truth_e_other'][filter].to_numpy(),
+                            response)
+        self.pdf_resolution.savefig(plot.draw())
+
+    def _make_response_plots(self):
+        filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull()
+        filter_has_pred = self.showers_dataframe['pred_sid'].notnull()
+        filter = np.logical_and(filter_has_truth, filter_has_pred)
+        response = self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy() \
+                   / self.showers_dataframe['pred_energy'][filter].to_numpy()
+
+        # Response fo true energy
+        plot = ResponsePlot(bins=self.energy_bins, x_label='True Energy [GeV]', y_label='Response')
+        plot.add_raw_values(self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy(), response)
+        self.pdf_response.savefig(plot.draw())
+
+        # Response fo pT
+        plot = ResponsePlot(bins=self.pt_bins, x_label='pT [GeV]', y_label='Response')
+        plot.add_raw_values(self.showers_dataframe['truth_pt'][filter].to_numpy(), response)
+        self.pdf_response.savefig(plot.draw())
+
+        # Response fo local shower energy fraction
+        plot = ResponsePlot(bins=self.local_shower_fraction_bins, x_label='Local shower energy fraction',
+                                      y_label='Response')
+        plot.add_raw_values(self.showers_dataframe['truth_local_shower_energy_fraction'][filter].to_numpy(),
+                            response)
+        self.pdf_response.savefig(plot.draw())
+
+        # Response fo eta
+        plot = ResponsePlot(bins=self.eta_bins, x_label='$|\\eta_{true}|$', y_label='Response')
+        plot.add_raw_values(eta_transform(self.showers_dataframe['truthHitAssignedEta'][filter].to_numpy()),
+                            response)
+        self.pdf_response.savefig(plot.draw())
+
+        # Response fo e other
+        plot = ResponsePlot(bins=self.energy_bins, x_label='$E_{other}$ [GeV]', y_label='Response')
+        plot.add_raw_values(self.showers_dataframe['truth_e_other'][filter].to_numpy(),
+                            response)
+        self.pdf_response.savefig(plot.draw())
+
+    def _write_scalar_properties(self):
+        if self.scalar_variables is None:
+            return
         text_font = {'fontname': 'Arial', 'size': '14', 'color': 'black', 'weight': 'normal',
                      'verticalalignment': 'bottom'}
         fig, ax = plt.subplots(figsize=(8, 3))
         fig.patch.set_visible(False)
         ax.axis('off')
-
-        bs = ','.join(['%.5f'%x for x in self.beta_thresholds])
-        ds = ','.join(['%.5f'%x for x in self.dist_thresholds])
-        iss = ','.join(['%.5f'%x for x in self.iou_thresholds])
-        matching_types = ','.join([str(x) for x in self.matching_types])
-
-        eprecisions = self.pred_energy_matched
-        erecalls = self.truth_energy_matched
-        fscores = self.reco_scores
-
-
-        if len(self.pred_energy_matched) == 0:
-            eprecisions = self.pred_energy_matched + [-1]
-        if len(self.truth_energy_matched) == 0:
-            erecalls = self.truth_energy_matched + [-1]
-        if len(self.reco_scores) == 0:
-            fscores = self.reco_scores + [-1]
-        sp = ','.join(['%.5f'%x for x in eprecisions])
-        sr = ','.join(['%.5f'%x for x in erecalls])
-        sf = ','.join(['%.5f'%x for x in fscores])
-
-        s = 'Beta threshold: %s\nDist threshold: %s\niou  threshold: %s\nMatching types: %s\n' \
-            "%% pred energy matched: %s\n%% truth energy matched: %s\nReco score: %s" % (bs, ds, iss, matching_types, sp, sr, sf)
-
-        plt.text(0, 1, s, horizontalalignment='left', verticalalignment='top', transform=ax.transAxes,
+        s = ''
+        for k,v in self.scalar_variables.items():
+            s += '%s = %s\n'%(k,v)
+        fig.text(0, 1, s, horizontalalignment='left', verticalalignment='top', transform=ax.transAxes,
                  fontdict=text_font)
+        self.pdf_others.savefig(fig)
 
-    def write_data_to_database(self, database_manager, table_prefix):
-        self.efficiency_plot.write_to_database(database_manager, table_prefix+'_efficiency_plot')
-        self.fake_rate_plot.write_to_database(database_manager, table_prefix+'_fake_rate_plot')
-        self.response_plot.write_to_database(database_manager, table_prefix+'_response_plot')
-        self.response_fo_pred_plot.write_to_database(database_manager, table_prefix+'_response_fo_pred_plot')
-        self.response_sum_plot.write_to_database(database_manager, table_prefix+'_response_sum_plot')
-        self.resolution_histogram_plot.write_to_database(database_manager, table_prefix+'_resolution_histogram_plot')
-        self.energy_found_fo_truth_plot.write_to_database(database_manager, table_prefix+'_energy_found_fo_truth_energy')
-        self.energy_found_fo_pred_plot.write_to_database(database_manager, table_prefix+'_energy_found_fo_pred_energy')
-        self.response_fo_local_shower_energy_fraction.write_to_database(database_manager, table_prefix+'_response_fo_local_shower_energy_fraction')
-        self.efficiency_fo_local_shower_energy_fraction.write_to_database(database_manager, table_prefix+'_efficiency_fo_local_shower_energy_fraction')
-        self.efficiency_fo_truth_eta_plot.write_to_database(database_manager, table_prefix+'_efficiency_fo_truth_eta')
-        self.fake_rate_fo_pred_eta_plot.write_to_database(database_manager, table_prefix+'_fake_rate_fo_pred_eta')
-        self.response_fo_truth_eta_plot.write_to_database(database_manager, table_prefix+'_response_fo_truth_eta')
-        self.response_fo_pred_eta_plot.write_to_database(database_manager, table_prefix+'_response_fo_pred_eta')
-        self.efficiency_fo_truth_pid_plot.write_to_database(database_manager, table_prefix+'_efficiency_fo_truth_pid')
-        self.response_fo_truth_pid_plot.write_to_database(database_manager, table_prefix+'_response_fo_truth_pid')
-        self.confusion_matrix_plot.write_to_database(database_manager, table_prefix+'_confusion_matrix')
 
+    def _make_response_histograms(self):
+        filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull()
+        filter_has_pred = self.showers_dataframe['pred_sid'].notnull()
+        filter = np.logical_and(filter_has_truth, filter_has_pred)
+        response = self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy() \
+                   / self.showers_dataframe['pred_energy'][filter].to_numpy()
 
-        database_manager.flush()
+        # Response histo
+        plot = ResponseHisto()
+        plot.add_raw_values(response)
+        self.pdf_response_histos.savefig(plot.draw())
 
-    def add_data_from_database(self, database_reading_manager, table_prefix, experiment_name=None, condition=None):
-        self.efficiency_plot.read_from_database(database_reading_manager, table_prefix + '_efficiency_plot', experiment_name=experiment_name, condition=condition)
-        self.fake_rate_plot.read_from_database(database_reading_manager, table_prefix + '_fake_rate_plot', experiment_name=experiment_name, condition=condition)
-        self.response_plot.read_from_database(database_reading_manager, table_prefix + '_response_plot', experiment_name=experiment_name, condition=condition)
+        plot = Multi4HistEnergy()
+        plot.add_raw_values(self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy(), response)
+        self.pdf_response_histos.savefig(plot.draw())
 
-        try:
-            self.response_fo_pred_plot.read_from_database(database_reading_manager, table_prefix + '_response_fo_pred_plot', experiment_name=experiment_name, condition=condition)
-        except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-            print("Skipping response fo pred plot, table doesn't exist")
 
 
-        if 'energy_found_fo_truth' in self.plots:
-            try:
-                self.energy_found_fo_truth_plot.read_from_database(database_reading_manager, table_prefix + '_energy_found_fo_truth_energy', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping energy found fo truth plot, table doesn't exist")
+    def set_data(self, showers_dataframe, events_dataframe, model_name, pdf_path, scalar_variables=None):
+        self.pdf_path = pdf_path
+        self.showers_dataframe = showers_dataframe
+        self.events_dataframe = events_dataframe
+        self.model_name = model_name
+        self.scalar_variables = scalar_variables
 
-        if 'energy_found_fo_pred' in self.plots:
-            try:
-                self.energy_found_fo_truth_plot.read_from_database(database_reading_manager, table_prefix + '_energy_found_fo_pred_energy', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping energy_found_fo_pred, table doesn't exist")
+    def _add_additional_columns(self):
+        filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull().to_numpy()
+        true_energy = self.showers_dataframe['truthHitAssignedEnergies'][filter_has_truth].to_numpy()
+        phi = self.showers_dataframe['truthHitAssignedPhi'][filter_has_truth].to_numpy()
+        eta = self.showers_dataframe['truthHitAssignedEta'][filter_has_truth].to_numpy()
+        pT = true_energy / eta
+        # found = self.showers_dataframe['pred_sid'][filter_has_truth].notnull().to_numpy()
 
+        _pT = np.zeros(filter_has_truth.shape, np.float)*np.NAN
+        _pT[filter_has_truth] = pT
+        self.showers_dataframe['truth_pt'] = _pT
 
-        if 'response_fo_local_shower_energy_fraction' in self.plots:
-            try:
-                self.response_fo_local_shower_energy_fraction.read_from_database(database_reading_manager, table_prefix + '_response_fo_local_shower_energy_fraction', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping response_fo_local_shower_energy_fraction, table doesn't exist")
+        local_shower_energy_fraction = []
+        e_other_event = []
 
 
-        if 'efficiency_fo_local_shower_energy_fraction' in self.plots:
-            try:
-                self.efficiency_fo_local_shower_energy_fraction.read_from_database(database_reading_manager, table_prefix + 'efficiency_fo_local_shower_energy_fraction', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping efficiency_fo_local_shower_energy_fraction, table doesn't exist")
+        event_ids = self.showers_dataframe['event_id'][filter_has_truth].to_numpy()
+        unique_events = np.unique(event_ids)
+        for u in unique_events:
+            event_filter = event_ids == u
+            energy_event = true_energy[event_filter]
 
+            eta_event = eta[event_filter]
+            phi_event = phi[event_filter]
+            d_eta_phi = np.sqrt((eta_event[..., np.newaxis] - eta_event[np.newaxis, ...]) ** 2 + (
+                        phi_event[..., np.newaxis] - phi_event[np.newaxis, ...]) ** 2)
+            lsf = energy_event / np.sum(np.less_equal(d_eta_phi, 0.5) * energy_event[np.newaxis, ...], axis=1)
+            e_other = np.sum(np.less_equal(d_eta_phi, 0.3) * (1 - np.eye(N=len(d_eta_phi))) * energy_event[np.newaxis, ...],
+                             axis=1)
+            local_shower_energy_fraction += lsf.tolist()
+            e_other_event += e_other.tolist()
 
-        if 'efficiency_fo_truth_eta' in self.plots:
-            try:
-                self.efficiency_fo_truth_eta_plot.read_from_database(database_reading_manager, table_prefix + '_efficiency_fo_truth_eta', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping efficiency_fo_truth_eta_plot plot, table doesn't exist")
+        _local_shower_energy_fraction = np.zeros(filter_has_truth.shape, np.float)*np.NAN
+        _local_shower_energy_fraction[filter_has_truth] = np.array(local_shower_energy_fraction)
+        self.showers_dataframe['truth_local_shower_energy_fraction'] = _local_shower_energy_fraction
 
+        _truth_e_other = np.zeros(filter_has_truth.shape, np.float)*np.NAN
+        _truth_e_other[filter_has_truth] = np.array(e_other_event)
+        self.showers_dataframe['truth_e_other'] = _truth_e_other
 
-        if 'fake_rate_fo_pred_eta' in self.plots:
-            try:
-                self.fake_rate_fo_pred_eta_plot.read_from_database(database_reading_manager, table_prefix + '_fake_rate_fo_pred_eta', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping fake_rate_fo_pred_eta_plot, table doesn't exist")
 
-        if 'response_fo_truth_eta' in self.plots:
-            try:
-                self.response_fo_truth_eta_plot.read_from_database(database_reading_manager, table_prefix + '_response_fo_truth_eta', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping response_fo_truth_eta_plot, table doesn't exist")
+    def process(self):
+        self._make_pdfs()
 
-        if 'response_fo_pred_eta' in self.plots:
-            try:
-                self.response_fo_pred_eta_plot.read_from_database(database_reading_manager, table_prefix + '_response_fo_pred_eta', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping response_fo_pred_eta_plot, table doesn't exist")
+        self._add_additional_columns()
+        self._write_scalar_properties()
+        self._make_efficiency_plots()
+        self._make_fake_rate_plots()
+        self._make_response_plots()
+        self._make_resolution_plots()
+        self._make_response_histograms()
 
-        if 'efficiency_fo_truth_pid' in self.plots:
-            try:
-                self.efficiency_fo_truth_pid_plot.read_from_database(database_reading_manager, table_prefix + '_efficiency_fo_truth_pid', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping efficiency_fo_truth_pid_plot, table doesn't exist")
+        self._close_pdfs()
 
-        if 'response_fo_truth_pid' in self.plots:
-            try:
-                self.response_fo_truth_pid_plot.read_from_database(database_reading_manager, table_prefix + '_response_fo_truth_pid', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping response_fo_truth_pid_plot, table doesn't exist")
 
-        if 'confusion_matrix' in self.plots:
-            try:
-                self.confusion_matrix_plot.read_from_database(database_reading_manager, table_prefix + '_confusion_matrix', experiment_name=experiment_name, condition=condition)
-            except experiment_database_reading_manager.ExperimentDatabaseReadingManager.TableDoesNotExistError:
-                print("Skipping confusion_matrix, table doesn't exist")
-
-
-        self.response_sum_plot.read_from_database(database_reading_manager, table_prefix + '_response_sum_plot', experiment_name=experiment_name, condition=condition)
-        self.resolution_histogram_plot.read_from_database(database_reading_manager, table_prefix+'_resolution_histogram_plot', experiment_name=experiment_name, condition=condition)
-
-        tags = self.efficiency_plot.get_tags()
-
-        self.beta_thresholds += [x['beta_threshold'] for x in tags]
-        self.dist_thresholds += [x['distance_threshold'] for x in tags]
-        self.iou_thresholds += [x['iou_threshold'] for x in tags]
-        self.soft += [x['soft'] for x in tags]
-
-        self.beta_thresholds = np.unique(self.beta_thresholds).tolist()
-        self.dist_thresholds = np.unique(self.dist_thresholds).tolist()
-        self.iou_thresholds = np.unique(self.iou_thresholds).tolist()
-        self.soft = np.unique(self.soft).tolist()
-
-
-        if 'reco_score' in tags[0]:
-            self.reco_scores += [x['reco_score'] for x in tags]
-            self.reco_scores = np.unique(self.reco_scores).tolist()
-
-
-            self.pred_energy_matched += [x['pred_energy_percentage_matched'] for x in tags]
-            self.pred_energy_matched = np.unique(self.pred_energy_matched).tolist()
-
-            self.truth_energy_matched += [x['truth_energy_percentage_matched'] for x in tags]
-            self.truth_energy_matched = np.unique(self.truth_energy_matched).tolist()
-
-    def add_data_from_analysed_graph_list(self, analysed_graphs, metadata, label='', additional_tags=dict()):
-        tags = dict()
-        tags['beta_threshold'] = float(metadata['beta_threshold'])
-        tags['distance_threshold'] = float(metadata['distance_threshold'])
-        tags['iou_threshold'] = float(metadata['iou_threshold'])
-        tags['matching_type'] = str(metadata['matching_type_str'])
-        tags['label'] = str(label)
-
-        skip = {'beta_threshold', 'distance_threshold', 'iou_threshold', 'matching_type', 'label', 'matching_type_str'}
-
-        for key, value in metadata.items():
-            if key in skip:
-                continue
-            if type(value) is float or type(value) is int:
-                if np.isfinite(value):
-                    tags[key] = value
-            if type(value) is str:
-                if len(value) < 100:
-                    tags[key] = value
-
-        for key, value in additional_tags.items():
-            tags[key] = value
-
-        self.beta_thresholds.append(float(tags['beta_threshold']))
-        self.dist_thresholds.append(float(tags['distance_threshold']))
-        self.iou_thresholds.append(float(tags['iou_threshold']))
-        self.matching_types.append(str(metadata['matching_type_str']))
-
-        self.beta_thresholds = np.unique(self.beta_thresholds).tolist()
-        self.dist_thresholds = np.unique(self.dist_thresholds).tolist()
-        self.iou_thresholds = np.unique(self.iou_thresholds).tolist()
-
-
-        if 'reco_score' in metadata:
-            self.reco_scores.append(metadata['reco_score'])
-            self.reco_scores = np.unique(self.reco_scores).tolist()
-
-            self.pred_energy_matched.append(metadata['pred_energy_percentage_matched'])
-            self.pred_energy_matched = np.unique(self.pred_energy_matched).tolist()
-
-            self.truth_energy_matched.append(metadata['truth_energy_percentage_matched'])
-            self.truth_energy_matched = np.unique(self.truth_energy_matched).tolist()
-
-
-
-
-        if 'efficiency_fo_truth' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            y = np.not_equal(y, -1)
-
-            self.efficiency_plot.add_raw_values(x, y, tags)
-
-
-        if 'fake_rate_fo_pred' in self.plots:
-
-            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            y = np.equal(y, -1)
-            self.fake_rate_plot.add_raw_values(x,y, tags)
-
-
-
-        if 'response_fo_truth' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            filter = y!=-1
-            self.response_plot.add_raw_values(x[filter], y[filter] / x[filter], tags)
-
-        if 'response_fo_pred' in self.plots:
-            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            filter = y!=-1
-            self.response_fo_pred_plot.add_raw_values(x[filter], x[filter] / y[filter], tags)
-
-        if 'response_sum_fo_truth' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
-            filter = y!=-1
-            self.response_sum_plot.add_raw_values(x[filter], y[filter] / x[filter], tags)
-
-
-        # TODO: Nadya Just adding a histogram of all the truth shower energy as a placeholder
-        # if 'energy_resolution' in self.plots:
-        #     self.resolution_histogram_plot.add_raw_values(dataset_analysis_dict['truth_shower_energy'][filter_truth_found], tags)
-
-        if 'energy_found_fo_truth' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            y[y==-1] = 0
-            self.energy_found_fo_truth_plot.add_raw_values(x, np.minimum(x,y), tags=tags)
-        if 'energy_found_fo_pred' in self.plots:
-            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            y[y==-1] = 0
-            self.energy_found_fo_pred_plot.add_raw_values(x, np.minimum(x,y), tags=tags)
-
-        if 'response_fo_local_shower_energy_fraction' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
-            filter = y!=-1
-            self.response_fo_local_shower_energy_fraction.add_raw_values(l[filter], y[filter] / x[filter], tags)
-
-        if 'efficiency_fo_local_shower_energy_fraction' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            y = y!=-1
-            self.efficiency_fo_local_shower_energy_fraction.add_raw_values(x, y, tags)
-
-        if 'efficiency_fo_truth_eta' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            x = np.abs(x)
-            #print("ZZZZZZ", np.min(x), np.max(x), np.mean(x))
-            x[x>3] = 3.01
-            y = y!=-1
-            self.efficiency_fo_truth_eta_plot.add_raw_values(x, y, tags)
-
-        if 'fake_rate_fo_pred_eta' in self.plots:
-            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'dep_eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            x = np.abs(x)
-            x[x>3] = 3.01
-            y = np.equal(y, -1)
-            self.fake_rate_fo_pred_eta_plot.add_raw_values(x,y, tags)
-
-        if 'response_fo_truth_eta' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l = np.abs(l)
-            l[l>3] = 3.01
-            filter = y!=-1
-            self.response_fo_truth_eta_plot.add_raw_values(l[filter], y[filter] / x[filter], tags)
-
-        if 'response_fo_pred_eta' in self.plots:
-            x,y = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l,_ = matching_and_analysis.get_pred_matched_attribute(analysed_graphs, 'dep_eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l = np.abs(l)
-            l[l>3] = 3.01
-            filter = y!=-1
-            self.response_fo_pred_eta_plot.add_raw_values(l[filter], y[filter] / x[filter], tags)
-
-        if 'efficiency_fo_truth_pid' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pid', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            x = np.abs(x)
-            x[(x > 29) & (x < 100)] = 29
-            x[x==111] = 31
-            x[x==211] = 32
-            x[x==113] = 33
-            x[x==213] = 34
-            x[x==115] = 35
-            x[x==215] = 36
-            x[x==117] = 37
-            x[x==217] = 38
-            x[x==119] = 39
-            x[x==219] = 40
-            x[x==130] = 41
-            x[x==310] = 42
-            x[x==311] = 43
-            x[x==321] = 44
-            x[x==2212] = 46
-            x[x==2112] = 47
-            x[x>=100] = 49
-            y = y!=-1
-            self.efficiency_fo_truth_pid_plot.add_raw_values(x, y, tags)
-
-        if 'response_fo_truth_pid' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pid', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l = np.abs(l)
-            l[(l > 29) & (l < 100)] = 29
-            l[l==111] = 31
-            l[l==211] = 32
-            l[l==113] = 33
-            l[l==213] = 34
-            l[l==115] = 35
-            l[l==215] = 36
-            l[l==117] = 37
-            l[l==217] = 38
-            l[l==119] = 39
-            l[l==219] = 40
-            l[l==130] = 41
-            l[l==310] = 42
-            l[l==311] = 43
-            l[l==321] = 44
-            l[l==2212] = 46
-            l[l==2112] = 47
-            l[l>=100] = 49
-            filter = y!=-1
-            self.response_fo_truth_pid_plot.add_raw_values(l[filter], y[filter] / x[filter], tags)
-
-        if 'confusion_matrix' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pid', 'pid_probability', numpy=False, not_found_value=None, sum_multi=True)
-
-            filter = np.argwhere(np.array([a is not None for a in y], np.bool))
-            filter = filter[:, 0]
-
-
-            x = [x[i] for i in filter]
-            y = [y[i] for i in filter]
-
-            x = np.array(x)
-            y = np.array(y)
-
-            y = np.argmax(y, axis=1)
-            x = np.argmax(one_hot_encode_id(x, n_classes=4), axis=1)
-
-            self.confusion_matrix_plot.classes = metadata['classes']
-            self.confusion_matrix_plot.add_raw_values(x, y)
-
-        if 'roc_curves' in self.plots:
-            x, y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'pid', 'pid_probability',
-                                                                     numpy=False, not_found_value=None, sum_multi=True)
-
-            filter = np.argwhere(np.array([a is not None for a in y], np.bool))
-            filter = filter[:, 0]
-
-            x = [x[i] for i in filter]
-            y = [y[i] for i in filter]
-
-            x = np.array(x)
-            y = np.array(y)
-
-
-            self.roc_curves.classes = metadata['classes']
-            x = one_hot_encode_id(x, n_classes=len(metadata['classes']))
-            self.roc_curves.add_raw_values(x, y)
-
-        if 'resolution_fo_true_energy' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            filter = y!=-1
-            self.resolution_fo_true_energy.add_raw_values(x[filter], y[filter] / x[filter], tags)
-
-
-        if 'resolution_fo_local_shower_fraction' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
-            filter = y!=-1
-            self.resolution_fo_local_shower_energy_fraction.add_raw_values(l[filter], y[filter] / x[filter], tags)
-
-
-        if 'resolution_fo_eta' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l = np.abs(l)
-            l[l>3] = 3.01
-            filter = y!=-1
-            self.resolution_fo_true_eta.add_raw_values(l[filter], y[filter] / x[filter], tags)
-
-
-        if 'resolution_sum_fo_true_energy' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
-            filter = y!=-1
-            self.resolution_sum_fo_true_energy.add_raw_values(x[filter], y[filter] / x[filter], tags)
-
-
-        if 'resolution_sum_fo_local_shower_fraction' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'local_shower_energy_fraction', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
-            filter = y!=-1
-            self.resolution_sum_fo_local_shower_energy_fraction.add_raw_values(l[filter], y[filter] / x[filter], tags)
-
-
-        if 'resolution_sum_fo_eta' in self.plots:
-            x,y = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'energy', 'dep_energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l,_ = matching_and_analysis.get_truth_matched_attribute(analysed_graphs, 'eta', 'energy', numpy=True, not_found_value=-1, sum_multi=True)
-            l = np.abs(l)
-            l[l>3] = 3.01
-            filter = y!=-1
-            self.resolution_sum_fo_true_eta.add_raw_values(l[filter], y[filter] / x[filter], tags)
-
-
-    def write_to_pdf(self, pdfpath, formatter=lambda x:''):
-        if os.path.exists(pdfpath):
-            if os.path.isdir(pdfpath):
-                shutil.rmtree(pdfpath)
-            else:
-                os.unlink(pdfpath)
-
-        os.mkdir(pdfpath)
-
-        pdf_efficiency = PdfPages(os.path.join(pdfpath,'efficiency.pdf'))
-        pdf_response = PdfPages(os.path.join(pdfpath,'response.pdf'))
-        pdf_pid = PdfPages(os.path.join(pdfpath,'pid.pdf'))
-        pdf_fake_rate = PdfPages(os.path.join(pdfpath,'fake_rate.pdf'))
-        pdf_others = PdfPages(os.path.join(pdfpath,'others.pdf'))
-        pdf_resolution = PdfPages(os.path.join(pdfpath,'resolution.pdf'))
-
-        if 'settings' in self.plots:
-            self._draw_numerics()
-            pdf_others.savefig()
-
-        if 'efficiency_fo_truth' in self.plots:
-            self.efficiency_plot.draw(formatter)
-            pdf_efficiency.savefig()
-
-        if 'fake_rate_fo_pred' in self.plots:
-            self.fake_rate_plot.draw(formatter)
-            pdf_fake_rate.savefig()
-
-        if 'response_fo_truth' in self.plots:
-            self.response_plot.draw(formatter)
-            pdf_response.savefig()
-
-        if 'response_fo_pred' in self.plots:
-            self.response_fo_pred_plot.draw(formatter)
-            pdf_response.savefig()
-
-        if 'response_sum_fo_truth' in self.plots:
-            self.response_sum_plot.draw(formatter)
-            pdf_response.savefig()
-
-        if 'energy_resolution' in self.plots:
-            # TODO: remove comments when added
-            # self.resolution_histogram_plot.draw(formatter)
-            # pdf.savefig()
-            pass
-
-        if 'response_fo_local_shower_energy_fraction' in self.plots:
-            self.response_fo_local_shower_energy_fraction.draw(formatter)
-            pdf_response.savefig()
-
-        if 'efficiency_fo_local_shower_energy_fraction' in self.plots:
-            self.efficiency_fo_local_shower_energy_fraction.draw(formatter)
-            pdf_efficiency.savefig()
-
-        if 'efficiency_fo_truth_eta' in self.plots:
-            self.efficiency_fo_truth_eta_plot.draw(formatter)
-            pdf_efficiency.savefig()
-
-        if 'fake_rate_fo_pred_eta' in self.plots:
-            self.fake_rate_fo_pred_eta_plot.draw(formatter)
-            pdf_fake_rate.savefig()
-
-        if 'response_fo_truth_eta' in self.plots:
-            self.response_fo_truth_eta_plot.draw(formatter)
-            pdf_response.savefig()
-
-        if 'response_fo_pred_eta' in self.plots:
-            self.response_fo_pred_eta_plot.draw(formatter)
-            pdf_response.savefig()
-
-        if 'efficiency_fo_truth_pid' in self.plots:
-            self.efficiency_fo_truth_pid_plot.draw(formatter)
-            pdf_efficiency.savefig()
-
-        if 'response_fo_truth_pid' in self.plots:
-            self.response_fo_truth_pid_plot.draw(formatter)
-            pdf_response.savefig()
-
-        if 'confusion_matrix' in self.plots:
-            fig = self.confusion_matrix_plot.draw(formatter)
-            pdf_pid.savefig(fig)
-
-            self.confusion_matrix_plot.dont_plot(3)
-            fig = self.confusion_matrix_plot.draw(formatter)
-            pdf_pid.savefig(fig)
-            self.confusion_matrix_plot.dont_plot(None)
-
-        if 'roc_curves' in self.plots:
-            for i in range(4):
-                self.roc_curves.set_primary_class(i)
-                fig = self.roc_curves.draw(formatter)
-                pdf_pid.savefig(figure=fig)
-
-            for i in range(3):
-                self.roc_curves.set_primary_class(i)
-                self.roc_curves.dont_plot(3)
-                fig = self.roc_curves.draw(formatter)
-                pdf_pid.savefig(figure=fig)
-
-            # self.roc_curves.set_primary_class(0)
-            # fig = self.roc_curves.draw(formatter)
-            # print(fig)
-            # fig.savefig('xyza.png')
-            # print("Saving to png")
-            # pdf_pid.savefig(figure=fig)
-
-        if 'resolution_fo_true_energy':
-            fig = self.resolution_fo_true_energy.draw(formatter)
-            pdf_resolution.savefig(fig)
-
-        if 'resolution_fo_local_shower_fraction':
-            fig = self.resolution_fo_local_shower_energy_fraction.draw(formatter)
-            pdf_resolution.savefig(fig)
-
-        if 'resolution_fo_eta':
-            fig = self.resolution_fo_true_eta.draw(formatter)
-            pdf_resolution.savefig(fig)
-
-
-        if 'resolution_sum_fo_true_energy':
-            fig = self.resolution_sum_fo_true_energy.draw(formatter)
-            pdf_resolution.savefig(fig)
-
-        if 'resolution_sum_fo_local_shower_fraction':
-            fig = self.resolution_sum_fo_local_shower_energy_fraction.draw(formatter)
-            pdf_resolution.savefig(fig)
-
-        if 'resolution_sum_fo_eta':
-            fig = self.resolution_sum_fo_true_eta.draw(formatter)
-            pdf_resolution.savefig(fig)
-
-        # if 'energy_found_fo_truth' in self.plots:
-        #     self.energy_found_fo_truth_plot.draw(formatter)
-        #     pdf.savefig()
-        # if 'energy_found_fo_pred' in self.plots:
-        #     self.energy_found_fo_pred_plot.draw(formatter)
-        #     pdf.savefig()
-        #
-        # if 'energy_found_fo_truth' in self.plots and 'energy_found_fo_pred' in self.plots and len(self.energy_found_fo_truth_plot.models_data)==1:
-        #     EnergyFoundFoTruthEnergyPlot.draw_together_scalar_metrics(self.energy_found_fo_truth_plot, self.energy_found_fo_pred_plot)
-        #     pdf.savefig()
-
-        #
-        pdf_efficiency.close()
-        pdf_response.close()
-        pdf_fake_rate.close()
-        pdf_others.close()
-        pdf_pid.close()
-        pdf_resolution.close()
-
-        plt.close('all')
