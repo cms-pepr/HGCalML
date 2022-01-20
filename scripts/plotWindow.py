@@ -150,7 +150,10 @@ for i in tqdm.tqdm(range(nevents)):
     showerhits = df[df["truthHitAssignementIdx"]>=0]
     #depvstruthenergy.append(np.sum(showerhits['recHitEnergy'])/(np.sum(dfshowers['truthHitAssignedEnergies'])+1.))
     
+    from globals import pu
+    #df["recHitLogEnergy"]*= (1. - (1.-1e-2)*(df["truthHitAssignementIdx"]>=pu.t_idx_offset))
     df3d = shuffle_truth_colors(df)
+    df3d['orig_truthHitAssignementIdx']=df['truthHitAssignementIdx']
     df3d['t_inv_spec'] = np.where(df3d['truthHitAssignementIdx']<0,
                      0.,np.ones_like(df3d['truthHitSpectatorFlag'])) * 1./(df3d['truthHitSpectatorFlag']+1e-1)
     #plot the first 20 as 3D plots
@@ -164,8 +167,11 @@ for i in tqdm.tqdm(range(nevents)):
                     'truthHitAssignedX',
                     'truthHitAssignedY',
                     'truthHitAssignementIdx',
+                    'orig_truthHitAssignementIdx',
                     'truthHitAssignedPIDs',
                     'truthHitSpectatorFlag']
+        
+        print('N hits', len(df3d))
         
         fig = px.scatter_3d(df3d, x="recHitX", y="recHitZ", z="recHitY", 
                                     color="truthHitAssignementIdx", size="recHitLogEnergy",
@@ -176,6 +182,8 @@ for i in tqdm.tqdm(range(nevents)):
         fig.update_traces(marker=dict(line=dict(width=0)))
         ccfile = outdir + str(i) + "_event.html"
         fig.write_html(ccfile)
+        
+        continue
         
         fig = px.scatter_3d(df3d, x="recHitX", y="recHitZ", z="recHitY", 
                                     color="truthHitAssignementIdx", size="recHitHitR",
