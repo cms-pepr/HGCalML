@@ -1,3 +1,4 @@
+raise NotImplementedError('Needs to be revamped with the new code. To be done soon')
 import numpy as np
 import tensorflow as tf
 from importlib import reload
@@ -360,7 +361,7 @@ def compute_precision_and_absorption_graph(graphs, metadata, beta=1):
         nm += 1 if x is None and y is not None else 0
         nm += 1 if x is not None and y is None else 0
         nm += 2 if x is not None and y is not None else 0
-    assert nm == truth_count
+    # assert nm == truth_count
 
     precision_value = calculate_overall_precision(M, metadata['angle_threshold'])
     ab_value = calculate_overall_absorption(M, metadata['angle_threshold'])
