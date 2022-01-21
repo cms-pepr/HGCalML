@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import gzip
 import pickle
@@ -5,6 +6,7 @@ import pickle
 import mgzip
 
 import argparse
+import time
 
 import pandas as pd
 
@@ -13,11 +15,11 @@ from ShowersMatcher import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 
 def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold, matching_mode, analysisoutpath, nfiles,
-            local_distance_scaling, is_soft, op, de_e_cut, angle_cut):
+            local_distance_scaling, is_soft, op, de_e_cut, angle_cut, kill_pu=True):
     hits2showers = OCHits2Showers(beta_threshold, distance_threshold, is_soft, local_distance_scaling, op=op)
     showers_matcher = ShowersMatcher(matching_mode, iou_threshold, de_e_cut, angle_cut)
 
-    files_to_be_tested = [os.path.join(preddir, x) for x in os.listdir(preddir)]
+    files_to_be_tested = [os.path.join(preddir, x) for x in os.listdir(preddir) if x.endswith('.bin.gz')]
     if nfiles!=-1:
         files_to_be_tested = files_to_be_tested[0:min(nfiles, len(files_to_be_tested))]
 
@@ -25,13 +27,16 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     event_id = 0
 
     for i, file in enumerate(files_to_be_tested):
-        print("Analysing file", i)
+        print("Analysing file", i, file)
         with mgzip.open(file, 'rb') as f:
             file_data = pickle.load(f)
             for j, endcap_data in enumerate(file_data):
                 print("Analysing endcap",j)
+                stopwatch = time.time()
                 features_dict, truth_dict, predictions_dict = endcap_data
                 processed_pred_dict, pred_shower_alpha_idx = hits2showers.call(features_dict, predictions_dict)
+                print('took',time.time()-stopwatch,'s for inference clustering')
+                stopwatch = time.time()
                 showers_matcher.set_inputs(
                     features_dict=features_dict,
                     truth_dict=truth_dict,
@@ -39,10 +44,17 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                     pred_alpha_idx=pred_shower_alpha_idx
                 )
                 showers_matcher.process()
-
+                print('took',time.time()-stopwatch,'s to match')
+                stopwatch = time.time()
                 dataframe = showers_matcher.get_result_as_dataframe()
+                print('took',time.time()-stopwatch,'s to make data frame')
                 dataframe['event_id'] = event_id
                 event_id += 1
+                if kill_pu:
+                    from globals import pu
+                    if len(dataframe[dataframe['truthHitAssignementIdx']>=pu.t_idx_offset]):
+                        print('\nWARNING REMOVING PU TRUTH MATCHED SHOWERS, HACK.\n')
+                        dataframe = dataframe[dataframe['truthHitAssignementIdx']<pu.t_idx_offset]
                 showers_dataframe = pd.concat((showers_dataframe, dataframe))
 
     # This is only to write to pdf files
