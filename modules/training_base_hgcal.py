@@ -14,6 +14,10 @@ class HGCalTraining(training_base):
             import sys
             sys.stdout = open(self.outputDir+'/stdout.txt', 'w')
             sys.stderr = open(self.outputDir+'/stderr.txt', 'w')
+            
+        
+        from config_saver import copyModules
+        copyModules(self.outputDir)#save the modules with indexing for overwrites
 
     def compileModel(self, **kwargs):
         super().compileModel(is_eager=True,
