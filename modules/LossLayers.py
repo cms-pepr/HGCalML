@@ -850,32 +850,46 @@ class LLFullObjectCondensation(LossLayerBase):
         tloss = huber((t_time - pred_time),2.) 
         return self.softclip(tloss, 6.) 
     
-    def calc_classification_loss(self, t_pid, pred_id, t_is_unique):
+    def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
         depth = pred_id.shape[1]#add n_classes here?
         truthclass, mask = one_hot_encode_id(t_pid, depth) # V x Cl, V x 1
         mask = tf.cast(mask, dtype='float32')
+        pid_w = None
+        if hasunique:
         #weight for 
-        u_pids = truthclass[t_is_unique[:,0]>0]# U x Cl
-        N_u_pids = tf.reduce_sum(u_pids,axis=0) # Cl
-        pid_w = tf.cast(N_u_pids, dtype='float32') # Cl
-        pid_w = tf.reduce_mean(pid_w,keepdims=True) / (pid_w + 1e-3) # Cl, average weight 1
-        pid_w = tf.expand_dims(pid_w, axis=0)# 1 x Cl
-        pid_w *= tf.cast(truthclass, dtype='float32') # V x Cl, one-hot
-        pid_w = tf.reduce_sum(pid_w, axis=1,keepdims=True) # V x 1
-        
+            u_pids = truthclass[t_is_unique[:,0]>0]# U x Cl
+            N_u_pids = tf.reduce_sum(u_pids,axis=0) # Cl
+            pid_w = tf.cast(N_u_pids, dtype='float32') # Cl
+            pid_w = tf.reduce_mean(pid_w,keepdims=True) / (pid_w + 1e-3) # Cl, average weight 1
+            pid_w = tf.expand_dims(pid_w, axis=0)# 1 x Cl
+            pid_w *= tf.cast(truthclass, dtype='float32') # V x Cl, one-hot
+            pid_w = tf.reduce_sum(pid_w, axis=1,keepdims=True) # V x 1
+        else:
+            pid_w = tf.ones_like(mask)
         classloss = tf.expand_dims(tf.keras.metrics.categorical_crossentropy(truthclass, pred_id), axis=1) # V x 1
         
-        return classloss*mask*pid_w
+        return self.softclip(classloss*mask*pid_w, 2.)#for high weights
 
     def loss(self, inputs):
         
-        assert len(inputs) == 18
-        
-        
-        pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
-        rechit_energy,\
-        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,t_is_unique,\
-        rowsplits = inputs
+        assert len(inputs) == 18 or len(inputs) == 17
+        hasunique = False
+        if len(inputs) == 18:
+            pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
+            rechit_energy,\
+            t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
+            t_is_unique,\
+            rowsplits = inputs
+            hasunique=True
+        else:
+            pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
+            rechit_energy,\
+            t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
+            rowsplits = inputs
+            
+            t_is_unique = tf.concat([t_idx[0:1]*0 + 1, t_idx[1:]*0],axis=0)
+            hasunique=False
+            print('WARNING. functions using unique will not work as expected')
                     
         tf.assert_equal(rowsplits[-1], pred_beta.shape[0])#guard
         
@@ -903,7 +917,7 @@ class LLFullObjectCondensation(LossLayerBase):
             
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
-        classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id, t_is_unique)
+        classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id, t_is_unique, hasunique)
         
         full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss], axis=-1)
         

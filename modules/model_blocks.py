@@ -309,7 +309,7 @@ def pre_selection_model_full(orig_inputs,
                              record_metrics=False,
                              omit_reduction=False, #only trains coordinate transform. useful for pretrain phase
                              use_multigrav=True,
-                             eweighted = False,
+                             eweighted = True,
                              ):
     
     from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices
