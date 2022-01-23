@@ -223,7 +223,7 @@ def gravnet_model(Inputs,
          pred_energy_corr, pred_pos, pred_time, pred_id] +
         [energy]+
         # truth information
-        [pre_selection['t_idx'] ,
+         [pre_selection['t_idx'] ,
          pre_selection['t_energy'] ,
          pre_selection['t_pos'] ,
          pre_selection['t_time'] ,
@@ -231,6 +231,7 @@ def gravnet_model(Inputs,
          pre_selection['t_spectator_weight'],
          pre_selection['t_fully_contained'],
          pre_selection['t_rec_energy'],
+         pre_selection['t_is_unique'],
          pre_selection['rs']])
                                          
     #fast feedback

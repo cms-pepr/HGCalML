@@ -6,7 +6,7 @@ import time
 from baseModules import LayerWithMetrics
 
 def one_hot_encode_id(t_pid, n_classes):
-    valued_pids = tf.zeros_like(t_pid)+3 #defaults to 3 as that is the highest showerType value
+    valued_pids = tf.zeros_like(t_pid)+4 #defaults to 4 as unkown
     valued_pids = tf.where(tf.math.logical_or(t_pid==22, tf.abs(t_pid) == 11), 0, valued_pids) #isEM
     
     valued_pids = tf.where(tf.abs(t_pid)==211, 1, valued_pids) #isHad
@@ -22,8 +22,13 @@ def one_hot_encode_id(t_pid, n_classes):
     valued_pids = tf.where(tf.abs(t_pid)==3122, 3, valued_pids) #lambda isNeutrHadOrOther
     
     valued_pids = tf.cast(valued_pids, tf.int32)[:,0]
+    
+    known = tf.where(valued_pids==4,tf.zeros_like(valued_pids),1)
+    valued_pids = tf.where(known<1,3,valued_pids)#set to 3
+    known = tf.expand_dims(known,axis=1) # V x 1 style
+    
     depth = n_classes #If n_classes=pred_id.shape[1], should we add an assert statement? 
-    return tf.one_hot(valued_pids, depth)
+    return tf.one_hot(valued_pids, depth), known
 
 def huber(x, d):
     losssq  = x**2   
@@ -48,8 +53,12 @@ class LossLayerBase(LayerWithMetrics):
                  print_loss=False,
                  print_batch_time=False,
                  return_lossval=False, 
+                 print_time=False,#compat, has no effect
                  **kwargs):
         super(LossLayerBase, self).__init__(**kwargs)
+        
+        if print_time:
+            print("print_time has no effect and is only for compatibility purposes")
         
         self.active = active
         self.scale = scale
@@ -785,29 +794,9 @@ class LLFullObjectCondensation(LossLayerBase):
         toclip *= startclipat
         return toclip
         
-    def calc_energy_correction_factor_loss(self, t_energy, t_idx, hit_energy, pred_energy, row_splits): 
-        #
-        # all V x 1
-        #
-        depe=[]
-        for b in tf.range(row_splits.shape[0]-1):
-            dep = self._calc_and_scatter_dep_energy_pre_rs(
-                t_energy[row_splits[b]:row_splits[b + 1]], 
-                t_idx[row_splits[b]:row_splits[b + 1]], 
-                hit_energy[row_splits[b]:row_splits[b + 1]], 
-                pred_energy[row_splits[b]:row_splits[b + 1]]
-                )
-            depe.append(dep)
-        dep_energies = tf.concat(depe,axis=0)
+    def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, pred_energy): 
         
-        #corrtruth = tf.math.divide_no_nan(t_energy, dep_energies)
-        #corrtruth = tf.where(t_idx<0,1.,corrtruth)#make it 1 for noise
-        #
-        #corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
-        #corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
-        
-        #calo-like
-        ediff = (t_energy - pred_energy*dep_energies)/tf.sqrt(t_energy+1e-3)
+        ediff = (t_energy - pred_energy*t_dep_energies)/tf.sqrt(t_energy+1e-3)
         
         eloss = None
         if self.huber_energy_scale>0:
@@ -817,21 +806,7 @@ class LLFullObjectCondensation(LossLayerBase):
             
         eloss = self.softclip(eloss, 0.4) 
         return eloss
-        
-    def _calc_and_scatter_dep_energy_pre_rs(self, t_energy, t_idx, hit_energy, pred_energy):   
-        
-        nt_idx = t_idx + 1 #make noise object
-        
-        objsel, _, _ = CreateMidx(nt_idx, calc_m_not=False)
-        obj_hit_e = SelectWithDefault(objsel, hit_energy, 0.) # K x V-obj x 1
-        obj_dep_e = tf.reduce_sum(obj_hit_e,axis=1)#K x 1
-        
-        _, idxs, _ = tf.unique_with_counts(nt_idx[:,0])#for backgather, same indices as in objsel
-        idxs = tf.expand_dims(idxs, axis=1)
-        scat_dep_e = tf.gather_nd(obj_dep_e,idxs)
-        return scat_dep_e
-        
-        
+    
             
     def calc_energy_loss(self, t_energy, pred_energy): 
         
@@ -875,33 +850,31 @@ class LLFullObjectCondensation(LossLayerBase):
         tloss = huber((t_time - pred_time),2.) 
         return self.softclip(tloss, 6.) 
     
-    def calc_classification_loss(self, t_idx, t_pid, pred_id, row_splits):
+    def calc_classification_loss(self, t_pid, pred_id, t_is_unique):
         depth = pred_id.shape[1]#add n_classes here?
-        truthclass  = one_hot_encode_id(t_pid, depth)
+        truthclass, mask = one_hot_encode_id(t_pid, depth) # V x Cl, V x 1
+        mask = tf.cast(mask, dtype='float32')
+        #weight for 
+        u_pids = truthclass[t_is_unique[:,0]>0]# U x Cl
+        N_u_pids = tf.reduce_sum(u_pids,axis=0) # Cl
+        pid_w = tf.cast(N_u_pids, dtype='float32') # Cl
+        pid_w = tf.reduce_mean(pid_w,keepdims=True) / (pid_w + 1e-3) # Cl, average weight 1
+        pid_w = tf.expand_dims(pid_w, axis=0)# 1 x Cl
+        pid_w *= tf.cast(truthclass, dtype='float32') # V x Cl, one-hot
+        pid_w = tf.reduce_sum(pid_w, axis=1,keepdims=True) # V x 1
         
-        #cpclass=[]
-        #for b in tf.range(row_splits.shape[0]-1):
-        #    rstidx = t_idx[row_splits[b]:row_splits[b + 1]]
-        #    objsel, _, _ = CreateMidx(rstidx, calc_m_not=False)
-        #    objsel = objsel[:,0:1] 
-        #    tclasses = SelectWithDefault(objsel, truthclass, 0.)#K x 1 x 1
-        #    tclasses = tf.
-        #    rstidx,uvidx = tf.unique(rstidx)
-        #    _, bgidxs, _ = tf.unique_with_counts(rstidx[:,0])
-        #    gtclass = truthclass
-        #
-        #FIXME: add class weights here
+        classloss = tf.expand_dims(tf.keras.metrics.categorical_crossentropy(truthclass, pred_id), axis=1) # V x 1
         
-        return tf.expand_dims(tf.keras.metrics.categorical_crossentropy(truthclass, pred_id), axis=1)
+        return classloss*mask*pid_w
 
     def loss(self, inputs):
         
-        assert len(inputs) == 17
+        assert len(inputs) == 18
         
         
         pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
         rechit_energy,\
-        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
+        t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,t_is_unique,\
         rowsplits = inputs
                     
         tf.assert_equal(rowsplits[-1], pred_beta.shape[0])#guard
@@ -923,16 +896,14 @@ class LLFullObjectCondensation(LossLayerBase):
         energy_loss = None
         if self.train_energy_correction:
             energy_loss = self.energy_loss_weight * self.calc_energy_correction_factor_loss(t_energy, 
-                                                                                            t_idx, 
-                                                                                            rechit_energy, 
-                                                                                            pred_energy, 
-                                                                                            rowsplits)
+                                                                                            t_rec_energy, 
+                                                                                            pred_energy)
         else:
             energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
             
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
-        classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_idx, t_pid, pred_id, rowsplits)
+        classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id, t_is_unique)
         
         full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss], axis=-1)
         

@@ -57,9 +57,9 @@ make this about coordinate shifts
 '''
 
 batchnorm_options={
-    'viscosity': 0.2,
-    'fluidity_decay': 5e-4,
-    'max_viscosity': 0.95,
+    'viscosity': 0.1,
+    'fluidity_decay': 1e-3,
+    'max_viscosity': 0.99,
     'soft_mean': True,
     'variance_only': False,
     'record_metrics': True
@@ -67,16 +67,15 @@ batchnorm_options={
 
 #loss options:
 loss_options={
-    'q_min': .5,
-    'alt_energy_weight': False,
-    'use_average_cc_pos': 0.5
+    'q_min': 2.5,
+    'use_average_cc_pos': 0.9
     }
 
 dense_activation='relu'
 
 
-learningrate = 5e-5
-nbatch = 200000
+learningrate = 1e-5
+nbatch = 300000
 
 #iterations of gravnet blocks
 total_iterations = 2
@@ -158,7 +157,7 @@ def gravnet_model(Inputs,
                                                  n_filters=64,
                                                  n_propagate=64,
                                                  record_metrics=True,
-                                                 coord_initialiser_noise=1e-3,
+                                                 coord_initialiser_noise=1e-2,
                                                  use_approximate_knn=False #weird issue with that for now
                                                  )([x, rs])
         
@@ -176,10 +175,16 @@ def gravnet_model(Inputs,
                                                                     rs]) 
         x = Concatenate()([gncoords,x])           
         
+        pre_gndist=gndist
         if double_mp:
-            for m in [64,64,32,32,16,16]:
+            for im,m in enumerate([64,64,32,32,16,16]):
                 dscale=Dense(1)(x)
-                gndist = LocalDistanceScaling(4.)([gndist,dscale])
+                gndist = LocalDistanceScaling(4.)([pre_gndist,dscale])                                  
+                gndist = AverageDistanceRegularizer(strength=1e-6,
+                                            record_metrics=True,
+                                            name='average_distance_dmp_'+str(i)+'_'+str(im)
+                                            )(gndist)
+                                            
                 x = DistanceWeightedMessagePassing([m],
                                            activation=dense_activation
                                            )([x,gnnidx,gndist])
@@ -195,6 +200,7 @@ def gravnet_model(Inputs,
         x = Dense(64,activation=dense_activation)(x)
         
         x = GooeyBatchNorm(**batchnorm_options)(x)
+        
         
         allfeat.append(x)
         
@@ -221,13 +227,13 @@ def gravnet_model(Inputs,
                                                   n_ccoords=n_cluster_space_coordinates)
     
     # loss
-    pred_beta = LLFullObjectCondensation(scale=1.,
+    pred_beta = LLFullObjectCondensation(scale=4.,
                                          energy_loss_weight=1.,
                                          position_loss_weight=1e-5,
                                          timing_loss_weight=1e-5,
                                          classification_loss_weight=1e-5,
                                          beta_loss_scale=1.,
-                                         too_much_beta_scale=1e-4,
+                                         too_much_beta_scale=1e-3,
                                          use_energy_weights=True,
                                          record_metrics=True,
                                          name="FullOCLoss",
@@ -245,6 +251,7 @@ def gravnet_model(Inputs,
          pre_selection['t_spectator_weight'],
          pre_selection['t_fully_contained'],
          pre_selection['t_rec_energy'],
+         pre_selection['t_is_unique'],
          pre_selection['rs']])
                                          
     #fast feedback
@@ -358,6 +365,14 @@ cb += [
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/slicing.html',
+        record_frequency= 2,
+        plot_frequency = plotfrequency,
+        select_metrics='*_slicing_*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
     #if approxime knn is used
     #simpleMetricsCallback(
     #    output_file=train.outputDir+'/slicing_knn_metrics.html',
@@ -386,6 +401,8 @@ for l in train.keras_model.layers:
     if 'gooey_batch_norm' in l.name:
         l.max_viscosity = 0.995
         l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
+    if 'FullOCLoss' in l.name:
+        continue
     
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=5.
