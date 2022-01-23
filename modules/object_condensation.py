@@ -160,6 +160,8 @@ def oc_per_batch_element(
     is_spectator_m = SelectWithDefault(Msel, is_spectator, 0.) #K x V-obj x 1
     q_m = SelectWithDefault(Msel, q, 0.)#K x V-obj x 1
     object_weights_m = SelectWithDefault(Msel, object_weights, 0.)
+    
+    distance_scale += 1e-3
     distance_scale_m = SelectWithDefault(Msel, distance_scale, 1.)
     
     tf.assert_greater(distance_scale_m, 0.,message="predicted distances must be greater zero")
