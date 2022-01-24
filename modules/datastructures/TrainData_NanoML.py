@@ -862,6 +862,9 @@ class TrainData_NanoML(TrainData):
         print("Done")
 
     def writeOutPredictionDict(self, dumping_data, outfilename):
+        '''
+        this function should not be necessary... why break with DJC standards?
+        '''
         if not str(outfilename).endswith('.bin.gz'):
             outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
 
@@ -884,13 +887,97 @@ class TrainData_NanoMLCPPU(TrainData_NanoML):
     def __init__(self):
         TrainData_NanoML.__init__(self)
         self.cp_plus_pu_mode=True
+        
+    def writeOutPredictionDict(self, dumping_data, outfilename):
+        print('TrainData_NanoMLCPPU: special prediction write out - removing PU with DR>0.5 to all non-pu particles')
+        from globals import pu
+        '''
+        dumping_data is a list of lists, each item corresponding to one event.
+        within each item there is a 
+          - feature dict with items of dimension V x X
+          - truth dict with items of dimension V x X
+          - predicted dict with items of dimension V x X
+          - all np arrays
+        '''
+        
+        #overwrite predicted, features, truth
+        new_dumping_data=[]
+        for e_dict in dumping_data:#loop over events - given event size should no add overhead
+            f,t,p = e_dict
+            
+            
+            Energy = f['recHitEnergy']
+            X = f['recHitX']
+            Y = f['recHitY']
+            Z = f['recHitZ']
+            coords = np.concatenate([X,Y,Z],axis=-1)#V x3
+            t_idx = t['truthHitAssignementIdx']
+            no_pu = t_idx < pu.t_idx_offset
+            no_pu = np.logical_and(no_pu, t_idx>=0)[:,0] #V
+            
+
+            no_pu_uidx = np.unique(t_idx[no_pu])
+            
+            print('no_pu_uidx',no_pu_uidx.shape) # Ncp
+            print('no_pu',no_pu.shape) # V x 1
+            print('coords',coords.shape) # V x 1
+            
+            cp_coords = coords[no_pu]#V' x 3
+            cp_coords = np.expand_dims(cp_coords,axis=0)#1 xV' x 3
+            cp_tidxs = np.expand_dims(t_idx[no_pu],axis=0)#1 x V x 1
+            
+            print('cp_tidxs',cp_tidxs.shape)
+            
+            no_pu_uidx = np.expand_dims( np.expand_dims(no_pu_uidx,1),1)# Ncp x 1 x 1
+            
+            cp_coords = np.where(no_pu_uidx==cp_tidxs, cp_coords, 0 )
+            print('cp_coords',cp_coords.shape)
+            cp_mask = np.where(no_pu_uidx==cp_tidxs, np.ones_like(cp_coords), 0.)
+            
+            cp_coords = np.sum(cp_coords,axis=1)/(np.sum(cp_mask,axis=1)+1e-6)# Ncp x 3
+            cp_eta = calc_eta(cp_coords[:,0:1],cp_coords[:,1:2],cp_coords[:,2:3])#Ncp x 1
+            cp_phi = calc_phi(cp_coords[:,0:1],cp_coords[:,1:2],cp_coords[:,2:3])
+            
+            cp_eta = np.transpose(cp_eta,[1,0]) # 1 x Ncp
+            cp_phi = np.transpose(cp_phi,[1,0])
+            
+            print('cp_eta',cp_eta)
+            print('cp_phi',cp_phi)
+            
+            hit_eta = f['recHitEta']
+            hit_phi = calc_phi(X,Y,Z) # V x 1
+            
+            d_eta = hit_eta-cp_eta # V x Ncp
+            d_phi = deltaPhi(hit_phi,cp_phi) # V x Ncp
+            
+            DR = d_eta**2 + d_phi**2
+            sel = DR < 0.5**2
+            sel = np.sum(sel,axis=1)>0
+            Nsel = np.sum(sel)
+            print('Nsel',Nsel)
+            
+            #sanity check
+            
+            o_dicts = []
+            for dd in e_dict:
+                for k in dd.keys():
+                    if k=='row_splits':
+                        dd[k]=np.array([0,Nsel],dtype='int32')
+                    else:
+                        dd[k]=dd[k][sel]
+
+                o_dicts.append(dd)
+            
+            new_dumping_data.append(o_dicts)
+        
+        super(TrainData_NanoMLCPPU, self).writeOutPredictionDict(new_dumping_data, outfilename)
+        
+        
+        
+        
+        
+        
+        
+        
 
 
-def main():
-    data = TrainData_NanoML()
-    info = data.convertFromSourceFile("/eos/cms/store/user/kelong/ML4Reco/Gun10Part_CHEPDef/Gun10Part_CHEPDef_fineCalo_nano.root",
-                    [], False)
-    print(info)    
-
-if __name__ == "__main__":
-    main()
