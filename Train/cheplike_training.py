@@ -67,15 +67,19 @@ batchnorm_options={
 
 #loss options:
 loss_options={
-    'q_min': 2.5,
-    'use_average_cc_pos': 0.9
+    'q_min': .1,
+    'use_average_cc_pos': 0.1,
+    'classification_loss_weight':1e-2,
+    'too_much_beta_scale': 1e-3
     }
+
 
 dense_activation='relu'
 
+plotfrequency=200
 
-learningrate = 1e-5
-nbatch = 300000
+learningrate = 5e-5
+nbatch = 500000
 
 #iterations of gravnet blocks
 total_iterations = 2
@@ -231,9 +235,7 @@ def gravnet_model(Inputs,
                                          energy_loss_weight=1.,
                                          position_loss_weight=1e-5,
                                          timing_loss_weight=1e-5,
-                                         classification_loss_weight=1e-5,
                                          beta_loss_scale=1.,
-                                         too_much_beta_scale=1e-3,
                                          use_energy_weights=True,
                                          record_metrics=True,
                                          name="FullOCLoss",
@@ -276,7 +278,7 @@ def gravnet_model(Inputs,
 
 
 import training_base_hgcal
-train = training_base_hgcal.HGCalTraining(redirect_stdout=True)
+train = training_base_hgcal.HGCalTraining()
 
 if not train.modelSet():
     train.setModel(gravnet_model,
@@ -292,7 +294,7 @@ if not train.modelSet():
     from model_tools import apply_weights_from_path
     import os
     path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
-    train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
+    apply_weights_from_path(path_to_pretrained,train.keras_model)
     
 
 verbosity = 2
@@ -301,7 +303,6 @@ import os
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
-plotfrequency=200
 
 publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
@@ -391,7 +392,7 @@ cb += build_callbacks(train)
 
 train.change_learning_rate(learningrate)
 
-model, history = train.trainModel(nepochs=1,
+model, history = train.trainModel(nepochs=5,
                                   batchsize=nbatch,
                                   additional_callbacks=cb)
 
