@@ -115,18 +115,21 @@ def oc_per_batch_element(
         beta = beta_gradient_damping * tf.stop_gradient(beta) + (1. - beta_gradient_damping)*beta
     beta_in = beta
     beta = tf.clip_by_value(beta, 0.,1.-1e-4)
-    beta *= (1. - is_spectator)
+    
+    q_min *= (1. - is_spectator)
+    
     qraw = tf.math.atanh(beta)**2 
     
     is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32')+1., 0.)#V x 1
     if noise_q_min is not None:
         q_min = (1.-is_noise)*q_min + is_noise*noise_q_min
     
+    q_min = tf.where(q_min<0,0.,q_min)#just safety in case there are some numerical effects
+    
     if soft_q_scaling:
         qraw = tf.math.atanh(beta_in/1.002)**2 #beta_in**4 *20.
-        beta = beta_in*(1. - is_spectator) # no need for clipping
     
-    q = (qraw + q_min) * (1. - is_spectator) # V x 1
+    q = qraw + q_min # V x 1
     #q = tf.where(beta_in<1.-1e-4, q, tf.math.atanh(1.-1e-4)**2 + q_min + beta_in) #just give the rest above clip a gradient
     
     N = tf.cast(beta.shape[0], dtype='float32')
@@ -295,7 +298,7 @@ def oc_per_batch_element(
     #explicit payload weight function here, the old one was odd
     
     #too aggressive scaling is bad for high learning rates. 
-    p_w = padmask_m * (1.-is_spectator_m) * tf.math.atanh(beta_m/1.002)**2 #this is well behaved
+    p_w = padmask_m * tf.math.atanh(beta_m/1.002)**2 #this is well behaved
     
     if payload_beta_gradient_damping_strength > 0:
         p_w = payload_beta_gradient_damping_strength * tf.stop_gradient(p_w) + \
