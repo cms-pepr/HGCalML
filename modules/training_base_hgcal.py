@@ -1,15 +1,19 @@
 from DeepJetCore.training.training_base import training_base
+from argparse import ArgumentParser
 
 class HGCalTraining(training_base):
     def __init__(self, *args, 
-                 redirect_stdout=True,
                  **kwargs):
         '''
         Adds file logging
         '''
-        super().__init__(*args, resumeSilently=True,**kwargs)
+        #use the DJC training base option to pass a parser
+        parser = ArgumentParser('Run the training')
+        parser.add_argument("--interactive",   help="prints output to screen", default=False, action="store_true")
         
-        if redirect_stdout:
+        super().__init__(*args, resumeSilently=True,parser=parser,**kwargs)
+        
+        if not self.args.interactive:
             print('>>> redirecting the following stdout and stderr to logs in',self.outputDir)
             import sys
             sys.stdout = open(self.outputDir+'/stdout.txt', 'w')
