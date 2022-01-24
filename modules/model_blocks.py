@@ -70,7 +70,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     
     pred_dist = OnesLike()(pred_time)
     if not fix_distance_scale:
-        pred_dist = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x))+1e-2
+        pred_dist = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x))
         #this needs to be bound otherwise fully anti-correlated with coordates scale
     return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id
     
@@ -308,7 +308,8 @@ def pre_selection_model_full(orig_inputs,
                              print_info=False,
                              record_metrics=False,
                              omit_reduction=False, #only trains coordinate transform. useful for pretrain phase
-                             use_multigrav=True
+                             use_multigrav=True,
+                             eweighted = True,
                              ):
     
     from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices
@@ -417,13 +418,17 @@ def pre_selection_model_full(orig_inputs,
     #save for later
     orig_dim_coords = coords
     
-    x = AccumulateNeighbours('minmeanmax')([x, gnidx])
+    energy_weight = energy
+    if not eweighted:
+        energy_weight = OnesLike()(energy)
+    
+    x = AccumulateNeighbours('minmeanmax')([x, gnidx, energy_weight])
     x = SelectFromIndices()([gsel,x])
     #add more useful things
-    coords = AccumulateNeighbours('mean')([coords, gnidx])
+    coords = AccumulateNeighbours('mean')([coords, gnidx, energy_weight])
     coords = SelectFromIndices()([gsel,coords])
     
-    phys_coords = AccumulateNeighbours('mean')([phys_coords, gnidx])
+    phys_coords = AccumulateNeighbours('mean')([phys_coords, gnidx, energy_weight])
     phys_coords = SelectFromIndices()([gsel,phys_coords])
     
     energy = AccumulateNeighbours('sum')([energy, gnidx])
@@ -487,7 +492,7 @@ def pre_selection_model_full(orig_inputs,
         print_loss = trainable and print_info,
         active = trainable,
         record_metrics = record_metrics,
-        scale=0.1,#just mild
+        scale=0.025,#just mild
         runevery=-1, #give it a kick only every now and then - hat's enough
         )([out['coords'],rs])
         
@@ -565,7 +570,7 @@ def pre_selection_staged(indict,
     from GravNetLayersRagged import RaggedGravNet, DistanceWeightedMessagePassing, ElementScaling
     from GravNetLayersRagged import SelectFromIndices, GooeyBatchNorm, MaskTracksAsNoise
     from GravNetLayersRagged import AccumulateNeighbours, KNN, MultiAttentionGravNetAdd
-    from LossLayers import LLClusterCoordinates
+    from LossLayers import LLClusterCoordinates, LLFillSpace
     from DebugLayers import PlotCoordinates
     from MetricsLayers import MLReductionMetrics
     from Regularizers import MeanMaxDistanceRegularizer, AverageDistanceRegularizer
@@ -639,7 +644,7 @@ def pre_selection_staged(indict,
     nidx,dist = KNN(K=16,radius='dynamic', #use dynamic feature
                 record_metrics=record_metrics,
                 name=name+'_knn',
-                min_bins=[20,20] #this can be fine grained
+                min_bins=[7,7] #this can be fine grained
                 )([coords,rs])
     
                                        
@@ -650,6 +655,17 @@ def pre_selection_staged(indict,
         print_batch_time=False,
         scale=5.
         )([coords,t_idx,rs])
+        
+    
+    
+    coords = LLFillSpace(
+        active = trainable,
+        record_metrics = record_metrics,
+        scale=0.025,#just mild
+        runevery=-1, #give it a kick only every now and then - hat's enough
+        )([coords,rs])
+        
+        
         
     unred_rs=rs
     
@@ -675,13 +691,17 @@ def pre_selection_staged(indict,
     selfeat = SelectFromIndices()([gsel,indict['features']])
     unproc_features = SelectFromIndices()([gsel,indict['unproc_features']])
     
+    energy = indict['energy']
     
-    x = AccumulateNeighbours('minmeanmax')([x, gnidx])
+    x = AccumulateNeighbours('minmeanmax')([x, gnidx,energy])
     x = SelectFromIndices()([gsel,x])
     #add more useful things
-    coords = AccumulateNeighbours('mean')([coords, gnidx])
+    coords = AccumulateNeighbours('mean')([coords, gnidx,energy])
     coords = SelectFromIndices()([gsel,coords])
-    energy = AccumulateNeighbours('sum')([indict['energy'], gnidx])
+    phys_coords = AccumulateNeighbours('mean')([indict['phys_coords'], gnidx,energy])
+    phys_coords = SelectFromIndices()([gsel,phys_coords])
+    
+    energy = AccumulateNeighbours('sum')([energy, gnidx])
     energy = SelectFromIndices()([gsel,energy])
     
     
@@ -695,6 +715,7 @@ def pre_selection_staged(indict,
     out['features'] = selfeat
     out['unproc_features'] = unproc_features
     out['coords'] = coords
+    out['phys_coords'] = phys_coords
     out['addfeat'] = GooeyBatchNorm(
         name=name+'_gooey_norm',
         trainable=trainable)(x) #norm them

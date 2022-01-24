@@ -1953,7 +1953,7 @@ class NeighbourGroups(LayerWithMetrics):
 class AccumulateNeighbours(tf.keras.layers.Layer):
     def __init__(self, mode='meanmax' , **kwargs):
         '''
-        Inputs: feat, nidx
+        Inputs: feat, nidx, weights (opt. and strict > 0)
         
         Outputs: accumulated features
         
@@ -1990,33 +1990,40 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
         return -tf.reshape(out,[-1, feat.shape[1]])  
           
     def call(self, inputs, training=None):
-        assert len(inputs)==2
-        feat,ndix = inputs
-        
-        zeros = tf.cast(tf.zeros_like(ndix),dtype='float32')
+        assert len(inputs)==2 or len(inputs)==3
+        feat,ndix,w = None,None,None
+        if len(inputs)==2:
+            feat,ndix = inputs
+            w = tf.cast(tf.zeros_like(ndix),dtype='float32')
+        else:
+            feat,ndix,w = inputs
+            w = tf.clip_by_value(w, 1e-8, 1e6)
+            w = -tf.math.log(w)
+            w = SelectWithDefault(ndix, w, 20.)[:,:,0]#20 approx -ln(1e-8)
+            
         K = tf.cast(ndix.shape[1],dtype='float32')
         #K = tf.expand_dims(tf.expand_dims(K,axis=0),axis=0)
         if self.mode == 'mean' or self.mode == 'meanmax':
-            out,_ = AccumulateKnnSumw(zeros, 
+            out,_ = AccumulateKnnSumw(w, 
                           feat, ndix,mean_and_max=self.mode == 'meanmax')
             return out
         if self.mode=='gnlike':
-            out,_ = AccumulateKnn(zeros, 
+            out,_ = AccumulateKnn(w, 
                           feat, ndix)
             return tf.reshape(out,[-1, 2*feat.shape[1]])
         if self.mode=='sum':
-            out,_ = AccumulateKnn(zeros,feat, ndix,mean_and_max=False)
+            out,_ = AccumulateKnn(w,feat, ndix,mean_and_max=False)
             out*=K
             return tf.reshape(out,[-1, feat.shape[1]])              
         if self.mode == 'max':
-            out,_ = AccumulateKnn(zeros, 
+            out,_ = AccumulateKnn(w, 
                           feat, ndix,mean_and_max=True)
             out=out[:,feat.shape[1]:]
             return tf.reshape(out,[-1, feat.shape[1]])
         if self.mode == 'min':
             return self.get_min(ndix,feat)
         if self.mode == 'minmeanmax':
-            meanmax,_ = AccumulateKnnSumw(zeros, 
+            meanmax,_ = AccumulateKnnSumw(w, 
                           feat, ndix,mean_and_max=True)
             meanmax = tf.reshape(meanmax,[-1, 2*feat.shape[1]])
             minvals = self.get_min(ndix,feat)

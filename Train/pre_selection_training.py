@@ -53,7 +53,7 @@ def pretrain_model(Inputs,
                              trainable=True,
                              debugplots_after=1500,
                              record_metrics=True,
-                             use_multigrav=True,
+                             eweighted=True,
                              )
     
     
@@ -78,11 +78,13 @@ if not train.modelSet():
     
     train.keras_model.summary()
     
+    #start somewhere
+    #from model_tools import apply_weights_from_path
+    #import os
+    #path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
+    #train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
+    
 
-
-
-from config_saver import copyModules
-copyModules(train.outputDir)#save the modules
 
 verbosity = 2
 import os
