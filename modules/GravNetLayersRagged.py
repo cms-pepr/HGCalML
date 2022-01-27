@@ -904,8 +904,6 @@ class ApproxPCA(tf.keras.layers.Layer):
     
     def build(self, input_shapes): #pure python
         nF, nC, _ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
-        print(input_shapes)
-        print("nF: ", nF, " nC: ", nC)
         self.nF = nF
         self.nC = nC
         self.covshape = nF * nC * nC
@@ -942,16 +940,13 @@ class ApproxPCA(tf.keras.layers.Layer):
                 if i == len(nodes):
                     # Last entry, output layer, no activation
                     output_dim = self.nC**2
-                    layer = tf.keras.layers.Dense(units=output_dim, trainable=False)
+                    layer = tf.keras.layers.Dense(units=output_dim, trainable=self.trainable)
                 else:
                     output_dim = nodes[i]
                     layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=self.trainable)
                 layer.build(input_dim)
                 weights = self.model.layers[i+1].get_weights()[0]
                 bias = self.model.layers[i+1].get_weights()[1]
-                # if self.empty:
-                #     weights = np.zeros_like(weights)
-                #     bias = np.zeros_like(weights)
                 if not self.empty:
                     layer.set_weights([weights, bias])
                 self.layers.append(layer)
