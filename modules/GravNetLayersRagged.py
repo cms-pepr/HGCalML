@@ -866,6 +866,7 @@ class ApproxPCA(tf.keras.layers.Layer):
     # Old version is kept to not cause unexpected behaviour
     def __init__(self, size='small', 
                  base_path=os.environ.get('HGCALML') + '/HGCalML_data/pca/pretrained/', 
+                 empty=False, # If true, weights are not loaded for testing
                  **kwargs):
         """
         Inputs: 
@@ -886,6 +887,7 @@ class ApproxPCA(tf.keras.layers.Layer):
         self.size = size.lower()
         self.base_path = base_path
         self.layers = []
+        self.empty = empty
         
         print("This layer uses the pretrained PCA approximation layers found in `pca/pretrained`")
         print("It is still somewhat experimental and subject to change!")
@@ -902,10 +904,13 @@ class ApproxPCA(tf.keras.layers.Layer):
     
     def build(self, input_shapes): #pure python
         nF, nC, _ = NeighbourCovariance.raw_get_cov_shapes(input_shapes)
+        print(input_shapes)
+        print("nF: ", nF, " nC: ", nC)
         self.nF = nF
         self.nC = nC
         self.covshape = nF * nC * nC
         self.counter = 0
+        self.trainable = not self.empty
 
         self.path = self.base_path + f"{str(self.nC)}D/{self.size}/"
         assert os.path.exists(self.path), f"path: {self.path} not found!"
@@ -921,8 +926,9 @@ class ApproxPCA(tf.keras.layers.Layer):
         outputs = tf.keras.layers.Dense(self.nC**2)(x)
         with tf.name_scope(self.name + '/pca/model'):
             self.model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
-        self.model.load_weights(self.path)
-        self.model.trainable = False
+        if not self.empty:
+            self.model.load_weights(self.path)
+            self.model.trainable = self.trainable
         self.model.summary()
 
         for i in range(len(nodes) + 1):
@@ -939,9 +945,15 @@ class ApproxPCA(tf.keras.layers.Layer):
                     layer = tf.keras.layers.Dense(units=output_dim, trainable=False)
                 else:
                     output_dim = nodes[i]
-                    layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=False)
+                    layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=self.trainable)
                 layer.build(input_dim)
-                layer.set_weights(self.model.layers[i+1].get_weights())
+                weights = self.model.layers[i+1].get_weights()[0]
+                bias = self.model.layers[i+1].get_weights()[1]
+                # if self.empty:
+                #     weights = np.zeros_like(weights)
+                #     bias = np.zeros_like(weights)
+                if not self.empty:
+                    layer.set_weights([weights, bias])
                 self.layers.append(layer)
 
         super(ApproxPCA, self).build(input_shapes)  
