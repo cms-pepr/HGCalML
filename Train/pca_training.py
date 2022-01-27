@@ -161,7 +161,7 @@ def gravnet_model(Inputs,
                                             )(gndist)
         
         x_pca = Dense(4,activation='relu')(x)#pca is expensive
-        x_pca = ApproxPCA()([gncoords, gndist, x_pca, gnnidx])
+        x_pca = ApproxPCA(empty=False)([gncoords, gndist, x_pca, gnnidx])
         x = Concatenate()([x,x_pca])
                            
         if use_multigrav:   
