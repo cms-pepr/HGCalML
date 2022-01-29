@@ -1,8 +1,8 @@
 
 import tensorflow as tf
-import numpy as np
 from tensorflow.python.framework import ops
-import time
+import globals as gl
+from oc_helper_ops import SelectWithDefault
 
 '''
 Wrap the module
@@ -102,11 +102,24 @@ def SlicingKnn(K : int, coords, row_splits, features_to_bin_on=None,
         _n_bins = tf.constant(n_bins, dtype=tf.int32) # cast tuple to Tensor to match required argument type
     
     idx, dist = _nknn_op.SlicingKnn(n_neighbours=K, coords=coords, row_splits=row_splits, n_bins=_n_bins, features_to_bin_on=features_to_bin_on, coord_min=r_min, coord_max=r_max)
-    #safety guard
-    tf.assert_equal(tf.range(tf.shape(idx)[0]), idx[:,0])
-    if return_n_bins:
-        return idx, dist, tf.reduce_prod(_n_bins)
-    return idx, dist
+    
+    with tf.control_dependencies([
+        tf.assert_equal(tf.range(tf.shape(idx)[0]), idx[:,0]),
+        tf.assert_less(idx, row_splits[-1]),
+        tf.assert_less(-2, idx)
+        ]):
+        
+        if gl.knn_ops_use_tf_gradients:
+            ncoords = SelectWithDefault(idx, coords, 0.)
+            dist = (ncoords[:,0:1,:]-ncoords)**2
+            dist = tf.reduce_sum(dist,axis=2)
+            dist = tf.where(idx<0, 0., dist)
+        
+        if return_n_bins:
+            return idx, dist, tf.reduce_prod(_n_bins)
+        return idx, dist
+
+
 
 _sknn_grad_op = tf.load_op_library('select_knn_grad.so')
 
@@ -120,3 +133,24 @@ def _SlicingKnnGrad(op, gradidx, dstgrad):
     coord_grad = _sknn_grad_op.SelectKnnGrad(grad_distances=dstgrad, indices=indices, distances=distances, coordinates=coords)
 
     return coord_grad, None, None, None, None #no grad for row_splits, features_to_bin_on, n_bins and and bin_width
+
+
+
+
+'''
+notes:
+
+inputs.
+
+bins = assign_bins(coords)
+n_in_bin = tf.unique(bins)
+resh_idxs = reshuffle_by_bins_idxs(bins,n_in_bins) #p: bins.. hmm, maybe sort? but also slow
+
+'''
+
+
+
+
+
+
+
