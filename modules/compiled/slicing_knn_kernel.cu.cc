@@ -14,6 +14,12 @@
 #include <iostream>
 #include <vector>
 
+/*
+ * Jan: I added a lot of comments for safe guards that should be errors thrown or things printed at this stage.
+ *      Might help get us on the right track
+ *      All my comments start with "Jan:" to make it easier to search for them
+ */
+
 namespace tensorflow {
 namespace functor {
 
@@ -50,6 +56,8 @@ void create_bin_neighbours_list(
 
     for (int j = 0; j<n_bins_y; j+=1){
         for (int i = 0; i<n_bins_x; i+=1){
+            //Jan: change this to the I2D/3D() functions to improve clarity,
+            //then it becomes easier to read (even though I think it's all fine)
             int index = (i + n_bins_x*j)*9;
             int counter = 0;
             for (size_t ii = 0; ii<3; ii++){
@@ -145,6 +153,7 @@ void print_gpu_array(
         const size_t end,
         bool convert_to_int = false
 ){
+    //Jan: isn't cudaMemcpy asynchronous?
     std::vector<T> tmp_arr(arr_size);
     HANDLE_ERROR(cudaMemcpy(&tmp_arr.at(0),in_arr,arr_size*sizeof(T),cudaMemcpyDeviceToHost));
 
@@ -165,6 +174,7 @@ void print_gpu_matrix(
         const size_t stride,
         bool convert_to_int = false
 ){
+    //Jan: isn't cudaMemcpy asynchronous?
     int arr_size = end-start;
     std::vector<T> tmp_arr(arr_size);
     HANDLE_ERROR(cudaMemcpy(&tmp_arr.at(0),in_arr,arr_size*sizeof(T),cudaMemcpyDeviceToHost));
@@ -193,6 +203,8 @@ void calculate_n_vtx_per_bin_cumulative(
         const int* d_n_vtx_per_bin,
         int* d_n_vtx_per_bin_cumulative)
 {
+    //Jan: add safeguards for all indices (e.g. 'd_n_vtx_per_bin_cumulative_size')
+    //just to be safe
     int index = blockIdx.x * blockDim.x + threadIdx.x + 1; // start with the second element
     int stride = blockDim.x * gridDim.x;
     
@@ -218,6 +230,9 @@ void insert_into_array(
         const size_t start_pos,
         const size_t end_pos
 ){
+    //Jan: insert safe guards for array sizes here
+    //e.g. array_a_size and array_b_size, and make sure indices don't go beyond
+    //
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(size_t i = index ; i < (end_pos-start_pos) ; i += stride){
@@ -232,6 +247,7 @@ void insert_value_into_array(
         T *arr_to_insert,
         const size_t pos
 ){
+    //Jan: safe guards
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(size_t i = index ; i < 1 ; i += stride){
@@ -267,6 +283,8 @@ void constructPhaseSpaceBins(const float *d_coords, const size_t n_coords, const
     for(size_t i_v = index; i_v < end_vert; i_v += stride){
         
         size_t iDim = d_features_to_bin_on[0];
+        //Jan: safe guard iDim here to be < n_coords
+
         float coord = d_coords[I2D(i_v,iDim,n_coords)];
         size_t indx_1 = (size_t)((coord - d_coords_min[iDim])/((d_coords_max[iDim]-d_coords_min[iDim])/d_n_bins[iDim]));
         iDim = d_features_to_bin_on[1];
@@ -287,6 +305,7 @@ void prepare_translation_matrix(const size_t start_vert, const size_t end_vert, 
     size_t stride = blockDim.x * gridDim.x;
     for(size_t i_v = index; i_v < end_vert; i_v += stride){
         int bin_index = d_bin_idx[i_v];
+        //Jan: this needs some explanation how index_to_fill is unique and safe
         int index_to_fill = atomicAdd(&d_zero_counters[bin_index],1) + d_n_vtx_per_bin_cumulative[bin_index] + start_vert;
         forward_translation_matrix[index_to_fill] = i_v;
     }
@@ -298,6 +317,7 @@ void prepare_backward_translation_matrix(const size_t start_vert, const size_t e
     size_t index = blockIdx.x * blockDim.x + threadIdx.x + start_vert;
     size_t stride = blockDim.x * gridDim.x;
     for(size_t i_v = index; i_v < end_vert; i_v += stride){
+        //Jan: safe guard forward_translation_matrix[i_v] < backward_translation_matrix_size
         backward_translation_matrix[forward_translation_matrix[i_v]] = i_v;
     }
 }
@@ -309,6 +329,7 @@ void translate_2d_matrix(const size_t start_vert, const size_t end_vert, const s
     size_t stride = blockDim.x * gridDim.x;
     for(size_t i_counter = index; i_counter < end_vert; i_counter += stride){
         size_t real_index = translation_matrix[i_counter];
+        //Jan: safe guard real_index and use I2D()
         for(size_t i_column = 0; i_column < matrix_width; i_column += 1)
             out_matrix[matrix_width*i_counter+i_column] = in_mattrix[matrix_width*real_index+i_column];
     }
@@ -321,12 +342,12 @@ void translate_ind_matrix(const size_t start_vert, const size_t end_vert, const 
     size_t stride = blockDim.x * gridDim.x;
     for(size_t i_counter = index; i_counter < end_vert; i_counter += stride){
         for(size_t i_column = 0; i_column < matrix_width; i_column += 1){
-            size_t final_index = matrix_width*i_counter+i_column;
+            size_t final_index = matrix_width*i_counter+i_column; //Jan: use I2D()
             const int tmp_val1 = in_matrix[final_index];
             if (tmp_val1==-1){
                 in_matrix[final_index] = -1;
             }
-            else{
+            else{ //Jan: safe guard tmp_val1
                 const size_t tmp_val2 = translation_matrix[tmp_val1];
                 in_matrix[final_index] = tmp_val2;
             }
@@ -342,7 +363,7 @@ void translate_matrices_to_make_selfindex_first(const size_t matrix_height, cons
         if (indx_matrix[matrix_width*i_row] == i_row)
             continue;
         for(size_t i_column = 0; i_column < matrix_width; i_column += 1){
-            size_t index = matrix_width*i_row+i_column;
+            size_t index = matrix_width*i_row+i_column; //Jan: I2D(), then things become much clearer, and safe guards are easier to define
             if (indx_matrix[index]==i_row){
                 indx_matrix[index] = indx_matrix[matrix_width*i_row];
                 indx_matrix[matrix_width*i_row] = i_row;
@@ -588,7 +609,7 @@ void perform_kNN_search(
             // prefill all relevant matrices
             neigh_idx[I2D(i_v,0,K)] = i_v;
             neigh_dist[I2D(i_v,0,K)] = 0.0;
-            d_farthest_neighbour[i_v] = 0;
+            d_farthest_neighbour[i_v] = 0;//Jan: why is this a vector? could just be a local register (faster and less prone to errors)
             nfilled += 1;
         }
 
