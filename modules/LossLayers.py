@@ -890,8 +890,10 @@ class LLFullObjectCondensation(LossLayerBase):
             t_is_unique = tf.concat([t_idx[0:1]*0 + 1, t_idx[1:]*0],axis=0)
             hasunique=False
             print('WARNING. functions using unique will not work as expected')
-                    
-        tf.assert_equal(rowsplits[-1], pred_beta.shape[0])#guard
+        
+        
+            #guard
+            
         
         if rowsplits.shape[0] is None:
             return tf.constant(0,dtype='float32')
@@ -929,7 +931,17 @@ class LLFullObjectCondensation(LossLayerBase):
         if is_spectator is None:
             is_spectator = tf.zeros_like(pred_beta)
         
-        att, rep, noise, min_b, payload, exceed_beta = oc_loss(
+        #safe guards
+        with tf.control_dependencies(
+            [tf.assert_equal(rowsplits[-1], pred_beta.shape[0]),
+             
+             tf.assert_equal(pred_beta>=0., True),
+             tf.assert_equal(pred_beta<=1., True),
+             
+             tf.assert_equal(is_spectator<=1., True),
+             tf.assert_equal(is_spectator>=0., True)]):
+            
+            att, rep, noise, min_b, payload, exceed_beta = oc_loss(
                                            x=pred_ccoords,
                                            beta=pred_beta,
                                            truth_indices=t_idx,
