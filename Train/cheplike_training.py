@@ -67,6 +67,7 @@ batchnorm_options={
 
 #loss options:
 loss_options={
+    'energy_loss_weight': .5,
     'q_min': .1,
     'use_average_cc_pos': 0.1,
     'classification_loss_weight':1e-2,
@@ -232,7 +233,6 @@ def gravnet_model(Inputs,
     
     # loss
     pred_beta = LLFullObjectCondensation(scale=4.,
-                                         energy_loss_weight=1.,
                                          position_loss_weight=1e-5,
                                          timing_loss_weight=1e-5,
                                          beta_loss_scale=1.,
