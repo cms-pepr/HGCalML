@@ -1,6 +1,8 @@
 
 import tensorflow as tf
 from tensorflow.python.framework import ops
+import globals as gl
+from oc_helper_ops import SelectWithDefault
 
 '''
 Indices MUST be unique in each row.
@@ -28,11 +30,20 @@ def AccumulateKnn(distances,  features, indices,
     
     '''
     
-    return _accknn_op.AccumulateKnn(distances=distances,  features=features, indices=indices,
+    if not gl.acc_ops_use_tf_gradients:
+        return _accknn_op.AccumulateKnn(distances=distances,  features=features, indices=indices,
                                     n_moments=0, mean_and_max=mean_and_max)
     
-    #make sure shape is defined
     
+    distances = tf.expand_dims(tf.exp(-distances),axis=2) #V x K x 1
+    nfeat = SelectWithDefault(indices, features, 0.) # V x K x F
+    wfeat = distances*nfeat
+    fmean = tf.reduce_mean(wfeat,axis=1)# V x F
+    fmax = tf.reduce_max(wfeat,axis=1)
+    fout = fmean
+    if mean_and_max:
+        fout = tf.concat([fmean,fmax],axis=1)
+    return fout,None
 
 #this refers to the OP called AccumulateKnn, not the function below
 @ops.RegisterGradient("AccumulateKnn")
