@@ -71,6 +71,7 @@ struct LocalGroupOpFunctor<CPUDevice, dummy> {
                 int i_v = d_hierarchy_idxs[_i_v];
                 if(i_v >= n_in_vert){
                     printf("local_group_kernel: invalid i_v\n");
+                    continue;
                 }
 
 
