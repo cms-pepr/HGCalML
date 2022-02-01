@@ -75,7 +75,7 @@ static void calc_feature_gradients(
 
         int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
 
-        if(m_v<0) continue;
+        if(m_v<0 || m_v >= n_vert) continue;//safe guard
 
         const float distsq_im = d_distances[I2D(i_v,i_i_n,n_neigh)];
 
@@ -129,7 +129,9 @@ static void calc_distance_gradients(
         return;
 
     int l_g = d_neigh_indices[I2D(m,l,n_neigh)];
-    if(l_g  < 0 ){
+    if(l_g  < 0){
+        if(l_g >= n_vert)//safe guard
+            return;
         d_out_grad_distances[I2D(m,l,n_neigh)] = 0;
         return;
     }

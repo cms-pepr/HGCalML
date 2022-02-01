@@ -105,7 +105,11 @@ static void select_knn_grad_selfloop_kernel(
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
         int k = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
-        if(k<0) break;
+        if(k<0 || k>= n_vert){
+            if( k>= n_vert)
+                printf("select_knn_grad_kernel: k out of range\n");
+            continue;
+        }
 
         const float gik = d_grad_dist[I2D(i_v,i_i_n,n_neigh)];
         const float xknu = d_coord[I2D(k,nu_c,n_coords)];
@@ -144,7 +148,11 @@ static void select_knn_grad_neighloop_kernel(
     for(size_t i_i_n = 0; i_i_n < n_neigh; i_i_n++){
 
         int m = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
-        if(m<0) break;//padded with -1
+        if(m<0 || m>= n_vert){
+            if(m>= n_vert)
+                printf("select_knn_grad_kernel: m out of range\n");
+            continue;
+        }
 
         const float gim = d_grad_dist[I2D(i_v,i_i_n,n_neigh)];
         const float xmnu = d_coord[I2D(m,nu_c,n_coords)];

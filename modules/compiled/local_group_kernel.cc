@@ -69,6 +69,10 @@ struct LocalGroupOpFunctor<CPUDevice, dummy> {
             for(int _i_v=d_row_splits[i_rs];_i_v<d_row_splits[i_rs+1]; _i_v++){
 
                 int i_v = d_hierarchy_idxs[_i_v];
+                if(i_v >= n_in_vert){
+                    printf("local_group_kernel: invalid i_v\n");
+                    continue;
+                }
 
 
                 //below threshold is not allowed to merge its neighbours

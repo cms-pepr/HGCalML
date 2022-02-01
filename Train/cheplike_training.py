@@ -157,7 +157,7 @@ def gravnet_model(Inputs,
         n_dims = 6
         #exchange information, create coordinates
         x = Concatenate()([c_coords,c_coords,c_coords,coords,x])
-        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=96,
+        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
