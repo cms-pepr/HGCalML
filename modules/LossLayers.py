@@ -931,7 +931,7 @@ class LLFullObjectCondensation(LossLayerBase):
         if is_spectator is None:
             is_spectator = tf.zeros_like(pred_beta)
         
-        pred_beta = tf.debugging.check_numerics(pred_beta)
+        pred_beta = tf.debugging.check_numerics(pred_beta,"beta has nans of infs")
         #safe guards
         with tf.control_dependencies(
             [tf.assert_equal(rowsplits[-1], pred_beta.shape[0]),
