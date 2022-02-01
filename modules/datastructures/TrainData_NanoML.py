@@ -5,7 +5,7 @@ import awkward as ak1
 import pickle
 import gzip
 import numpy as np
-import mgzip
+import gzip
 import pandas as pd
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import cdist
@@ -871,7 +871,7 @@ class TrainData_NanoML(TrainData):
         if not str(outfilename).endswith('.bin.gz'):
             outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
 
-        with mgzip.open(outfilename, 'wb', blocksize=2*10**7) as f2:
+        with gzip.open(outfilename, 'wb') as f2:
             pickle.dump(dumping_data, f2)
 
     def readPredicted(self, predfile):
