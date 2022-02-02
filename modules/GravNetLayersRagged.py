@@ -2049,6 +2049,7 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
         return feat #just backup, should not happen
 
 
+
 class SoftPixelCNN(tf.keras.layers.Layer):
     def __init__(self, length_scale_momentum=0.01, mode: str='onlyaxes', subdivisions: int=3 , **kwargs):
         """

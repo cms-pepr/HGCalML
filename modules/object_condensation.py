@@ -119,15 +119,14 @@ def oc_per_batch_element(
     q_min *= (1. - is_spectator)
     
     qraw = tf.math.atanh(beta)**2 
+    if soft_q_scaling:
+        qraw = tf.math.atanh(beta_in/1.002)**2 #beta_in**4 *20.
     
     is_noise = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32')+1., 0.)#V x 1
     if noise_q_min is not None:
         q_min = (1.-is_noise)*q_min + is_noise*noise_q_min
     
     q_min = tf.where(q_min<0,0.,q_min)#just safety in case there are some numerical effects
-    
-    if soft_q_scaling:
-        qraw = tf.math.atanh(beta_in/1.002)**2 #beta_in**4 *20.
     
     q = qraw + q_min # V x 1
     #q = tf.where(beta_in<1.-1e-4, q, tf.math.atanh(1.-1e-4)**2 + q_min + beta_in) #just give the rest above clip a gradient
@@ -265,7 +264,7 @@ def oc_per_batch_element(
         b_mes = tf.reduce_sum(b_m**exponent, axis=1)
         if not exponent==1:
             b_mes = (b_mes+1e-16)**(1./float(exponent))
-        return tf.math.log((1.-b_mes)**2+1.)
+        return tf.math.log((1.-b_mes)**2+1.+1e-8) 
     
     if phase_transition:
     ## beta terms
