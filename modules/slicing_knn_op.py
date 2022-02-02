@@ -139,12 +139,68 @@ def _SlicingKnnGrad(op, gradidx, dstgrad):
 
 '''
 notes:
+The following example for 3D space coordinates.
+Only two custom ops are needed in total, both rather simple
 
-inputs.
+# bins are organised as a flat index indexing back to 4D: [row_splits, nbins, nbins, nbins]
 
-bins = assign_bins(coords)
-n_in_bin = tf.unique(bins)
-resh_idxs = reshuffle_by_bins_idxs(bins,n_in_bins) #p: bins.. hmm, maybe sort? but also slow
+unit_distance=some_value
+nbins = tf.max(coords/unit_distance)
+bin_no = custom_op_assign_bins(coords, row_splits, nbins=nbins) #nbins same in all dimensions
+
+
+_, resort_indices, n_per_bin = tf.unique_with_counts(bin_no) 
+
+# add a leading zero to n_per_bin
+n_per_bin = tf.concatenate([row_splits[0], n_per_bin],axis=0)
+
+# make it row split like
+n_per_bin = tf.cumsum(n_per_bin)
+
+# now tf.gather_nd(some_tensor, resort_indices) will resort everything
+# and n_per_bin will define the boundaries of the bins in row split format:
+# lower bound: n_per_bin[i], upper bound: n_per_bin[i+1]
+
+sorted_coords = tf.gather_nd(coords,resort_indices)
+
+dist, idx = custom_op_bin_knn(sorted_coords, n_per_bin, unit_distance)
+
+# the above kNN is a very minor extension of SelectKNN where only the loop is restricted within a certain range
+# This range is given by n_per_bin[b], n_per_bin[b+1]. 
+#
+# the index b is determined by a bin-stepper class (C++), that will be the heart of this kernel
+# This class should be a helper and templated in a separate header file, since also future other kernels might
+# want to use it.
+#
+# The bin stepper should be able to step an ND cube surface in a grid, where the cube sides are configurable. So e.g.
+# it has a 'radius', where radius=0 means, it would give the index of the origin bin,
+# radius=1 means, it would return the flat indices for the nearest neighbours to the origin bin, 
+# radius=2 would mean it would return the flat indices of the neighbours of the nearest neighbour bins etc.
+# 
+# This class must be stateful, such that the following can happen
+#
+
+int radius=0;
+while(true){
+    binstepper stepper(origin_bin, dimensions, radius);
+    int bin = stepper.get()
+    for(vertices[bin] to vertices[bin+1]){
+       determine kNN and max_distance.
+    }
+    if(stepper.done()){//stepped through all bins of a cube with side=radius
+        if(unit_distance>2.*max_distance
+           || stepper.no_more_bins()  //this can happen if the whole coordinate space has been scanned (radius>=nbins/2)
+        ){ //might need to be adapted, just a guess right now
+            break; //done
+        }
+        else{
+            radius+=1
+        }
+    }
+}
+
+# use tf.scatter_nd(resort_indices,...) to get back to old format, 
+# possibly do some simple index reshuffling for neighbour indices
 
 '''
 
