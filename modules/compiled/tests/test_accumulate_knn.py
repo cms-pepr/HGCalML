@@ -3,7 +3,7 @@
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.platform import test
-from accknn_op import *
+
 import time
 import matplotlib
 matplotlib.use('Agg')
@@ -14,7 +14,7 @@ from accknn_op import AccumulateKnn
 
 def custom_impl(distances, features, indices, mean_and_max):
     #print(distances)
-    meanmax, mmidx = AccumulateKnn(distances=distances,  features=features, indices=indices, mean_and_max=mean_and_max)
+    meanmax, _ = AccumulateKnn(distances=distances,  features=features, indices=indices, mean_and_max=mean_and_max)
     #print('mmidx',mmidx)
     return meanmax#[:,features.shape[1]:] #just mean for now
 
@@ -24,6 +24,8 @@ def tf_impl(distances,features,indices,mean_and_max):
     
     #print('minmax indxs',tf.reduce_min(indices), tf.reduce_max(indices))
     weights = tf.math.exp(-1. * distances)[...,tf.newaxis]
+    #DEBUG
+    #weights = distances[...,tf.newaxis]
     #print('weights',weights)
     #print('maxweight', tf.reduce_max(weights), 'min distance', tf.reduce_min(distances))
     
@@ -45,7 +47,7 @@ for meanmax in [True, False]:
     bm = Benchmarker(tf_impl, custom_impl,name, use_distances_direct=True, 
                      tfoncpu=usecpu, customoncpu=usecpu,mean_and_max=meanmax)
     bm.debugout=True
-    bm.difference(nvert = 5, nfeat = 3, nneigh = 2, ncoords = 4)    
+    bm.difference(nvert = 5, nfeat = 3, nneigh = 5, ncoords = 4)    
     bm.debugout=False
     
     #exit()
@@ -55,7 +57,7 @@ for meanmax in [True, False]:
     nfeat  = [int(32*i)+32 for i in range(0,4)] 
     
     
-    
+    #continue
     bm.run_extended_difference(nvert,nneigh,nfeat)
     
     continue

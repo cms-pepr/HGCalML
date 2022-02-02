@@ -29,13 +29,16 @@ def AccumulateKnn(distances,  features, indices,
     Other than the padding, the indices must be unique
     
     '''
+    #compatibility
+    distances = tf.exp(-distances)
+
     
     if not gl.acc_ops_use_tf_gradients:
         return _accknn_op.AccumulateKnn(distances=distances,  features=features, indices=indices,
                                     n_moments=0, mean_and_max=mean_and_max)
     
     
-    distances = tf.expand_dims(tf.exp(-distances),axis=2) #V x K x 1
+    distances = tf.expand_dims(distances,axis=2) #V x K x 1
     nfeat = SelectWithDefault(indices, features, 0.) # V x K x F
     wfeat = distances*nfeat
     fmean = tf.reduce_mean(wfeat,axis=1)# V x F
