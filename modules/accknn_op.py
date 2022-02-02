@@ -15,7 +15,26 @@ _accknn_op = tf.load_op_library('accumulate_knn.so')
 _accknn_grad_op = tf.load_op_library('accumulate_knn_grad.so')
 
 
+def AccumulateLinKnn(weights,  features, indices, 
+                  mean_and_max=True):
+    '''
+    Accumulates neighbour features with linear weights (not exp(-w) as AccumulateKnn)
+    '''
+    if not gl.acc_ops_use_tf_gradients:
+        return _accknn_op.AccumulateKnn(distances=weights,  features=features, indices=indices,
+                                    n_moments=0, mean_and_max=mean_and_max)
     
+    
+    weights = tf.expand_dims(weights,axis=2) #V x K x 1
+    nfeat = SelectWithDefault(indices, features, 0.) # V x K x F
+    wfeat = weights*nfeat
+    fmean = tf.reduce_mean(wfeat,axis=1)# V x F
+    fmax = tf.reduce_max(wfeat,axis=1)
+    fout = fmean
+    if mean_and_max:
+        fout = tf.concat([fmean,fmax],axis=1)
+    return fout,None
+
 
 def AccumulateKnn(distances,  features, indices, 
                   mean_and_max=True):
