@@ -788,6 +788,7 @@ class LLFullObjectCondensation(LossLayerBase):
         
     
     def softclip(self, toclip, startclipat,softness=0.1):
+        assert softness>0 and softness < 1.
         toclip /= startclipat
         soft = softness*tf.math.log((toclip-(1.-softness))/softness)+1.
         toclip = tf.where(toclip>1, soft , toclip)

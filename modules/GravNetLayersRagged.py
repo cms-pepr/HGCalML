@@ -5,7 +5,7 @@ import os
 from select_knn_op import SelectKnn
 from slicing_knn_op import SlicingKnn
 from select_mod_knn_op import SelectModKnn
-from accknn_op import AccumulateKnn
+from accknn_op import AccumulateKnn, AccumulateLinKnn
 from local_cluster_op import LocalCluster
 from local_group_op import LocalGroup
 from local_distance_op import LocalDistance
@@ -46,6 +46,20 @@ def AccumulateKnnSumw(distances,  features, indices, mean_and_max=False):
         fmean = tf.concat([fmean, f[:,origshape+1:-1]],axis=1)
     return fmean,midx
   
+
+def AccumulateLinKnnSumw(weights,  features, indices, mean_and_max=False):
+    
+    origshape = features.shape[1]
+    features = tf.concat([features, tf.ones_like(features[:,0:1])],axis=1)
+    f,midx = AccumulateLinKnn(weights,  features, indices,mean_and_max=mean_and_max)
+    
+    fmean = f[:,:origshape]
+    fnorm = f[:,origshape:origshape+1]
+    fmean = tf.math.divide_no_nan(fmean,fnorm)
+    fmean = tf.reshape(fmean, [-1,origshape])
+    if mean_and_max:
+        fmean = tf.concat([fmean, f[:,origshape+1:-1]],axis=1)
+    return fmean,midx
   
 
 def check_type_return_shape(s):
@@ -1112,10 +1126,9 @@ class WeightedNeighbourMeans(tf.keras.layers.Layer):
         if self.distweight:
             nweights*=tf.exp(-10.*dist)#needs to be before log
         
-        nweights = tf.nn.relu(nweights)#secure
-        nweights = -tf.math.log(nweights+1e-6) #accumulateKnn has a minus sign
+        nweights = tf.nn.relu(nweights)+1e-6#secure
         
-        f,_ = AccumulateKnnSumw(nweights, feat, nidx)
+        f,_ = AccumulateLinKnnSumw(nweights, feat, nidx)
         out = f-feat
         return out
         
@@ -1991,7 +2004,7 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
             return (None, 2*fshape[1])
 
     def get_min(self,ndix,feat):
-        out,_ = AccumulateKnn(tf.zeros_like(ndix,dtype='float32'), 
+        out,_ = AccumulateLinKnn(tf.zeros_like(ndix,dtype='float32')+1., 
                           -feat, ndix,mean_and_max=True)
         out=out[:,feat.shape[1]:]
         return -tf.reshape(out,[-1, feat.shape[1]])  
@@ -2001,36 +2014,34 @@ class AccumulateNeighbours(tf.keras.layers.Layer):
         feat,ndix,w = None,None,None
         if len(inputs)==2:
             feat,ndix = inputs
-            w = tf.cast(tf.zeros_like(ndix),dtype='float32')
+            w = tf.cast(tf.zeros_like(ndix),dtype='float32')+1.
         else:
             feat,ndix,w = inputs
-            w = tf.clip_by_value(w, 1e-8, 1e6)
-            w = -tf.math.log(w)
-            w = SelectWithDefault(ndix, w, 20.)[:,:,0]#20 approx -ln(1e-8)
+            w = SelectWithDefault(ndix, w, 0.)[:,:,0]
             
         K = tf.cast(ndix.shape[1],dtype='float32')
         #K = tf.expand_dims(tf.expand_dims(K,axis=0),axis=0)
         if self.mode == 'mean' or self.mode == 'meanmax':
-            out,_ = AccumulateKnnSumw(w, 
+            out,_ = AccumulateLinKnnSumw(w, 
                           feat, ndix,mean_and_max=self.mode == 'meanmax')
             return out
         if self.mode=='gnlike':
-            out,_ = AccumulateKnn(w, 
+            out,_ = AccumulateLinKnn(w, 
                           feat, ndix)
             return tf.reshape(out,[-1, 2*feat.shape[1]])
         if self.mode=='sum':
-            out,_ = AccumulateKnn(w,feat, ndix,mean_and_max=False)
+            out,_ = AccumulateLinKnn(w,feat, ndix,mean_and_max=False)
             out*=K
             return tf.reshape(out,[-1, feat.shape[1]])              
         if self.mode == 'max':
-            out,_ = AccumulateKnn(w, 
+            out,_ = AccumulateLinKnn(w, 
                           feat, ndix,mean_and_max=True)
             out=out[:,feat.shape[1]:]
             return tf.reshape(out,[-1, feat.shape[1]])
         if self.mode == 'min':
             return self.get_min(ndix,feat)
         if self.mode == 'minmeanmax':
-            meanmax,_ = AccumulateKnnSumw(w, 
+            meanmax,_ = AccumulateLinKnnSumw(w, 
                           feat, ndix,mean_and_max=True)
             meanmax = tf.reshape(meanmax,[-1, 2*feat.shape[1]])
             minvals = self.get_min(ndix,feat)
