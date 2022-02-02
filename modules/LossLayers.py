@@ -36,6 +36,10 @@ def huber(x, d):
     losslin = d**2 + 2. * d * (absx - d)
     return tf.where(absx < d, losssq, losslin)
 
+def quantile(x,tau):
+    return tf.maximum(tau*x, (tau-1)*x)
+    
+
 class LossLayerBase(LayerWithMetrics):
     """Base class for HGCalML loss layers.
     
@@ -663,6 +667,8 @@ class LLFullObjectCondensation(LossLayerBase):
                  super_repulsion=False,
                  use_local_distances=True,
                  energy_weighted_qmin=False,
+                 low_energy_tau=0.16,
+                 high_energy_tau=0.84, 
                  super_attraction=False,
                  div_repulsion=False,
                  dynamic_payload_scaling_onset=-0.005,
@@ -760,6 +766,8 @@ class LLFullObjectCondensation(LossLayerBase):
         self.super_repulsion=super_repulsion
         self.use_local_distances = use_local_distances
         self.energy_weighted_qmin=energy_weighted_qmin
+        self.low_energy_tau=low_energy_tau
+        self.high_energy_tau=high_energy_tau
         self.super_attraction = super_attraction
         self.div_repulsion=div_repulsion
         self.dynamic_payload_scaling_onset = dynamic_payload_scaling_onset
@@ -794,7 +802,7 @@ class LLFullObjectCondensation(LossLayerBase):
         toclip *= startclipat
         return toclip
         
-    def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, pred_energy): 
+    def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, pred_energy,pred_energy_low_quantile,pred_energy_high_quantile): 
         
         ediff = (t_energy - pred_energy*t_dep_energies)/tf.sqrt(t_energy+1e-3)
         
@@ -805,7 +813,18 @@ class LLFullObjectCondensation(LossLayerBase):
             eloss = tf.math.log(ediff**2 + 1. + 1e-5)
             
         eloss = self.softclip(eloss, 0.4) 
-        return eloss
+
+        #calculate energy quantiles 
+        euncloss=None
+        corrtruth = tf.math.divide_no_nan(t_energy, t_dep_energies)
+        corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
+        corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
+        resolution =(1-pred_energy/corrtruth) 
+        l_low =  resolution - pred_energy_low_quantile
+        l_high = resolution - pred_energy_high_quantile
+        euncloss = quantile(l_low,self.low_energy_tau) + quantile(l_high,self.high_energy_tau) 
+
+        return eloss, euncloss
     
             
     def calc_energy_loss(self, t_energy, pred_energy): 
@@ -872,25 +891,28 @@ class LLFullObjectCondensation(LossLayerBase):
 
     def loss(self, inputs):
         
-        assert len(inputs) == 18 or len(inputs) == 17
+        assert len(inputs)==20 or len(inputs)==19 
         hasunique = False
-        if len(inputs) == 18:
-            pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
+        if len(inputs) == 20:
+            pred_beta, pred_ccoords, pred_distscale,\
+            pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,\
+            pred_pos, pred_time, pred_id,\
             rechit_energy,\
             t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
             t_is_unique,\
             rowsplits = inputs
             hasunique=True
-        else:
-            pred_beta, pred_ccoords, pred_distscale, pred_energy, pred_pos, pred_time, pred_id,\
+        elif len(inputs) == 19:
+            pred_beta, pred_ccoords, pred_distscale,\
+            pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,\
+            pred_pos, pred_time, pred_id,\
             rechit_energy,\
             t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
             rowsplits = inputs
             
             t_is_unique = tf.concat([t_idx[0:1]*0 + 1, t_idx[1:]*0],axis=0)
             hasunique=False
-            print('WARNING. functions using unique will not work as expected')
-        
+            print('WARNING. functions using unique will not work as expected')        
         
             #guard
             
@@ -909,19 +931,20 @@ class LLFullObjectCondensation(LossLayerBase):
         q_min = self.q_min #self.calc_qmin_weight(rechit_energy)#FIXME
             
         #also kill any gradients for zero weight
-        energy_loss = None
+        energy_loss,energy_quantiles_loss = None,None        
         if self.train_energy_correction:
-            energy_loss = self.energy_loss_weight * self.calc_energy_correction_factor_loss(t_energy, 
-                                                                                            t_rec_energy, 
-                                                                                            pred_energy)
+            energy_loss,energy_quantiles_loss = self.calc_energy_correction_factor_loss(t_energy,t_rec_energy,pred_energy,pred_energy_low_quantile,pred_energy_high_quantile)
+            energy_loss *= self.energy_loss_weight 
         else:
             energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
-            
+            _, energy_quantiles_loss =  self.calc_energy_correction_factor_loss(t_energy,t_rec_energy,pred_energy,pred_energy_low_quantile,pred_energy_high_quantile)
+        energy_quantiles_loss *= self.energy_loss_weight/2. 
+
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
         classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id, t_is_unique, hasunique)
         
-        full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss], axis=-1)
+        full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss,energy_quantiles_loss], axis=-1)
         
         if self.payload_beta_clip > 0:
             full_payload = tf.where(pred_beta<self.payload_beta_clip, 0., full_payload)
@@ -990,13 +1013,14 @@ class LLFullObjectCondensation(LossLayerBase):
         pos_loss    = payload[1]
         time_loss   = payload[2]
         class_loss  = payload[3]
+        energy_unc_loss  = payload[4]
         
         
         #explicit cc damping
         ccdamp = self.cc_damping_strength * (0.02*tf.reduce_mean(pred_ccoords))**4# gently keep them around 0
         
         
-        lossval = att + rep + min_b + noise + energy_loss + pos_loss + time_loss + class_loss + exceed_beta + ccdamp
+        lossval = att + rep + min_b + noise + energy_loss + energy_unc_loss+ pos_loss + time_loss + class_loss + exceed_beta + ccdamp
             
         lossval = tf.reduce_mean(lossval)
         
@@ -1006,6 +1030,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.add_prompt_metric(min_b,self.name+'_min_beta_loss')
         self.add_prompt_metric(noise,self.name+'_noise_loss')
         self.add_prompt_metric(energy_loss,self.name+'_energy_loss')
+        self.add_prompt_metric(energy_unc_loss,self.name+'_energy_unc_loss')
         self.add_prompt_metric(pos_loss,self.name+'_position_loss')
         self.add_prompt_metric(time_loss,self.name+'_time_loss')
         self.add_prompt_metric(class_loss,self.name+'_class_loss')
@@ -1059,6 +1084,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'super_repulsion': self.super_repulsion,
             'use_local_distances': self.use_local_distances,
             'energy_weighted_qmin': self.energy_weighted_qmin,
+            'low_energy_tau': self.low_energy_tau,
+            'high_energy_tau': self.high_energy_tau,
             'super_attraction':self.super_attraction,
             'div_repulsion' : self.div_repulsion,
             'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset
