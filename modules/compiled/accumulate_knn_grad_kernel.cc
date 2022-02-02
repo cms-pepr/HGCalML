@@ -18,7 +18,7 @@ namespace functor {
 
 
 inline static float distanceWeight(const float& distsq){
-    return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
+    return distsq;
 }
 
 static void set_feature_grad_zero(
@@ -127,7 +127,7 @@ static void calc_distance_gradients(
             float max_contrib=0;
 
             float dml = d_distances[I2D(m,l,n_neigh)]; //dlm == dml
-            float expml = distanceWeight(dml);
+            float expml = 1.; //linear scaling so grad 1 distanceWeight(dml);
 
             for(size_t b_f=0;b_f<n_feat;b_f++){
 
@@ -156,8 +156,8 @@ static void calc_distance_gradients(
                 }
 
             }
-            mean_contrib *= -ACCUMULATE_KNN_EXPONENT / (float)n_neigh;
-            max_contrib *= -ACCUMULATE_KNN_EXPONENT;
+            mean_contrib *= 1. / (float)n_neigh;
+            max_contrib *= 1;
 
             d_out_grad_distances[I2D(m,l,n_neigh)] = mean_contrib + max_contrib;
         }

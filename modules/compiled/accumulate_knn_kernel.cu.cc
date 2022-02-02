@@ -17,7 +17,7 @@ namespace functor {
 
 __device__
 static inline float distanceWeight(float distsq){
-    return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq); //uses cuda built in exp
+    return distsq;
 }
 
 __global__
