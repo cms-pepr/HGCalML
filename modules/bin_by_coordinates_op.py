@@ -34,16 +34,9 @@ def BinByCoordinates(coordinates, row_splits, bin_width):
     dmax_coords = tf.reduce_max(coordinates,axis=0)
     dmin_coords = tf.reduce_min(coordinates,axis=0)
     
-    dnbins = (dmax_coords - dmin_coords) / bin_width #this will be max
-    nbins = tf.reduce_min(dnbins)
-    
-    bin_width = (dmax_coords-dmin_coords)/nbins # C, will be smaller in some dimensions.
-    
-    # we need to restrict it and feed back to bins in a next step
-    
-    
+    nbins = (dmax_coords - dmin_coords) / bin_width  #this will be max
     nbins = tf.cast(nbins, dtype='int32')+1 #add one for safety
-    nbins = nbins[...,tf.newaxis]
+    
     
     return _bin_by_coordinates.BinByCoordinates(coordinates=coordinates, 
                                                 row_splits=row_splits, 

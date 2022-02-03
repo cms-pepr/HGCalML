@@ -219,6 +219,9 @@ std::ostream &operator<<(std::ostream &s, _index_vector<T> const &iv) {
  *
  *
  * simplest 'continue' implementation for now. can be made smarter
+ *
+ * does support different binning in different dimensions in principle..
+ *
  */
 
 #define binstepper(x) _binstepper<int[x]>

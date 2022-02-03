@@ -31,19 +31,20 @@ struct BinByCoordinatesOpFunctor<CPUDevice, dummy> { //just because access needs
             int n_coords,
             int n_rs){
 
-        int nbins = n_bins[0];
 
         //this will be parallelisation dimension
         for(int iv=0; iv<n_vert; iv++){
+
+            ///same for cu
 
             int mul = 1;
             int idx = 0;
             for (int ic = n_coords-1; ic != -1; ic--) {
 
-                int cidx = d_coords[I2D(iv,ic,n_coords)] / d_binswidth[ic];
+                int cidx = d_coords[I2D(iv,ic,n_coords)] / d_binswidth[0];
 
                 idx += cidx * mul;
-                mul *= nbins;
+                mul *= n_bins[ic];
 
             }
 
@@ -60,11 +61,12 @@ struct BinByCoordinatesOpFunctor<CPUDevice, dummy> { //just because access needs
 
             d_assigned_bin[iv]=idx; //now this is c-style ordering with [rs, c_N, c_N-1, ..., c_0]
 
+            //end same for cu
+
         }//iv loop
 
     }
 };
-
 
 
 template<typename Device>
@@ -89,10 +91,10 @@ public:
 
         ///size checks
 
-        OP_REQUIRES(context, n_coords == t_binwdith.dim_size(0),
-                    errors::InvalidArgument("BinByCoordinatesOp expects coordinate dimensions for bin width."));
-        OP_REQUIRES(context, 1 == t_nbins.dim_size(0),
-                    errors::InvalidArgument("BinByCoordinatesOp expects singleton for number of bins."));
+        OP_REQUIRES(context, 1 == t_binwdith.dim_size(0),
+                    errors::InvalidArgument("BinByCoordinatesOp expects singleton (dim: 1) for bin width."));
+        OP_REQUIRES(context, n_coords == t_nbins.dim_size(0),
+                    errors::InvalidArgument("BinByCoordinatesOp expects coordinate dimension for number of bins."));
 
         
         Tensor *t_assigned_bin = NULL;

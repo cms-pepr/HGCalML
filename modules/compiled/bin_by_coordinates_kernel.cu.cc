@@ -10,12 +10,10 @@
 #include "helpers.h"
 #include "bin_by_coordinates_kernel.h"
 
-
 namespace tensorflow {
 namespace functor {
 
 typedef Eigen::GpuDevice GPUDevice;
-
 
 __global__
 static void calc(
@@ -35,16 +33,14 @@ static void calc(
     if(iv>=n_vert)
         return;
 
-    int nbins = n_bins[0];
-
     int mul = 1;
     int idx = 0;
     for (int ic = n_coords-1; ic != -1; ic--) {
 
-        int cidx = d_coords[I2D(iv,ic,n_coords)] / d_binswidth[ic];
+        int cidx = d_coords[I2D(iv,ic,n_coords)] / d_binswidth[0];
 
         idx += cidx * mul;
-        mul *= nbins;
+        mul *= n_bins[ic];
 
     }
 
@@ -60,7 +56,6 @@ static void calc(
     idx += rsidx * mul;
 
     d_assigned_bin[iv]=idx; //now this is c-style ordering with [rs, c_N, c_N-1, ..., c_0]
-
 }
 
 
