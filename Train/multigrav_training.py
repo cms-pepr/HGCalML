@@ -71,9 +71,7 @@ batchnorm_options={
 loss_options={
     'q_min': 2.5,
     'alt_energy_weight': False,
-    'use_average_cc_pos': 0.99,
-    'low_energy_tau': 0.16,
-    'high_energy_tau': 0.84,  
+    'use_average_cc_pos': 0.99  
     }
 
 

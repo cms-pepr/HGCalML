@@ -57,12 +57,6 @@ make this about coordinate shifts
 
 '''
 
-#loss options:
-loss_options={
-    'low_energy_tau': 0.16,
-    'high_energy_tau': 0.84,  
-    }
-
 
 def gravnet_model(Inputs,
                   td,
@@ -239,8 +233,7 @@ def gravnet_model(Inputs,
                                          # phase_transition=1,
                                          #huber_energy_scale=0.1,
                                          use_average_cc_pos=0.2,  # smoothen it out a bit
-                                         name="FullOCLoss",
-                                         **loss_options
+                                         name="FullOCLoss"
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
          pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile,

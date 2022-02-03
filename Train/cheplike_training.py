@@ -71,9 +71,7 @@ loss_options={
     'q_min': .1,
     'use_average_cc_pos': 0.1,
     'classification_loss_weight':1e-2,
-    'too_much_beta_scale': 1e-3,
-    'low_energy_tau': 0.16,
-    'high_energy_tau': 0.84,   
+    'too_much_beta_scale': 1e-3 
     }
 
 

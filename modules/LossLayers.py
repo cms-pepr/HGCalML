@@ -667,8 +667,6 @@ class LLFullObjectCondensation(LossLayerBase):
                  super_repulsion=False,
                  use_local_distances=True,
                  energy_weighted_qmin=False,
-                 low_energy_tau=0.16,
-                 high_energy_tau=0.84, 
                  super_attraction=False,
                  div_repulsion=False,
                  dynamic_payload_scaling_onset=-0.005,
@@ -766,8 +764,6 @@ class LLFullObjectCondensation(LossLayerBase):
         self.super_repulsion=super_repulsion
         self.use_local_distances = use_local_distances
         self.energy_weighted_qmin=energy_weighted_qmin
-        self.low_energy_tau=low_energy_tau
-        self.high_energy_tau=high_energy_tau
         self.super_attraction = super_attraction
         self.div_repulsion=div_repulsion
         self.dynamic_payload_scaling_onset = dynamic_payload_scaling_onset
@@ -822,7 +818,9 @@ class LLFullObjectCondensation(LossLayerBase):
         resolution =(1-pred_energy/corrtruth) 
         l_low =  resolution - pred_energy_low_quantile
         l_high = resolution - pred_energy_high_quantile
-        euncloss = quantile(l_low,self.low_energy_tau) + quantile(l_high,self.high_energy_tau) 
+        low_energy_tau = 0.16
+        high_energy_tau = 0.84
+        euncloss = quantile(l_low,low_energy_tau) + quantile(l_high,high_energy_tau) 
 
         return eloss, euncloss
     
@@ -1084,8 +1082,6 @@ class LLFullObjectCondensation(LossLayerBase):
             'super_repulsion': self.super_repulsion,
             'use_local_distances': self.use_local_distances,
             'energy_weighted_qmin': self.energy_weighted_qmin,
-            'low_energy_tau': self.low_energy_tau,
-            'high_energy_tau': self.high_energy_tau,
             'super_attraction':self.super_attraction,
             'div_repulsion' : self.div_repulsion,
             'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset

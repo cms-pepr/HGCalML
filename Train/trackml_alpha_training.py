@@ -47,12 +47,6 @@ import sql_credentials
 from datetime import datetime
 
 
-#loss options:
-loss_options={
-    'low_energy_tau': 0.16,
-    'high_energy_tau': 0.84,  
-    }
-
 
 td=TrainData_TrackML()
 '''
@@ -245,8 +239,7 @@ def gravnet_model(Inputs,
                                          payload_beta_gradient_damping_strength=0.,
                                          kalpha_damping_strength=0.,#1.,
                                          use_local_distances=True,
-                                         name="FullOCLoss",
-                                         **loss_options                                         
+                                         name="FullOCLoss"
                                          )([pred_beta, pred_ccoords,
                                             pred_dist,
                                             pred_energy,
