@@ -33,8 +33,6 @@ struct BinByCoordinatesOpFunctor<CPUDevice, dummy> { //just because access needs
 
         int nbins = n_bins[0];
 
-        int indices[n_coords];//let's see if that compiles
-
         //this will be parallelisation dimension
         for(int iv=0; iv<n_vert; iv++){
 
