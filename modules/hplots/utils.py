@@ -25,10 +25,12 @@ def profile(target,xvar,bins=10,range=None,uniform=False,moments=True,
     categories = np.eye(np.max(ibins)+1)[ibins]
 
     ret = [bins]
-    print(ibins,categories,ret)
-
     mxvar=xvar.reshape(-1,1) * categories
-    if average==True : ret = [ np.average(mxvar,weights=categories,axis=0) ]
+    if average==True :
+        if (sum(categories)!=0).all(): 
+            ret = [ np.average(mxvar,weights=categories,axis=0) ]
+        else:
+            ret = [bins[:-1]]
     if moments:
         mtarget = target.reshape(-1,1) * categories
         weights = categories
@@ -38,6 +40,10 @@ def profile(target,xvar,bins=10,range=None,uniform=False,moments=True,
     if quantiles is not None:
         values = []
         for ibin in np.arange(categories.shape[1],dtype=int):
-            values.append( np.percentile(target[categories[:,ibin].astype(np.bool)],quantiles*100.,axis=0).reshape(-1,1) )
+            target_in_bin = target[categories[:,ibin].astype(np.bool)]
+            if len(target_in_bin)>0:
+                values.append( np.percentile(target_in_bin,quantiles*100.,axis=0).reshape(-1,1) )
+            else:
+                values.append(np.zeros_like(quantiles).reshape(-1,1))
         ret.append( np.concatenate(values,axis=-1) )
     return tuple(ret)

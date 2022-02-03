@@ -153,10 +153,8 @@ class HGCalAnalysisPlotter:
         true_resolution =  (self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy()\
                             -self.showers_dataframe['pred_energy'][filter].to_numpy())\
                             / self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy()
-        #print(true_resolution,resolution_estimator)
-        #print(true_resolution.mean(),resolution_estimator.mean())
-        #res_estim_values, res_true_quantiles = utils.profile(true_resolution,resolution_estimator,bins=30,range=[0,0.3],moments=False,average=False,quantiles=np.array(self.quantiles_res_plot)) 
-        #res_true_values =  0.5*(res_true_quantiles[1]-res_true_quantiles[0])
+        res_estim_values, res_true_quantiles = utils.profile(true_resolution,resolution_estimator,bins=30,range=[0,0.3],moments=False,average=True,quantiles=np.array(self.quantiles_res_plot)) 
+        res_true_values =  0.5*(res_true_quantiles[1]-res_true_quantiles[0])
 
         #resolution estimator plot
         plot = GeneralHistogramPlot(bins=self.energy_res_estimator_bins,x_label='Energy Resolution Estimator', y_label='Counts', title='', histogram_log=False)
@@ -169,9 +167,9 @@ class HGCalAnalysisPlotter:
         self.pdf_resolution_estimator.savefig(plot.draw())
 
         #correlation plot between estimator and real resolution
-        #plot = GeneralGraphPlot(x_label='Average Energy Resolution Estimator', y_label=r'Energy Resolution $\frac{E_{true}-E_{pred}}{E_{true}}$', title='', histogram_log=False)
-        #plot.add_raw_values(res_estim_values,res_true_values)
-        #self.pdf_resolution_estimator.savefig(plot.draw())
+        plot = GeneralGraphPlot(x_label='Average Energy Resolution Estimator', y_label=r'Energy Resolution $\frac{E_{true}-E_{pred}}{E_{true}}$', title='', histogram_log=False)
+        plot.add_raw_values(res_estim_values,res_true_values)
+        self.pdf_resolution_estimator.savefig(plot.draw())
 
 
     def _make_response_plots(self):

@@ -79,7 +79,7 @@ loss_options={
 
 dense_activation='relu'
 
-plotfrequency= 200
+plotfrequency=200
 
 learningrate = 5e-5
 nbatch = 500000
