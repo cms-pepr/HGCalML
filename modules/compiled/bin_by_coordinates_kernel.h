@@ -8,7 +8,19 @@ namespace functor {
 template<typename Device, typename dummy>
 struct BinByCoordinatesOpFunctor {
     void operator()(
-            const Device &d
+
+            const Device &d,
+            const float * d_coords,
+            const int * d_rs,
+
+            const float * d_binswidth, //singleton
+            const int* n_bins,//singleton
+
+            int * d_assigned_bin,
+
+            int n_vert,
+            int n_coords,
+            int n_rs
     );
 
 

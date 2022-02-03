@@ -13,6 +13,8 @@
 #include <initializer_list>
 
 
+#define index_vector(x) _index_vector<int[x]>
+
 template<class T>
 class _index_vector {
 public:
