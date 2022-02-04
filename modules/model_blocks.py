@@ -31,7 +31,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
                    energy_proxy=None,
                    name_prefix="output_module"):
     '''
-    returns pred_beta, pred_ccoords, pred_energy, pred_pos, pred_time, pred_id
+    returns pred_beta, pred_ccoords, pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,pred_pos, pred_time, pred_id
     '''
     assert scale_energy != energy_factor
     
@@ -56,10 +56,20 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
                         bias_initializer='ones',#no effect if full scale, useful if corr factor
                         activation=energy_act
                         )(energy_proxy)
+    pred_energy_low_quantile = Dense(1,name = name_prefix+'_energy_low_quantile',
+                        bias_initializer='ones',#no effect if full scale, useful if corr factor
+                        activation=energy_act
+                        )(energy_proxy)
+    pred_energy_high_quantile = Dense(1,name = name_prefix+'_energy_high_quantile',
+                        bias_initializer='ones',#no effect if full scale, useful if corr factor
+                        activation=energy_act
+                        )(energy_proxy)
     if scale_energy:
         pred_energy = ScalarMultiply(10.)(pred_energy)
     if energy is not None:
         pred_energy = Multiply()([pred_energy,energy])
+        pred_energy_low_quantile = Multiply()([pred_energy_low_quantile,energy])
+        pred_energy_high_quantile = Multiply()([pred_energy_high_quantile,energy])
         
     pred_pos =  Dense(2,use_bias=False,name = name_prefix+'_pos')(x)
     pred_time = ScalarMultiply(10.)(Dense(1)(x))
@@ -72,9 +82,7 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     if not fix_distance_scale:
         pred_dist = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x))
         #this needs to be bound otherwise fully anti-correlated with coordates scale
-    return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_pos, pred_time, pred_id
-    
-    
+    return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, pred_pos, pred_time, pred_id
 
 
 
@@ -779,6 +787,8 @@ def re_integrate_to_full_hits(
         pred_ccoords,
         pred_beta,
         pred_energy_corr,
+        pred_energy_low_quantile,
+        pred_energy_high_quantile,
         pred_pos,
         pred_time,
         pred_id,
@@ -796,6 +806,8 @@ def re_integrate_to_full_hits(
     ('pred_beta', pred_beta), 
     ('pred_ccoords', pred_ccoords),
     ('pred_energy_corr_factor', pred_energy_corr),
+    ('pred_energy_low_quantile', pred_energy_low_quantile),
+    ('pred_energy_high_quantile', pred_energy_high_quantile),
     ('pred_pos', pred_pos),
     ('pred_time', pred_time),
     ('pred_id', pred_id),
@@ -809,6 +821,8 @@ def re_integrate_to_full_hits(
     pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
     pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
     pred_energy_corr = MultiBackScatterOrGather(default=1.)([pred_energy_corr, scatterids])
+    pred_energy_low_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_low_quantile, scatterids])
+    pred_energy_high_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_high_quantile, scatterids])
     pred_pos = MultiBackScatterOrGather(default=0.)([pred_pos, scatterids])
     pred_time = MultiBackScatterOrGather(default=10.)([pred_time, scatterids])
     pred_id = MultiBackScatterOrGather(default=0.)([pred_id, scatterids])
@@ -819,6 +833,8 @@ def re_integrate_to_full_hits(
             'pred_beta': pred_beta, 
             'pred_ccoords': pred_ccoords,
             'pred_energy_corr_factor': pred_energy_corr,
+            'pred_energy_low_quantile': pred_energy_low_quantile,
+            'pred_energy_high_quantile': pred_energy_high_quantile,
             'pred_pos': pred_pos,
             'pred_time': pred_time,
             'pred_id': pred_id,
@@ -829,6 +845,8 @@ def re_integrate_to_full_hits(
         ('pred_beta', pred_beta), 
         ('pred_ccoords', pred_ccoords),
         ('pred_energy_corr_factor', pred_energy_corr),
+        ('pred_energy_low_quantile', pred_energy_low_quantile),
+        ('pred_energy_high_quantile', pred_energy_high_quantile),
         ('pred_pos', pred_pos),
         ('pred_time', pred_time),
         ('pred_id', pred_id),
