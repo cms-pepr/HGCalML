@@ -2,6 +2,7 @@
 #ifndef BIN_BY_COORDINATES_KERNEL_H
 #define BIN_BY_COORDINATES_KERNEL_H
 
+
 namespace tensorflow {
 namespace functor {
 
@@ -17,17 +18,36 @@ struct BinByCoordinatesOpFunctor {
             const int* n_bins,//singleton
 
             int * d_assigned_bin,
+            int * d_flat_assigned_bin,
+            int * d_n_per_bin,
 
-            int n_vert,
-            int n_coords,
-            int n_rs
+            const int n_vert,
+            const int n_coords,
+            const int n_rs,
+            const int n_total_bins,
+            const bool calc_n_per_bin
     );
 
 
 
 };
 
+
+template<typename Device, typename dummy>
+struct BinByCoordinatesNbinsHelperOpFunctor {
+    void operator()(
+            const Device &d,
+            const int * n_bins,
+            int * out_tot_bins,
+            int n_nbins,
+            int nrs
+            );
+};
+
 }  // namespace functor
 }  // namespace tensorflow
 
 #endif //BIN_BY_COORDINATES_KERNEL_H
+
+
+
