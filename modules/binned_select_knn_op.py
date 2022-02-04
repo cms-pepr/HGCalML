@@ -4,7 +4,7 @@ from tensorflow.python.framework import ops
 
 _binned_select_knn = tf.load_op_library('binned_select_knn.so')
 
-def _BinnedSelectKnn(K : int, coords,  bin_idx, bin_boundaries, n_bins, bin_width , tf_compatible=False):
+def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_bins, bin_width , tf_compatible=False):
     '''
     the op wrapper only
     '''
@@ -12,6 +12,7 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, bin_boundaries, n_bins, bin_widt
     return _binned_select_knn.BinnedSelectKnn(n_neighbours=K, 
                                               coords=coords,
                                               bin_idx=bin_idx,
+                                              dim_bin_idx=dim_bin_idx,
                                               bin_boundaries=bin_boundaries,
                                               n_bins=n_bins,
                                               bin_width=bin_width,
@@ -19,27 +20,25 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, bin_boundaries, n_bins, bin_widt
                                               )
 
 
-
 def BinnedSelectKnn(K : int, coords, row_splits, bin_width=tf.constant([.5],dtype='float32'), tf_compatible=False):
     from bin_by_coordinates_op import BinByCoordinates
     from index_replacer_op import IndexReplacer
     
-    dbinning,binning,nper, nb = BinByCoordinates(coords, row_splits, bin_width)
+    dbinning,binning,nper, nb, bin_width = BinByCoordinates(coords, row_splits, bin_width, restrict_nbins=20)
     
     sorting = tf.argsort(binning)
     
     scoords = tf.gather_nd( coords, sorting[...,tf.newaxis])
     sbinning = tf.gather_nd( binning, sorting[...,tf.newaxis])
+    sdbinning = tf.gather_nd( dbinning, sorting[...,tf.newaxis])
     
     bin_boundaries = tf.concat([row_splits[0:1], nper],axis=0)
     # make it row split like
     bin_boundaries = tf.cumsum(bin_boundaries)
     
-    idx,dist = _BinnedSelectKnn(K, scoords,  sbinning, bin_boundaries=bin_boundaries, 
+    idx,dist = _BinnedSelectKnn(K, scoords,  sbinning, sdbinning, bin_boundaries=bin_boundaries, 
                                 n_bins=nb, bin_width=bin_width, tf_compatible=tf_compatible )
-    
-    
-    #sort back dist
+    #sort back 
     idx = IndexReplacer(idx,sorting)
     dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, dist.shape)
     idx = tf.scatter_nd(sorting[...,tf.newaxis], idx, idx.shape)

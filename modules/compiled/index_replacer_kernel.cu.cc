@@ -10,12 +10,10 @@
 
 #include "index_replacer_kernel.h"
 
-
 namespace tensorflow {
 namespace functor {
 
 typedef Eigen::GpuDevice GPUDevice;
-
 
 __global__
 static void calc(
@@ -31,6 +29,10 @@ static void calc(
         return;
 
     const int ridx = to_be_replaced[i];
+    if(ridx<0){
+        replaced[i] = ridx;
+        return;
+    }
     if(ridx>=n_replacements){
         printf("IndexReplacerOpFunctor: index out of range\n");
         return;

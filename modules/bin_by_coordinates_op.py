@@ -12,7 +12,7 @@ _bin_by_coordinates = tf.load_op_library('bin_by_coordinates.so')
     .Output("output: int32"); 
 '''
 
-def BinByCoordinates(coordinates, row_splits, bin_width, calc_n_per_bin=True):
+def BinByCoordinates(coordinates, row_splits, bin_width, restrict_nbins=-1, calc_n_per_bin=True):
     '''
     
     bin_width: scalar input (can be tensor)
@@ -29,12 +29,17 @@ def BinByCoordinates(coordinates, row_splits, bin_width, calc_n_per_bin=True):
     
     '''
     
-    #calculate bin width here
-    
+    #calculate
     dmax_coords = tf.reduce_max(coordinates,axis=0)
     dmin_coords = tf.reduce_min(coordinates,axis=0)
     
     nbins = (dmax_coords - dmin_coords) / bin_width  #this will be max
+    
+    if restrict_nbins>0:
+        nbins = tf.where(nbins>restrict_nbins, restrict_nbins, nbins)
+        bin_width = tf.reduce_max((dmax_coords - dmin_coords) / nbins)[...,tf.newaxis]
+        nbins = (dmax_coords - dmin_coords) / bin_width
+    
     nbins = tf.cast(nbins, dtype='int32')+1 #add one for safety
     
     coordinates -= tf.expand_dims(dmin_coords,axis=0)
@@ -52,9 +57,9 @@ def BinByCoordinates(coordinates, row_splits, bin_width, calc_n_per_bin=True):
                                                      axis=0))]):
         
         if calc_n_per_bin:                                            
-            return binass,flatbinass,nperbin,nbins
+            return binass,flatbinass,nperbin,nbins,bin_width
         else:
-            return binass,flatbinass,nbins
+            return binass,flatbinass,nbins,bin_width
 
 @ops.RegisterGradient("BinByCoordinates")
 def _BinByCoordinatesGrad(op, idxout_grad, flatidxgrad,npbingrad):

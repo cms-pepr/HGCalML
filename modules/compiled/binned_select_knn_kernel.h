@@ -12,6 +12,7 @@ struct BinnedSelectKnnOpFunctor {
 
             const float * d_coord,
             const int * d_bin_idx,
+            const int * d_dim_bin_idx,
 
             const int * d_bin_boundaries,
             const int * d_n_bins,

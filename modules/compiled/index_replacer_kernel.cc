@@ -28,6 +28,10 @@ struct IndexReplacerOpFunctor<CPUDevice, dummy> { //just because access needs to
 
         for(int i=0;i<n_to_be_replaced;i++){
             const int ridx = to_be_replaced[i];
+            if(ridx<0){
+                replaced[i] = ridx;
+                continue;
+            }
             if(ridx>=n_replacements){
                 printf("IndexReplacerOpFunctor: index out of range\n");
                 continue;

@@ -74,6 +74,7 @@ static void select_knn_kernel(
 
         const float * d_coord,
         const int * d_bin_idx,
+        const int * d_dim_bin_idx,
 
         const int * d_bin_boundaries,
         const int * d_n_bins,
@@ -102,6 +103,9 @@ static void select_knn_kernel(
         if(i_v>=n_vert)
             return;//safe guard
 
+        //continue;//do nothing
+
+
         size_t nfilled=1;//self-reference from defaults
         size_t maxidx_local=0;
         float maxdistsq=0;
@@ -116,33 +120,39 @@ static void select_knn_kernel(
 
        // printf("considering vertex %d, bin %d, flat offset %d, global bin offset %d\n",i_v,iv_bin,sb_flat_offset,gbin_offset);
 
-        binstepper_base * bs = NULL;
-        if(n_coords==2)
-            bs=new binstepper(2)({d_n_bins[0],d_n_bins[1]},sb_flat_offset);
-        else if(n_coords==3)
-            bs=new binstepper(3)({d_n_bins[0],d_n_bins[1],d_n_bins[2]},sb_flat_offset);
-        else if(n_coords==4)
-            bs=new binstepper(4)({d_n_bins[0],d_n_bins[1],d_n_bins[2],d_n_bins[3]},sb_flat_offset);
-        else
-            bs=NULL;//not supported
+        int cubeidxs[n_coords]; //temp
+        int glidxs[n_coords];
+        for(int ic=0;ic<n_coords;ic++){
+            glidxs[ic]=d_dim_bin_idx[I2D(i_v,ic+1,n_coords+1)];
+        }
+
+        binstepper stepper;
+        s_init(stepper,d_n_bins,n_coords);
 
         bool continue_search = true;
         int distance = 0;
         while(continue_search){
-            int b_idx = 0;
-            bs->set_distance(distance);
+
+            s_set_d(stepper,distance);
+
             continue_search=false;
 
             while(true){
-                bool valid=false;
-                int idx = bs->step(valid);
-                if(!valid){
+                int idx = s_step(stepper,cubeidxs,glidxs,d_n_bins);
+                if(idx<0){//not valid
+                    if(!continue_search && !distance){//this should not happen
+                        printf("stopping search for vtx %d at distance %d\n",i_v,distance);
+                        cout_array(cubeidxs,n_coords);
+                        cout_array(glidxs,n_coords);
+                        cout_array(d_n_bins,n_coords);
+                    }
                     break;
+
                 }
 
                 idx+=gbin_offset;
 
-                if(idx>=n_bboundaries-1){//I don't know how this can happen... FIXME
+                if(idx>=n_bboundaries-1){
                     printf("idx %d out of range, gb offset %d, distance %d, sb_flat_offset %d, nbb %d\n", idx, gbin_offset, distance, sb_flat_offset,n_bboundaries);
                     continue;
                 }
@@ -186,8 +196,6 @@ static void select_knn_kernel(
             distance++;
         }
 
-        delete bs;
-
     }//cu parallelised loop
 }
 
@@ -200,6 +208,7 @@ struct BinnedSelectKnnOpFunctor<CPUDevice, dummy> { //just because access needs 
 
             const float * d_coord,
             const int * d_bin_idx,
+            const int * d_dim_bin_idx,
 
             const int * d_bin_boundaries,
             const int * d_n_bins,
@@ -226,6 +235,7 @@ struct BinnedSelectKnnOpFunctor<CPUDevice, dummy> { //just because access needs 
         select_knn_kernel(
                 d_coord,
                 d_bin_idx,
+                d_dim_bin_idx,
 
                 d_bin_boundaries,
                 d_n_bins,
@@ -276,9 +286,10 @@ public:
 
         const Tensor &t_coords = context->input(0);
         const Tensor &t_bin_idx = context->input(1);
-        const Tensor &t_bin_boundaries = context->input(2);
-        const Tensor &t_n_bins = context->input(3);
-        const Tensor &t_bin_width = context->input(4);
+        const Tensor &t_dim_bin_idx = context->input(2);
+        const Tensor &t_bin_boundaries = context->input(3);
+        const Tensor &t_n_bins = context->input(4);
+        const Tensor &t_bin_width = context->input(5);
 
         const int n_vert = t_coords.dim_size(0);
         const int n_coords = t_coords.dim_size(1);
@@ -314,6 +325,7 @@ public:
 
                 t_coords.flat<float>().data(),
                 t_bin_idx.flat<int>().data(),
+                t_dim_bin_idx.flat<int>().data(),
 
                 t_bin_boundaries.flat<int>().data(),
                 t_n_bins.flat<int>().data(),
@@ -343,7 +355,7 @@ private:
 
 REGISTER_KERNEL_BUILDER(Name("BinnedSelectKnn").Device(DEVICE_CPU), BinnedSelectKnnOp<CPUDevice>);
 
-#ifdef GOOGLE_CUDASS
+#ifdef GOOGLE_CUDA
 extern template struct BinnedSelectKnnOpFunctor<GPUDevice, int>;
 REGISTER_KERNEL_BUILDER(Name("BinnedSelectKnn").Device(DEVICE_GPU), BinnedSelectKnnOp<GPUDevice>);
 #endif  
