@@ -869,6 +869,7 @@ class LLFullObjectCondensation(LossLayerBase):
         return self.softclip(tloss, 6.) 
     
     def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
+        return tf.reduce_sum(pred_id, axis=1, keepdims=True) #until bug is found
         depth = pred_id.shape[1]#add n_classes here?
         truthclass, mask = one_hot_encode_id(t_pid, depth) # V x Cl, V x 1
         mask = tf.cast(mask, dtype='float32')
