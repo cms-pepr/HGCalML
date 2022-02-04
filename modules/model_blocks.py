@@ -1,5 +1,5 @@
 
-from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply
+from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply, LeakyReLU
 from Layers import OnesLike, ExpMinusOne
 from DeepJetCore.DJCLayers import  StopGradient, SelectFeatures, ScalarMultiply
 
@@ -52,17 +52,18 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     energy_act=None
     if energy_factor:
         energy_act='relu'
+    energy_res_act = LeakyReLU(alpha=0.3)
     pred_energy = Dense(1,name = name_prefix+'_energy',
-                        bias_initializer='ones',#no effect if full scale, useful if corr factor
+                        bias_initializer='ones',
                         activation=energy_act
                         )(energy_proxy)
     pred_energy_low_quantile = Dense(1,name = name_prefix+'_energy_low_quantile',
-                        bias_initializer='ones',#no effect if full scale, useful if corr factor
-                        activation=energy_act
+                        bias_initializer='zeros',
+                        activation=energy_res_act
                         )(energy_proxy)
     pred_energy_high_quantile = Dense(1,name = name_prefix+'_energy_high_quantile',
-                        bias_initializer='ones',#no effect if full scale, useful if corr factor
-                        activation=energy_act
+                        bias_initializer='zeros',
+                        activation=energy_res_act
                         )(energy_proxy)
     if scale_energy:
         pred_energy = ScalarMultiply(10.)(pred_energy)

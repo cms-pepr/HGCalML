@@ -23,7 +23,7 @@ class HGCalAnalysisPlotter:
         self.eta_bins = np.array([1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0,2.25,2.5,2.75,3,3.1])
         self.pt_bins = np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80])
         self.energy_res_bins = np.linspace(-1,1,50)
-        self.energy_res_estimator_bins = np.linspace(0,0.3,50)
+        self.energy_res_estimator_bins = np.linspace(0.,0.75,50)
         self.quantiles_res_plot = [0.25,0.75]
 
     def set_energy_bins(self, energy_bins):
@@ -150,11 +150,22 @@ class HGCalAnalysisPlotter:
         filter_has_pred = self.showers_dataframe['pred_sid'].notnull()
         filter = np.logical_and(filter_has_truth, filter_has_pred)
         resolution_estimator = self.showers_dataframe['pred_energy_unc'][filter].to_numpy()
+        pred_energy_low_quantile = self.showers_dataframe['pred_energy_low_quantile'][filter].to_numpy()
+        pred_energy_high_quantile = self.showers_dataframe['pred_energy_high_quantile'][filter].to_numpy()
+
         true_resolution =  (self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy()\
                             -self.showers_dataframe['pred_energy'][filter].to_numpy())\
                             / self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy()
         res_estim_values, res_true_quantiles = utils.profile(true_resolution,resolution_estimator,bins=30,range=[0,0.3],moments=False,average=True,quantiles=np.array(self.quantiles_res_plot)) 
         res_true_values =  0.5*(res_true_quantiles[1]-res_true_quantiles[0])
+
+        #resolution low and high quantiles plot
+        plot = GeneralHistogramPlot(bins=np.linspace(-1.,1.0,50),x_label='Energy Resolution, Low Quantile', y_label='Counts', title='', histogram_log=False)
+        plot.add_raw_values(pred_energy_low_quantile)
+        self.pdf_resolution_estimator.savefig(plot.draw())
+        plot = GeneralHistogramPlot(bins=np.linspace(-1.,1.0,50),x_label='Energy Resolution, High Quantile', y_label='Counts', title='', histogram_log=False)
+        plot.add_raw_values(pred_energy_high_quantile)
+        self.pdf_resolution_estimator.savefig(plot.draw())
 
         #resolution estimator plot
         plot = GeneralHistogramPlot(bins=self.energy_res_estimator_bins,x_label='Energy Resolution Estimator', y_label='Counts', title='', histogram_log=False)
