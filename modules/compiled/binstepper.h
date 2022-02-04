@@ -13,6 +13,8 @@
 #include <initializer_list>
 
 
+#include "cuda_runtime.h"
+
 #define index_vector(x) _index_vector<int[x]>
 
 template<class T>
@@ -31,6 +33,15 @@ public:
     _index_vector<T> operator+(const _index_vector<T>& rhs){
         _index_vector<T> cp=*this;
         return cp+=rhs;
+    }
+    _index_vector<T> & operator -= (const _index_vector<T>& rhs){
+        for(int i=0;i<n_dim();i++)
+            indices_[i] -= rhs.indices_[i];
+        return *this;
+    }
+    _index_vector<T> operator-(const _index_vector<T>& rhs){
+        _index_vector<T> cp=*this;
+        return cp-=rhs;
     }
 
     int operator[](int i)const{
@@ -224,10 +235,19 @@ std::ostream &operator<<(std::ostream &s, _index_vector<T> const &iv) {
  *
  */
 
+class binstepper_base {
+public:
+    virtual ~binstepper_base(){}
+
+    virtual bool done()const=0;
+    virtual int step(bool& valid)=0;
+    virtual void set_distance(int d)=0;
+};
+
 #define binstepper(x) _binstepper<int[x]>
 
 template<class T>//this is getting ridiculous, should be made prettier in next round
-class _binstepper {
+class _binstepper: public binstepper_base {
 public:
 
     _binstepper(_index_vector<T> dims, int flat_offset):d_(1),dims_(dims){//start with 1 radius directly
@@ -250,13 +270,13 @@ public:
     int step(bool& valid){
         if(done()){
             valid=false;
-            return 0;
+            return -100;
         }
         nsteps_left_--;
 
         // w.r.t. own capacity
-        _index_vector<T> stepidx = visit_.read_flat(nsteps_left_,2*d_+1,nsteps_);
-        auto addidx = stepidx + d_offset_; //now these are index offsets
+        visit_.read_flat(nsteps_left_,2*d_+1,nsteps_);
+        auto addidx = visit_ + d_offset_; //now these are index offsets
 
         if(!addidx.at_least_one_abs_equals(d_)){
             return step(valid);
@@ -270,6 +290,7 @@ public:
 
         return out.to_flat(dims_);
     }
+
 
 private:
 

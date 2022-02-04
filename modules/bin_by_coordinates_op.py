@@ -40,7 +40,7 @@ def BinByCoordinates(coordinates, row_splits, bin_width):
     
     return _bin_by_coordinates.BinByCoordinates(coordinates=coordinates, 
                                                 row_splits=row_splits, 
-                                                bin_width=bin_width, nbins=nbins), nbins, bin_width
+                                                bin_width=bin_width, nbins=nbins), nbins
 
 @ops.RegisterGradient("BinByCoordinates")
 def _BinByCoordinatesGrad(op, idxout_grad):
