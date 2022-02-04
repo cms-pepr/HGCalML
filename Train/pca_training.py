@@ -58,8 +58,6 @@ make this about coordinate shifts
 '''
 
 
-
-
 def gravnet_model(Inputs,
                   td,
                   empty_pca=False,
@@ -202,7 +200,8 @@ def gravnet_model(Inputs,
                        name='gooey_pre_out')(x)
     x = Concatenate()([c_coords]+[x])
     
-    pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
+    pred_beta, pred_ccoords, pred_dist,\
+    pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
     pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['unproc_features'], 
                                                   n_ccoords=n_cluster_space_coordinates)
     
@@ -227,7 +226,8 @@ def gravnet_model(Inputs,
                                          name="FullOCLoss"
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
-         pred_energy_corr, pred_pos, pred_time, pred_id] +
+         pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile,
+         pred_pos, pred_time, pred_id] +
         [energy]+
         # truth information
          [pre_selection['t_idx'] ,
@@ -251,6 +251,8 @@ def gravnet_model(Inputs,
         pred_ccoords,
         pred_beta,
         pred_energy_corr,
+        pred_energy_low_quantile,
+        pred_energy_high_quantile,
         pred_pos,
         pred_time,
         pred_id,

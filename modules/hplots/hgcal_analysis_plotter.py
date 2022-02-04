@@ -7,6 +7,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from hplots.general_2d_plot_extensions_2 import EfficiencyFakeRatePlot, ResponsePlot, ResolutionPlot
 from hplots.general_hist_extensions import ResponseHisto, Multi4HistEnergy
+from hplots.general_hist_plot import GeneralHistogramPlot
+from hplots.general_graph_plot import GeneralGraphPlot
+import hplots.utils as utils
 
 def eta_transform(eta):
     eta = np.abs(eta)
@@ -19,6 +22,9 @@ class HGCalAnalysisPlotter:
         self.local_shower_fraction_bins = np.array([0, 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0])
         self.eta_bins = np.array([1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0,2.25,2.5,2.75,3,3.1])
         self.pt_bins = np.array([0, 1., 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,18, 20, 25, 30, 40, 50, 60, 70, 80])
+        self.energy_res_bins = np.linspace(-1,1,50)
+        self.energy_res_estimator_bins = np.linspace(0,0.3,50)
+        self.quantiles_res_plot = [0.25,0.75]
 
     def set_energy_bins(self, energy_bins):
         self.energy_bins = energy_bins
@@ -32,6 +38,8 @@ class HGCalAnalysisPlotter:
     def set_pt_bins(self, pt_bins):
         self.pt_bins = pt_bins
 
+    def set_quantiles_res_plot(self, quantiles):
+        self.quantiles_res_plot = quantiles
 
     def _make_pdfs(self, ):
         if os.path.exists(self.pdf_path):
@@ -48,6 +56,7 @@ class HGCalAnalysisPlotter:
         self.pdf_fake_rate = PdfPages(os.path.join(self.pdf_path,'fake_rate.pdf'))
         self.pdf_others = PdfPages(os.path.join(self.pdf_path,'others.pdf'))
         self.pdf_resolution = PdfPages(os.path.join(self.pdf_path,'resolution.pdf'))
+        self.pdf_resolution_estimator = PdfPages(os.path.join(self.pdf_path,'resolution_estimator.pdf'))
         self.pdf_response_histos = PdfPages(os.path.join(self.pdf_path,'response_histos.pdf'))
 
     def _close_pdfs(self):
@@ -57,6 +66,7 @@ class HGCalAnalysisPlotter:
         self.pdf_others.close()
         # self.pdf_pid.close()
         self.pdf_resolution.close()
+        self.pdf_resolution_estimator.close()
         self.pdf_response_histos.close()
         plt.close('all')
 
@@ -134,6 +144,33 @@ class HGCalAnalysisPlotter:
         plot.add_raw_values(self.showers_dataframe['truth_e_other'][filter].to_numpy(),
                             response)
         self.pdf_resolution.savefig(plot.draw())
+
+    def _make_resolution_estimator_plots(self):
+        filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull()
+        filter_has_pred = self.showers_dataframe['pred_sid'].notnull()
+        filter = np.logical_and(filter_has_truth, filter_has_pred)
+        resolution_estimator = self.showers_dataframe['pred_energy_unc'][filter].to_numpy()
+        true_resolution =  (self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy()\
+                            -self.showers_dataframe['pred_energy'][filter].to_numpy())\
+                            / self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy()
+        res_estim_values, res_true_quantiles = utils.profile(true_resolution,resolution_estimator,bins=30,range=[0,0.3],moments=False,average=True,quantiles=np.array(self.quantiles_res_plot)) 
+        res_true_values =  0.5*(res_true_quantiles[1]-res_true_quantiles[0])
+
+        #resolution estimator plot
+        plot = GeneralHistogramPlot(bins=self.energy_res_estimator_bins,x_label='Energy Resolution Estimator', y_label='Counts', title='', histogram_log=False)
+        plot.add_raw_values(resolution_estimator)
+        self.pdf_resolution_estimator.savefig(plot.draw())
+
+        #true resolution plot
+        plot = GeneralHistogramPlot(bins=self.energy_res_bins,x_label=r'Energy Resolution $\frac{E_{true}-E_{pred}}{E_{true}}$', y_label='Counts', title='', histogram_log=False)
+        plot.add_raw_values(true_resolution)
+        self.pdf_resolution_estimator.savefig(plot.draw())
+
+        #correlation plot between estimator and real resolution
+        plot = GeneralGraphPlot(x_label='Average Energy Resolution Estimator', y_label=r'Energy Resolution $\frac{E_{true}-E_{pred}}{E_{true}}$', title='', histogram_log=False)
+        plot.add_raw_values(res_estim_values,res_true_values)
+        self.pdf_resolution_estimator.savefig(plot.draw())
+
 
     def _make_response_plots(self):
         filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull()
@@ -262,6 +299,7 @@ class HGCalAnalysisPlotter:
         self._make_fake_rate_plots()
         self._make_response_plots()
         self._make_resolution_plots()
+        self._make_resolution_estimator_plots()
         self._make_response_histograms()
 
         self._close_pdfs()
