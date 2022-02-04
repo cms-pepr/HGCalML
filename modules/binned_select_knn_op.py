@@ -22,6 +22,7 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, bin_boundaries, n_bins, bin_widt
 
 def BinnedSelectKnn(K : int, coords, row_splits, bin_width=tf.constant([.5],dtype='float32'), tf_compatible=False):
     from bin_by_coordinates_op import BinByCoordinates
+    from index_replacer_op import IndexReplacer
     
     dbinning,binning,nper, nb = BinByCoordinates(coords, row_splits, bin_width)
     
@@ -39,7 +40,9 @@ def BinnedSelectKnn(K : int, coords, row_splits, bin_width=tf.constant([.5],dtyp
     
     
     #sort back dist
-    #dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, dist.shape)
+    idx = IndexReplacer(idx,sorting)
+    dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, dist.shape)
+    idx = tf.scatter_nd(sorting[...,tf.newaxis], idx, idx.shape)
     
     return idx, dist
 
