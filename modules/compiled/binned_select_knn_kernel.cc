@@ -69,7 +69,7 @@ static void set_defaults(
     }
 }
 
-
+template<int N_binning_dims>
 static void select_knn_kernel(
 
         const float * d_coord,
@@ -87,19 +87,16 @@ static void select_knn_kernel(
         const int n_vert,
         const int n_neigh,
         const int n_coords,
+        const int n_bin_dim,
 
-        const int n_bboundaries,
-
-        const bool approx=false) {
+        const int n_bboundaries) {
 
     //bin boundaries [i] [i+1] describe the scan ranges
 
 
     //really no buffering at all here
 
-
-
-    for(size_t i_v = 0; i_v < n_vert; i_v ++){//parallelise in cu
+    for(int i_v = 0; i_v < n_vert; i_v ++){//parallelise in cu
         if(i_v>=n_vert)
             return;//safe guard
 
@@ -111,40 +108,30 @@ static void select_knn_kernel(
         float maxdistsq=0;
 
         int total_subbins = 1;
-        for(int sbi=0;sbi<n_coords;sbi++)
+        for(int sbi=0;sbi<n_bin_dim;sbi++)
             total_subbins *= d_n_bins[sbi];
 
         int iv_bin = d_bin_idx[i_v];
         int gbin_offset = total_subbins*(iv_bin / total_subbins);
         int sb_flat_offset = iv_bin - gbin_offset;
 
-       // printf("considering vertex %d, bin %d, flat offset %d, global bin offset %d\n",i_v,iv_bin,sb_flat_offset,gbin_offset);
-
-        int cubeidxs[n_coords]; //temp
-        int glidxs[n_coords];
-        for(int ic=0;ic<n_coords;ic++){
-            glidxs[ic]=d_dim_bin_idx[I2D(i_v,ic+1,n_coords+1)];
-        }
-
-        binstepper stepper;
-        s_init(stepper,d_n_bins,n_coords);
+        //fill with number of bins and global bin index of the point
+        //(without row splits being the first dimension)
+        binstepper<N_binning_dims> stepper(d_n_bins, &d_dim_bin_idx[I2D(i_v,1,n_bin_dim+1)]);
 
         bool continue_search = true;
         int distance = 0;
         while(continue_search){
 
-            s_set_d(stepper,distance);
+            stepper.set_d(distance);
 
             continue_search=false;
 
             while(true){
-                int idx = s_step(stepper,cubeidxs,glidxs,d_n_bins);
+                int idx = stepper.step();
                 if(idx<0){//not valid
                     if(!continue_search && !distance){//this should not happen
                         printf("stopping search for vtx %d at distance %d\n",i_v,distance);
-                        cout_array(cubeidxs,n_coords);
-                        cout_array(glidxs,n_coords);
-                        cout_array(d_n_bins,n_coords);
                     }
                     break;
 
@@ -188,17 +175,39 @@ static void select_knn_kernel(
                 continue_search=true;//at least one was valid
 
             }
-            // debug: never stop unless all bins exhausted DEBUG FIXME
+
             if(nfilled==n_neigh && d_bin_width[0]*distance * d_bin_width[0]*distance > maxdistsq)
                 break;//done
-            if(approx)
-                break;
+
             distance++;
         }
 
     }//cu parallelised loop
 }
 
+
+
+//specify  dimensions
+template __global__ void select_knn_kernel<2>(
+        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
+        const int n_neigh,const int n_coords, const int n_bin_dim,
+        const int n_bboundaries);
+template __global__ void select_knn_kernel<3>(
+        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
+        const int n_neigh,const int n_coords, const int n_bin_dim,
+        const int n_bboundaries);
+template __global__ void select_knn_kernel<4>(
+        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
+        const int n_neigh,const int n_coords, const int n_bin_dim,
+        const int n_bboundaries);
+template __global__ void select_knn_kernel<5>(
+        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
+        const int n_neigh,const int n_coords, const int n_bin_dim,
+        const int n_bboundaries);
 
 
 template<typename dummy>
@@ -221,6 +230,7 @@ struct BinnedSelectKnnOpFunctor<CPUDevice, dummy> { //just because access needs 
             const int n_vert,
             const int n_neigh,
             const int n_coords,
+            const int n_bin_dim,
 
             const int n_bboundaries,
             bool tf_compat
@@ -232,27 +242,34 @@ struct BinnedSelectKnnOpFunctor<CPUDevice, dummy> { //just because access needs 
                 n_neigh);
         //really no buffering at all here
 
-        select_knn_kernel(
-                d_coord,
-                d_bin_idx,
-                d_dim_bin_idx,
+        if(n_bin_dim==2)
+            select_knn_kernel<2>(d_coord,d_bin_idx,d_dim_bin_idx,
+                d_bin_boundaries,d_n_bins,d_bin_width,
+                d_indices,d_dist,
+                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
 
-                d_bin_boundaries,
-                d_n_bins,
+        if(n_bin_dim==3)
+            select_knn_kernel<3>(d_coord,d_bin_idx,d_dim_bin_idx,
+                d_bin_boundaries,d_n_bins,d_bin_width,
+                d_indices,d_dist,
+                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
 
-                d_bin_width,
+        if(n_bin_dim==4)
+            select_knn_kernel<4>(d_coord,d_bin_idx,d_dim_bin_idx,
+                d_bin_boundaries,d_n_bins,d_bin_width,
+                d_indices,d_dist,
+                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
 
-                d_indices,
-                d_dist,
-
-                n_vert,
-                n_neigh,
-                n_coords,
-
-                n_bboundaries);
+        if(n_bin_dim==4)
+            select_knn_kernel<5>(d_coord,d_bin_idx,d_dim_bin_idx,
+                d_bin_boundaries,d_n_bins,d_bin_width,
+                d_indices,d_dist,
+                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
 
     }
 };
+
+
 
 
 
@@ -294,17 +311,21 @@ public:
         const int n_vert = t_coords.dim_size(0);
         const int n_coords = t_coords.dim_size(1);
         const int n_bboundaries = t_bin_boundaries.dim_size(0);
+        const int n_bin_dims_withrs = t_dim_bin_idx.dim_size(1);
+        const int n_bin_dims = t_n_bins.dim_size(0);
 
         //checks
 
-        OP_REQUIRES(context, n_coords<5,
-                    errors::InvalidArgument("BinnedSelectKnnOp expects less than 5 dimensions."));
+        OP_REQUIRES(context, n_bin_dims>1,
+                    errors::InvalidArgument("BinnedSelectKnnOp expects at least 2 binning dimensions."));
+        OP_REQUIRES(context, n_bin_dims<6,
+                    errors::InvalidArgument("BinnedSelectKnnOp expects maximum 5 binning dimensions."));
+        OP_REQUIRES(context, n_bin_dims_withrs-1 == n_bin_dims,
+                    errors::InvalidArgument("BinnedSelectKnnOp expects number of bin dimensions (including row splits) -1 == number of total bin dimensions."));
         OP_REQUIRES(context, n_coords>1,
                     errors::InvalidArgument("BinnedSelectKnnOp expects at least 2 dimensions."));
         OP_REQUIRES(context, n_vert == t_bin_idx.dim_size(0),
                     errors::InvalidArgument("BinnedSelectKnnOp expects same first dimension for bin idx and coordinates."));
-        OP_REQUIRES(context, n_coords == t_n_bins.dim_size(0),
-                    errors::InvalidArgument("BinnedSelectKnnOp expects same second dimension for n_bins and coordinates."));
         OP_REQUIRES(context, 1 == t_bin_width.dim_size(0),
                     errors::InvalidArgument("BinnedSelectKnnOp expects singleton (dim(1)) for bin width."));
 
@@ -338,6 +359,7 @@ public:
                 n_vert,
                 K_,
                 n_coords,
+                n_bin_dims,
 
                 n_bboundaries,
                 tf_compat_

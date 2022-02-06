@@ -20,12 +20,25 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_b
                                               )
 
 
-def BinnedSelectKnn(K : int, coords, row_splits, bin_width=tf.constant([.5],dtype='float32'), tf_compatible=False):
+def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf_compatible=False):
     from bin_by_coordinates_op import BinByCoordinates
     from index_replacer_op import IndexReplacer
     
-    dbinning,binning,nper, nb, bin_width = BinByCoordinates(coords, row_splits, bin_width, restrict_nbins=20)
     
+    # the following number of bins seems a good~ish estimate for good performance
+    # for homogenous point distributions but should be subject to more tests
+    if n_bins is None:
+        n_bins = tf.math.pow(tf.cast(row_splits[1],dtype='float32'),1/max_bin_dims)
+        n_bins = tf.cast(n_bins,dtype='int32')
+        n_bins = tf.where(n_bins<5,5,n_bins)
+    
+    bin_coords = coords
+    if bin_coords.shape[-1]>max_bin_dims:
+        bin_coords = bin_coords[:,:max_bin_dims]
+    
+    dbinning,binning, nb, bin_width, nper = BinByCoordinates(bin_coords, row_splits, n_bins=n_bins)
+    
+    #if this becomes a bottleneck one could play tricks since nper and bin numbers are predefined
     sorting = tf.argsort(binning)
     
     scoords = tf.gather_nd( coords, sorting[...,tf.newaxis])
@@ -44,7 +57,6 @@ def BinnedSelectKnn(K : int, coords, row_splits, bin_width=tf.constant([.5],dtyp
     idx = tf.scatter_nd(sorting[...,tf.newaxis], idx, idx.shape)
     
     return idx, dist
-
 
 
 _sknn_grad_op = tf.load_op_library('select_knn_grad.so')

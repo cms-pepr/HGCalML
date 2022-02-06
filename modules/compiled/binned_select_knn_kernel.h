@@ -25,6 +25,7 @@ struct BinnedSelectKnnOpFunctor {
             const int n_vert,
             const int n_neigh,
             const int n_coords,
+            const int n_bin_dim,
 
             const int n_bboundaries,
             bool tf_compat
