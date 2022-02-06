@@ -17,7 +17,7 @@ def createData(nvert,ncoords):
 
 for nvert in [1000,50000,200000,500000,1000000]:
     
-    coords, row_splits = createData(nvert,4)
+    coords, row_splits = createData(nvert,3)
     
     idx, dist = SelectKnn(4, coords, row_splits)
     print(idx)
