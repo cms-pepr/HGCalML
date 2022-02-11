@@ -28,10 +28,10 @@ def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf
     # the following number of bins seems a good~ish estimate for good performance
     # for homogenous point distributions but should be subject to more tests
     if n_bins is None:
-        n_bins = tf.math.pow(tf.cast(row_splits[1],dtype='float32'),1/max_bin_dims)
+        n_bins = tf.math.pow(tf.cast(row_splits[1],dtype='float32')/(K/32),1/max_bin_dims)
         n_bins = tf.cast(n_bins,dtype='int32')
         n_bins = tf.where(n_bins<5,5,n_bins)
-    
+        
     bin_coords = coords
     if bin_coords.shape[-1]>max_bin_dims:
         bin_coords = bin_coords[:,:max_bin_dims]
