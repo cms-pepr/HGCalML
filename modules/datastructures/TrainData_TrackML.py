@@ -137,7 +137,7 @@ class TrainData_TrackML(TrainData):
         '''
         return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1]
 
-    def createFromCsvsIntoStandard(self, filename_truth,filename_hits,filename_cells,filename_particles, outfilename):
+        def createFromCsvsIntoStandard(self, filename_truth,filename_hits,filename_cells,filename_particles, outfilename):
         df_hits = pd.read_csv(filename_hits, sep=',')
         df_truth = pd.read_csv(filename_truth, sep=',')
         df_particles = pd.read_csv(filename_particles, sep=',')
@@ -236,27 +236,27 @@ class TrainData_TrackML(TrainData):
         recHitTruthDepEnergy = recHitTruthDepEnergy.astype(np.float32)
         recHitTruthPID = zeroFeature
 
-        truth = np.stack([
-            np.array(recHitSimClusIdx, dtype='float32'),  # 0
-            recHitTruthEnergy,
-            recHitTruthX,
-            recHitTruthY,
-            recHitTruthZ,  # 4
-            zeroFeature,  # truthHitAssignedDirX,
-            zeroFeature,  # 6
-            zeroFeature,
-            recHitTruthEta,
-            recHitTruthPhi,
-            recHitTruthTime,  # 10
-            zeroFeature,
-            zeroFeature,
-            recHitTruthDepEnergy,  # 13
-            zeroFeature,  # 14
-            zeroFeature,  # 15
-            recHitTruthPID,  # 16 - 16+n_classes #won't be used anymore
-            zeroFeature,
-            zeroFeature], axis=1)
-        truth = truth.astype(np.float32)
+        # truth = np.stack([
+        #     np.array(recHitSimClusIdx, dtype='float32'),  # 0
+        #     recHitTruthEnergy,
+        #     recHitTruthX,
+        #     recHitTruthY,
+        #     recHitTruthZ,  # 4
+        #     zeroFeature,  # truthHitAssignedDirX,
+        #     zeroFeature,  # 6
+        #     zeroFeature,
+        #     recHitTruthEta,
+        #     recHitTruthPhi,
+        #     recHitTruthTime,  # 10
+        #     zeroFeature,
+        #     zeroFeature,
+        #     recHitTruthDepEnergy,  # 13
+        #     zeroFeature,  # 14
+        #     zeroFeature,  # 15
+        #     recHitTruthPID,  # 16 - 16+n_classes #won't be used anymore
+        #     zeroFeature,
+        #     zeroFeature], axis=1)
+        # truth = truth.astype(np.float32)
 
         features = np.stack([
             rechHitEnergy,
@@ -274,53 +274,34 @@ class TrainData_TrackML(TrainData):
 
         rs = np.array([0,len(features)], np.int64)
 
-        farr = SimpleArray(name="recHitFeatures")
-        farr.createFromNumpy(features, rs)
+        farr = SimpleArray(features, rs, name="recHitFeatures")
 
-        t_rest = SimpleArray(name="recHitTruth")
-        t_rest.createFromNumpy(truth, rs)
+        t_idxarr = SimpleArray(recHitSimClusIdx[..., np.newaxis], rs, name="t_idx")
 
-        # rs[1] = 100
+        t_energyarr = SimpleArray(recHitTruthEnergy[..., np.newaxis], rs, name="t_energy")
 
-        # print(rs, rs.dtype)
-        #
-        # 0/0
-
-        t_idxarr = SimpleArray(name="recHitTruthClusterIdx")
-        t_idxarr.createFromNumpy(recHitSimClusIdx[..., np.newaxis], rs)
-
-
-        t_energyarr = SimpleArray(name="recHitTruthEnergy")
-        t_energyarr.createFromNumpy(recHitTruthEnergy[..., np.newaxis], rs)
-
-        t_posarr = SimpleArray(name="recHitTruthPosition")
-        t_posarr.createFromNumpy(np.concatenate([recHitTruthX[..., np.newaxis], recHitTruthY[..., np.newaxis]], axis=-1), rs)
+        t_posarr = SimpleArray(np.concatenate([recHitTruthX[..., np.newaxis], recHitTruthY[..., np.newaxis]], axis=-1), rs, name="t_pos")
 
         # print(np.concatenate([recHitTruthX[..., np.newaxis], recHitTruthY[..., np.newaxis]], axis=-1).shape)
         # 0/0
 
-        t_time = SimpleArray(name="recHitTruthTime")
-        t_time.createFromNumpy(recHitTruthTime[..., np.newaxis], rs)
+        t_time = SimpleArray(recHitTruthTime[..., np.newaxis], rs, name="t_time")
 
-        t_pid = SimpleArray(name="recHitTruthID")
-        t_pid.createFromNumpy(recHitTruthPID[..., np.newaxis], rs)
+        t_pid = SimpleArray(recHitTruthPID[..., np.newaxis], rs, name="t_pid")
 
-        t_spectator = SimpleArray(
-            name="recHitSpectatorFlag")  # why do we have inconsistent namings, where is it needed? wrt. to truth array
-        t_spectator.createFromNumpy(zeroFeature[..., np.newaxis], rs)
+        t_spectator = SimpleArray(zeroFeature[..., np.newaxis], rs,
+            name="t_spectator")
 
-        t_fully_contained = SimpleArray(name="recHitFullyContainedFlag")
-        t_fully_contained.createFromNumpy((zeroFeature[..., np.newaxis]+1).astype(np.int32), rs)
+        t_fully_contained = SimpleArray((zeroFeature[..., np.newaxis]+1).astype(np.int32),rs,name="t_fully_contained")
 
-        # remaining truth is mostly for consistency in the plotting tools
-        t_rest = SimpleArray(name="recHitTruth")
-        t_rest.createFromNumpy(truth, rs)
+        # # remaining truth is mostly for consistency in the plotting tools
+        # t_rest = SimpleArray(truth, rs, name="recHitTruth")
 
         x,y,z = [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid, t_spectator, t_fully_contained], [], []
         self._store(x,y,z)
         self.writeToFile(outfilename)
-        print("Storing in new format")
-
+        print("Storing in new format", len(features), len(recHitSimClusIdx), rs)
+		
     def createFromCsvs(self, filename_truth,filename_hits,filename_cells,filename_particles, outfilename):
         df_hits = pd.read_csv(os.path.join('/Users/shahrukhqasim/Downloads/kaggle_trackml/train_100_events/', filename_hits), sep=',')
         df_truth = pd.read_csv(os.path.join('/Users/shahrukhqasim/Downloads/kaggle_trackml/train_100_events/', filename_truth), sep=',')
