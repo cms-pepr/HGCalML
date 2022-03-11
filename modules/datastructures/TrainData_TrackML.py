@@ -137,7 +137,7 @@ class TrainData_TrackML(TrainData):
         '''
         return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1]
 
-        def createFromCsvsIntoStandard(self, filename_truth,filename_hits,filename_cells,filename_particles, outfilename):
+    def createFromCsvsIntoStandard(self, filename_truth,filename_hits,filename_cells,filename_particles, outfilename):
         df_hits = pd.read_csv(filename_hits, sep=',')
         df_truth = pd.read_csv(filename_truth, sep=',')
         df_particles = pd.read_csv(filename_particles, sep=',')
