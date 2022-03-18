@@ -64,7 +64,7 @@ class TrainData_ReductionNanoML(TrainData):
             #print("Check keys : ", out.keys())
             rs_tmp = out['rs'].numpy()
             rs.append(rs_tmp[1])
-            if i == 1:
+            if i == 0:
                 feat_arr = out['features'].numpy()
                 t_idx_arr = out['t_idx'].numpy()
                 t_energy_arr = out['t_energy'].numpy()
