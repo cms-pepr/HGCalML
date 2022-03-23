@@ -908,7 +908,7 @@ class ApproxPCA(tf.keras.layers.Layer):
         self.nC = nC
         self.covshape = nF * nC * nC
         self.counter = 0
-        self.trainable = not self.empty
+        self.train_layers = not self.empty
 
         self.path = self.base_path + f"{str(self.nC)}D/{self.size}/"
         assert os.path.exists(self.path), f"path: {self.path} not found!"
@@ -926,7 +926,7 @@ class ApproxPCA(tf.keras.layers.Layer):
             self.model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
         if not self.empty:
             self.model.load_weights(self.path)
-            self.model.trainable = self.trainable
+            self.model.trainable = self.train_layers
         self.model.summary()
 
         for i in range(len(nodes) + 1):
@@ -940,10 +940,10 @@ class ApproxPCA(tf.keras.layers.Layer):
                 if i == len(nodes):
                     # Last entry, output layer, no activation
                     output_dim = self.nC**2
-                    layer = tf.keras.layers.Dense(units=output_dim, trainable=self.trainable)
+                    layer = tf.keras.layers.Dense(units=output_dim, trainable=self.train_layers)
                 else:
                     output_dim = nodes[i]
-                    layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=self.trainable)
+                    layer = tf.keras.layers.Dense(units=output_dim, activation='elu', trainable=self.train_layers)
                 layer.build(input_dim)
                 weights = self.model.layers[i+1].get_weights()[0]
                 bias = self.model.layers[i+1].get_weights()[1]
