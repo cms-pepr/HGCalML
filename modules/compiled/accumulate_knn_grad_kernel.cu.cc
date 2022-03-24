@@ -20,7 +20,7 @@ typedef Eigen::GpuDevice GPUDevice;
 
 __device__
 inline static float distanceWeight(const float& distsq){
-    return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
+    return distsq;
 }
 
 __global__
@@ -75,7 +75,7 @@ static void calc_feature_gradients(
 
         int m_v = d_neigh_indices[I2D(i_v, i_i_n, n_neigh)];
 
-        if(m_v<0) continue;
+        if(m_v<0 || m_v >= n_vert) continue;//safe guard
 
         const float distsq_im = d_distances[I2D(i_v,i_i_n,n_neigh)];
 
@@ -129,7 +129,9 @@ static void calc_distance_gradients(
         return;
 
     int l_g = d_neigh_indices[I2D(m,l,n_neigh)];
-    if(l_g  < 0 ){
+    if(l_g  < 0){
+        if(l_g >= n_vert)//safe guard
+            return;
         d_out_grad_distances[I2D(m,l,n_neigh)] = 0;
         return;
     }
@@ -137,8 +139,8 @@ static void calc_distance_gradients(
     float mean_contrib=0;
     float max_contrib=0;
 
-    float dml = d_distances[I2D(m,l,n_neigh)]; //dlm == dml
-    float expml = distanceWeight(dml);
+    //float dml = d_distances[I2D(m,l,n_neigh)]; //dlm == dml
+    float expml = 1.;//distanceWeight(dml);
 
     for(size_t b_f=0;b_f<n_feat;b_f++){
         __syncthreads();
@@ -168,8 +170,8 @@ static void calc_distance_gradients(
         }
 
     }
-    mean_contrib *= -ACCUMULATE_KNN_EXPONENT / (float)n_neigh;
-    max_contrib *= -ACCUMULATE_KNN_EXPONENT;
+    mean_contrib *= 1. / (float)n_neigh;
+    max_contrib *= 1.;
 
     d_out_grad_distances[I2D(m,l,n_neigh)] = mean_contrib + max_contrib;
 

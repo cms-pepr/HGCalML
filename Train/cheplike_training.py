@@ -67,10 +67,11 @@ batchnorm_options={
 
 #loss options:
 loss_options={
+    'energy_loss_weight': .5,
     'q_min': .1,
     'use_average_cc_pos': 0.1,
     'classification_loss_weight':1e-2,
-    'too_much_beta_scale': 1e-3
+    'too_much_beta_scale': 1e-3 
     }
 
 
@@ -156,7 +157,7 @@ def gravnet_model(Inputs,
         n_dims = 6
         #exchange information, create coordinates
         x = Concatenate()([c_coords,c_coords,c_coords,coords,x])
-        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=96,
+        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
@@ -226,13 +227,13 @@ def gravnet_model(Inputs,
     x = GooeyBatchNorm(**batchnorm_options,name='gooey_pre_out')(x)
     x = Concatenate()([c_coords]+[x])
     
-    pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
+    pred_beta, pred_ccoords, pred_dist,\
+    pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
     pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['unproc_features'], 
                                                   n_ccoords=n_cluster_space_coordinates)
     
     # loss
     pred_beta = LLFullObjectCondensation(scale=4.,
-                                         energy_loss_weight=1.,
                                          position_loss_weight=1e-5,
                                          timing_loss_weight=1e-5,
                                          beta_loss_scale=1.,
@@ -242,7 +243,8 @@ def gravnet_model(Inputs,
                                          **loss_options
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
-         pred_energy_corr, pred_pos, pred_time, pred_id] +
+         pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile,
+         pred_pos, pred_time, pred_id] +
         [energy]+
         # truth information
         [pre_selection['t_idx'] ,
@@ -266,6 +268,8 @@ def gravnet_model(Inputs,
         pred_ccoords,
         pred_beta,
         pred_energy_corr,
+        pred_energy_low_quantile,
+        pred_energy_high_quantile,
         pred_pos,
         pred_time,
         pred_id,

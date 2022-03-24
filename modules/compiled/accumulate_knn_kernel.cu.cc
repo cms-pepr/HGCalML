@@ -17,7 +17,7 @@ namespace functor {
 
 __device__
 static inline float distanceWeight(float distsq){
-    return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq); //uses cuda built in exp
+    return distsq;
 }
 
 __global__
@@ -56,7 +56,7 @@ void acc_knn_kernel(
 
         int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
 
-        if(nidx<0) continue;
+        if(nidx<0 || nidx>=n_vert) continue;//safe guard
 
         float vnf = d_feat[I2D(nidx,i_f,n_feat)];
         float distsq = d_distances[I2D(i_v,i_n,n_neigh)];

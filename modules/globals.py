@@ -79,3 +79,15 @@ class pu(_const):
     t_idx_offset = 1e7
 
 
+'''
+The only non-const global.
+In case TF gradients should be used instead of custom OP gradients.
+This will increase resource usage, and is mostly a panic switch 
+to make sure weird behaviour is not caused by the (well tested) custom gradients
+
+This needs to be imported and changed before any other import of ops
+'''
+    
+knn_ops_use_tf_gradients=False   
+acc_ops_use_tf_gradients=False   
+

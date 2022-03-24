@@ -1,6 +1,8 @@
 
 import tensorflow as tf
 from tensorflow.python.framework import ops
+import globals as gl
+from oc_helper_ops import SelectWithDefault
 
 '''
 Wrap the module
@@ -8,7 +10,7 @@ Wrap the module
 
 _sknn_op = tf.load_op_library('select_knn.so')
 
-def SelectKnn(K : int, coords,  row_splits, masking_values=None, threshold=0.5, tf_compatible=True, max_radius=-1.,
+def SelectKnn(K : int, coords,  row_splits, masking_values=None, threshold=0.5, tf_compatible=False, max_radius=-1.,
               mask_mode='none', mask_logic='xor'):
     '''
     returns indices and distances**2 , gradient for distances is implemented!
@@ -63,9 +65,26 @@ def SelectKnn(K : int, coords,  row_splits, masking_values=None, threshold=0.5, 
       20) and: selected  (one and the other) -> pooling (scat and acc don't matter)
     '''
     
-    return _sknn_op.SelectKnn(n_neighbours=K, tf_compatible=tf_compatible, max_radius=max_radius,
+    
+    idx,distsq = _sknn_op.SelectKnn(n_neighbours=K, tf_compatible=tf_compatible, max_radius=max_radius,
                                  coords=coords, row_splits=row_splits, mask=mask, mask_mode=op_mask_mode)
     
+    #safe guards
+    with tf.control_dependencies([
+        tf.assert_equal(tf.range(tf.shape(idx)[0]), idx[:,0]),
+        tf.assert_less(idx, row_splits[-1]),
+        tf.assert_less(-2, idx)
+        ]):
+    
+    
+        if not gl.knn_ops_use_tf_gradients:
+            return idx, distsq
+        
+        ncoords = SelectWithDefault(idx, coords, 0.)
+        distsq = (ncoords[:,0:1,:]-ncoords)**2
+        distsq = tf.reduce_sum(distsq,axis=2)
+        distsq = tf.where(idx<0, 0., distsq)
+        return idx, distsq
 
 
 

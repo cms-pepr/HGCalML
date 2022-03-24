@@ -1,6 +1,8 @@
 
 import tensorflow as tf
 from tensorflow.python.framework import ops
+import globals as gl
+from oc_helper_ops import SelectWithDefault
 
 '''
 Indices MUST be unique in each row.
@@ -13,7 +15,26 @@ _accknn_op = tf.load_op_library('accumulate_knn.so')
 _accknn_grad_op = tf.load_op_library('accumulate_knn_grad.so')
 
 
+def AccumulateLinKnn(weights,  features, indices, 
+                  mean_and_max=True):
+    '''
+    Accumulates neighbour features with linear weights (not exp(-w) as AccumulateKnn)
+    '''
+    if not gl.acc_ops_use_tf_gradients:
+        return _accknn_op.AccumulateKnn(distances=weights,  features=features, indices=indices,
+                                    n_moments=0, mean_and_max=mean_and_max)
     
+    
+    weights = tf.expand_dims(weights,axis=2) #V x K x 1
+    nfeat = SelectWithDefault(indices, features, 0.) # V x K x F
+    wfeat = weights*nfeat
+    fmean = tf.reduce_mean(wfeat,axis=1)# V x F
+    fmax = tf.reduce_max(wfeat,axis=1)
+    fout = fmean
+    if mean_and_max:
+        fout = tf.concat([fmean,fmax],axis=1)
+    return fout,None
+
 
 def AccumulateKnn(distances,  features, indices, 
                   mean_and_max=True):
@@ -27,12 +48,24 @@ def AccumulateKnn(distances,  features, indices,
     Other than the padding, the indices must be unique
     
     '''
+    #compatibility
+    distances = tf.exp(-distances)
+
     
-    return _accknn_op.AccumulateKnn(distances=distances,  features=features, indices=indices,
+    if not gl.acc_ops_use_tf_gradients:
+        return _accknn_op.AccumulateKnn(distances=distances,  features=features, indices=indices,
                                     n_moments=0, mean_and_max=mean_and_max)
     
-    #make sure shape is defined
     
+    distances = tf.expand_dims(distances,axis=2) #V x K x 1
+    nfeat = SelectWithDefault(indices, features, 0.) # V x K x F
+    wfeat = distances*nfeat
+    fmean = tf.reduce_mean(wfeat,axis=1)# V x F
+    fmax = tf.reduce_max(wfeat,axis=1)
+    fout = fmean
+    if mean_and_max:
+        fout = tf.concat([fmean,fmax],axis=1)
+    return fout,None
 
 #this refers to the OP called AccumulateKnn, not the function below
 @ops.RegisterGradient("AccumulateKnn")

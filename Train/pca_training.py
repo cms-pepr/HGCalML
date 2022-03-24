@@ -58,11 +58,9 @@ make this about coordinate shifts
 '''
 
 
-
-
 def gravnet_model(Inputs,
                   td,
-                  use_multigrav = True,
+                  empty_pca=False,
                   total_iterations=2,
                   variance_only=True,
                   viscosity=0.1,
@@ -135,9 +133,7 @@ def gravnet_model(Inputs,
                            record_metrics=True,fluidity_decay=fluidity_decay)(x)
         ### reduction done
         
-        n_dims = 6
-        if use_multigrav:
-            n_dims=3
+        n_dims = 3
         #exchange information, create coordinates
         x = Concatenate()([coords,coords,c_coords,x])
         x, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
@@ -159,20 +155,12 @@ def gravnet_model(Inputs,
         gndist = AverageDistanceRegularizer(strength=0.01,
                                             record_metrics=True
                                             )(gndist)
-        
+        x = Concatenate()([energy,x])
         x_pca = Dense(4,activation='relu')(x)#pca is expensive
-        x_pca = ApproxPCA(empty=False)([gncoords, gndist, x_pca, gnnidx])
+        x_pca = ApproxPCA(empty=empty_pca)([gncoords, gndist, x_pca, gnnidx])
         x = Concatenate()([x,x_pca])
                            
-        if use_multigrav:   
-            x = DistanceWeightedMessagePassing([32,32])([x,gnnidx,gndist])                
-            x_matt = Dense(16,activation='relu')(x)
-            x_matt = MultiAttentionGravNetAdd(5)([x,x_matt,gncoords,gnnidx])
-            x = Concatenate()([x,x_matt])
-            x = DistanceWeightedMessagePassing([32,32])([x,gnnidx,gndist])   
-            
-        else:
-            x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
+        x = DistanceWeightedMessagePassing([64,64,32,32,16,16])([x,gnnidx,gndist])
             
         x = GooeyBatchNorm(viscosity=viscosity, max_viscosity=max_viscosity, 
                            record_metrics=True,
@@ -212,7 +200,8 @@ def gravnet_model(Inputs,
                        name='gooey_pre_out')(x)
     x = Concatenate()([c_coords]+[x])
     
-    pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
+    pred_beta, pred_ccoords, pred_dist,\
+    pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
     pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['unproc_features'], 
                                                   n_ccoords=n_cluster_space_coordinates)
     
@@ -237,7 +226,8 @@ def gravnet_model(Inputs,
                                          name="FullOCLoss"
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
-         pred_energy_corr, pred_pos, pred_time, pred_id] +
+         pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile,
+         pred_pos, pred_time, pred_id] +
         [energy]+
         # truth information
          [pre_selection['t_idx'] ,
@@ -261,6 +251,8 @@ def gravnet_model(Inputs,
         pred_ccoords,
         pred_beta,
         pred_energy_corr,
+        pred_energy_low_quantile,
+        pred_energy_high_quantile,
         pred_pos,
         pred_time,
         pred_id,
@@ -379,7 +371,7 @@ cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 5e-5
-nbatch = 120000
+nbatch = 300000
 
 train.change_learning_rate(learningrate)
 
@@ -387,20 +379,5 @@ model, history = train.trainModel(nepochs=2,
                                   batchsize=nbatch,
                                   additional_callbacks=cb)
 
-print("freeze BN")
-# Note the submodel here its not just train.keras_model
-for l in train.keras_model.layers:
-    if 'gooey_batch_norm' in l.name:
-        l.max_viscosity = 0.99
-        l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
-    
-#also stop GravNetLLLocalClusterLoss* from being evaluated
-learningrate/=5.
-
-train.change_learning_rate(learningrate)
-
-model, history = train.trainModel(nepochs=121,
-                                  batchsize=nbatch,
-                                  additional_callbacks=cb)
 
 

@@ -1,6 +1,5 @@
 
 import tensorflow as tf
-from accknn_op import *
 import time
 import numpy as np
 import matplotlib

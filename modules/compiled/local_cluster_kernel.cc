@@ -66,19 +66,28 @@ struct LocalClusterOpFunctor<CPUDevice, dummy> {
 
                 d_out_selection_idxs[nseltotal] = i_v;
                 int v_gl_idx = d_global_idxs[i_v];
+                if(v_gl_idx >= n_in_vert){
+                    printf("local_cluster_kernel: invalid v_gl_idx\n");
+                    continue;
+                }
                 d_out_backgather[v_gl_idx] = nseltotal; //global self-associate
 
                 for(int i_n=0;i_n<n_neigh;i_n++){
 
                     int nidx = d_neigh_idxs[I2D(i_v,i_n,n_neigh)];
-                    if(nidx<0)//not a neighbour
+                    if(nidx<0 || nidx>=n_in_vert){//not a neighbour
+                        if(nidx>=n_in_vert)
+                            printf("local_cluster_kernel: invalid nidx\n");
                         continue;
+                    }
                     if(mask[nidx])
                         continue;//already used
 
                     //mask
                     mask[nidx]=1;
                     int ngl_idx = d_global_idxs[nidx];
+                    if(ngl_idx >= n_in_vert)
+                        printf("local_cluster_kernel: invalid ngl_idx\n");
                     d_out_backgather[ngl_idx] = nseltotal; //global associate
 
                     if(below_threshold)

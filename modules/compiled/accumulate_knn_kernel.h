@@ -2,7 +2,6 @@
 #ifndef ACCUMULATE_KNN_KERNEL_H
 #define ACCUMULATE_KNN_KERNEL_H
 
-#define ACCUMULATE_KNN_EXPONENT 1.
 
 namespace tensorflow {
 namespace functor {

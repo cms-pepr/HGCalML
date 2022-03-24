@@ -20,7 +20,7 @@ namespace functor {
 
 
 static inline float distanceWeight(const float& distsq){
-    return exp(-1.*ACCUMULATE_KNN_EXPONENT* distsq);
+    return distsq;
 }
 
 // CPU specialization

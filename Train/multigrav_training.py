@@ -71,7 +71,7 @@ batchnorm_options={
 loss_options={
     'q_min': 2.5,
     'alt_energy_weight': False,
-    'use_average_cc_pos': 0.99
+    'use_average_cc_pos': 0.99  
     }
 
 
@@ -201,7 +201,8 @@ def gravnet_model(Inputs,
     x = GooeyBatchNorm(**batchnorm_options)(x)
     x = Concatenate()([c_coords]+[x])
     
-    pred_beta, pred_ccoords, pred_dist, pred_energy_corr, \
+    pred_beta, pred_ccoords, pred_dist,\
+    pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
     pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['unproc_features'], 
                                                   n_ccoords=n_cluster_space_coordinates)
     
@@ -220,7 +221,8 @@ def gravnet_model(Inputs,
                                          **loss_options
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
-         pred_energy_corr, pred_pos, pred_time, pred_id] +
+         pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile,
+         pred_pos, pred_time, pred_id] +
         [energy]+
         # truth information
          [pre_selection['t_idx'] ,
@@ -244,6 +246,8 @@ def gravnet_model(Inputs,
         pred_ccoords,
         pred_beta,
         pred_energy_corr,
+        pred_energy_low_quantile,
+        pred_energy_high_quantile,
         pred_pos,
         pred_time,
         pred_id,

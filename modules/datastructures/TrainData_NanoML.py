@@ -5,7 +5,7 @@ import awkward as ak1
 import pickle
 import gzip
 import numpy as np
-import mgzip
+import gzip
 import pandas as pd
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import cdist
@@ -499,7 +499,10 @@ class RecHitCollection(CollectionBase):
         #remove spectator flag for noise
         recHitSpectatorFlag = ak1.where(recHitSimClusIdx<0 , ak1.zeros_like(recHitSpectatorFlag), recHitSpectatorFlag)#this doesn't work for some reason!
         
-        self.truth={}
+        #DEBUG!!!
+        #ticlidx = self._readSplitAndExpand(tree,'RecHitHGC_TICLCandIdx')
+        
+        self.truth={}     #DEBUG!!!
         self.truth['t_idx'] = self._expand(recHitSimClusIdx)# now expand to a trailing dimension
         self.truth['t_energy'] = recHitTruthEnergy
         self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
@@ -868,7 +871,7 @@ class TrainData_NanoML(TrainData):
         if not str(outfilename).endswith('.bin.gz'):
             outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
 
-        with mgzip.open(outfilename, 'wb', thread=8, blocksize=2*10**7) as f2:
+        with gzip.open(outfilename, 'wb') as f2:
             pickle.dump(dumping_data, f2)
 
     def readPredicted(self, predfile):
