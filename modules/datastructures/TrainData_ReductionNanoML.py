@@ -24,17 +24,35 @@ class TrainData_ReductionNanoML(TrainData):
         TrainData.__init__(self)
         self.include_tracks = False
         self.cp_plus_pu_mode = False
-
+        #reduction model used
+        self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
+        print("Preselection model used : ", self.path_to_pretrained)
+        #mo = load_model(self.path_to_pretrained)
+        #del mo
 
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename=""):
 
         #reduction model used
-        path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
-        model = load_model(path_to_pretrained)
+        #path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
+        model = load_model(self.path_to_pretrained)
+        #model = self.model
+        #print("Check Loaded preselection model : ", self.path_to_pretrained)
+
+
+        #outdict = model.output_shape
+        list_outkeys = list(model.output_shape.keys())
+        for l in model.output_shape.keys():
+            if 'orig_' in l:
+                list_outkeys.remove(l)
+            elif l == "rs":
+                list_outkeys.remove(l)
+
+        #print("Otput keys considered : ", list_outkeys)
 
         td = TrainData_NanoML()
         tdclass = TrainData_NanoML
         td.readFromFile(filename)
+        print("Reading from file : ", filename)
 
         gen = TrainDataGenerator()
         gen.setBatchSize(1)
@@ -43,49 +61,24 @@ class TrainData_ReductionNanoML(TrainData):
         gen.setBuffer(td)
 
         nevents = gen.getNBatches()
-        #generator = gen.feedNumpyData()
+        print("Nevents : ", nevents)
 
         rs = []
+        newout = {}
         rs.append(0)
-        feat_arr = []
-        t_idx_arr = []
-        t_energy_arr = []
-        t_pos_arr = []
-        t_time_arr = []
-        t_pid_arr = []
-        t_spectator_arr = []
-        t_fully_contained_arr = []
-        t_rec_energy_arr = []
-        t_is_unique_arr = []
 
+        #for i in range(5):
         for i in range(nevents):
-            #data_in = next(generator)
             out = model(next(gen.feedNumpyData()))
             #print("Check keys : ", out.keys())
             rs_tmp = out['rs'].numpy()
             rs.append(rs_tmp[1])
             if i == 0:
-                feat_arr = out['features'].numpy()
-                t_idx_arr = out['t_idx'].numpy()
-                t_energy_arr = out['t_energy'].numpy()
-                t_pos_arr = out['t_pos'].numpy()
-                t_time_arr = out['t_time'].numpy()
-                t_pid_arr = out['t_pid'].numpy()
-                t_spectator_arr = out['t_spectator'].numpy()
-                t_fully_contained_arr = out['t_fully_contained'].numpy()
-                t_rec_energy_arr = out['t_rec_energy'].numpy()
-                t_is_unique_arr = out['t_is_unique'].numpy()
+                for k in list_outkeys:
+                    newout[k] = out[k].numpy()
             else:
-                 feat_arr = np.concatenate((feat_arr, out['features'].numpy()), axis=0)
-                 t_idx_arr = np.concatenate((t_idx_arr, out['t_idx'].numpy()), axis=0)
-                 t_energy_arr = np.concatenate((t_energy_arr,out['t_energy'].numpy()), axis=0)
-                 t_pos_arr = np.concatenate((t_pos_arr,out['t_pos'].numpy()), axis=0)
-                 t_time_arr = np.concatenate((t_time_arr,out['t_time'].numpy()), axis=0)
-                 t_pid_arr = np.concatenate((t_pid_arr,out['t_pid'].numpy()), axis=0)
-                 t_spectator_arr = np.concatenate((t_spectator_arr,out['t_spectator'].numpy()), axis=0)
-                 t_fully_contained_arr = np.concatenate((t_fully_contained_arr,out['t_fully_contained'].numpy()), axis=0)
-                 t_rec_energy_arr = np.concatenate((t_rec_energy_arr,out['t_rec_energy'].numpy()), axis=0)
-                 t_is_unique_arr = np.concatenate((t_is_unique_arr,out['t_is_unique'].numpy()), axis=0)
+                for k in list_outkeys:
+                    newout[k] = np.concatenate((newout[k], out[k].numpy()), axis=0)
 
 
         #td.clear()
@@ -96,32 +89,17 @@ class TrainData_ReductionNanoML(TrainData):
         rs = np.array(rs, dtype='int64')
         rs = np.cumsum(rs,axis=0)
 
-        feat_arr = np.array(feat_arr, dtype='float32')
-        farr = SimpleArray(feat_arr,rs,name="recHitFeatures")
+        outSA = {}
+        for k2 in list_outkeys:
+            nameSA = k2
+            if nameSA == "features":
+                nameSA = "recHitFeatures"
+            outSA[k2] = SimpleArray(newout[k2],rs,name=nameSA)
 
-        t_idx_arr = np.array(t_idx_arr, dtype='int32')
-        t_idx = SimpleArray(t_idx_arr,rs,name="t_idx")
-        t_energy_arr = np.array(t_energy_arr, dtype='float32')
-        t_energy = SimpleArray(t_energy_arr,rs,name="t_energy")
-        t_pos_arr = np.array(t_pos_arr, dtype='float32')
-        t_pos = SimpleArray(t_pos_arr,rs,name="t_pos")
-        t_time_arr = np.array(t_time_arr, dtype='float32')
-        t_time = SimpleArray(t_time_arr,rs,name="t_time")
-        t_pid_arr = np.array(t_pid_arr, dtype='int32')
-        t_pid = SimpleArray(t_pid_arr,rs,name="t_pid")
-        t_spectator_arr = np.array(t_spectator_arr, dtype='float32')
-        t_spectator = SimpleArray(t_spectator_arr,rs,name="t_spectator")
-        t_fully_contained_arr = np.array(t_fully_contained_arr, dtype='float32')
-        t_fully_contained = SimpleArray(t_fully_contained_arr,rs,name="t_fully_contained")
-        t_rec_energy_arr = np.array(t_rec_energy_arr, dtype='float32')
-        t_rec_energy = SimpleArray(t_rec_energy_arr,rs,name="t_rec_energy")
-        t_is_unique_arr = np.array(t_is_unique_arr, dtype='int32')
-        t_is_unique = SimpleArray(t_is_unique_arr,rs,name="t_is_unique")
-
-        return [farr,
-                t_idx, t_energy, t_pos, t_time,
-                t_pid, t_spectator, t_fully_contained,
-                t_rec_energy, t_is_unique],[], []
+        return [outSA["features"],
+                outSA["t_idx"], outSA["t_energy"], outSA["t_pos"], outSA["t_time"],
+                outSA["t_pid"], outSA["t_spectator"], outSA["t_fully_contained"],
+                outSA["t_rec_energy"], outSA["t_is_unique"]],[], []
 
 
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
