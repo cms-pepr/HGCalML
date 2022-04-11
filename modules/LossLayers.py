@@ -1,5 +1,5 @@
 import tensorflow as tf
-from object_condensation import oc_loss
+from object_condensation import oc_loss, OC_loss
 from oc_helper_ops import SelectWithDefault
 from oc_helper_ops import CreateMidx
 import time
@@ -39,6 +39,49 @@ def huber(x, d):
 def quantile(x,tau):
     return tf.maximum(tau*x, (tau-1)*x)
     
+    
+class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
+    '''
+    Sets the truth to noise spectators if it is ambiguous for a group of neighbours
+    
+    Technically, this is not a loss layer, but as it affects the truth
+    this seems to be the most reasonable place to put it.
+    
+    Inputs: 
+     - neighbour indicies (selected assuming the belong to the same object)
+     - spectator weights
+     - truth indices
+     
+    Outputs:
+     - adapted spectator weights
+     - adapted truth indices
+    '''
+    def __init__(self,**kwargs):
+        super(AmbiguousTruthToNoiseSpectator, self).__init__(**kwargs)
+        self.record_metrics=True #DEBUG
+        
+    def call(self, inputs):
+        assert len(inputs)==3
+        padding_default = -10000
+        
+        nidx, sw, tidx = inputs
+        n_tidx = SelectWithDefault(nidx, tidx, padding_default)
+        
+        is_same = tf.logical_or(n_tidx[:,0:1]==n_tidx, n_tidx==padding_default)
+        is_same = tf.reduce_all(is_same,axis=1)
+        
+        sw = tf.where(is_same, sw, 1.)#set ambiguous to spectator
+        tidx = tf.where(is_same, tidx, -1)#set ambiguous to noise
+        
+        is_same_f = tf.cast(is_same, dtype='float32')
+        same_f = tf.reduce_sum(is_same_f)/tf.reduce_sum(tf.ones_like(is_same_f))
+        #metrics
+        self.add_prompt_metric(same_f, 
+                               self.name+'_non_amb_truth_fraction')
+        
+        return sw, tidx
+        
+        
 
 class LossLayerBase(LayerWithMetrics):
     """Base class for HGCalML loss layers.
@@ -119,7 +162,7 @@ class LossLayerBase(LayerWithMetrics):
             batchtime = now - prev            #round((time.time()-self.time)*1000.)/1000.
             tf.keras.backend.update(self.time,now)
             if self.print_batch_time:
-                print(self.name,'batch time',batchtime*1000.,'ms')
+                tf.print(self.name,'batch time',batchtime*1000.,'ms')
             self.add_prompt_metric(batchtime, self.name+'_batch_time')
             
 
@@ -721,6 +764,16 @@ class LLFullObjectCondensation(LossLayerBase):
         
         if huber_energy_scale>0 and alt_energy_loss:
             raise ValueError("huber_energy_scale>0 and alt_energy_loss exclude each other")
+        
+        #configuration here, no need for all that stuff below 
+        #as far as the OC part is concerned (still config for payload though)
+        self.oc_loss_object = OC_loss(
+            q_min= q_min,
+                 s_b=s_b,
+                 use_mean_x=use_average_cc_pos,
+                 spect_supp=1.
+            )
+        #### the latter needs to be cleaned up
 
         self.energy_loss_weight = energy_loss_weight
         self.use_energy_weights = use_energy_weights
@@ -965,35 +1018,44 @@ class LLFullObjectCondensation(LossLayerBase):
              tf.assert_equal(is_spectator<=1., True),
              tf.assert_equal(is_spectator>=0., True)]):
             
-            att, rep, noise, min_b, payload, exceed_beta = oc_loss(
-                                           x=pred_ccoords,
-                                           beta=pred_beta,
-                                           truth_indices=t_idx,
-                                           row_splits=rowsplits,
-                                           is_spectator=is_spectator,
-                                           payload_loss=full_payload,
-                                           Q_MIN=q_min,
-                                           S_B=self.s_b,
-                                           noise_q_min = self.noise_q_min,
-                                           distance_scale=pred_distscale,
-                                           energyweights=energy_weights,
-                                           use_average_cc_pos=self.use_average_cc_pos,
-                                           payload_rel_threshold=self.payload_rel_threshold,
-                                           cont_beta_loss=self.cont_beta_loss,
-                                           prob_repulsion=self.prob_repulsion,
-                                           phase_transition=self.phase_transition>0. ,
-                                           phase_transition_double_weight = self.phase_transition_double_weight,
-                                           #removed
-                                           #alt_potential_norm=self.alt_potential_norm,
-                                           payload_beta_gradient_damping_strength=self.payload_beta_gradient_damping_strength,
-                                           kalpha_damping_strength = self.kalpha_damping_strength,
-                                           beta_gradient_damping=self.beta_gradient_damping,
-                                           repulsion_q_min=self.repulsion_q_min,
-                                           super_repulsion=self.super_repulsion,
-                                           super_attraction = self.super_attraction,
-                                           div_repulsion = self.div_repulsion,
-                                           dynamic_payload_scaling_onset=self.dynamic_payload_scaling_onset
-                                           )
+            #att, rep, noise, min_b, payload, exceed_beta = oc_loss(
+            #                               x=pred_ccoords,
+            #                               beta=pred_beta,
+            #                               truth_indices=t_idx,
+            #                               row_splits=rowsplits,
+            #                               is_spectator=is_spectator,
+            #                               payload_loss=full_payload,
+            #                               Q_MIN=q_min,
+            #                               S_B=self.s_b,
+            #                               noise_q_min = self.noise_q_min,
+            #                               distance_scale=pred_distscale,
+            #                               energyweights=energy_weights,
+            #                               use_average_cc_pos=self.use_average_cc_pos,
+            #                               payload_rel_threshold=self.payload_rel_threshold,
+            #                               cont_beta_loss=self.cont_beta_loss,
+            #                               prob_repulsion=self.prob_repulsion,
+            #                               phase_transition=self.phase_transition>0. ,
+            #                               phase_transition_double_weight = self.phase_transition_double_weight,
+            #                               #removed
+            #                               #alt_potential_norm=self.alt_potential_norm,
+            #                               payload_beta_gradient_damping_strength=self.payload_beta_gradient_damping_strength,
+            #                               kalpha_damping_strength = self.kalpha_damping_strength,
+            #                               beta_gradient_damping=self.beta_gradient_damping,
+            #                               repulsion_q_min=self.repulsion_q_min,
+            #                               super_repulsion=self.super_repulsion,
+            #                               super_attraction = self.super_attraction,
+            #                               div_repulsion = self.div_repulsion,
+            #                               dynamic_payload_scaling_onset=self.dynamic_payload_scaling_onset
+            #                               )
+            att, rep, noise, min_b, payload, exceed_beta = self.oc_loss_object(
+                beta=pred_beta,
+                x=pred_ccoords,
+                d=pred_distscale,
+                pll=full_payload,
+                truth_idx=t_idx,
+                object_weight=energy_weights,
+                is_spectator_weight=is_spectator,
+                rs=rowsplits)
 
         self.add_prompt_metric(att+rep,self.name+'_dynamic_payload_scaling')
         
@@ -1004,8 +1066,8 @@ class LLFullObjectCondensation(LossLayerBase):
         exceed_beta *= self.too_much_beta_scale
 
         #unscaled should be well in range < 1.
-        att = self.softclip(att, self.potential_scaling) 
-        rep = self.softclip(rep, self.potential_scaling * self.repulsion_scaling) 
+        #att = self.softclip(att, self.potential_scaling) 
+        #rep = self.softclip(rep, self.potential_scaling * self.repulsion_scaling) 
         #min_b = self.softclip(min_b, 5.)  # not needed, limited anyway
         #noise = self.softclip(noise, 5.)  # not needed limited to 1 anyway
         

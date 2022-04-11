@@ -4,6 +4,7 @@ import yaml
 import os
 from select_knn_op import SelectKnn
 from slicing_knn_op import SlicingKnn
+from binned_select_knn_op import BinnedSelectKnn
 from select_mod_knn_op import SelectModKnn
 from accknn_op import AccumulateKnn, AccumulateLinKnn
 from local_cluster_op import LocalCluster
@@ -1187,6 +1188,38 @@ class RecalcDistances(tf.keras.layers.Layer):
         ncoords = SelectWithDefault(nidx, coords, 0.) # V x K x C
         dist = tf.reduce_sum( (ncoords - tf.expand_dims(coords,axis=1))**2, axis=2 )
         return dist
+
+class SelectFromIndicesWithPad(tf.keras.layers.Layer):
+    
+    '''
+    SelectWithDefault wrapper
+    
+    inputs: 
+    - indices
+    - to be selected
+    
+    options:
+    - default value
+    '''
+    def __init__(self, default = 0., **kwargs):  
+        self.default = default
+        if 'dynamic' in kwargs:
+            super(SelectFromIndicesWithPad, self).__init__(**kwargs)
+        else:
+            super(SelectFromIndicesWithPad, self).__init__(dynamic=False,**kwargs)
+            
+    def get_config(self):
+        config = {'default': self.default}
+        base_config = super(SelectFromIndicesWithPad, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):# 
+        return input_shapes[0][:-1]+input_shapes[1][-1:]
+    
+    def call(self, inputs):
+        assert len(inputs)==2
+        out = SelectWithDefault(inputs[0], inputs[1], self.default)
+        return out
     
     
 class SelectFromIndices(tf.keras.layers.Layer): 
@@ -1395,7 +1428,7 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
 class KNN(LayerWithMetrics):
     def __init__(self,K: int, radius=-1., 
                  use_approximate_knn=True,
-                 min_bins=[3,3],
+                 min_bins=None,
                  **kwargs):
         """
         
@@ -1452,7 +1485,8 @@ class KNN(LayerWithMetrics):
                                   return_n_bins=True,
                                   min_bins = min_bins)
         else:
-            idx,dist = SelectKnn(K+1, coordinates,  row_splits,
+            idx,dist = BinnedSelectKnn(K+1, coordinates,  row_splits,
+                                       n_bins=min_bins,
                                  max_radius= radius, tf_compatible=False)
 
         idx = tf.reshape(idx, [-1,K+1])
@@ -2317,7 +2351,8 @@ class RaggedGravNet(LayerWithMetrics):
                                   return_n_bins=True)
             self.add_prompt_metric(nbins, self.name+'_slicing_knn_bins')
         else:
-            idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+            #BinnedSelectKnn(K, coords, row_splits, n_bins, max_bin_dims, tf_compatible, max_radius)
+            idx,dist = BinnedSelectKnn(self.n_neighbours, coordinates,  row_splits,
                                  max_radius= -1.0, tf_compatible=False)
         idx = tf.reshape(idx, [-1, self.n_neighbours])
         dist = tf.reshape(dist, [-1, self.n_neighbours])

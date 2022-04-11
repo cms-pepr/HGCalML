@@ -145,10 +145,11 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                  name=name+'plt1')([coords,energy,t_idx,rs])
     
     
-    nidx,dist = KNN(K=32,radius='dynamic', #use dynamic feature # 24
+    nidx,dist = KNN(K=32,#radius='dynamic', #use dynamic feature # 24
                     record_metrics=record_metrics,
+                    use_approximate_knn=False,
                     name=name+'_knn',
-                    min_bins=[7,7]
+                    #min_bins=10,#hard code it here, to be optimised
                     )([coords,rs])#all distance weighted afterwards
     
     x = Dense(32,activation='relu',name=name+'dense1',trainable=trainable)(x)
@@ -189,7 +190,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
     return coords,nidx,dist,x
     
     
-def reduce_indices(x,dist, nidx, rs, t_idx, 
+def reduce_indices(x,dist, nidx, rs, t_idx, spec_w,
            threshold = 0.5,
            name='reduce_indices',
            trainable=True,
@@ -205,7 +206,7 @@ def reduce_indices(x,dist, nidx, rs, t_idx,
     from GravNetLayersRagged import EdgeSelector, GroupScoreFromEdgeScores
     from GravNetLayersRagged import NeighbourGroups
     
-    from LossLayers import LLEdgeClassifier, LLNeighbourhoodClassifier
+    from LossLayers import LLEdgeClassifier, LLNeighbourhoodClassifier, AmbiguousTruthToNoiseSpectator
     
     goodneighbours = x
     groupthreshold=threshold
@@ -236,6 +237,12 @@ def reduce_indices(x,dist, nidx, rs, t_idx,
             threshold=threshold
             )([s_e,nidx])
             
+            
+        #truth layer 
+        # spect_weight, t_idx = AmbiguousTruthToNoiseSpectator()([nidx,spect_weight,t_idx])
+            
+        spec_w, t_idx = AmbiguousTruthToNoiseSpectator(record_metrics=record_metrics)([nidx, spec_w, t_idx])
+            
         #for nidx, the -1 padding is broken here, but it's ok 
         #because it gets reintroducted with NeighbourGroups
         #
@@ -264,7 +271,7 @@ def reduce_indices(x,dist, nidx, rs, t_idx,
         )([goodneighbours, nidx, rs])
     
     
-    return  gnidx, gsel, bg, srs
+    return  gnidx, gsel, bg, srs, t_idx, spec_w
 
 def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight, 
            threshold = 0.5,
@@ -277,7 +284,7 @@ def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight,
     
     from GravNetLayersRagged import SelectFromIndices, AccumulateNeighbours
     
-    gnidx, gsel, bg, srs = reduce_indices(x,dist, nidx, rs, t_idx, 
+    gnidx, gsel, bg, srs, t_idx, t_spectator_weight = reduce_indices(x,dist, nidx, rs, t_idx,t_spectator_weight, 
            threshold = threshold,
            name=name+'_indices',
            trainable=trainable,
@@ -331,7 +338,7 @@ def pre_selection_model_full(orig_inputs,
     
     rs = CastRowSplits()(orig_inputs['row_splits'])
     t_idx = orig_inputs['t_idx']
-    
+    t_spec_w =  orig_inputs['t_spectator_weight']
         
 
     orig_processed_features = ProcessFeatures()(orig_inputs['features'])
@@ -377,7 +384,7 @@ def pre_selection_model_full(orig_inputs,
     coords = LLClusterCoordinates(
         print_loss = trainable and print_info,
         active = trainable,
-        print_batch_time=False,
+        print_batch_time=False, #DEBUG
         record_metrics = record_metrics,
         scale=5.
         )([coords,t_idx,rs])
@@ -397,13 +404,13 @@ def pre_selection_model_full(orig_inputs,
     run a full reduction block
     return the noise score in addition - don't select yet
     
-    do not cluster tracks with anything here
+    do not cluster tracks with anything here; this needs to be revised as reduce_indices will change the truth
     '''
     
-    cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
+    #cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
     
     unred_rs = rs
-    gnidx, gsel, group_backgather, rs = reduce_indices(x,dist, nidx, rs, cluster_tidx, 
+    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w  = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w,
            threshold = reduction_threshold,
            print_reduction=print_info,
            trainable=trainable,
@@ -456,6 +463,10 @@ def pre_selection_model_full(orig_inputs,
     for k in orig_inputs.keys():
         if 't_' == k[0:2]:
             out[k] = SelectFromIndices()([gsel,orig_inputs[k]])
+            
+    #t_idx and spec weights have been adapted
+    out['t_idx'] = SelectFromIndices()([gsel,t_idx])
+    out['t_spectator_weight'] = SelectFromIndices()([gsel,t_spec_w])
     
     #debug
     if debugplots_after>0:
@@ -576,6 +587,7 @@ def pre_selection_staged(indict,
     
     '''
     
+    
     from GravNetLayersRagged import RaggedGravNet, DistanceWeightedMessagePassing, ElementScaling
     from GravNetLayersRagged import SelectFromIndices, GooeyBatchNorm, MaskTracksAsNoise
     from GravNetLayersRagged import AccumulateNeighbours, KNN, MultiAttentionGravNetAdd
@@ -588,6 +600,7 @@ def pre_selection_staged(indict,
     #assume the inputs are normalised
     rs = indict['rs']
     t_idx = indict['t_idx']
+    t_spec_w =  indict['t_spectator_weight']
     
     
     track_charge = SelectFeatures(2,3)(indict['unproc_features']) #zero for calo hits
@@ -605,7 +618,7 @@ def pre_selection_staged(indict,
                                                  coord_initialiser_noise=1e-5,
                                                  feature_activation=None,
                                                  record_metrics=record_metrics,
-                                                 use_approximate_knn=True,
+                                                 #use_approximate_knn=True,
                                                  use_dynamic_knn=True,
                                                  trainable=trainable,
                                                  name = name+'_gn1'
@@ -650,10 +663,11 @@ def pre_selection_staged(indict,
                                          indict['energy'],
                                          t_idx,rs])
                                     
-    nidx,dist = KNN(K=16,radius='dynamic', #use dynamic feature
+    nidx,dist = KNN(K=8,#radius='dynamic', #use dynamic feature
                 record_metrics=record_metrics,
                 name=name+'_knn',
-                min_bins=[7,7] #this can be fine grained
+                use_approximate_knn=False,
+                #min_bins=[7,7] #this can be fine grained
                 )([coords,rs])
     
                                        
@@ -667,20 +681,20 @@ def pre_selection_staged(indict,
         
     
     
-    coords = LLFillSpace(
-        active = trainable,
-        record_metrics = record_metrics,
-        scale=0.025,#just mild
-        runevery=-1, #give it a kick only every now and then - hat's enough
-        )([coords,rs])
+    #coords = LLFillSpace(
+    #    active = trainable,
+    #    record_metrics = record_metrics,
+    #    scale=0.025,#just mild
+    #    runevery=-1, #give it a kick only every now and then - hat's enough
+    #    )([coords,rs])
         
         
         
     unred_rs=rs
     
-    cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
+    #cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
     
-    gnidx, gsel, group_backgather, rs = reduce_indices(x,dist, nidx, rs, cluster_tidx, 
+    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w,
            threshold = reduction_threshold,
            print_reduction=print_info,
            trainable=trainable,
@@ -734,6 +748,10 @@ def pre_selection_staged(indict,
     for k in indict.keys():
         if 't_' == k[0:2]:
             out[k] = SelectFromIndices()([gsel,indict[k]])
+            
+            
+    out['t_idx'] = SelectFromIndices()([gsel,t_idx])
+    out['t_spectator_weight'] = SelectFromIndices()([gsel,t_spec_w])
     
     #some pass throughs:
     out['orig_dim_coords'] = indict['orig_dim_coords']

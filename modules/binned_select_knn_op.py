@@ -20,17 +20,24 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_b
                                               )
 
 
-def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf_compatible=False):
+def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf_compatible=False, max_radius=None):
+    '''
+    max_radius is a dummy for now to make it a drop-in replacement
+    '''
     from bin_by_coordinates_op import BinByCoordinates
     from index_replacer_op import IndexReplacer
     
-    
     # the following number of bins seems a good~ish estimate for good performance
     # for homogenous point distributions but should be subject to more tests
+    elems_per_rs = 1
+    if row_splits.shape[0] is not None:
+        elems_per_rs = row_splits[1]
+    
     if n_bins is None:
-        n_bins = tf.math.pow(tf.cast(row_splits[1],dtype='float32')/(K/32),1/max_bin_dims)
+        n_bins = tf.math.pow(tf.cast(elems_per_rs,dtype='float32')/(K/32),1/max_bin_dims)
         n_bins = tf.cast(n_bins,dtype='int32')
         n_bins = tf.where(n_bins<5,5,n_bins)
+        n_bins = tf.where(n_bins>20,20,n_bins)#just a guess
         
     bin_coords = coords
     if bin_coords.shape[-1]>max_bin_dims:
@@ -45,12 +52,16 @@ def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf
     sbinning = tf.gather_nd( binning, sorting[...,tf.newaxis])
     sdbinning = tf.gather_nd( dbinning, sorting[...,tf.newaxis])
     
-    bin_boundaries = tf.concat([row_splits[0:1], nper],axis=0)
+    #add a leading 0
+    bin_boundaries = tf.concat([tf.zeros([1],dtype='int32'), nper],axis=0) #row_splits[0:1]
     # make it row split like
     bin_boundaries = tf.cumsum(bin_boundaries)
     
     idx,dist = _BinnedSelectKnn(K, scoords,  sbinning, sdbinning, bin_boundaries=bin_boundaries, 
                                 n_bins=nb, bin_width=bin_width, tf_compatible=tf_compatible )
+    
+    if row_splits.shape[0] is None:
+        return idx, dist
     #sort back 
     idx = IndexReplacer(idx,sorting)
     dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, dist.shape)
@@ -70,6 +81,5 @@ def _BinnedSelectKnnGrad(op, idxgrad, dstgrad):
     coord_grad = _sknn_grad_op.SelectKnnGrad(grad_distances=dstgrad, indices=indices, distances=distances, coordinates=coords)
 
     
-    #FIXME
-    return coord_grad,None,None,None,None
+    return coord_grad,None,None,None,None,None
   

@@ -7,6 +7,12 @@ but the layers themselves to other files
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
+# keras hacks
+
+from tensorflow.keras.layers import LeakyReLU
+global_layers_list['LeakyReLU'] = LeakyReLU
+
+
 #base modules
 
 from baseModules import PromptMetric
@@ -96,6 +102,9 @@ global_layers_list['WeightFeatures']=WeightFeatures
 from GravNetLayersRagged import RecalcDistances
 global_layers_list['RecalcDistances']=RecalcDistances
 
+from GravNetLayersRagged import SelectFromIndicesWithPad
+global_layers_list['SelectFromIndicesWithPad']=SelectFromIndicesWithPad
+
 from GravNetLayersRagged import SelectFromIndices
 global_layers_list['SelectFromIndices']=SelectFromIndices
 
@@ -177,13 +186,16 @@ global_layers_list['PlotCoordinates']=PlotCoordinates
 from LossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
 from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace
 from LossLayers import LossLayerBase, LLFullObjectCondensation,LLNeighbourhoodClassifier
-from LossLayers import LLEdgeClassifier
+from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator
 import traceback
 import os
 
 
+
 ##end debug
 
+
+global_layers_list['AmbiguousTruthToNoiseSpectator']=AmbiguousTruthToNoiseSpectator
 
 global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
 
