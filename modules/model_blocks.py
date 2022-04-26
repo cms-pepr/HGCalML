@@ -190,7 +190,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
     return coords,nidx,dist,x
     
     
-def reduce_indices(x,dist, nidx, rs, t_idx, spec_w,
+def reduce_indices(x,dist, nidx, rs, t_idx, spec_w, energy,
            threshold = 0.5,
            name='reduce_indices',
            trainable=True,
@@ -227,11 +227,12 @@ def reduce_indices(x,dist, nidx, rs, t_idx, spec_w,
                     name=name+'_ed3',trainable=trainable)(x_e)#edge classifier
         #loss
         s_e = LLEdgeClassifier(
+            name = name+'_LLEdgeClassifier',
             print_loss=False,
             active=trainable,
             record_metrics=record_metrics,
-            scale=1.
-            )([s_e,nidx,t_idx])#don't use spectators here yet
+            scale=5.#high scale
+            )([s_e,nidx,t_idx, spec_w, energy])
     
         nidx = EdgeSelector(
             threshold=threshold
@@ -279,9 +280,10 @@ def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight,
            name='reduce',
            trainable=True,
            use_edges = True,
-           return_backscatter=False):
+           return_backscatter=False,
+           record_metrics=False):
     
-    
+    raise ValueError("currently not updated (and not used)")
     from GravNetLayersRagged import SelectFromIndices, AccumulateNeighbours
     
     gnidx, gsel, bg, srs, t_idx, t_spectator_weight = reduce_indices(x,dist, nidx, rs, t_idx,t_spectator_weight, 
@@ -290,7 +292,8 @@ def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight,
            trainable=trainable,
            print_reduction=print_reduction,
            use_edges = use_edges,
-           return_backscatter=return_backscatter)
+           return_backscatter=return_backscatter,
+           record_metrics = record_metrics)
     
     
     #these are needed in reduced form
@@ -384,10 +387,11 @@ def pre_selection_model_full(orig_inputs,
     coords = LLClusterCoordinates(
         print_loss = trainable and print_info,
         active = trainable,
+        name = name+'_LLClusterCoordinates',
         print_batch_time=False, #DEBUG
         record_metrics = record_metrics,
-        scale=5.
-        )([coords,t_idx,rs])
+        scale=1.
+        )([coords,t_idx,t_spec_w,energy, rs])
     
     
     if debugplots_after>0:
@@ -410,7 +414,7 @@ def pre_selection_model_full(orig_inputs,
     #cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
     
     unred_rs = rs
-    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w  = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w,
+    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w  = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w, energy,
            threshold = reduction_threshold,
            print_reduction=print_info,
            trainable=trainable,
@@ -510,6 +514,7 @@ def pre_selection_model_full(orig_inputs,
     
     out['coords'] = LLFillSpace(
         print_loss = trainable and print_info,
+        name = name+'_LLFillSpace',
         active = trainable,
         record_metrics = record_metrics,
         scale=0.025,#just mild
@@ -674,10 +679,11 @@ def pre_selection_staged(indict,
     coords = LLClusterCoordinates(
         print_loss = print_info,
         record_metrics=record_metrics,
+        name = name+'_LLClusterCoordinates',
         active = trainable,
         print_batch_time=False,
-        scale=5.
-        )([coords,t_idx,rs])
+        scale=1.
+        )([coords,t_idx,t_spec_w,indict['energy'],rs])
         
     
     
@@ -688,13 +694,13 @@ def pre_selection_staged(indict,
     #    runevery=-1, #give it a kick only every now and then - hat's enough
     #    )([coords,rs])
         
-        
+    energy = indict['energy']    
         
     unred_rs=rs
     
     #cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
     
-    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w,
+    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w,energy,
            threshold = reduction_threshold,
            print_reduction=print_info,
            trainable=trainable,
@@ -702,6 +708,7 @@ def pre_selection_staged(indict,
            use_edges = use_edges,
            edge_nodes_0=edge_nodes_0,
            edge_nodes_1=edge_nodes_1,
+           record_metrics=record_metrics,
            return_backscatter=False)
     
     
@@ -714,7 +721,7 @@ def pre_selection_staged(indict,
     selfeat = SelectFromIndices()([gsel,indict['features']])
     unproc_features = SelectFromIndices()([gsel,indict['unproc_features']])
     
-    energy = indict['energy']
+    
     
     x = AccumulateNeighbours('minmeanmax')([x, gnidx,energy])
     x = SelectFromIndices()([gsel,x])

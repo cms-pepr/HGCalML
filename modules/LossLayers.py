@@ -135,6 +135,8 @@ class LossLayerBase(LayerWithMetrics):
             lossval = self.scale * self.loss(inputs)
             if not self.return_lossval:
                 self.add_loss(lossval)
+                
+        self.add_prompt_metric(lossval, self.name+'_loss')
         if self.return_lossval:
             return inputs[0], lossval
         else:
@@ -301,7 +303,6 @@ class LLFillSpace(LossLayerBase):
             self.counter = 0
         lossval = LLFillSpace.raw_loss(coords, rs, tidx, self.maxhits)
         self.maybe_print_loss(lossval)
-        self.add_prompt_metric(lossval, self.name+'_loss')
         
         if self.counter == -1:
             self.counter+=1
@@ -332,7 +333,7 @@ class LLClusterCoordinates(LossLayerBase):
         return dict(list(base_config.items()) + list({'downsample':self.downsample}.items()))
              
     @staticmethod
-    def _rs_loop(coords, tidx):
+    def _rs_loop(coords, tidx, specweight, energy):
         Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
         if N_per_obj is None:
             return 0.,0.,0. #no objects, discard
@@ -342,29 +343,33 @@ class LLClusterCoordinates(LossLayerBase):
         
         padmask_m = SelectWithDefault(Msel, tf.ones_like(coords[:,0:1]), 0.)# K x V' x 1
         coords_m = SelectWithDefault(Msel, coords, 0.)# K x V' x C
+        
+        q = (1.-specweight)*(1.+tf.math.log(energy+1.))+1e-2
+        q_m = SelectWithDefault(Msel, q, 0.)# K x V' x C
+        q_k = tf.reduce_sum(q_m,axis=1)#K x 1
+        
         #create average
         av_coords_m = tf.reduce_sum(coords_m * padmask_m,axis=1) # K x C
         av_coords_m = tf.math.divide_no_nan(av_coords_m, N_per_obj) #K x C
         av_coords_m = tf.expand_dims(av_coords_m,axis=1) ##K x 1 x C
         
         distloss = tf.reduce_sum((av_coords_m-coords_m)**2,axis=2)
-        distloss = tf.math.log(tf.math.exp(1.)*distloss+1.) * padmask_m[:,:,0]
-        distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss,axis=1),
+        distloss = q_m[:,:,0] * tf.math.log(tf.math.exp(1.)*distloss+1.) * padmask_m[:,:,0]
+        distloss = tf.math.divide_no_nan(q_k[:,0] * tf.reduce_sum(distloss,axis=1),
                                          N_per_obj[:,0])#K
-        distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss),K)
+        distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss),tf.reduce_sum(q_k))
         
         repdist = tf.expand_dims(coords, axis=0) - av_coords_m #K x V x C
-        repdist = tf.reduce_sum(repdist**2,axis=-1,keepdims=True) #K x V x 1
+        repdist = tf.expand_dims(q,axis=0) * tf.reduce_sum(repdist**2,axis=-1,keepdims=True) #K x V x 1
         reploss = M_not * tf.exp(-repdist)#K x V x 1
         #downweight noise
-        reploss *= tf.expand_dims((1. - 0.9* tf.cast( tidx < 0, dtype='float32' )),axis=0)
-        reploss = tf.reduce_sum(reploss,axis=1)/( N_tot-N_per_obj )#K x 1
-        reploss = tf.reduce_sum(reploss)/(K+1e-3)
+        reploss = q_k * tf.reduce_sum(reploss,axis=1)/( N_tot-N_per_obj )#K x 1
+        reploss = tf.reduce_sum(reploss)/(tf.reduce_sum(q_k)+1e-3)
         
         return distloss+reploss, distloss, reploss
     
     @staticmethod
-    def raw_loss(acoords, atidx, rs, downsample):
+    def raw_loss(acoords, atidx, aspecw, aenergy, rs, downsample):
         
         lossval = tf.zeros_like(acoords[0,0])
         reploss = tf.zeros_like(acoords[0,0])
@@ -374,6 +379,8 @@ class LLClusterCoordinates(LossLayerBase):
         for i in range(nbatches):
             coords = acoords[rs[i]:rs[i+1]]
             tidx = atidx[rs[i]:rs[i+1]]
+            specw = aspecw[rs[i]:rs[i+1]]
+            energy = aenergy[rs[i]:rs[i+1]]
             
             if downsample>0 and downsample < coords.shape[0]:
                 sel = tf.random.uniform(shape=(downsample,), minval=0, maxval=coords.shape[0]-1, dtype=tf.int32)
@@ -383,7 +390,7 @@ class LLClusterCoordinates(LossLayerBase):
             
             if tidx.shape[0]<20:
                 continue #does not make sense
-            tlv, tdl, trl = LLClusterCoordinates._rs_loop(coords,tidx)
+            tlv, tdl, trl = LLClusterCoordinates._rs_loop(coords,tidx,specw,energy)
             lossval += tlv
             distloss += tdl
             reploss += trl
@@ -400,13 +407,13 @@ class LLClusterCoordinates(LossLayerBase):
                   )
         
     def loss(self, inputs):
-        assert len(inputs) == 3
-        coords, tidx, rs = inputs
-        lossval,distloss, reploss = LLClusterCoordinates.raw_loss(coords, tidx, rs, self.downsample)
+        assert len(inputs) == 5 
+        coords, tidx, specw, energy, rs = inputs
+        lossval,distloss, reploss = LLClusterCoordinates.raw_loss(
+            coords, tidx, specw, energy, rs, self.downsample)
         
-        self.add_prompt_metric(lossval, self.name+'_loss')
-        self.add_prompt_metric(distloss, self.name+'_att_loss')
-        self.add_prompt_metric(reploss, self.name+'_rep_loss')
+        self.add_prompt_metric(self.scale * distloss, self.name+'_att_loss')
+        self.add_prompt_metric(self.scale * reploss, self.name+'_rep_loss')
         
         self.maybe_print_loss(lossval,distloss, reploss, tidx)
         
@@ -545,7 +552,6 @@ class LLNotNoiseClassifier(LossLayerBase):
         isnotnoise = tf.cast(tidx>=0,dtype='float32')
         accuracy = tf.reduce_sum(isnotnoise * tf.cast(score>0.5,dtype='float32'))/tf.reduce_sum(isnotnoise)
         self.add_prompt_metric(accuracy,self.name+'_accuracy')
-        self.add_prompt_metric(lossval,self.name+'_loss')
         
         self.maybe_print_loss(lossval)
         return lossval
@@ -616,7 +622,7 @@ class LLNeighbourhoodClassifier(LossLayerBase):
                 
 class LLEdgeClassifier(LossLayerBase):
     
-    def __init__(self, **kwargs):
+    def __init__(self, downweight_spectators=False, **kwargs):
         '''
         Noise hits (truth index < 0) are never classified as belonging together
         
@@ -625,15 +631,17 @@ class LLEdgeClassifier(LossLayerBase):
         - neighbour index
         - truth index (ignored if switched off)
         - spectator weights (optional)
+        - energy (optional)
         
         Returns:
         - score (unchanged)
         '''
         super(LLEdgeClassifier, self).__init__(**kwargs)
+        self.downweight_spectators = downweight_spectators
         
     @staticmethod
-    def raw_loss(score, nidx, tidx, specweight):
-        # nidx = V x K
+    def raw_loss(score, nidx, tidx, specweight, energy, downweight_spectators=False):
+        # nidx = V x K,
         # tidx = V x 1
         # specweight: V x 1
         # score: V x K-1 x 1
@@ -645,29 +653,38 @@ class LLEdgeClassifier(LossLayerBase):
         
         n_active = tf.where(nidx>=0, tf.ones_like(nidx,dtype='float32'), 0.)[:,1:] # V x K-1
         specweight = tf.clip_by_value(specweight,0.,1.)
-        n_specw = SelectWithDefault(nidx, specweight, -1.)[:,1:,0]# V x K-1
+        energy = tf.clip_by_value(energy,0.,100000.)
+        n_specw = SelectWithDefault(nidx, specweight, 1.)[:,1:,0]# V x K-1
+        n_energy = SelectWithDefault(nidx, energy, 0.)[:,1:,0]# V x K-1
+        
+        n_weight = (1.+tf.math.log(n_energy+1.))+1e-2
+        weight = (1.+tf.math.log(energy+1.))+1e-2
+        
+        if downweight_spectators:
+            n_weight = (1.-n_specw)*n_weight+1e-2
+            weight = (1.-specweight)*weight+1e-2
         
         #now this will be false for all noise
         n_sameasprobe = tf.cast(tf.expand_dims(tidx, axis=2) == n_tidxs[:,1:,:], dtype='float32') # V x K-1 x 1
         
         lossval =  tf.keras.losses.binary_crossentropy(n_sameasprobe, score)# V x K-1
         lossval *= n_active
-        lossval *= (1.- 0.9*n_specw)#reduce spectators, but don't remove them
+        lossval *= n_weight#reduce spectators, but don't remove them
         
         lossval = tf.math.divide_no_nan( tf.reduce_sum(lossval,axis=1), tf.reduce_sum(n_active,axis=1) ) # V 
-        lossval *= (1.- 0.9*specweight[:,0])#V
-        return tf.reduce_mean(lossval)
+        lossval *= weight[:,0]#V
+        return tf.math.divide_no_nan(tf.reduce_sum(lossval), tf.reduce_sum(weight))
         
     def loss(self, inputs):
-        assert len(inputs) > 2 and len(inputs) < 5
-        score, nidx, tidx, specweight = None, None, None, None
-        if len(inputs) == 3:
-            score, nidx, tidx = inputs
-            specweight = tf.zeros_like(score[:,0])
-        else:
-            score, nidx, tidx, specweight = inputs
-        lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight)
-        self.add_prompt_metric(lossval, self.name+'_loss')
+        assert len(inputs) > 2 and len(inputs) < 6
+        score, nidx, tidx = inputs[0],inputs[1],inputs[2]
+        specweight = tf.zeros_like(score[:,0])
+        energy = tf.zeros_like(score[:,0])
+        if len(inputs) > 3:
+            specweight = inputs[3]
+        if len(inputs) > 4:
+            energy = inputs[4]
+        lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight, energy, self.downweight_spectators)
         self.maybe_print_loss(lossval)
         return lossval
 
@@ -1087,7 +1104,6 @@ class LLFullObjectCondensation(LossLayerBase):
             
         lossval = tf.reduce_mean(lossval)
         
-        self.add_prompt_metric(lossval,self.name+'_loss')
         self.add_prompt_metric(att,self.name+'_attractive_loss')
         self.add_prompt_metric(rep,self.name+'_repulsive_loss')
         self.add_prompt_metric(min_b,self.name+'_min_beta_loss')
@@ -1154,6 +1170,3 @@ class LLFullObjectCondensation(LossLayerBase):
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-
-
-        
