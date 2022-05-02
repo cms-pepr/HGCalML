@@ -1579,33 +1579,38 @@ class WarpedSpaceKNN(tf.keras.layers.Layer):
 
 
 class SortAndSelectNeighbours(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float=-1., sort=True, **kwargs):
+    def __init__(self,K: int, radius: float=-1., sort=True, descending=False, **kwargs):
         """
         
         This layer will sort neighbour indices by distance and possibly select neighbours
         within a radius, or the closest ones up to K neighbours.
         
-        Inputs: distances, neighbour indices
+        If a sorting score is given the sorting will be based on that (will still return the same)
+        
+        Inputs: distances, neighbour indices, sorting_score (opt)
         
         Call will return 
-         - neighbour distances sorted by distance (increasing)
-         - neighbour indices sorted by distance (increasing)
+         - neighbour distances sorted by distance 
+         - neighbour indices sorted by distance 
         
         
         :param K: number of nearest neighbours, will do no selection if K<1
         :param radius: maximum distance of nearest neighbours (no effect if < 0)
+        :param descending: use descending order
         
         """
         super(SortAndSelectNeighbours, self).__init__(**kwargs) 
         self.K = K
         self.radius = radius
         self.sort=sort
+        self.descending = descending
         
         
     def get_config(self):
         config = {'K': self.K,
                   'radius': self.radius,
-                  'sort': self.sort}
+                  'sort': self.sort,
+                  'descending': self.descending}
         base_config = super(SortAndSelectNeighbours, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -1624,15 +1629,16 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         return [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i]) for i in range(len(output_shapes))]
         
     @staticmethod 
-    def raw_call(distances, nidx, K, radius, sort):
+    def raw_call(distances, nidx, K, radius, sort, incr_sorting_score):
         
         if not sort:
             distances[:,:K],nidx[:,:K]
         
-        tfdist = tf.where(nidx<0, 1e9, distances) #make sure the -1 end up at the end
-        tfdist = tf.concat([tf.zeros_like(tfdist[:,0:1])-1.,tfdist[:,1:]  ],axis=1) #make sure 'self' remains
+        tfssc = tf.where(nidx<0, 1e9, incr_sorting_score) #make sure the -1 end up at the end
+        tfssc = tf.concat([tf.zeros_like(tfssc[:,0:1])-1.,tfssc[:,1:]  ],axis=1) #make sure 'self' remains
 
-        sorting = tf.argsort(tfdist, axis=1)
+        sorting = tf.argsort(tfssc, axis=1)
+        
         snidx = tf.gather(nidx,sorting,batch_dims=1) #_nd(nidx,sorting,batch_dims=1)
         sdist = tf.gather(distances,sorting,batch_dims=1)
         if K > 0:
@@ -1653,8 +1659,18 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
 
         
     def call(self, inputs):
-        distances, nidx = inputs
-        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius,self.sort)
+        distances, nidx, ssc = None, None, None
+        if len(inputs)==2:
+            distances, nidx = inputs
+            ssc = distances
+            
+        elif len(inputs)==3:
+            distances, nidx,ssc = inputs
+            
+        if self.descending:
+            ssc = -1.* ssc
+        
+        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius,self.sort, ssc)
         #make TF compatible
         
         
