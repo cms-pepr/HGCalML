@@ -106,7 +106,7 @@ cb = [
         output_file=train.outputDir+'/reduction_metrics.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics=['*_reduction','*_reduction*lost*','*cluster*time'],#includes time
+        select_metrics=['*_reduction','*_reduction*lost*','*luster*time'],#includes time
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -127,19 +127,12 @@ cb = [
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/space_metrics.html',
-        record_frequency= 2,
-        plot_frequency = plot_frequency,
-        select_metrics='*cluster*loss',
-        publish=publishpath #no additional directory here (scp cannot create one)
-        ),
     
     simpleMetricsCallback(
-        output_file=train.outputDir+'/fillspace_metrics.html',
+        output_file=train.outputDir+'/time.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics='ll_fill_space_loss',
+        select_metrics='*time*',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -147,15 +140,7 @@ cb = [
         output_file=train.outputDir+'/losses.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics=['ll_edge_classifier_loss','ll_cluster_coordinates_loss','ll_not_noise_classifier_loss'],
-        publish=publishpath #no additional directory here (scp cannot create one)
-        ),
-    
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/coord_losses.html',
-        record_frequency= 2,
-        plot_frequency = plot_frequency,
-        select_metrics='ll_cluster_coordinates_*loss',
+        select_metrics='*_loss',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
