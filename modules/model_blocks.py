@@ -128,6 +128,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                 trainable,
                                 name='first_coords',
                                 n_coords=3,
+                                K=32,
                                 record_metrics=False,
                                 debugplots_after=-1,
                                 use_multigrav=True): 
@@ -145,7 +146,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                                  name=name+'plt1')([coords,energy,t_idx,rs])
     
     
-    nidx,dist = KNN(K=32,#radius='dynamic', #use dynamic feature # 24
+    nidx,dist = KNN(K=K,#radius='dynamic', #use dynamic feature # 24
                     record_metrics=record_metrics,
                     use_approximate_knn=False,
                     name=name+'_knn',
@@ -274,45 +275,8 @@ def reduce_indices(x,dist, nidx, rs, t_idx, spec_w, energy,
     
     return  gnidx, gsel, bg, srs, t_idx, spec_w
 
-def reduce(x,coords,energy,dist, nidx, rs, t_idx, t_spectator_weight, 
-           threshold = 0.5,
-           print_reduction=True,
-           name='reduce',
-           trainable=True,
-           use_edges = True,
-           return_backscatter=False,
-           record_metrics=False):
-    
-    raise ValueError("currently not updated (and not used)")
-    from GravNetLayersRagged import SelectFromIndices, AccumulateNeighbours
-    
-    gnidx, gsel, bg, srs, t_idx, t_spectator_weight = reduce_indices(x,dist, nidx, rs, t_idx,t_spectator_weight, 
-           threshold = threshold,
-           name=name+'_indices',
-           trainable=trainable,
-           print_reduction=print_reduction,
-           use_edges = use_edges,
-           return_backscatter=return_backscatter,
-           record_metrics = record_metrics)
-    
-    
-    #these are needed in reduced form
-    t_idx, t_spectator_weight = SelectFromIndices()([gsel,t_idx, t_spectator_weight])
-    
-    coords = AccumulateNeighbours('mean')([coords, gnidx])
-    coords = SelectFromIndices()([gsel,coords])
-    energy = AccumulateNeighbours('sum')([energy, gnidx])
-    energy = SelectFromIndices()([gsel,energy])
-    x = AccumulateNeighbours('minmeanmax')([x, gnidx])
-    x = SelectFromIndices()([gsel,x])
 
-    rs = srs #set new row splits
-    
-    return x,coords,energy, rs, bg, t_idx, t_spectator_weight    
-    
-    
-    
-    
+
     
 def pre_selection_model_full(orig_inputs,
                              debug_outdir='',
@@ -329,15 +293,28 @@ def pre_selection_model_full(orig_inputs,
                              omit_reduction=False, #only trains coordinate transform. useful for pretrain phase
                              use_multigrav=True,
                              eweighted = True,
+                             K=10
                              ):
     
-    from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices
+    from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
     from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
     from GravNetLayersRagged import CastRowSplits, ProcessFeatures
     from GravNetLayersRagged import GooeyBatchNorm, MaskTracksAsNoise
     from DebugLayers import PlotCoordinates
     from LossLayers import LLClusterCoordinates, LLNotNoiseClassifier, LLFillSpace
     from MetricsLayers import MLReductionMetrics
+    from Layers import CreateTruthSpectatorWeights
+    
+    from tensorflow.keras.layers import Flatten
+    
+    #add spectator
+    orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,
+                                                     minimum=1e-1,
+                                                     active=True
+                                                     )([orig_inputs['t_spectator'], 
+                                                        orig_inputs['t_idx']])
+                                                     
+    orig_inputs['t_spectator_weight'] = orig_t_spectator_weight
     
     rs = CastRowSplits()(orig_inputs['row_splits'])
     t_idx = orig_inputs['t_idx']
@@ -380,6 +357,7 @@ def pre_selection_model_full(orig_inputs,
         name=name+'_first_coords',
         debugplots_after=debugplots_after,
         n_coords=n_coords,
+        K=K,
         record_metrics=record_metrics,
         use_multigrav=use_multigrav
         )
@@ -402,7 +380,7 @@ def pre_selection_model_full(orig_inputs,
     if omit_reduction:
         return {'coords': coords,'dist':dist,'x':x}
     
-    dist,nidx = SortAndSelectNeighbours(K=16)([dist,nidx])#only run reduction on 12 closest
+    dist,nidx = SortAndSelectNeighbours(K=K)([dist,nidx])#only run reduction on 12 closest
     
     '''
     run a full reduction block
@@ -441,9 +419,20 @@ def pre_selection_model_full(orig_inputs,
     energy_weight = energy
     if not eweighted:
         energy_weight = OnesLike()(energy)
+        
+    
+    flat_features_full = Concatenate()([x, orig_processed_features])
+    flat_features_full = Dense(5, activation='relu',name=name+'flatten_dense')(flat_features_full)
+    
+    selgnidx = SelectFromIndices()([gsel,gnidx])#already reduced
+    flat_features = SelectFromIndicesWithPad()([selgnidx, flat_features_full])
+    flat_features = Flatten()(flat_features)
     
     x = AccumulateNeighbours('minmeanmax')([x, gnidx, energy_weight])
     x = SelectFromIndices()([gsel,x])
+    
+    x = Concatenate()([x,flat_features])
+    
     #add more useful things
     coords = AccumulateNeighbours('mean')([coords, gnidx, energy_weight])
     coords = SelectFromIndices()([gsel,coords])

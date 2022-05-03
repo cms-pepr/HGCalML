@@ -47,13 +47,13 @@ def pretrain_model(Inputs,
                    debug_outdir=None):
 
     orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
-
+ 
+    
     presel = pre_selection_model_full(orig_inputs,
                              debug_outdir,
                              trainable=True,
                              debugplots_after=1500,
-                             record_metrics=True,
-                             eweighted=True,
+                             record_metrics=True
                              )
     
     
@@ -84,6 +84,7 @@ if not train.modelSet():
     #path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
     #train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
     
+
 
 
 verbosity = 2
@@ -172,7 +173,7 @@ cb = [
 
 #cb=[]
 nbatch = 400000 
-train.change_learning_rate(8e-4)
+train.change_learning_rate(1e-4)
 
 train.trainModel(nepochs=2,batchsize=nbatch,additional_callbacks=cb)
 

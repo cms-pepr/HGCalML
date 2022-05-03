@@ -41,7 +41,7 @@ from Layers import GausActivation,GooeyBatchNorm #make a new line
 from model_blocks import create_outputs, noise_pre_filter
 from Regularizers import AverageDistanceRegularizer
 
-from model_blocks import first_coordinate_adjustment, reduce, pre_selection_model_full
+from model_blocks import first_coordinate_adjustment, pre_selection_model_full
 from model_blocks import extent_coords_if_needed, re_integrate_to_full_hits
 
 from LossLayers import LLNeighbourhoodClassifier, LLNotNoiseClassifier
@@ -97,15 +97,7 @@ def gravnet_model(Inputs,
     ####################################################################################
 
     orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
-    
-    
-    orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=3.,
-                                                     minimum=1e-1,
-                                                     active=True
-                                                     )([orig_inputs['t_spectator'], 
-                                                        orig_inputs['t_idx']])
-                                                     
-    orig_inputs['t_spectator_weight'] = orig_t_spectator_weight                                                 
+                                                
     #can be loaded - or use pre-selected dataset (to be made)
     pre_selection = pre_selection_model_full(orig_inputs,trainable=False)
     
@@ -113,11 +105,7 @@ def gravnet_model(Inputs,
     print('available pre-selection outputs',[k for k in pre_selection.keys()])
                                           
     
-    t_spectator_weight = CreateTruthSpectatorWeights(threshold=3.,
-                                                     minimum=1e-1,
-                                                     active=True
-                                                     )([pre_selection['t_spectator'], 
-                                                        pre_selection['t_idx']])
+    t_spectator_weight = pre_selection['t_spectator_weight']
     rs = pre_selection['rs']
                                
     x_in = Concatenate()([pre_selection['coords'],
@@ -364,19 +352,22 @@ cb += [
         ),
     
     simpleMetricsCallback(
+        output_file=train.outputDir+'/non_amb_truth_fraction.html',
+        record_frequency= 2,
+        plot_frequency = plotfrequency,
+        select_metrics='*_non_amb_truth_fraction',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
         output_file=train.outputDir+'/val_metrics.html',
         call_on_epoch=True,
         select_metrics='val_*',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/slicing.html',
-        record_frequency= 2,
-        plot_frequency = plotfrequency,
-        select_metrics='*_slicing_*',
-        publish=publishpath #no additional directory here (scp cannot create one)
-        ),
+    
+    
     
     #if approxime knn is used
     #simpleMetricsCallback(
@@ -390,13 +381,13 @@ cb += [
     
     ]
 
-cb += build_callbacks(train)
+#cb += build_callbacks(train)
 
 #cb=[]
 
 train.change_learning_rate(learningrate)
 
-model, history = train.trainModel(nepochs=5,
+model, history = train.trainModel(nepochs=1,
                                   batchsize=nbatch,
                                   additional_callbacks=cb)
 
@@ -405,9 +396,14 @@ print("freeze BN")
 for l in train.keras_model.layers:
     if 'gooey_batch_norm' in l.name:
         l.max_viscosity = 0.995
-        l.fluidity_decay= 1e-4 #reaches constant 1 after about one epoch
+        l.fluidity_decay= 1e-3 #reaches constant 1 very quickly
     if 'FullOCLoss' in l.name:
         continue
+    
+
+model, history = train.trainModel(nepochs=5,
+                                  batchsize=nbatch,
+                                  additional_callbacks=cb)
     
 #also stop GravNetLLLocalClusterLoss* from being evaluated
 learningrate/=5.
