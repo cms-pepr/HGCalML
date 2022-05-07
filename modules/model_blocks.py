@@ -150,7 +150,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
                     record_metrics=record_metrics,
                     use_approximate_knn=False,
                     name=name+'_knn',
-                    #min_bins=10,#hard code it here, to be optimised
+                    min_bins=20,#hard code it here, this is optimised given our datasets
                     )([coords,rs])#all distance weighted afterwards
     
     x = Dense(32,activation='relu',name=name+'dense1',trainable=trainable)(x)
@@ -191,7 +191,7 @@ def first_coordinate_adjustment(coords, x, energy, rs, t_idx,
     return coords,nidx,dist,x
     
     
-def reduce_indices(x,dist, nidx, rs, t_idx, spec_w, energy,
+def reduce_indices(x,dist, nidx, rs, t_idx, spec_w, track_charge, energy,
            threshold = 0.5,
            name='reduce_indices',
            trainable=True,
@@ -205,12 +205,14 @@ def reduce_indices(x,dist, nidx, rs, t_idx, spec_w, energy,
     from tensorflow.keras.layers import Reshape
     from GravNetLayersRagged import EdgeCreator, RemoveSelfRef
     from GravNetLayersRagged import EdgeSelector, GroupScoreFromEdgeScores
-    from GravNetLayersRagged import NeighbourGroups
+    from GravNetLayersRagged import NeighbourGroups, MaskTracksAsNoise
     
     from LossLayers import LLEdgeClassifier, LLNeighbourhoodClassifier, AmbiguousTruthToNoiseSpectator
     
     goodneighbours = x
     groupthreshold=threshold
+    
+    cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
     
     if use_edges:
         x_e = Dense(edge_nodes_0,activation='relu',
@@ -233,7 +235,7 @@ def reduce_indices(x,dist, nidx, rs, t_idx, spec_w, energy,
             active=trainable,
             record_metrics=record_metrics,
             scale=5.#high scale
-            )([s_e,nidx,t_idx, spec_w, energy])
+            )([s_e,nidx,cluster_tidx, spec_w, energy])
     
         nidx = EdgeSelector(
             threshold=threshold
@@ -262,7 +264,7 @@ def reduce_indices(x,dist, nidx, rs, t_idx, spec_w, energy,
             active=trainable,
             scale=1.,
             print_batch_time=False
-            )([goodneighbours,nidx,t_idx])
+            )([goodneighbours,nidx,cluster_tidx])
         
     
     gnidx, gsel, bg, srs = NeighbourGroups(
@@ -389,10 +391,11 @@ def pre_selection_model_full(orig_inputs,
     do not cluster tracks with anything here; this needs to be revised as reduce_indices will change the truth
     '''
     
-    #cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
+    
     
     unred_rs = rs
-    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w  = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w, energy,
+    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w  = reduce_indices(x,dist, nidx, 
+                                                                         rs, t_idx, t_spec_w, track_charge, energy,
            threshold = reduction_threshold,
            print_reduction=print_info,
            trainable=trainable,
@@ -443,6 +446,8 @@ def pre_selection_model_full(orig_inputs,
     energy = AccumulateNeighbours('sum')([energy, gnidx])
     energy = SelectFromIndices()([gsel,energy])
     
+    track_charge = SelectFromIndices()([gsel,track_charge])
+    
     #re-build standard feature layout
     out['features'] = selfeat
     out['unproc_features'] = unproc_features
@@ -480,12 +485,16 @@ def pre_selection_model_full(orig_inputs,
                        trainable=trainable,
                        name=name+'_noisescore_d1',
                        )(Concatenate()([out['addfeat'],out['coords']]))
+                       
+    #mask all tracks explicitly as *not* noise (even if they are)                   
+    track_adjusted_t_idx = MaskTracksAsNoise(maskidx=1,active=trainable)([out['t_idx'],track_charge])
+    
     isnotnoise = LLNotNoiseClassifier(
         print_loss=trainable and print_info,
         scale=1.,
         active=trainable,
         record_metrics=record_metrics,
-        )([isnotnoise, out['t_idx']])
+        )([isnotnoise, track_adjusted_t_idx])
 
     unred_rs = rs
     sel, rs, noise_backscatter = NoiseFilter(
@@ -689,7 +698,7 @@ def pre_selection_staged(indict,
     
     #cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
     
-    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w,energy,
+    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w,track_charge,energy,
            threshold = reduction_threshold,
            print_reduction=print_info,
            trainable=trainable,

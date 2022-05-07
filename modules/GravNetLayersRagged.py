@@ -178,6 +178,7 @@ class CastRowSplits(tf.keras.layers.Layer):
 class MaskTracksAsNoise(tf.keras.layers.Layer):
     def __init__(self, 
                  active=True,
+                 maskidx=-1,
                  **kwargs):
         '''
         Inputs:
@@ -186,10 +187,13 @@ class MaskTracksAsNoise(tf.keras.layers.Layer):
         '''
         super(MaskTracksAsNoise, self).__init__(**kwargs)
         self.active = active
+        self.maskidx = maskidx
     
     def get_config(self):
         base_config = super(MaskTracksAsNoise, self).get_config()
-        return dict(list(base_config.items()) + list({'active': self.active }.items()))
+        return dict(list(base_config.items()) + list({'active': self.active ,
+                                                      'maskidx': self.maskidx
+                                                      }.items()))
 
     def build(self, input_shape):
         super(MaskTracksAsNoise, self).build(input_shape)
@@ -202,7 +206,7 @@ class MaskTracksAsNoise(tf.keras.layers.Layer):
         assert inputs[0].dtype=='int32'
         tidx, trackcharge = inputs
         if self.active:
-            tidx = tf.where(tf.abs(trackcharge)>1e-3, -1, tidx)
+            tidx = tf.where(tf.abs(trackcharge)>1e-3, self.maskidx, tidx)
         return tidx
         
         
