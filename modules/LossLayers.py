@@ -283,7 +283,7 @@ class LLFillSpace(LossLayerBase):
         
     @staticmethod
     def raw_loss(coords, rs, tidx, maxhits=1000):
-        loss = tf.zeros_like(coords[0,0])
+        loss = tf.zeros([], dtype='float32')
         for i in range(len(rs)-1):
             rscoords = coords[rs[i]:rs[i+1]]
             loss += LLFillSpace._rs_loop(rscoords, tidx, maxhits)

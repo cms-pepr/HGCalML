@@ -112,6 +112,10 @@ class MLReductionMetrics(MLBase):
         reduced_to_fraction = tf.cast(srs[-1],dtype='float32')/tf.cast(rs[-1],dtype='float32')
         self.add_prompt_metric(reduced_to_fraction,self.name+'_reduction')
         
+        no_noise_hits_bef = tf.cast(tf.math.count_nonzero(tidx+1)  ,dtype='float32')
+        no_noise_hits_aft = tf.cast(tf.math.count_nonzero(stidx+1) ,dtype='float32')
+        self.add_prompt_metric(no_noise_hits_aft/no_noise_hits_bef,self.name+'_no_noise_reduction')
+        
         
         
         

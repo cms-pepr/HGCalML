@@ -634,7 +634,7 @@ class TrackCollection(CollectionBase):
         zeros = ak1.zeros_like(truthEnergy)
         splittruthidx = self._splitJaggedArray(nonSplitTrackSimClusIdx)
         
-        spectator = ak1.where(splittruthidx<0, zeros+10., zeros)
+        spectator = ak1.where(splittruthidx<0, zeros+100., zeros)
         
         trackPt = self._readSplitAndExpand(tree,"Track_pt")
         trackVertEta = self._readSplitAndExpand(tree,"Track_eta")

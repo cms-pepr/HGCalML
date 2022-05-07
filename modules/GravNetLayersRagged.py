@@ -1427,7 +1427,7 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
 
 class KNN(LayerWithMetrics):
     def __init__(self,K: int, radius=-1., 
-                 use_approximate_knn=True,
+                 use_approximate_knn=False,
                  min_bins=None,
                  **kwargs):
         """
@@ -1891,7 +1891,7 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
         n_neigh = tf.cast(n_neigh,dtype='float32') - 1.
         groupscore = tf.reduce_sum(active[:,1:]*score[:,:,0], axis=1)
         #give slight priority to larger groups
-        groupscore = tf.math.divide_no_nan(groupscore,n_neigh+1.)#prefer larger groups
+        groupscore = tf.math.divide_no_nan(groupscore,n_neigh)
         return tf.expand_dims(groupscore,axis=1)
 
 
