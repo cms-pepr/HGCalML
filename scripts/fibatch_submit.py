@@ -50,16 +50,17 @@ commands = " "
 for clos in filtered_clo:
     commands += clos + " "
 
-print(commands)
+CWD = os.getcwd()
 
 bscript_temp='''#!/bin/bash
 
 #SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint=a100-40gb
 
-singularity  run  -B /mnt --nv {djcloc} /bin/bash -c "~/private/keytabd.sh & KTPID=$! ; cd {hgcalml}; source env.sh; cd - ;  {commands} ; kill $KTPID ; exit"
+singularity  run  -B /mnt --nv {djcloc} /bin/bash -c "~/private/keytabd.sh >/dev/null & KTPID=\$! ; cd {hgcalml}; source env.sh; cd {cwd} ;  {commands} ; kill \$KTPID ; exit"
 
 '''.format(djcloc=djcloc,
             hgcalml=HGCALML, 
+            cwd=CWD,
             commands=commands )
 
 with open(workdir+'/batchscript.sh','w') as f:

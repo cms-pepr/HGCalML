@@ -38,10 +38,10 @@ from GravNetLayersRagged import RecalcDistances, ElementScaling, RemoveSelfRef, 
 
 from Layers import CreateTruthSpectatorWeights, ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CreateGlobalIndices, SelectFromIndices, MultiBackScatter, KNN, MessagePassing, DictModel
 from Layers import GausActivation,GooeyBatchNorm #make a new line
-from model_blocks import create_outputs, noise_pre_filter
+from model_blocks import create_outputs
 from Regularizers import AverageDistanceRegularizer
 
-from model_blocks import first_coordinate_adjustment, pre_selection_model_full
+from model_blocks import pre_selection_model
 from model_blocks import extent_coords_if_needed, re_integrate_to_full_hits
 
 from LossLayers import LLNeighbourhoodClassifier, LLNotNoiseClassifier
@@ -80,7 +80,7 @@ dense_activation='relu'
 plotfrequency=200
 
 learningrate = 5e-5
-nbatch = 500000
+nbatch = 200000
 
 #iterations of gravnet blocks
 total_iterations = 2
@@ -99,22 +99,20 @@ def gravnet_model(Inputs,
     orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
                                                 
     #can be loaded - or use pre-selected dataset (to be made)
-    pre_selection = pre_selection_model_full(orig_inputs,trainable=False)
+    pre_selection = pre_selection_model(orig_inputs,trainable=False)
     
     #just for info what's available
     print('available pre-selection outputs',[k for k in pre_selection.keys()])
                                           
     
     t_spectator_weight = pre_selection['t_spectator_weight']
-    rs = pre_selection['rs']
+    rs = pre_selection['row_splits']
                                
     x_in = Concatenate()([pre_selection['coords'],
-                          pre_selection['features'],
-                          pre_selection['addfeat']])
+                          pre_selection['features']])
                            
     x = x_in
-    energy = pre_selection['energy']
-    coords = pre_selection['phys_coords']#physical coordinates
+    energy = pre_selection['rechit_energy']
     c_coords = pre_selection['coords']#pre-clustered coordinates
     t_idx = pre_selection['t_idx']
     
@@ -144,7 +142,7 @@ def gravnet_model(Inputs,
         
         n_dims = 6
         #exchange information, create coordinates
-        x = Concatenate()([c_coords,c_coords,c_coords,coords,x])
+        x = Concatenate()([c_coords,x])
         xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
@@ -161,7 +159,7 @@ def gravnet_model(Inputs,
                                             record_metrics=True
                                             )(gndist)
                                             
-        gncoords = PlotCoordinates(plot_debug_every, outdir = debug_outdir,
+        gncoords = PlotCoordinates(plot_every = plot_debug_every, outdir = debug_outdir,
                                    name='gn_coords_'+str(i))([gncoords, 
                                                                     energy,
                                                                     t_idx,
@@ -199,7 +197,7 @@ def gravnet_model(Inputs,
         
         
     
-    x = Concatenate()([c_coords]+allfeat+[pre_selection['not_noise_score']])
+    x = Concatenate()([c_coords]+allfeat)
     #do one more exchange with all
     x = Dense(64,activation=dense_activation)(x)
     x = Dense(64,activation=dense_activation)(x)
@@ -217,8 +215,7 @@ def gravnet_model(Inputs,
     
     pred_beta, pred_ccoords, pred_dist,\
     pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
-    pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['unproc_features'], 
-                                                  n_ccoords=n_cluster_space_coordinates)
+    pred_pos, pred_time, pred_id = create_outputs(x, n_ccoords=n_cluster_space_coordinates)
     
     # loss
     pred_beta = LLFullObjectCondensation(scale=4.,
@@ -244,10 +241,10 @@ def gravnet_model(Inputs,
          pre_selection['t_fully_contained'],
          pre_selection['t_rec_energy'],
          pre_selection['t_is_unique'],
-         pre_selection['rs']])
+         pre_selection['row_splits']])
                                          
     #fast feedback
-    pred_ccoords = PlotCoordinates(plot_debug_every, outdir = debug_outdir,
+    pred_ccoords = PlotCoordinates(plot_every=plot_debug_every, outdir = debug_outdir,
                     name='condensation')([pred_ccoords, pred_beta,pre_selection['t_idx'],
                                           rs])                                    
 
@@ -285,7 +282,7 @@ if not train.modelSet():
     
     from model_tools import apply_weights_from_path
     import os
-    path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
+    path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_may22/KERAS_model.h5'
     apply_weights_from_path(path_to_pretrained,train.keras_model)
     
 

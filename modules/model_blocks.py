@@ -22,8 +22,8 @@ def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_e
     return coords
 
 #new format!
-def create_outputs(x, feat, energy=None, n_ccoords=3, 
-                   n_classes=4, td=TrainData_NanoML(), add_features=True, 
+def create_outputs(x, energy=None, n_ccoords=3, 
+                   n_classes=4,
                    fix_distance_scale=False,
                    scale_energy=False,
                    energy_factor=True,
@@ -33,8 +33,6 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     returns pred_beta, pred_ccoords, pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,pred_pos, pred_time, pred_id
     '''
     assert scale_energy != energy_factor
-    
-    feat = td.createFeatureDict(feat)
     
     pred_beta = Dense(1, activation='sigmoid',name = name_prefix+'_beta')(x)
     pred_ccoords = Dense(n_ccoords,
@@ -74,8 +72,6 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
     pred_pos =  Dense(2,use_bias=False,name = name_prefix+'_pos')(x)
     pred_time = ScalarMultiply(10.)(Dense(1)(x))
     
-    if add_features:
-        pred_pos =  Add()([feat['recHitXY'],pred_pos])
     pred_id = Dense(n_classes, activation="softmax",name = name_prefix+'_class')(x)
     
     pred_dist = OnesLike()(pred_time)
@@ -346,6 +342,8 @@ def pre_selection_model(
     
     ####### noise filter part #########
     
+    scatterids=None
+    
     if filter_noise:
     
         isnotnoise = Dense(1, activation='sigmoid',trainable=trainable,name=name+'_noisescore_d1',
@@ -367,17 +365,21 @@ def pre_selection_model(
         for k in out.keys():
             out[k] = SelectFromIndices()([no_noise_sel,out[k]]) #also  good check, will fail if dimensions don't match
         
-        group_backgather = [group_backgather, noise_backscatter]
         #safety, these row splits are obsolete now 
         g_sel_rs = None
     
         out['row_splits'] = no_noise_rs
+        scatterids = [group_backgather, noise_backscatter]
+        
     else:
         out['row_splits'] = g_sel_rs
+        scatterids = [group_backgather]
         
-    out['scatterids'] = [group_backgather]
     if 'scatterids' in orig_inputs.keys():
-        out['scatterids'] = orig_inputs['scatterids'] + [group_backgather]
+        out['scatterids'] = orig_inputs['scatterids'] + scatterids
+    else:
+        out['scatterids'] = scatterids
+        
     if not 'orig_row_splits' in orig_inputs.keys():
         out['orig_row_splits'] = orig_inputs['row_splits']
     else:
