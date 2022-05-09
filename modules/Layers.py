@@ -183,6 +183,14 @@ from DebugLayers import PlotCoordinates
 global_layers_list['PlotCoordinates']=PlotCoordinates
 
 
+from DebugLayers import PlotEdgeDiscriminator
+global_layers_list['PlotEdgeDiscriminator']=PlotEdgeDiscriminator
+
+from DebugLayers import PlotNoiseDiscriminator
+global_layers_list['PlotNoiseDiscriminator']=PlotNoiseDiscriminator
+
+
+
 from LossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
 from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace
 from LossLayers import LossLayerBase, LLFullObjectCondensation,LLNeighbourhoodClassifier

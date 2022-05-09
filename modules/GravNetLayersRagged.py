@@ -171,9 +171,12 @@ class CastRowSplits(tf.keras.layers.Layer):
             
     def call(self,inputs):
         assert inputs.dtype=='int64' or inputs.dtype=='int32'
-        assert len(inputs.shape)==2
-        return tf.cast(inputs[:,0],dtype='int32')
-        
+        if len(inputs.shape)==2:
+            return tf.cast(inputs[:,0],dtype='int32')
+        elif inputs.dtype=='int64':
+            return tf.cast(inputs,dtype='int32')
+        else:
+            return inputs
 
 class MaskTracksAsNoise(tf.keras.layers.Layer):
     def __init__(self, 
@@ -1635,8 +1638,9 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
     @staticmethod 
     def raw_call(distances, nidx, K, radius, sort, incr_sorting_score):
         
+        K = K if K>0 else distances.shape[1]
         if not sort:
-            distances[:,:K],nidx[:,:K]
+            return distances[:,:K],nidx[:,:K]
         
         tfssc = tf.where(nidx<0, 1e9, incr_sorting_score) #make sure the -1 end up at the end
         tfssc = tf.concat([tf.zeros_like(tfssc[:,0:1])-1.,tfssc[:,1:]  ],axis=1) #make sure 'self' remains
@@ -1653,7 +1657,6 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
             snidx = tf.where(sdist > radius, -1, snidx)
             sdist = tf.where(sdist > radius, 0. , sdist)
             
-        K = K if K>0 else distances.shape[1]
         #fix the shapes
         sdist = tf.reshape(sdist, [-1, K])
         snidx = tf.reshape(snidx, [-1, K])

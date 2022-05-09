@@ -1,9 +1,8 @@
 
 from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply, LeakyReLU
-from Layers import OnesLike, ExpMinusOne
-from DeepJetCore.DJCLayers import  StopGradient, SelectFeatures, ScalarMultiply
+from Layers import OnesLike
+from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply
 
-import tensorflow as tf
 from Initializers import EyeInitializer
 
 
@@ -87,724 +86,6 @@ def create_outputs(x, feat, energy=None, n_ccoords=3,
 
 
 
-def noise_pre_filter(x, coords, rs, listofrest, t_idx, threshold=0.025,
-                     dmps=[32,16,16,8],
-                     K=24,
-                     return_non_filtered_nidx=False
-                     ):
-    from GravNetLayersRagged import ElementScaling, KNN, LocalDistanceScaling, DistanceWeightedMessagePassing, NoiseFilter
-    coords = ElementScaling(name='initial_nf_coord_scaling')(coords)#just rotation and scaling
-
-    ### Noise filter
-    #see whats there, strict distance weighted so radius=1 is fine (and fast)
-    nidx, dist = KNN(K=K,radius=-1.0, name='initial_nf_knn')([coords,rs])
-    dist = LocalDistanceScaling(name='initial_nf_dist_scale')([dist,Dense(1)(x)])
-    x = DistanceWeightedMessagePassing(dmps,name='initial_nf_mp')([x,nidx,dist])
-    
-    listofrest+=[x]
-    
-    noise_score = Dense(1, activation='sigmoid', name='initial_nf_noise_score')(x)
-    rs, bg,\
-    *other = NoiseFilter(threshold=threshold,#
-                                      loss_enabled=True, 
-                                      loss_scale=1.,
-                                      print_loss=True,
-                                      return_backscatter=True,
-                                      print_reduction=True,
-                                      name='initial_nf_noise_filter' #so that we can load it back
-                                      )([ noise_score, rs] +
-                                        listofrest +
-                                        [t_idx ])
-    if return_non_filtered_nidx:
-        return nidx, dist, noise_score, rs, bg, other[:-1],other[-1]#last one is x
-    else:
-        return noise_score, rs, bg, other[:-1],other[-1]#last one is x
-    
-    
-    
-    
-def first_coordinate_adjustment(coords, x, energy, rs, t_idx, 
-                                debug_outdir,
-                                trainable,
-                                name='first_coords',
-                                n_coords=3,
-                                K=32,
-                                record_metrics=False,
-                                debugplots_after=-1,
-                                use_multigrav=True): 
-    
-    from GravNetLayersRagged import ElementScaling, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
-    from DebugLayers import PlotCoordinates
-    
-    coords = ElementScaling(name=name+'es1',trainable=trainable)(coords)
-    
-    coords = extent_coords_if_needed(coords, x, n_coords, name=name+'_coord_ext')
-
-    if debugplots_after>0:
-        coords = PlotCoordinates(debugplots_after,
-                                 outdir=debug_outdir,
-                                 name=name+'plt1')([coords,energy,t_idx,rs])
-    
-    
-    nidx,dist = KNN(K=K,#radius='dynamic', #use dynamic feature # 24
-                    record_metrics=record_metrics,
-                    use_approximate_knn=False,
-                    name=name+'_knn',
-                    min_bins=20,#hard code it here, this is optimised given our datasets
-                    )([coords,rs])#all distance weighted afterwards
-    
-    x = Dense(32,activation='relu',name=name+'dense1',trainable=trainable)(x)
-    #the last 8 and 4 just add 5% more gpu
-    if use_multigrav:
-        x = DistanceWeightedMessagePassing([16,16], #sumwnorm=True,
-                                       name=name+'matt_dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
-        x_matt = Dense(8,activation='relu',name=name+'dense_matt_1',trainable=trainable)(x)
-        x_matt = MultiAttentionGravNetAdd(
-            4,record_metrics=False,#gets too big
-            name=name+'multi_att_gn')([x,x_matt,coords,nidx])
-        x = Concatenate()([x,x_matt])
-        #x = DistanceWeightedMessagePassing([16], #sumwnorm=True,
-        #                               name=name+'matt_dmp2',trainable=trainable)([x,nidx,dist])# hops are rather light 
-    else:
-        x = DistanceWeightedMessagePassing([32,32,8,8], #sumwnorm=True,
-                                       name=name+'dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
-    
-    
-    # this does not come at a high cost
-    x = Dense(64,activation='relu',name=name+'dense1b',trainable=trainable)(x)
-    x = Dense(32,activation='relu',name=name+'dense1c',trainable=trainable)(x)
-    
-    learnedcoorddiff = Dense(n_coords,kernel_initializer='zeros',use_bias=False,
-                             name=name+'dense2',trainable=trainable)(x)
-    
-    coords = Concatenate()([coords,learnedcoorddiff])                             
-    coords = Dense(n_coords,kernel_initializer=EyeInitializer(mean=0,stddev=0.1),
-                   trainable=trainable,
-                   use_bias=False)(coords)
-    
-    if debugplots_after>0:
-        coords = PlotCoordinates(debugplots_after,outdir=debug_outdir,
-                                 name=name+'plt3')([coords,energy,t_idx,rs])
-                                 
-    dist = RecalcDistances()([coords,nidx])
-    
-    return coords,nidx,dist,x
-    
-    
-def reduce_indices(x,dist, nidx, rs, t_idx, spec_w, track_charge, energy,
-           threshold = 0.5,
-           name='reduce_indices',
-           trainable=True,
-           print_reduction=True,
-           use_edges = True,
-           edge_nodes_0 = 6,
-           edge_nodes_1 = 4,
-           record_metrics=False,
-           return_backscatter=False):   
-    
-    from tensorflow.keras.layers import Reshape
-    from GravNetLayersRagged import EdgeCreator, RemoveSelfRef
-    from GravNetLayersRagged import EdgeSelector, GroupScoreFromEdgeScores
-    from GravNetLayersRagged import NeighbourGroups, MaskTracksAsNoise
-    
-    from LossLayers import LLEdgeClassifier, LLNeighbourhoodClassifier, AmbiguousTruthToNoiseSpectator
-    
-    goodneighbours = x
-    groupthreshold=threshold
-    
-    cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
-    
-    if use_edges:
-        x_e = Dense(edge_nodes_0,activation='relu',
-                    name=name+'_ed1',
-                    trainable=trainable)(x) #6 x 12 .. still ok
-        x_e = EdgeCreator()([nidx,x_e])
-        dist = RemoveSelfRef()(dist)#also make it V x K-1
-        dist = Reshape((dist.shape[-1],1))(dist)
-        x_e = Concatenate()([x_e,dist])
-        x_e = Dense(edge_nodes_1,activation='relu',
-                    name=name+'_ed2',
-                    trainable=trainable)(x_e)#keep this simple!
-        
-        s_e = Dense(1,activation='sigmoid',
-                    name=name+'_ed3',trainable=trainable)(x_e)#edge classifier
-        #loss
-        s_e = LLEdgeClassifier(
-            name = name+'_LLEdgeClassifier',
-            print_loss=False,
-            active=trainable,
-            record_metrics=record_metrics,
-            scale=5.#high scale
-            )([s_e,nidx,cluster_tidx, spec_w, energy])
-    
-        nidx = EdgeSelector(
-            threshold=threshold
-            )([s_e,nidx])
-            
-            
-        #truth layer 
-        # spect_weight, t_idx = AmbiguousTruthToNoiseSpectator()([nidx,spect_weight,t_idx])
-            
-        spec_w, t_idx = AmbiguousTruthToNoiseSpectator(record_metrics=record_metrics)([nidx, spec_w, t_idx])
-            
-        #for nidx, the -1 padding is broken here, but it's ok 
-        #because it gets reintroducted with NeighbourGroups
-        #
-        
-        groupthreshold=1e-3#done by edges
-        goodneighbours = GroupScoreFromEdgeScores()([s_e,nidx])#flatten edge scores
-    
-    else: 
-        goodneighbours = Dense(1, activation='sigmoid',
-                    name=name+'_ngd1',
-                    trainable=trainable)(goodneighbours)
-        
-        goodneighbours = LLNeighbourhoodClassifier(
-            print_loss=True,
-            active=trainable,
-            scale=1.,
-            print_batch_time=False
-            )([goodneighbours,nidx,cluster_tidx])
-        
-    
-    gnidx, gsel, bg, srs = NeighbourGroups(
-        threshold = groupthreshold,
-        return_backscatter=return_backscatter,
-        print_reduction=print_reduction,
-        record_metrics = False,#can be picked up by metrics layers later
-        )([goodneighbours, nidx, rs])
-    
-    
-    return  gnidx, gsel, bg, srs, t_idx, spec_w
-
-
-
-    
-def pre_selection_model_full(orig_inputs,
-                             debug_outdir='',
-                             trainable=False,
-                             name='pre_selection',
-                             debugplots_after=-1,
-                             reduction_threshold=0.75,
-                             noise_threshold = 0.025,
-                             use_edges=True,
-                             n_coords=3,
-                             pass_through=False,
-                             print_info=False,
-                             record_metrics=False,
-                             omit_reduction=False, #only trains coordinate transform. useful for pretrain phase
-                             use_multigrav=True,
-                             eweighted = True,
-                             K=10
-                             ):
-    
-    from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
-    from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
-    from GravNetLayersRagged import CastRowSplits, ProcessFeatures
-    from GravNetLayersRagged import GooeyBatchNorm, MaskTracksAsNoise
-    from DebugLayers import PlotCoordinates
-    from LossLayers import LLClusterCoordinates, LLNotNoiseClassifier, LLFillSpace
-    from MetricsLayers import MLReductionMetrics
-    from Layers import CreateTruthSpectatorWeights
-    
-    from tensorflow.keras.layers import Flatten
-    
-    #add spectator
-    orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,
-                                                     minimum=1e-1,
-                                                     active=True
-                                                     )([orig_inputs['t_spectator'], 
-                                                        orig_inputs['t_idx']])
-                                                     
-    orig_inputs['t_spectator_weight'] = orig_t_spectator_weight
-    
-    rs = CastRowSplits()(orig_inputs['row_splits'])
-    t_idx = orig_inputs['t_idx']
-    t_spec_w =  orig_inputs['t_spectator_weight']
-        
-
-    orig_processed_features = ProcessFeatures()(orig_inputs['features'])
-    x = orig_processed_features
-    energy = SelectFeatures(0, 1)(orig_inputs['features'])
-    coords = SelectFeatures(5, 8)(x)
-    track_charge = SelectFeatures(2,3)(orig_inputs['features']) #zero for calo hits
-    phys_coords = coords
-
-    # here the actual network starts
-    if debugplots_after>0:
-        coords = PlotCoordinates(debugplots_after,outdir=debug_outdir,name=name+'_initial')([coords,energy,t_idx,rs])
-    ############## Keep this part to reload the noise filter with pre-trained weights for other trainings
-    
-    out={}
-    if pass_through: #do nothing but make output compatible
-        for k in orig_inputs.keys():
-            out[k] = orig_inputs[k]
-        out['features'] = x
-        out['coords'] = coords
-        out['addfeat'] = x #add more
-        out['energy'] = energy
-        out['not_noise_score']=Dense(1,name=name+'_passthrough_noise')(x)
-        out['orig_t_idx'] = orig_inputs['t_idx']
-        out['orig_t_energy'] = orig_inputs['t_energy'] #for validation
-        out['orig_dim_coords'] = coords
-        out['rs']=rs
-        out['orig_row_splits'] = rs
-        return out
-    
-    #this takes O(200ms) for 100k hits
-    coords,nidx,dist, x = first_coordinate_adjustment(
-        coords, x, energy, rs, t_idx, 
-        debug_outdir,
-        trainable=trainable,
-        name=name+'_first_coords',
-        debugplots_after=debugplots_after,
-        n_coords=n_coords,
-        K=K,
-        record_metrics=record_metrics,
-        use_multigrav=use_multigrav
-        )
-    #create the gradients
-    coords = LLClusterCoordinates(
-        print_loss = trainable and print_info,
-        active = trainable,
-        name = name+'_LLClusterCoordinates',
-        print_batch_time=False, #DEBUG
-        record_metrics = record_metrics,
-        scale=1.
-        )([coords,t_idx,t_spec_w,energy, rs])
-    
-    
-    if debugplots_after>0:
-        coords = PlotCoordinates(debugplots_after,outdir=debug_outdir,name=name+'_bef_red')([coords,
-                                                                           energy,
-                                                                           t_idx,rs])
-    
-    if omit_reduction:
-        return {'coords': coords,'dist':dist,'x':x}
-    
-    dist,nidx = SortAndSelectNeighbours(K=K)([dist,nidx])#only run reduction on 12 closest
-    
-    '''
-    run a full reduction block
-    return the noise score in addition - don't select yet
-    
-    do not cluster tracks with anything here; this needs to be revised as reduce_indices will change the truth
-    '''
-    
-    
-    
-    unred_rs = rs
-    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w  = reduce_indices(x,dist, nidx, 
-                                                                         rs, t_idx, t_spec_w, track_charge, energy,
-           threshold = reduction_threshold,
-           print_reduction=print_info,
-           trainable=trainable,
-           name=name+'_reduce_indices',
-           use_edges = use_edges,
-           record_metrics=record_metrics,
-           return_backscatter=False)
-    
-    
-    gsel = MLReductionMetrics(
-        name=name+'_reduction_0',
-        record_metrics = record_metrics
-        )([gsel,t_idx,orig_inputs['t_energy'],unred_rs,rs])
-    
-    #do it explicitly
-    
-    #selfeat = orig_inputs['features']
-    selfeat = SelectFromIndices()([gsel,orig_processed_features])
-    unproc_features = SelectFromIndices()([gsel,orig_inputs['features']])
-    
-    #save for later
-    orig_dim_coords = coords
-    
-    energy_weight = energy
-    if not eweighted:
-        energy_weight = OnesLike()(energy)
-        
-    
-    flat_features_full = Concatenate()([x, orig_processed_features])
-    flat_features_full = Dense(5, activation='relu',name=name+'flatten_dense')(flat_features_full)
-    
-    selgnidx = SelectFromIndices()([gsel,gnidx])#already reduced
-    flat_features = SelectFromIndicesWithPad()([selgnidx, flat_features_full])
-    flat_features = Flatten()(flat_features)
-    
-    x = AccumulateNeighbours('minmeanmax')([x, gnidx, energy_weight])
-    x = SelectFromIndices()([gsel,x])
-    
-    x = Concatenate()([x,flat_features])
-    
-    #add more useful things
-    coords = AccumulateNeighbours('mean')([coords, gnidx, energy_weight])
-    coords = SelectFromIndices()([gsel,coords])
-    
-    phys_coords = AccumulateNeighbours('mean')([phys_coords, gnidx, energy_weight])
-    phys_coords = SelectFromIndices()([gsel,phys_coords])
-    
-    energy = AccumulateNeighbours('sum')([energy, gnidx])
-    energy = SelectFromIndices()([gsel,energy])
-    
-    track_charge = SelectFromIndices()([gsel,track_charge])
-    
-    #re-build standard feature layout
-    out['features'] = selfeat
-    out['unproc_features'] = unproc_features
-    out['coords'] = coords
-    out['phys_coords'] = phys_coords
-    out['addfeat'] = GooeyBatchNorm(trainable=trainable)(x) #norm them
-    out['energy'] = energy
-    
-    
-    ## all the truth
-    for k in orig_inputs.keys():
-        if 't_' == k[0:2]:
-            out[k] = SelectFromIndices()([gsel,orig_inputs[k]])
-            
-    #t_idx and spec weights have been adapted
-    out['t_idx'] = SelectFromIndices()([gsel,t_idx])
-    out['t_spectator_weight'] = SelectFromIndices()([gsel,t_spec_w])
-    
-    #debug
-    if debugplots_after>0:
-        out['coords'] = PlotCoordinates(debugplots_after,
-                                        outdir=debug_outdir,name=name+'_after_red')(
-                                            [out['coords'],
-                                             out['energy'],
-                                             out['t_idx'],rs])
-    
-    
-    ######## below is noise classifier
-    
-    
-    #this does not work, but also might not be an issue for the studies        
-    #out['backscatter']=bg
-
-    isnotnoise = Dense(1, activation='sigmoid',
-                       trainable=trainable,
-                       name=name+'_noisescore_d1',
-                       )(Concatenate()([out['addfeat'],out['coords']]))
-                       
-    #mask all tracks explicitly as *not* noise (even if they are)                   
-    track_adjusted_t_idx = MaskTracksAsNoise(maskidx=1,active=trainable)([out['t_idx'],track_charge])
-    
-    isnotnoise = LLNotNoiseClassifier(
-        print_loss=trainable and print_info,
-        scale=1.,
-        active=trainable,
-        record_metrics=record_metrics,
-        )([isnotnoise, track_adjusted_t_idx])
-
-    unred_rs = rs
-    sel, rs, noise_backscatter = NoiseFilter(
-        threshold = noise_threshold, #high signal efficiency filter
-        print_reduction=print_info,
-        record_metrics=record_metrics
-        )([isnotnoise,rs])
-        
-        
-    out['not_noise_score']=isnotnoise
-        
-    for k in out.keys():
-        out[k] = SelectFromIndices()([sel,out[k]])
-        
-    
-    out['coords'] = LLFillSpace(
-        print_loss = trainable and print_info,
-        name = name+'_LLFillSpace',
-        active = trainable,
-        record_metrics = record_metrics,
-        scale=0.025,#just mild
-        runevery=-1, #give it a kick only every now and then - hat's enough
-        )([out['coords'],rs])
-        
-    
-    out['scatterids'] = [group_backgather, noise_backscatter] #add them here directly
-    out['orig_t_idx'] = orig_inputs['t_idx']
-    out['orig_t_energy'] = orig_inputs['t_energy'] #for validation
-    out['orig_dim_coords'] = orig_dim_coords
-    out['rs']=rs
-    out['orig_row_splits'] = orig_inputs['row_splits']
-    
-    '''
-    So we have the following outputs at this stage:
-    
-    out['group_backgather']
-    out['noise_backscatter_N']
-    out['noise_backscatter_idx']
-    out['orig_t_idx'] 
-    out['orig_t_energy'] 
-    out['orig_dim_coords']
-    out['rs']
-    out['orig_row_splits']
-    
-    out['features'] 
-    out['unproc_features']
-    out['coords'] 
-    out['addfeat']
-    out['energy']
-    
-    '''
-
-    return out
-    
-def pre_selection_staged(indict,
-                         debug_outdir,
-                         trainable,
-                         name='pre_selection_add_stage_0',
-                         debugplots_after=-1,
-                         reduction_threshold=0.75,
-                         use_edges=True,
-                         print_info=False,
-                         record_metrics=False,
-                         n_coords=3,
-                         edge_nodes_0 = 16,
-                         edge_nodes_1 = 8,
-                         ):
-    '''
-    Takes the output of the preselection model and selects again :)
-    But the outputs are compatible, this one can be chained
-    
-    This one uses full blown GravNet
-    
-    Gets as inputs:
-    
-    indict['scatterids']
-    indict['orig_t_idx'] 
-    indict['orig_t_energy'] 
-    indict['orig_dim_coords']
-    indict['rs']
-    indict['orig_row_splits']
-    
-    indict['features'] 
-    indict['orig_features']
-    indict['coords'] 
-    indict['addfeat']
-    indict['energy']
-    
-    
-    indict['t_idx']
-    indict['t_energy']
-    ... all the truth info
-    
-    '''
-    
-    
-    from GravNetLayersRagged import RaggedGravNet, DistanceWeightedMessagePassing, ElementScaling
-    from GravNetLayersRagged import SelectFromIndices, GooeyBatchNorm, MaskTracksAsNoise
-    from GravNetLayersRagged import AccumulateNeighbours, KNN, MultiAttentionGravNetAdd
-    from LossLayers import LLClusterCoordinates, LLFillSpace
-    from DebugLayers import PlotCoordinates
-    from MetricsLayers import MLReductionMetrics
-    from Regularizers import MeanMaxDistanceRegularizer, AverageDistanceRegularizer
-    
-    
-    #assume the inputs are normalised
-    rs = indict['rs']
-    t_idx = indict['t_idx']
-    t_spec_w =  indict['t_spectator_weight']
-    
-    
-    track_charge = SelectFeatures(2,3)(indict['unproc_features']) #zero for calo hits
-    x = Concatenate()([indict['features'] , indict['addfeat']])
-    x = Dense(64,activation='elu',trainable=trainable)(x)
-    gn_pre_coords = indict['coords']
-    gn_pre_coords =  ElementScaling(name=name+'es1',
-                                    trainable=trainable)(gn_pre_coords) 
-    x = Concatenate()([gn_pre_coords , x])
-    
-    x, coords, nidx, dist = RaggedGravNet(n_neighbours=32,
-                                                 n_dimensions=n_coords,
-                                                 n_filters=64,
-                                                 n_propagate=64,
-                                                 coord_initialiser_noise=1e-5,
-                                                 feature_activation=None,
-                                                 record_metrics=record_metrics,
-                                                 #use_approximate_knn=True,
-                                                 use_dynamic_knn=True,
-                                                 trainable=trainable,
-                                                 name = name+'_gn1'
-                                                 )([x, rs])
-    
-    #the two below are mostly running to record metrics and kill very bad coordinate scalings 
-    dist = MeanMaxDistanceRegularizer(
-        strength=1e-6 if trainable else 0.,
-        record_metrics = record_metrics
-        )(dist)
-        
-    dist = AverageDistanceRegularizer(
-        strength=1e-6 if trainable else 0.,
-        record_metrics = record_metrics
-        )(dist)
-        
-    
-    if debugplots_after>0:
-        coords = PlotCoordinates(debugplots_after,
-                                        outdir=debug_outdir,name=name+'_gn1_coords')(
-                                            [coords,
-                                             indict['energy'],
-                                             t_idx,rs])
-    
-    x = DistanceWeightedMessagePassing([32,32,8,8], 
-                                       name=name+'dmp1',
-                                       trainable=trainable)([x,nidx,dist])
-    
-    x_matt = Dense(16,activation='elu',name=name+'_matt_dense')(x)
-                                       
-    x_matt = MultiAttentionGravNetAdd(5,name=name+'_att_gn1',record_metrics=record_metrics)([x,x_matt,coords,nidx])
-    x = Concatenate()([x,x_matt]) 
-    x = Dense(64,activation='elu',name=name+'_bef_coord_dense')(x)
-    
-    coords = Add()([Dense(n_coords,
-                          name=name+'_coord_add_dense',
-                          kernel_initializer='zeros')(x),coords])
-    if debugplots_after>0:
-        coords = PlotCoordinates(debugplots_after,
-                                    outdir=debug_outdir,name=name+'_red_coords')(
-                                        [coords,
-                                         indict['energy'],
-                                         t_idx,rs])
-                                    
-    nidx,dist = KNN(K=8,#radius='dynamic', #use dynamic feature
-                record_metrics=record_metrics,
-                name=name+'_knn',
-                use_approximate_knn=False,
-                #min_bins=[7,7] #this can be fine grained
-                )([coords,rs])
-    
-                                       
-    coords = LLClusterCoordinates(
-        print_loss = print_info,
-        record_metrics=record_metrics,
-        name = name+'_LLClusterCoordinates',
-        active = trainable,
-        print_batch_time=False,
-        scale=1.
-        )([coords,t_idx,t_spec_w,indict['energy'],rs])
-        
-    
-    
-    #coords = LLFillSpace(
-    #    active = trainable,
-    #    record_metrics = record_metrics,
-    #    scale=0.025,#just mild
-    #    runevery=-1, #give it a kick only every now and then - hat's enough
-    #    )([coords,rs])
-        
-    energy = indict['energy']    
-        
-    unred_rs=rs
-    
-    #cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,track_charge])
-    
-    gnidx, gsel, group_backgather, rs, t_idx, t_spec_w = reduce_indices(x,dist, nidx, rs, t_idx, t_spec_w,track_charge,energy,
-           threshold = reduction_threshold,
-           print_reduction=print_info,
-           trainable=trainable,
-           name=name+'_reduce_indices',
-           use_edges = use_edges,
-           edge_nodes_0=edge_nodes_0,
-           edge_nodes_1=edge_nodes_1,
-           record_metrics=record_metrics,
-           return_backscatter=False)
-    
-    
-    gsel = MLReductionMetrics(
-        name=name+'_reduction',
-        record_metrics = True
-        )([gsel,t_idx,indict['t_energy'],unred_rs,rs])
-    
-    
-    selfeat = SelectFromIndices()([gsel,indict['features']])
-    unproc_features = SelectFromIndices()([gsel,indict['unproc_features']])
-    
-    
-    
-    x = AccumulateNeighbours('minmeanmax')([x, gnidx,energy])
-    x = SelectFromIndices()([gsel,x])
-    #add more useful things
-    coords = AccumulateNeighbours('mean')([coords, gnidx,energy])
-    coords = SelectFromIndices()([gsel,coords])
-    phys_coords = AccumulateNeighbours('mean')([indict['phys_coords'], gnidx,energy])
-    phys_coords = SelectFromIndices()([gsel,phys_coords])
-    
-    energy = AccumulateNeighbours('sum')([energy, gnidx])
-    energy = SelectFromIndices()([gsel,energy])
-    
-    
-    out={}
-    out['not_noise_score'] = AccumulateNeighbours('mean')([indict['not_noise_score'], gnidx]) 
-    out['not_noise_score'] = SelectFromIndices()([gsel,out['not_noise_score']])
-    
-    out['scatterids'] = indict['scatterids']+[group_backgather] #append new selection 
-    
-    #re-build standard feature layout
-    out['features'] = selfeat
-    out['unproc_features'] = unproc_features
-    out['coords'] = coords
-    out['phys_coords'] = phys_coords
-    out['addfeat'] = GooeyBatchNorm(
-        name=name+'_gooey_norm',
-        trainable=trainable)(x) #norm them
-    out['energy'] = energy
-    out['rs'] = rs
-    
-    for k in indict.keys():
-        if 't_' == k[0:2]:
-            out[k] = SelectFromIndices()([gsel,indict[k]])
-            
-            
-    out['t_idx'] = SelectFromIndices()([gsel,t_idx])
-    out['t_spectator_weight'] = SelectFromIndices()([gsel,t_spec_w])
-    
-    #some pass throughs:
-    out['orig_dim_coords'] = indict['orig_dim_coords']
-    out['orig_t_idx'] = indict['orig_t_idx']
-    out['orig_t_energy'] = indict['orig_t_energy']
-    out['orig_row_splits'] = indict['orig_row_splits']
-    
-    #check
-    anymissing=False
-    for k in indict.keys():
-        if not k in out.keys():
-            anymissing=True
-            print(k, 'missing')
-    if anymissing:
-        raise ValueError("key not found")
-        
-    return out
-
-
-def N_pre_selection_staged(N,
-                           indict,
-                           debug_outdir,
-                           trainable,
-                           name='pre_selection_stage_',
-                           debugplots_after=-1,
-                           reduction_threshold=0.75,
-                           use_edges=True,
-                           print_info=False,
-                           record_metrics=False,
-                           n_coords=3,
-                           edge_nodes_0 = 16,
-                           edge_nodes_1 = 8):
-    
-    for i in range(N):
-        indict=pre_selection_staged(indict,
-                               debug_outdir=debug_outdir,
-                               trainable=trainable,
-                               name=name+str(i),
-                               debugplots_after=debugplots_after,
-                               reduction_threshold=reduction_threshold,
-                               use_edges=use_edges,
-                               print_info=print_info,
-                               record_metrics=record_metrics,
-                               n_coords=n_coords,
-                               edge_nodes_0 = edge_nodes_0,
-                               edge_nodes_1 = edge_nodes_1,
-                               )
-    return indict
 
 def re_integrate_to_full_hits(
         pre_selection,
@@ -882,4 +163,227 @@ def re_integrate_to_full_hits(
 
 
 
+from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
+from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
+from GravNetLayersRagged import CastRowSplits, ProcessFeatures
+from GravNetLayersRagged import GooeyBatchNorm, MaskTracksAsNoise
+from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLFillSpace, LLEdgeClassifier
+from MetricsLayers import MLReductionMetrics
+from Layers import CreateTruthSpectatorWeights
+
+from tensorflow.keras.layers import Flatten, Reshape
+
+from GravNetLayersRagged import NeighbourGroups,GroupScoreFromEdgeScores,ElementScaling, EdgeSelector, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
+from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
+    
+#make this much simpler
+def pre_selection_model(
+        orig_inputs,
+        debug_outdir='',
+        trainable=False,
+        name='pre_selection',
+        debugplots_after=-1,
+        reduction_threshold=0.51,#doesn't make a huge difference
+        noise_threshold=0.1, #0.4 % false-positive, 96% noise removal
+        K=12,
+        record_metrics=True,
+        filter_noise=True,
+        ):
+    
+    if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
+        orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,minimum=1e-1,active=True
+                                                         )([orig_inputs['t_spectator'], 
+                                                            orig_inputs['t_idx']])
+        orig_inputs['t_spectator_weight'] = orig_t_spectator_weight
+        
+    if not 'is_track' in orig_inputs.keys():
+        orig_inputs['is_track'] = SelectFeatures(2,3)(orig_inputs['features'])
+        
+    if not 'rechit_energy' in orig_inputs.keys():
+        orig_inputs['rechit_energy'] = SelectFeatures(0, 1)(orig_inputs['features'])    
+    
+    processed_features =  orig_inputs['features']   
+    #coords have not been built so features not processed
+    if not 'coords' in orig_inputs.keys():
+        processed_features = ProcessFeatures()(orig_inputs['features'])
+        orig_inputs['coords'] = SelectFeatures(5, 8)(processed_features)
+    
+    #get some things to work with    
+    
+    rs = CastRowSplits()(orig_inputs['row_splits'])
+    energy = orig_inputs['rechit_energy']
+    coords = orig_inputs['coords']
+    is_track = orig_inputs['is_track']
+    x = processed_features
+    
+    #truth
+    t_spec_w = orig_inputs['t_spectator_weight']
+    t_idx = orig_inputs['t_idx']
+    
+    coords = ElementScaling(name=name+'es1',trainable=trainable)(coords)
+    coords = LLClusterCoordinates(active = trainable,
+        name = name+'_LLClusterCoordinates',record_metrics = record_metrics,
+        scale=1.
+        )([coords,t_idx,t_spec_w,energy, rs])
+    
+    
+    
+    nidx,dist = KNN(K=K,record_metrics=record_metrics,name=name+'_knn',
+                    min_bins=20)([coords,rs])#hard code it here, this is optimised given our datasets
+    
+    ### this is the "meat" of the model
+    
+    x = DistanceWeightedMessagePassing([32,32],name=name+'dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
+    x = Dense(32,activation='relu',name=name+'dense1a',trainable=trainable)(x)
+    x = Dense(32,activation='relu',name=name+'dense1b',trainable=trainable)(x)                
+    
+    #create reduction, very simple, this gets expanded with K! be careful
+    x_e = Dense(6,activation='relu',name=name+'dense_x_e',trainable=trainable)(x)
+    x_e = SelectFromIndicesWithPad()([nidx, x_e])#this will be big
+    x_e = Flatten()(x_e)
+    x_e = Dense(4*K,activation='relu',name=name+'dense_flat_x_e',trainable=trainable)(x_e)
+    x_e = Reshape((K,4))(x_e)
+    x_e = Dense(1,activation='sigmoid',name=name+'_ed3',trainable=trainable)(x_e)#edge classifier    
+    
+    
+    cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,is_track])
+    x_e = LLEdgeClassifier( name = name+'_LLEdgeClassifier',active=trainable,record_metrics=record_metrics,
+            scale=5.#high scale
+            )([x_e,nidx,cluster_tidx, t_spec_w, energy])    
+    
+    
+    if debugplots_after > 0:
+        x_e = PlotEdgeDiscriminator(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_edges')([x_e,nidx,cluster_tidx])
+    
+    sel_nidx = EdgeSelector(
+            threshold=reduction_threshold
+            )([x_e,nidx])
+            
+    sel_t_spec_w, sel_t_idx = AmbiguousTruthToNoiseSpectator(
+        record_metrics=record_metrics)([sel_nidx, t_spec_w, t_idx])
+                 
+    hierarchy = GroupScoreFromEdgeScores()([x_e,sel_nidx])
+    
+    g_sel_nidx, g_sel, group_backgather, g_sel_rs = NeighbourGroups(threshold = 1e-3,return_backscatter=False,
+        record_metrics = False)([hierarchy, sel_nidx, rs])
+    
+    
+    g_sel = MLReductionMetrics(
+        name=name+'_reduction_0',
+        record_metrics = record_metrics
+        )([g_sel,t_idx,orig_inputs['t_energy'],rs,g_sel_rs])
+    
+    #safety, these row splits are obsolete now  
+    rs = None
+    
+    # g_sel_sel_nidx: selected selected indices (first dimension output vertex multi)
+    # g_sel_nidx: 'old' dimension, but with -1s where neighbours are clusters elsewhere
+    g_sel_sel_nidx = SelectFromIndices()([g_sel,g_sel_nidx])
+    
+    #create selected output truth
+    out={}
+    for k in orig_inputs.keys():
+        if 't_' == k[0:2]:
+            out[k] = SelectFromIndices()([g_sel,orig_inputs[k]])
+    
+    #consider ambiguities
+    out['t_idx'] = SelectFromIndices()([g_sel,sel_t_idx])
+    out['t_spectator_weight'] = SelectFromIndices()([g_sel,sel_t_spec_w])
+    
+    ## create reduced features
+    
+    x_to_flat = Concatenate(name=name+'concat_x_to_flat')([processed_features,x])
+    x_to_flat = Dense(4, activation='relu',name=name+'flatten_dense')(x_to_flat)
+    #this has output dimension now
+    x_flat_o = SelectFromIndicesWithPad()([g_sel_sel_nidx, x_to_flat])
+    x_flat_o = Flatten()(x_flat_o)
+    
+    x_o = AccumulateNeighbours('minmeanmax')([x, g_sel_nidx, energy])
+    x_o = SelectFromIndices()([g_sel,x_o])
+    x_o = Concatenate(name=name+'concat_x_o')([x_o,x_flat_o])
+    x_o = GooeyBatchNorm(trainable=trainable)(x_o)
+    
+    #explicitly sum energy    
+    energy_o = AccumulateNeighbours('sum')([energy, g_sel_nidx])
+    energy_o = SelectFromIndices()([g_sel,energy_o])
+    
+    #build preselection coordinates
+    coords_o = AccumulateNeighbours('mean')([coords, g_sel_nidx, energy])
+    coords_o = SelectFromIndices()([g_sel,coords_o])
+    
+    ## selection done work on selected ones
+    
+    coord_add_o = Dense(16,activation='relu',name=name+'dense_coord_add1')(x_o)
+    coord_add_o = Dense(3,name=name+'dense_coord_add3')(coord_add_o)
+    coords_o = Add()([coords_o,coord_add_o])
+    
+    #was not clustered
+    is_track_o = SelectFromIndices()([g_sel,is_track])
+    
+    #create a gradient for this
+    coords_o = LLClusterCoordinates(
+        record_metrics=record_metrics,
+        name = name+'_LLClusterCoordinates_coords_o',
+        active = trainable,
+        scale=1.
+        )([coords_o,out['t_idx'],out['t_spectator_weight'],energy_o,g_sel_rs])
+    
+    
+    
+    #add to dict:
+    out['coords'] = coords_o
+    out['rechit_energy'] = energy_o
+    out['features'] = x_o
+    out['is_track'] = is_track_o
+    
+    if debugplots_after>0:
+        out['coords'] = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_after_red')(
+                                            [out['coords'],
+                                             out['rechit_energy'],
+                                             out['t_idx'],g_sel_rs])
+    
+    ####### noise filter part #########
+    
+    if filter_noise:
+    
+        isnotnoise = Dense(1, activation='sigmoid',trainable=trainable,name=name+'_noisescore_d1',
+                           )(Concatenate(name=name+'concat_outf_outc')([out['features'],out['coords']]))
+                           
+        track_adjusted_t_idx = MaskTracksAsNoise(maskidx=1,active=trainable)([out['t_idx'],out['is_track']])
+        isnotnoise = LLNotNoiseClassifier(active=trainable,record_metrics=record_metrics,
+            scale=1.)([isnotnoise, track_adjusted_t_idx])
+        
+        if debugplots_after > 0:
+            isnotnoise = PlotNoiseDiscriminator(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_noise_score')([isnotnoise,track_adjusted_t_idx])
+                                        
+        no_noise_sel, no_noise_rs, noise_backscatter = NoiseFilter(threshold = noise_threshold,record_metrics=record_metrics
+            )([isnotnoise,g_sel_rs])
+        
+        
+        #select not-noise
+        for k in out.keys():
+            out[k] = SelectFromIndices()([no_noise_sel,out[k]]) #also  good check, will fail if dimensions don't match
+        
+        group_backgather = [group_backgather, noise_backscatter]
+        #safety, these row splits are obsolete now 
+        g_sel_rs = None
+    
+        out['row_splits'] = no_noise_rs
+    else:
+        out['row_splits'] = g_sel_rs
+        
+    out['scatterids'] = [group_backgather]
+    if 'scatterids' in orig_inputs.keys():
+        out['scatterids'] = orig_inputs['scatterids'] + [group_backgather]
+    if not 'orig_row_splits' in orig_inputs.keys():
+        out['orig_row_splits'] = orig_inputs['row_splits']
+    else:
+        out['orig_row_splits'] = orig_inputs['orig_row_splits']#pass through
+    
+    return out
+    
+    
     

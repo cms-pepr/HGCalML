@@ -23,40 +23,46 @@ from datastructures import TrainData_NanoML
 
 
 #from tensorflow.keras import Model
-from Layers import DictModel, PrintMeanAndStd
+from Layers import DictModel
 
-from model_blocks import create_outputs, noise_pre_filter, first_coordinate_adjustment, reduce_indices
-from tensorflow.keras.layers import Dense, Concatenate
-from Layers import ProcessFeatures, CastRowSplits
-from DeepJetCore.DJCLayers import SelectFeatures
-
-from LossLayers import LLLocalClusterCoordinates,LLNotNoiseClassifier, LLClusterCoordinates
-from LossLayers import LLNeighbourhoodClassifier, CreateTruthSpectatorWeights
-
-from Regularizers import AverageDistanceRegularizer
-
-from DebugLayers import PlotCoordinates
-
-from clr_callback import CyclicLR
-
-from MetricsLayers import MLReductionMetrics
-from model_blocks import pre_selection_model_full, pre_selection_staged
+from model_blocks import  pre_selection_model
 
 def pretrain_model(Inputs,
-                   td,
+                   td, 
+                   debugplots_after=1200, #10 minutes: ~600
                    debug_outdir=None):
 
     orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
  
     
-    presel = pre_selection_model_full(orig_inputs,
+    #presel = pre_selection_model_full(orig_inputs,
+    #                         debug_outdir,
+    #                         trainable=True,
+    #                         debugplots_after=1500,
+    #                         record_metrics=True
+    #                         )
+    
+    print('orig_inputs',orig_inputs.keys())
+    
+    presel = pre_selection_model(orig_inputs,
                              debug_outdir,
                              trainable=True,
-                             debugplots_after=1500,
+                             debugplots_after=5*debugplots_after,
                              record_metrics=True
                              )
     
+    if False: #the pre-selection model can be chained if needed
+        presel = pre_selection_model(presel,
+                             debug_outdir,
+                             name='presel_stage_2',
+                             trainable=True,
+                             debugplots_after=debugplots_after,
+                             record_metrics=True,
+                             reduction_threshold=0.5,
+                             filter_noise=False
+                             )
     
+    print('presel',presel.keys())
     # this will create issues with the output and is only needed if used in a full dim model.
     # so it's ok to pop it here for training
     presel.pop('scatterids')
@@ -99,14 +105,14 @@ publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 
-plot_frequency=200
+plot_frequency=150#every 5 minutes approx
 cb = [
     
     simpleMetricsCallback(
         output_file=train.outputDir+'/reduction_metrics.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics=['*_reduction','*_reduction*lost*','*luster*time'],#includes time
+        select_metrics=['*_reduction','*amb_truth_fraction'],#includes time
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -115,7 +121,7 @@ cb = [
         output_file=train.outputDir+'/hit_reduction_metrics.html',
         record_frequency= 2,
         plot_frequency = plot_frequency,
-        select_metrics='*reduction*hits*',#includes time
+        select_metrics=['*reduction*hits*','*_reduction*lost*'],#includes time
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -130,7 +136,7 @@ cb = [
     
     simpleMetricsCallback(
         output_file=train.outputDir+'/time.html',
-        record_frequency= 2,
+        record_frequency= 100,#doesn't change anyway
         plot_frequency = plot_frequency,
         select_metrics='*time*',
         publish=publishpath #no additional directory here (scp cannot create one)
@@ -157,7 +163,7 @@ cb = [
 #cb += build_callbacks(train)
 
 #cb=[]
-nbatch = 400000 
+nbatch = 200000 
 train.change_learning_rate(1e-4)
 
 train.trainModel(nepochs=2,batchsize=nbatch,additional_callbacks=cb)
