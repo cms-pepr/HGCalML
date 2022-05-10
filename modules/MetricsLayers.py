@@ -35,6 +35,27 @@ class MLBase(LayerWithMetrics):
         self.metrics_call(inputs)
         return inputs[0]
 
+class SimpleReductionMetrics(MLBase):
+    
+    def __init__(self, **kwargs):
+        '''
+        Inputs:
+        - after reduction row splits
+        - previous row splits
+        
+        
+        Output:
+        - previous row splits (unchanged)
+        
+        '''
+        super(SimpleReductionMetrics, self).__init__(**kwargs)
+        
+    def metrics_call(self, inputs):
+        assert len(inputs)==2
+        after,bef = inputs
+        self.add_prompt_metric(tf.reduce_mean(after[-1]/bef[-1]),self.name+'_rel_reduction')
+        
+
 class MLReductionMetrics(MLBase):
     
     def __init__(self, **kwargs):

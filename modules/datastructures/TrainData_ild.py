@@ -6,7 +6,7 @@ from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore import SimpleArray
 import numpy as np
 import uproot3 as uproot
-import ROOT
+
 import os
 import pickle
 import gzip
@@ -84,6 +84,7 @@ class TrainData_ild(TrainData):
         return np.expand_dims(a.content, axis=1),np.array(rowsplits, dtype='int64') 
 
     def fileIsValid(self, filename):
+        import ROOT
         try:
             fileTimeOut(filename, 2)
             tree = uproot.open(filename)["SLCIOConverted"]

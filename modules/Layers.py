@@ -23,6 +23,9 @@ global_layers_list['LayerWithMetrics'] = LayerWithMetrics
 
 #metrics layers
 
+from MetricsLayers import SimpleReductionMetrics
+global_layers_list['SimpleReductionMetrics'] = SimpleReductionMetrics
+
 from MetricsLayers import MLReductionMetrics
 global_layers_list['MLReductionMetrics'] = MLReductionMetrics
 

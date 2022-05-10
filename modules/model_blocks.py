@@ -164,7 +164,7 @@ from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
 from GravNetLayersRagged import CastRowSplits, ProcessFeatures
 from GravNetLayersRagged import GooeyBatchNorm, MaskTracksAsNoise
 from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLFillSpace, LLEdgeClassifier
-from MetricsLayers import MLReductionMetrics
+from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics
 from Layers import CreateTruthSpectatorWeights
 
 from tensorflow.keras.layers import Flatten, Reshape
@@ -205,8 +205,8 @@ def pre_selection_model(
         orig_inputs['coords'] = SelectFeatures(5, 8)(processed_features)
     
     #get some things to work with    
-    
-    rs = CastRowSplits()(orig_inputs['row_splits'])
+    orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
+    rs = orig_inputs['row_splits']
     energy = orig_inputs['rechit_energy']
     coords = orig_inputs['coords']
     is_track = orig_inputs['is_track']
@@ -384,6 +384,12 @@ def pre_selection_model(
         out['orig_row_splits'] = orig_inputs['row_splits']
     else:
         out['orig_row_splits'] = orig_inputs['orig_row_splits']#pass through
+    
+    # full reduction metric
+    out['row_splits'] = SimpleReductionMetrics(
+        name=name+'full_reduction',
+        record_metrics=record_metrics
+        )([out['row_splits'],orig_inputs['row_splits']])
     
     return out
     

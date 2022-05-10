@@ -105,7 +105,7 @@ publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 
-plot_frequency=150#every 5 minutes approx
+plot_frequency=2*1200#every 20 minutes approx
 cb = [
     
     simpleMetricsCallback(
@@ -136,7 +136,7 @@ cb = [
     
     simpleMetricsCallback(
         output_file=train.outputDir+'/time.html',
-        record_frequency= 100,#doesn't change anyway
+        record_frequency= 10,#doesn't change anyway
         plot_frequency = plot_frequency,
         select_metrics='*time*',
         publish=publishpath #no additional directory here (scp cannot create one)
@@ -170,5 +170,6 @@ train.trainModel(nepochs=2,batchsize=nbatch,additional_callbacks=cb)
 
 print('reducing learning rate to 1e-5')
 train.change_learning_rate(5e-5)
+nbatch = 400000 
 
 train.trainModel(nepochs=100,batchsize=nbatch,additional_callbacks=cb)
