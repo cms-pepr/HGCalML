@@ -4,58 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import tensorflow as tf
 from scipy.optimize import linear_sum_assignment
-
-def calculate_iou_tf(truth_sid,
-                     pred_sid,
-                     truth_shower_sid,
-                     pred_shower_sid,
-                     hit_weight, return_all=False):
-
-    with tf.device('/cpu:0'):
-        # print("1")
-        truth_sid = tf.cast(tf.convert_to_tensor(truth_sid), tf.int32)
-        pred_sid = tf.cast(tf.convert_to_tensor(pred_sid), tf.int32)
-        hit_weight = tf.cast(tf.convert_to_tensor(hit_weight), tf.float32)
-        # print("2")
-
-        truth_shower_sid = tf.cast(tf.convert_to_tensor(truth_shower_sid), tf.int32)
-        pred_shower_sid = tf.cast(tf.convert_to_tensor(pred_shower_sid), tf.int32)
-        len_pred_showers = len(pred_shower_sid)
-        len_truth_showers = len(truth_shower_sid)
-
-        # print("3")
-        truth_idx_2 = tf.zeros_like(truth_sid) -1
-        pred_idx_2 = tf.zeros_like(pred_sid) -1
-        hit_weight_2 = tf.zeros_like(hit_weight)
-
-        # print("3.1")
-
-        for i in range(len(pred_shower_sid)):
-            pred_idx_2 = tf.where(pred_sid == pred_shower_sid[i], i, pred_idx_2)
-
-        for i in range(len(truth_shower_sid)):
-            truth_idx_2 = tf.where(truth_sid == truth_shower_sid[i], i, truth_idx_2)
-
-        # print("3.3")
-        one_hot_pred = tf.one_hot(pred_idx_2, depth=len_pred_showers)
-        one_hot_truth = tf.one_hot(truth_idx_2, depth=len_truth_showers)
-
-        intersection_sum_matrix = tf.linalg.matmul(one_hot_pred * hit_weight[..., tf.newaxis], one_hot_truth, transpose_a=True)
-
-        pred_sum_matrix = tf.linalg.matmul(one_hot_pred * hit_weight[..., tf.newaxis], tf.ones_like(one_hot_truth),
-                                        transpose_a=True)
-
-        truth_sum_matrix = tf.linalg.matmul(
-            tf.ones_like(one_hot_pred) * hit_weight[..., tf.newaxis], one_hot_truth, transpose_a=True)
-
-        union_sum_matrix = pred_sum_matrix + truth_sum_matrix - intersection_sum_matrix
-
-        overlap_matrix = (intersection_sum_matrix / union_sum_matrix).numpy()
-
-        if return_all:
-            return overlap_matrix, pred_sum_matrix, truth_sum_matrix, intersection_sum_matrix
-        else:
-            return overlap_matrix
+from numba import njit
 
 
 def angle(p, t):
@@ -65,6 +14,60 @@ def angle(p, t):
     angle = np.arccos(np.sum(t*p) / (np.sqrt(np.sum(t*t))*np.sqrt(np.sum(p*p))))
 
     return angle
+
+
+@njit
+def _calculate_iou_serial_fast_comp(intersection_sum_matrix, pred_sum, truth_sum, truth_sid, pred_sid, hit_weight):
+    if( not( len(truth_sid) == len(pred_sid) == len(hit_weight))):
+        raise RuntimeError('Length of truth_sid, pred_sid and hig_weight must be the same')
+
+    for i in range(len(truth_sid)):
+        intersection_sum_matrix[pred_sid[i]+1,truth_sid[i]+1] += hit_weight[i]
+        pred_sum[pred_sid[i]+1] += hit_weight[i]
+        truth_sum[truth_sid[i]+1] += hit_weight[i]
+
+@njit
+def _find_idx(uniques, original):
+    idx = np.zeros_like(original)
+    for i in range(len(original)):
+        for j in range(len(uniques)):
+            if uniques[j] == original[i]:
+                idx[i] = j + 1
+                break
+    return idx
+
+def calculate_iou_serial_fast(truth_sid,
+                     pred_sid,
+                     truth_shower_sid,
+                     pred_shower_sid,
+                     hit_weight, return_all=False):
+    truth_shower_sid = np.array(truth_shower_sid)
+    pred_shower_sid = np.array(pred_shower_sid)
+
+    t_unique, truth_sid_2 = np.unique(truth_sid, return_inverse=True)
+    p_unique, pred_sid_2 = np.unique(pred_sid, return_inverse=True)
+
+    t_idx = _find_idx(t_unique, truth_shower_sid)
+    p_idx = _find_idx(p_unique, pred_shower_sid)
+
+    intersection_matrix = np.zeros((len(p_unique)+1, len(t_unique)+1), np.float32)
+    truth_sum = np.zeros((len(t_unique)+1), np.float32)
+    pred_sum = np.zeros((len(p_unique)+1), np.float32)
+    _calculate_iou_serial_fast_comp(intersection_matrix, pred_sum, truth_sum, truth_sid_2, pred_sid_2, hit_weight)
+
+    intersection_matrix = intersection_matrix[p_idx]
+    intersection_matrix = intersection_matrix[:, t_idx]
+
+    truth_sum = truth_sum[t_idx]
+    pred_sum = pred_sum[p_idx]
+
+    union_matrix = pred_sum[:, np.newaxis] + truth_sum[np.newaxis, :] - intersection_matrix
+    overlap_matrix = (intersection_matrix / union_matrix)
+
+    if return_all:
+        return overlap_matrix, pred_sum, truth_sum, intersection_matrix
+    else:
+        return overlap_matrix
 
 
 class ShowersMatcher:
@@ -137,7 +140,7 @@ class ShowersMatcher:
         pred_shower_energy = [self.graph.nodes[x]['pred_energy'] for x in pred_shower_sid]
         truth_shower_energy = [self.graph.nodes[x]['truthHitAssignedEnergies'] for x in truth_shower_sid]
         weight = self.features_dict['recHitEnergy'][:, 0]
-        iou_matrix = calculate_iou_tf(self.truth_dict['truthHitAssignementIdx'][:, 0],
+        iou_matrix = calculate_iou_serial_fast(self.truth_dict['truthHitAssignementIdx'][:, 0],
                                       self.pred_sid[:, 0],
                                        truth_shower_sid,
                                        pred_shower_sid,
