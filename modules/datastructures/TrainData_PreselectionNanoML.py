@@ -18,31 +18,44 @@ import os
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from DeepJetCore.dataPipeline import TrainDataGenerator
 
+def _getkeys():
+    file = os.getenv("HGCALML")+'/models/pre_selection_may22/KERAS_model.h5'
+    tmp_model = load_model(file)
+    output_keys = list(tmp_model.output_shape.keys())
+    output_keys.remove('row_splits')
+    output_keys.remove('orig_row_splits')
+    return output_keys
+
+#just load once at import
+TrainData_PreselectionNanoML_keys=None
+
 class TrainData_PreselectionNanoML(TrainData):
     def __init__(self):
         TrainData.__init__(self)
+        
+        global TrainData_PreselectionNanoML_keys
+        if TrainData_PreselectionNanoML_keys is None:
+            TrainData_PreselectionNanoML_keys=_getkeys()#load only once
+        
+        self.no_fork=True #make sure conversion can use gpu
+        
         self.include_tracks = False
         self.cp_plus_pu_mode = False
         #preselection model used
         self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_may22/KERAS_model.h5'
+        
+        self.output_keys = TrainData_PreselectionNanoML_keys
 
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename=""):
 
+        #this needs GPU
+        import setGPU
         model = load_model(self.path_to_pretrained)
         print("Loaded preselection model : ", self.path_to_pretrained)
 
 
         #outdict = model.output_shape
-        list_outkeys = list(model.output_shape.keys())
-        for l in model.output_shape.keys():
-            if 'orig_' in l:
-                list_outkeys.remove(l)
-            elif l == "row_splits":
-                list_outkeys.remove(l)
-        #print("Otput keys considered : ", list_outkeys)
-
         td = TrainData_NanoML()
-        tdclass = TrainData_NanoML
         td.readFromFile(filename)
         print("Reading from file : ", filename)
 
@@ -55,20 +68,21 @@ class TrainData_PreselectionNanoML(TrainData):
         nevents = gen.getNBatches()
         #print("Nevents : ", nevents)
 
-        rs = []
+        rs = [[0]]#row splits need one extra dimension 
         newout = {}
-        rs.append(0)
-
+        feeder = gen.feedNumpyData()
         for i in range(nevents):
-            out = model(next(gen.feedNumpyData()))
+            feat,_ = next(feeder)
+            out = model(feat)
             rs_tmp = out['row_splits'].numpy()
-            rs.append(rs_tmp[1])
+            rs.append([rs_tmp[1]])
             if i == 0:
-                for k in list_outkeys:
+                for k in self.output_keys:
                     newout[k] = out[k].numpy()
             else:
-                for k in list_outkeys:
+                for k in self.output_keys:
                     newout[k] = np.concatenate((newout[k], out[k].numpy()), axis=0)
+                    
 
 
         #td.clear()
@@ -78,62 +92,29 @@ class TrainData_PreselectionNanoML(TrainData):
         # converting to DeepJetCore.SimpleArray
         rs = np.array(rs, dtype='int64')
         rs = np.cumsum(rs,axis=0)
+        print(rs)
+        print([(k,newout[k].shape) for k in newout.keys()])
+        
+        outSA = []
+        for k2 in self.output_keys:
+            outSA.append(SimpleArray(newout[k2],rs,name=k2))
 
-        outSA = {}
-        for k2 in list_outkeys:
-            nameSA = k2
-            if nameSA == "features":
-                nameSA = "recHitFeatures"
-            outSA[k2] = SimpleArray(newout[k2],rs,name=nameSA)
-
-        return [outSA["features"],
-                outSA["rechit_energy"],
-                outSA["t_idx"], outSA["t_energy"], outSA["t_pos"], outSA["t_time"],
-                outSA["t_pid"], outSA["t_spectator"], outSA["t_fully_contained"],
-                outSA["t_rec_energy"], outSA["t_is_unique"]],[], []
+        return outSA,[], []
 
 
     def interpretAllModelInputs(self, ilist, returndict=True):
         #taken from TrainData_NanoML since it is similar, check for changes there
         if not returndict:
             raise ValueError('interpretAllModelInputs: Non-dict output is DEPRECATED. PLEASE REMOVE')
-        '''
-        input: the full list of keras inputs
-        returns: td
-         - rechit feature array
-         - t_idx
-         - t_energy
-         - t_pos
-         - t_time
-         - t_pid :             non hot-encoded pid
-         - t_spectator :       spectator score, higher: further from shower core
-         - t_fully_contained : fully contained in calorimeter, no 'scraping'
-         - t_rec_energy :      the truth-associated deposited
-                               (and rechit calibrated) energy, including fractional assignments)
-         - t_is_unique :       an index that is 1 for exactly one hit per truth shower
-         - row_splits
-
-        '''
-        out = {
-            'features':ilist[0],
-            'rechit_energy':[2],
-            't_idx':ilist[4],
-            't_energy':ilist[6],
-            't_pos':ilist[8],
-            't_time':ilist[10],
-            't_pid':ilist[12],
-            't_spectator':ilist[14],
-            't_fully_contained':ilist[16],
-            't_rec_energy':ilist[18],
-            't_is_unique':ilist[20],
-            'row_splits':ilist[1]
-            }
-        #keep length check for compatibility
-        if len(ilist)>16:
-            out['t_rec_energy'] = ilist[16]
-        if len(ilist)>18:
-            out['t_is_unique'] = ilist[18]
+        
+        out={}
+        #data, rs, data, rs
+        i_k=0
+        out['row_splits'] = ilist[1]
+        for i_k in range(len(self.output_keys)):
+            out[self.output_keys[i_k]] = ilist[2*i_k]
         return out
+        
 
 
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):

@@ -14,7 +14,6 @@ from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
 #### helper###
-from datastructures import TrainData_NanoML
 from Initializers import EyeInitializer
 
 from oc_helper_ops import SelectWithDefault
@@ -581,6 +580,8 @@ class ProcessFeatures(tf.keras.layers.Layer):
         will apply some simple fixed preprocessing to the standard TrainData_OC features
         
         """
+        
+        from datastructures import TrainData_NanoML
         self.td=TrainData_NanoML()
         self.newformat = newformat
         super(ProcessFeatures, self).__init__(**kwargs)
