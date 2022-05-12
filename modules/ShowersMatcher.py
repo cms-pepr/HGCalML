@@ -388,9 +388,8 @@ class ShowersMatcher:
         skip_keys = {'type'}
         keys_ = [list(attr.keys()) for n, attr in self.calculated_graph.nodes(data=True)]
         keys_ = [item for sublist in keys_ for item in sublist]
-        keys_ = [k for k in keys_ if k not in skip_keys]
+        keys_ = set([k for k in keys_ if k not in skip_keys])
         result_data = {k:[] for k in keys_}
-
         done = set()
         for n, attr in self.calculated_graph.nodes(data=True):
             if n in done:

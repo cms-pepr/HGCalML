@@ -51,6 +51,20 @@ def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, pred_d
 
     return np.array(pred_sid)[:, np.newaxis], pred_shower_alpha_idx
 
+def reconstruct_showers_binned(cc, beta, beta_threshold=0.5, dist_threshold=0.5, pred_dist=None):
+    from assign_condensate_op import BinnedBuildAndAssignCondenates
+
+    assignment, alpha_idx = BinnedBuildAndAssignCondenates(
+        cc,
+        beta,
+        row_splits=np.array([0, len(cc)], np.int32),
+        dist=pred_dist if pred_dist is not None else None,
+        min_beta=beta_threshold,
+        radius=dist_threshold)
+
+    return assignment[..., np.newaxis], alpha_idx
+
+
 
 def reconstruct_showers_no_op(cc, beta, beta_threshold=0.5, dist_threshold=0.5, pred_dist=None, max_hits_per_shower=-1):
     beta = beta[:, 0]
@@ -96,12 +110,14 @@ def reconstruct_showers_no_op(cc, beta, beta_threshold=0.5, dist_threshold=0.5, 
 
 
 class OCHits2Showers():
-    def __init__(self, beta_threshold, distance_threshold, is_soft, with_local_distance_scaling, op):
+    def __init__(self, beta_threshold, distance_threshold, is_soft, with_local_distance_scaling, reco_method):
         self.beta_threshold = beta_threshold
         self.distance_threshold = distance_threshold
         self.is_soft = is_soft
         self.with_local_distance_scaling = with_local_distance_scaling
-        self.op = op
+        self.op = reco_method
+        if type(self.op) is bool:
+            self.op = 'condensate_op'
 
     def set_beta_threshold(self, beta_threshold):
         self.beta_threshold = beta_threshold
@@ -116,18 +132,27 @@ class OCHits2Showers():
         :return: Pred sid
         """
 
-        if self.op:
+        if self.op == 'condensate_op':
             pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
                                                                   pred_dict['pred_beta'],
                                                                   self.beta_threshold,
                                                                   self.distance_threshold,
                                                                   pred_dist=pred_dict['pred_dist'] if self.with_local_distance_scaling else None)
-        else:
+        elif self.op =='numpy':
             pred_sid, pred_shower_alpha_idx = reconstruct_showers_no_op(pred_dict['pred_ccoords'],
                                                                   pred_dict['pred_beta'],
                                                                   self.beta_threshold,
                                                                   self.distance_threshold,
                                                                   pred_dist=pred_dict['pred_dist'] if self.with_local_distance_scaling else None)
+        elif self.op=='binned':
+            pred_sid, pred_shower_alpha_idx = reconstruct_showers_binned(pred_dict['pred_ccoords'],
+                                                                        pred_dict['pred_beta'],
+                                                                        self.beta_threshold,
+                                                                        self.distance_threshold,
+                                                                        pred_dist=pred_dict[
+                                                                            'pred_dist'] if self.with_local_distance_scaling else None)
+        else:
+            raise KeyError('%s reco method not recognized'%self.op)
 
         processed_pred_dict = dict()
         processed_pred_dict['pred_sid'] = pred_sid
@@ -137,8 +162,10 @@ class OCHits2Showers():
             filter = (processed_pred_dict['pred_sid']==pred_sid[idx])[:,0]
             processed_pred_dict['pred_energy'][filter] \
                 = np.sum(pred_dict['pred_energy_corr_factor'][filter] * features_dict['recHitEnergy'][filter])
-        processed_pred_dict['pred_energy_unc'] \
-            = 0.5*(pred_dict['pred_energy_high_quantile']-pred_dict['pred_energy_low_quantile'])
+
+        if 'pred_energy_unc' in processed_pred_dict:
+            processed_pred_dict['pred_energy_unc'] \
+                = 0.5*(pred_dict['pred_energy_high_quantile']-pred_dict['pred_energy_low_quantile'])
 
         processed_pred_dict.update(pred_dict)
         processed_pred_dict.pop('pred_beta')
