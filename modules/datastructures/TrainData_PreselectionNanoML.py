@@ -17,20 +17,17 @@ import os
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from DeepJetCore.dataPipeline import TrainDataGenerator
-from model_blocks import pre_selection_model_full, pre_selection_staged
 
-class TrainData_ReductionNanoML(TrainData):
+class TrainData_PreselectionNanoML(TrainData):
     def __init__(self):
         TrainData.__init__(self)
         self.include_tracks = False
         self.cp_plus_pu_mode = False
-        #reduction model used
-        self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
+        #preselection model used
+        self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_may22/KERAS_model.h5'
 
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename=""):
 
-        #reduction model used
-        #path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
         model = load_model(self.path_to_pretrained)
         print("Loaded preselection model : ", self.path_to_pretrained)
 
@@ -40,7 +37,7 @@ class TrainData_ReductionNanoML(TrainData):
         for l in model.output_shape.keys():
             if 'orig_' in l:
                 list_outkeys.remove(l)
-            elif l == "rs":
+            elif l == "row_splits":
                 list_outkeys.remove(l)
         #print("Otput keys considered : ", list_outkeys)
 
@@ -64,7 +61,7 @@ class TrainData_ReductionNanoML(TrainData):
 
         for i in range(nevents):
             out = model(next(gen.feedNumpyData()))
-            rs_tmp = out['rs'].numpy()
+            rs_tmp = out['row_splits'].numpy()
             rs.append(rs_tmp[1])
             if i == 0:
                 for k in list_outkeys:
@@ -90,6 +87,7 @@ class TrainData_ReductionNanoML(TrainData):
             outSA[k2] = SimpleArray(newout[k2],rs,name=nameSA)
 
         return [outSA["features"],
+                outSA["rechit_energy"],
                 outSA["t_idx"], outSA["t_energy"], outSA["t_pos"], outSA["t_time"],
                 outSA["t_pid"], outSA["t_spectator"], outSA["t_fully_contained"],
                 outSA["t_rec_energy"], outSA["t_is_unique"]],[], []
@@ -118,14 +116,16 @@ class TrainData_ReductionNanoML(TrainData):
         '''
         out = {
             'features':ilist[0],
-            'rechit_energy': ilist[0][:,0:1], #this is hacky. FIXME
-            't_idx':ilist[2],
-            't_energy':ilist[4],
-            't_pos':ilist[6],
-            't_time':ilist[8],
-            't_pid':ilist[10],
-            't_spectator':ilist[12],
-            't_fully_contained':ilist[14],
+            'rechit_energy':[2],
+            't_idx':ilist[4],
+            't_energy':ilist[6],
+            't_pos':ilist[8],
+            't_time':ilist[10],
+            't_pid':ilist[12],
+            't_spectator':ilist[14],
+            't_fully_contained':ilist[16],
+            't_rec_energy':ilist[18],
+            't_is_unique':ilist[20],
             'row_splits':ilist[1]
             }
         #keep length check for compatibility
