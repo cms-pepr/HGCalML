@@ -94,7 +94,8 @@ def re_integrate_to_full_hits(
         pred_time,
         pred_id,
         pred_dist,
-        dict_output=False
+        dict_output=False,
+        is_preselected=False,
         ):
     '''
     To be called after OC loss is applied to pre-selected outputs to bring it all back to the full dimensionality
@@ -118,16 +119,23 @@ def re_integrate_to_full_hits(
     from GravNetLayersRagged import MultiBackScatterOrGather
     from globals import cluster_space as  cs
     
-    scatterids = pre_selection['scatterids']
-    pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
-    pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
-    pred_energy_corr = MultiBackScatterOrGather(default=1.)([pred_energy_corr, scatterids])
-    pred_energy_low_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_low_quantile, scatterids])
-    pred_energy_high_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_high_quantile, scatterids])
-    pred_pos = MultiBackScatterOrGather(default=0.)([pred_pos, scatterids])
-    pred_time = MultiBackScatterOrGather(default=10.)([pred_time, scatterids])
-    pred_id = MultiBackScatterOrGather(default=0.)([pred_id, scatterids])
-    pred_dist = MultiBackScatterOrGather(default=1.)([pred_dist, scatterids])
+    if not is_preselected:
+        scatterids = pre_selection['scatterids']
+        pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
+        pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
+        pred_energy_corr = MultiBackScatterOrGather(default=1.)([pred_energy_corr, scatterids])
+        pred_energy_low_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_low_quantile, scatterids])
+        pred_energy_high_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_high_quantile, scatterids])
+        pred_pos = MultiBackScatterOrGather(default=0.)([pred_pos, scatterids])
+        pred_time = MultiBackScatterOrGather(default=10.)([pred_time, scatterids])
+        pred_id = MultiBackScatterOrGather(default=0.)([pred_id, scatterids])
+        pred_dist = MultiBackScatterOrGather(default=1.)([pred_dist, scatterids])
+    
+    row_splits = None
+    if is_preselected:
+        row_splits = pre_selection['row_splits']
+    else:
+        row_splits = pre_selection['orig_row_splits']
     
     if dict_output:
         return {
@@ -140,7 +148,7 @@ def re_integrate_to_full_hits(
             'pred_time': pred_time,
             'pred_id': pred_id,
             'pred_dist': pred_dist,
-            'row_splits': pre_selection['orig_row_splits'] }
+            'row_splits': row_splits }
         
     return [
         ('pred_beta', pred_beta), 
