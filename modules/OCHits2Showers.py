@@ -129,6 +129,7 @@ class OCHits2Showers():
                                                                   self.distance_threshold,
                                                                   pred_dist=pred_dict['pred_dist'] if self.with_local_distance_scaling else None)
 
+        print("Num alpha", len(pred_shower_alpha_idx))
         processed_pred_dict = dict()
         processed_pred_dict['pred_sid'] = pred_sid
         processed_pred_dict['pred_energy'] = np.zeros_like(processed_pred_dict['pred_sid'], np.float)

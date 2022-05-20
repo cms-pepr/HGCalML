@@ -736,6 +736,9 @@ class TrainData_NanoML(TrainData):
          - row_splits
          
         '''
+
+        print("I list length", len(ilist))
+
         out = {
             'features':ilist[0],
             'rechit_energy': ilist[0][:,0:1], #this is hacky. FIXME

@@ -1,5 +1,8 @@
 from DeepJetCore.TrainData import TrainData, fileTimeOut
 from DeepJetCore import SimpleArray 
+
+from datastructures import TrainData_NanoML
+
 import awkward0 as ak
 import pickle
 import gzip
@@ -14,10 +17,10 @@ from sklearn.preprocessing import StandardScaler
 import os
 import numpy as np
 
-class TrainData_TrackML(TrainData):
+class TrainData_TrackML(TrainData_NanoML):
     def __init__(self):
         self.splitIdx = None
-        TrainData.__init__(self)
+        TrainData_NanoML.__init__(self)
 
     def setSplitIdx(self, idx):
         self.splitIdx = idx
@@ -78,64 +81,64 @@ class TrainData_TrackML(TrainData):
         }
         return d
 
-    def createFeatureDict(self,infeat,addxycomb=True):
-        '''
-        infeat is the full list of features, including truth
-        '''
+    # def createFeatureDict(self,infeat,addxycomb=True):
+    #     '''
+    #     infeat is the full list of features, including truth
+    #     '''
         
-        #small compatibility layer with old usage.
-        feat = infeat
-        if type(infeat) == list:
-            feat=infeat[0]
+    #     #small compatibility layer with old usage.
+    #     feat = infeat
+    #     if type(infeat) == list:
+    #         feat=infeat[0]
         
-        d = {
-        'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
-        'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
-        'recHitID'    : feat[:,2:3] ,          #recHitID, #indicator if it is track or not
-        'recHitTheta' : feat[:,3:4] ,          #recHitTheta ,
-        'recHitR'     : feat[:,4:5] ,          #recHitR   ,
-        'recHitX'     : feat[:,5:6] ,          #recHitX     ,
-        'recHitY'     : feat[:,6:7] ,          #recHitY     ,
-        'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
-        'recHitTime'  : feat[:,8:9] ,            #recHitTime  
-        }
-        if addxycomb:
-            d['recHitXY']  = feat[:,5:7]    
+    #     d = {
+    #     'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
+    #     'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
+    #     'recHitID'    : feat[:,2:3] ,          #recHitID, #indicator if it is track or not
+    #     'recHitTheta' : feat[:,3:4] ,          #recHitTheta ,
+    #     'recHitR'     : feat[:,4:5] ,          #recHitR   ,
+    #     'recHitX'     : feat[:,5:6] ,          #recHitX     ,
+    #     'recHitY'     : feat[:,6:7] ,          #recHitY     ,
+    #     'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
+    #     'recHitTime'  : feat[:,8:9] ,            #recHitTime  
+    #     }
+    #     if addxycomb:
+    #         d['recHitXY']  = feat[:,5:7]    
             
-        return d
+    #     return d
 
-    def createTruthDict(self, allfeat, truthidx=None):
-        _, _, t_idx, _, t_energy, _, t_pos, _, t_time, _, t_pid, _,\
-        t_spectator, _, t_fully_contained,_ = allfeat
-        out={
-            'truthHitAssignementIdx': t_idx,
-            'truthHitAssignedEnergies': t_energy,
-            'truthHitAssignedX': t_pos[:,0:1],
-            'truthHitAssignedY': t_pos[:,1:2],
-            'truthHitAssignedT': t_time,
-            'truthHitAssignedPIDs': t_pid,
-            'truthHitSpectatorFlag': t_spectator,
-            'truthHitFullyContainedFlag': t_fully_contained,
-            }
-        return out
+    # def createTruthDict(self, allfeat, truthidx=None):
+    #     _, _, t_idx, _, t_energy, _, t_pos, _, t_time, _, t_pid, _,\
+    #     t_spectator, _, t_fully_contained,_ = allfeat
+    #     out={
+    #         'truthHitAssignementIdx': t_idx,
+    #         'truthHitAssignedEnergies': t_energy,
+    #         'truthHitAssignedX': t_pos[:,0:1],
+    #         'truthHitAssignedY': t_pos[:,1:2],
+    #         'truthHitAssignedT': t_time,
+    #         'truthHitAssignedPIDs': t_pid,
+    #         'truthHitSpectatorFlag': t_spectator,
+    #         'truthHitFullyContainedFlag': t_fully_contained,
+    #         }
+    #     return out
 
-    def interpretAllModelInputs(self, ilist):
-        '''
-        input: the full list of keras inputs
-        returns: td
-         - rechit feature array
-         - t_idxarr
-         - t_energyarr
-         - t_posarr
-         - t_time
-         - t_pid
-         - t_spectator
-         - t_fully_contained
-         - row_splits
+    # def interpretAllModelInputs(self, ilist):
+    #     '''
+    #     input: the full list of keras inputs
+    #     returns: td
+    #      - rechit feature array
+    #      - t_idxarr
+    #      - t_energyarr
+    #      - t_posarr
+    #      - t_time
+    #      - t_pid
+    #      - t_spectator
+    #      - t_fully_contained
+    #      - row_splits
 
-        (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator ,t_fully_contained, row_splits)
-        '''
-        return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1]
+    #     (for copy-paste: feat,  t_idx, t_energy, t_pos, t_time, t_pid, t_spectator ,t_fully_contained, row_splits)
+    #     '''
+    #     return ilist[0], ilist[2], ilist[4], ilist[6], ilist[8], ilist[10], ilist[12], ilist[14], ilist[1]
 
     def createFromCsvsIntoStandard(self, filename_truth,filename_hits,filename_cells,filename_particles, outfilename):
         df_hits = pd.read_csv(filename_hits, sep=',')
@@ -164,7 +167,7 @@ class TrainData_TrackML(TrainData):
 
         assert np.sum(hit_ids-hit_ids_c) == 0
 
-        df_hits['energy'] = rechitEnergy
+        df_hits['energy'] = rechitEnergy * 0 +1
 
         ptx = np.sqrt(df_particles['px'] ** 2 + df_particles['py'] ** 2)
 
@@ -236,28 +239,6 @@ class TrainData_TrackML(TrainData):
         recHitTruthDepEnergy = recHitTruthDepEnergy.astype(np.float32)
         recHitTruthPID = zeroFeature
 
-        # truth = np.stack([
-        #     np.array(recHitSimClusIdx, dtype='float32'),  # 0
-        #     recHitTruthEnergy,
-        #     recHitTruthX,
-        #     recHitTruthY,
-        #     recHitTruthZ,  # 4
-        #     zeroFeature,  # truthHitAssignedDirX,
-        #     zeroFeature,  # 6
-        #     zeroFeature,
-        #     recHitTruthEta,
-        #     recHitTruthPhi,
-        #     recHitTruthTime,  # 10
-        #     zeroFeature,
-        #     zeroFeature,
-        #     recHitTruthDepEnergy,  # 13
-        #     zeroFeature,  # 14
-        #     zeroFeature,  # 15
-        #     recHitTruthPID,  # 16 - 16+n_classes #won't be used anymore
-        #     zeroFeature,
-        #     zeroFeature], axis=1)
-        # truth = truth.astype(np.float32)
-
         features = np.stack([
             rechHitEnergy,
             recHitEta,
@@ -297,7 +278,19 @@ class TrainData_TrackML(TrainData):
         # # remaining truth is mostly for consistency in the plotting tools
         # t_rest = SimpleArray(truth, rs, name="recHitTruth")
 
-        x,y,z = [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid, t_spectator, t_fully_contained], [], []
+        uniques, indices, count = np.unique(recHitSimClusIdx, return_index=True, return_counts=True)
+
+        # print("xyz", type(recHitSimClusIdx), recHitSimClusIdx.shape)
+        t_rec_energy_np = (recHitSimClusIdx * 0.0).astype(np.float32)
+        t_is_unique = (recHitSimClusIdx * 0.0).astype(np.int32)
+        for u,i,c in zip(uniques, indices,count):
+            # print(u,i,c, recHitSimClusIdx.shape)
+            t_rec_energy_np[recHitSimClusIdx==u] = c
+            t_is_unique[i] = 1
+
+        t_rec_energy = SimpleArray(t_rec_energy_np[..., np.newaxis], rs, name='t_rec_energy')
+        t_is_unique = SimpleArray(t_is_unique[..., np.newaxis], rs, name='t_is_unique')
+        x,y,z = [farr, t_idxarr, t_energyarr, t_posarr, t_time, t_pid, t_spectator, t_fully_contained, t_rec_energy, t_is_unique], [], []
         self._store(x,y,z)
         self.writeToFile(outfilename)
         print("Storing in new format", len(features), len(recHitSimClusIdx), rs)
@@ -383,7 +376,7 @@ class TrainData_TrackML(TrainData):
         if not str(outfilename).endswith('.bin.gz'):
             outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
 
-        with mgzip.open(outfilename, 'wb', thread=8, blocksize=2*10**7) as f2:
+        with gzip.open(outfilename, 'wb') as f2:
             pickle.dump(dumping_data, f2)
 
     def readPredicted(self, predfile):

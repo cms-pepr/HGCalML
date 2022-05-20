@@ -5,18 +5,26 @@ import sys
 print("All imports done...")
 
 foldernames = [
-    '/eos/project-d/dshep/TrackML/extracted/train_1',
+    # '/afs/cern.ch/user/j/jfli/public/HGCalML/scratch/data/inputs',
+	'/eos/project-d/dshep/TrackML/extracted/train_1',
     '/eos/project-d/dshep/TrackML/extracted/train_2',
     '/eos/project-d/dshep/TrackML/extracted/train_3',
     '/eos/project-d/dshep/TrackML/extracted/train_4',
     '/eos/project-d/dshep/TrackML/extracted/train_5',
 ]
 outputfoldernames = [
-    '/eos/project-d/dshep/TrackML/extracted/train_1/converted3',
-    '/eos/project-d/dshep/TrackML/extracted/train_2/converted3',
-    '/eos/project-d/dshep/TrackML/extracted/train_3/converted3',
-    '/eos/project-d/dshep/TrackML/extracted/train_4/converted3',
-    '/eos/project-d/dshep/TrackML/extracted/train_5/converted3',
+    # '/afs/cern.ch/user/j/jfli/public/HGCalML/scratch/data/outputs',
+	'/eos/user/j/jfli/cheplike_training/data/extracted/train_1/converted',
+	'/eos/user/j/jfli/cheplike_training/data/extracted/train_2/converted',
+	'/eos/user/j/jfli/cheplike_training/data/extracted/train_3/converted',
+	'/eos/user/j/jfli/cheplike_training/data/extracted/train_4/converted',
+	'/eos/user/j/jfli/cheplike_training/data/extracted/train_5/converted',
+
+	# '/eos/project-d/dshep/TrackML/extracted/train_1/converted3',
+    # '/eos/project-d/dshep/TrackML/extracted/train_2/converted3',
+    # '/eos/project-d/dshep/TrackML/extracted/train_3/converted3',
+    # '/eos/project-d/dshep/TrackML/extracted/train_4/converted3',
+    # '/eos/project-d/dshep/TrackML/extracted/train_5/converted3',
 ]
 
 # foldernames = ['/mnt/home/sqasim/ceph/Datasets/TrackML/train_100_events']

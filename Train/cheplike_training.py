@@ -67,10 +67,10 @@ batchnorm_options={
 
 #loss options:
 loss_options={
-    'energy_loss_weight': .5,
+    'energy_loss_weight': 10e-7,
     'q_min': .1,
-    'use_average_cc_pos': 0.1,
-    'classification_loss_weight':1e-2,
+    'use_average_cc_pos': 0.5,
+    'classification_loss_weight':1e-7,
     'too_much_beta_scale': 1e-3 
     }
 
@@ -79,11 +79,11 @@ dense_activation='relu'
 
 plotfrequency=200
 
-learningrate = 5e-5
-nbatch = 500000
+learningrate = 5e-4
+nbatch =  30000 # 500000
 
 #iterations of gravnet blocks
-total_iterations = 2
+total_iterations = 7
 double_mp=True
 
 
@@ -107,29 +107,29 @@ def gravnet_model(Inputs,
                                                      
     orig_inputs['t_spectator_weight'] = orig_t_spectator_weight                                                 
     #can be loaded - or use pre-selected dataset (to be made)
-    pre_selection = pre_selection_model_full(orig_inputs,trainable=False)
-    
+    # print("Original keys", orig_inputs.keys())
+    # pre_selection = pre_selection_model_full(orig_inputs,trainable=False)
     #just for info what's available
-    print('available pre-selection outputs',[k for k in pre_selection.keys()])
+    # print('available pre-selection outputs',[k for k in pre_selection.keys()])
                                           
     
-    t_spectator_weight = CreateTruthSpectatorWeights(threshold=3.,
-                                                     minimum=1e-1,
-                                                     active=True
-                                                     )([pre_selection['t_spectator'], 
-                                                        pre_selection['t_idx']])
-    rs = pre_selection['rs']
+    # t_spectator_weight = CreateTruthSpectatorWeights(threshold=3.,
+    #                                                  minimum=1e-1,
+    #                                                  active=True
+    #                                                  )([pre_selection['t_spectator'], 
+    #                                                     pre_selection['t_idx']])
+    rs = tf.cast(orig_inputs['row_splits'][:, 0], tf.int32) # pre_selection['rs']
                                
-    x_in = Concatenate()([pre_selection['coords'],
-                          pre_selection['features'],
-                          pre_selection['addfeat']])
+    # x_in = Concatenate()([pre_selection['coords'],
+    #                       pre_selection['features'],
+    #                       pre_selection['addfeat']])
                            
-    x = x_in
-    energy = pre_selection['energy']
-    coords = pre_selection['phys_coords']#physical coordinates
-    c_coords = pre_selection['coords']#pre-clustered coordinates
-    t_idx = pre_selection['t_idx']
-    
+    x = orig_inputs['features'] # x_in
+    energy = orig_inputs['t_energy']
+    # coords = pre_selection['phys_coords']#physical coordinates
+    # c_coords = pre_selection['coords']#pre-clustered coordinates
+    t_idx = orig_inputs['t_idx']
+    print("XXXX: ", x)
     ####################################################################################
     ##################### now the actual model goes below ##############################
     ####################################################################################
@@ -140,7 +140,7 @@ def gravnet_model(Inputs,
     
     
     #extend coordinates already here if needed
-    c_coords = extent_coords_if_needed(c_coords, x, n_cluster_space_coordinates)
+    # c_coords = extent_coords_if_needed(c_coords, x, n_cluster_space_coordinates)
         
 
     for i in range(total_iterations):
@@ -156,8 +156,8 @@ def gravnet_model(Inputs,
         
         n_dims = 6
         #exchange information, create coordinates
-        x = Concatenate()([c_coords,c_coords,c_coords,coords,x])
-        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
+        # x = Concatenate()([c_coords,c_coords,c_coords,coords,x])
+        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=10,
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
@@ -210,8 +210,8 @@ def gravnet_model(Inputs,
         allfeat.append(x)
         
         
-    
-    x = Concatenate()([c_coords]+allfeat+[pre_selection['not_noise_score']])
+    x = Concatenate()(allfeat)
+    # x = Concatenate()([c_coords]+allfeat+[pre_selection['not_noise_score']])
     #do one more exchange with all
     x = Dense(64,activation=dense_activation)(x)
     x = Dense(64,activation=dense_activation)(x)
@@ -225,13 +225,15 @@ def gravnet_model(Inputs,
     #######################################################################
     
     x = GooeyBatchNorm(**batchnorm_options,name='gooey_pre_out')(x)
-    x = Concatenate()([c_coords]+[x])
+    # x = Concatenate()([c_coords]+[x])
     
     pred_beta, pred_ccoords, pred_dist,\
     pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
-    pred_pos, pred_time, pred_id = create_outputs(x, pre_selection['unproc_features'], 
+    pred_pos, pred_time, pred_id = create_outputs(x, orig_inputs['features'], # pre_selection['unproc_features'], 
                                                   n_ccoords=n_cluster_space_coordinates)
     
+    # print(pre_selection.keys())
+
     # loss
     pred_beta = LLFullObjectCondensation(scale=4.,
                                          position_loss_weight=1e-5,
@@ -247,35 +249,46 @@ def gravnet_model(Inputs,
          pred_pos, pred_time, pred_id] +
         [energy]+
         # truth information
-        [pre_selection['t_idx'] ,
-         pre_selection['t_energy'] ,
-         pre_selection['t_pos'] ,
-         pre_selection['t_time'] ,
-         pre_selection['t_pid'] ,
-         pre_selection['t_spectator_weight'],
-         pre_selection['t_fully_contained'],
-         pre_selection['t_rec_energy'],
-         pre_selection['t_is_unique'],
-         pre_selection['rs']])
+        [orig_inputs['t_idx'] ,
+         orig_inputs['t_energy'] ,
+         orig_inputs['t_pos'] ,
+         orig_inputs['t_time'] ,
+         orig_inputs['t_pid'] ,
+         orig_inputs['t_spectator_weight'],
+         orig_inputs['t_fully_contained'],
+         orig_inputs['t_rec_energy'],
+         orig_inputs['t_is_unique'],
+         rs])
                                          
     #fast feedback
     pred_ccoords = PlotCoordinates(plot_debug_every, outdir = debug_outdir,
-                    name='condensation')([pred_ccoords, pred_beta,pre_selection['t_idx'],
+                    name='condensation')([pred_ccoords, pred_beta,orig_inputs['t_idx'],
                                           rs])                                    
 
-    model_outputs = re_integrate_to_full_hits(
-        pre_selection,
-        pred_ccoords,
-        pred_beta,
-        pred_energy_corr,
-        pred_energy_low_quantile,
-        pred_energy_high_quantile,
-        pred_pos,
-        pred_time,
-        pred_id,
-        pred_dist,
-        dict_output=True
-        )
+    # model_outputs = re_integrate_to_full_hits(
+    #     # pre_selection,
+    #     pred_ccoords,
+    #     pred_beta,
+    #     pred_energy_corr,
+    #     pred_energy_low_quantile,
+    #     pred_energy_high_quantile,
+    #     pred_pos,
+    #     pred_time,
+    #     pred_id,
+    #     pred_dist,
+    #     dict_output=True
+    #     )
+    model_outputs = {
+        'pred_beta': pred_beta, 
+        'pred_ccoords': pred_ccoords,
+        'pred_energy_corr_factor': pred_energy_corr,
+        'pred_energy_low_quantile': pred_energy_low_quantile,
+        'pred_energy_high_quantile': pred_energy_high_quantile,
+        'pred_pos': pred_pos,
+        'pred_time': pred_time,
+        'pred_id': pred_id,
+        'pred_dist': pred_dist,
+        'row_splits': orig_inputs['row_splits'] }
     
     return DictModel(inputs=Inputs, outputs=model_outputs)
     
@@ -283,6 +296,12 @@ def gravnet_model(Inputs,
 
 import training_base_hgcal
 train = training_base_hgcal.HGCalTraining()
+print("------------------------------------------------------")
+print(train.train_data.getAllFeatures(nfiles=-1))
+train.setModel(gravnet_model,
+				td=train.train_data.dataclass(),
+				debug_outdir=train.outputDir+'/intplots')
+quit()
 
 if not train.modelSet():
     train.setModel(gravnet_model,
@@ -308,7 +327,8 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 
-publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
+publishpath = "jfli@lxplus.cern.ch:/eos/user/j/jfli/cheplike_training/outputs/temp1"
+# "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 cb = []
@@ -324,17 +344,17 @@ cb = []
 #    use_event=0)
 #    for i in [0, 2, 4]]
 #
-cb += [
-    plotEventDuringTraining(
-        outputfile=train.outputDir + "/condensation/c_"+str(i),
-        samplefile=samplepath,
-        after_n_batches=2*plotfrequency,
-        batchsize=200000,
-        on_epoch_end=False,
-        publish=None,
-        use_event=i)
-for i in range(5)
-]
+# cb += [
+#     plotEventDuringTraining(
+#         outputfile=train.outputDir + "/condensation/c_"+str(i),
+#         samplefile=samplepath,
+#         after_n_batches=2*plotfrequency,
+#         batchsize=200000,
+#         on_epoch_end=False,
+#         publish=None,
+#         use_event=i)
+# for i in range(5)
+# ]
 
 
 
