@@ -931,11 +931,11 @@ class LLFullObjectCondensation(LossLayerBase):
         ploss = huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) + 1e-2), 10.) #is in cm
         return self.softclip(ploss, 3.) 
     
-    def calc_timing_loss(self, t_time, pred_time):
+    def calc_timing_loss(self, t_time, pred_time, pred_time_unc):
         if not self.timing_loss_weight:
             return pred_time**2
         
-        tloss = huber((t_time - pred_time),2.) 
+        tloss = (t_time - pred_time)**2 / (pred_time_unc**2+1e-6) + pred_time_unc**2
         return self.softclip(tloss, 6.) 
     
     def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
@@ -961,21 +961,21 @@ class LLFullObjectCondensation(LossLayerBase):
 
     def loss(self, inputs):
         
-        assert len(inputs)==20 or len(inputs)==19 
+        assert len(inputs)==21 or len(inputs)==20 
         hasunique = False
-        if len(inputs) == 20:
+        if len(inputs) == 21:
             pred_beta, pred_ccoords, pred_distscale,\
             pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,\
-            pred_pos, pred_time, pred_id,\
+            pred_pos, pred_time, pred_time_unc, pred_id,\
             rechit_energy,\
             t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
             t_is_unique,\
             rowsplits = inputs
             hasunique=True
-        elif len(inputs) == 19:
+        elif len(inputs) == 20:
             pred_beta, pred_ccoords, pred_distscale,\
             pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,\
-            pred_pos, pred_time, pred_id,\
+            pred_pos, pred_time, pred_time_unc, pred_id,\
             rechit_energy,\
             t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
             rowsplits = inputs
@@ -997,8 +997,6 @@ class LLFullObjectCondensation(LossLayerBase):
         #reduce weight on not fully contained showers
         energy_weights = tf.where(t_fully_contained>0, energy_weights, energy_weights*0.01)
         
-        
-        q_min = self.q_min #self.calc_qmin_weight(rechit_energy)#FIXME
             
         #also kill any gradients for zero weight
         energy_loss,energy_quantiles_loss = None,None        
@@ -1011,8 +1009,16 @@ class LLFullObjectCondensation(LossLayerBase):
         energy_quantiles_loss *= self.energy_loss_weight/2. 
 
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
-        timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time)
+        timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time, pred_time_unc)
         classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id, t_is_unique, hasunique)
+        
+        ##just for time metrics
+        tdiff = (t_time-pred_time)
+        tdiff -= tf.reduce_mean(tdiff,keepdims=True)
+        tstd = tf.math.reduce_std(tdiff)
+        self.add_prompt_metric(tstd,self.name+'_time_std')
+        self.add_prompt_metric(tf.reduce_mean(pred_time_unc),self.name+'_time_pred_std')
+        #end just for metrics
         
         full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss,energy_quantiles_loss], axis=-1)
         
