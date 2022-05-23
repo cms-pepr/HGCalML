@@ -107,7 +107,7 @@ def gravnet_model(Inputs,
                                                 
     #can be loaded - or use pre-selected dataset (to be made)
     if not is_preselected:
-        pre_selection = pre_selection_model(orig_inputs,trainable=False)
+        pre_selection = pre_selection_model(pre_selection,trainable=False)
     else:
         pre_selection['row_splits'] = CastRowSplits()(pre_selection['row_splits'])
         print(">> preselected dataset will omit pre-selection step")
@@ -226,12 +226,12 @@ def gravnet_model(Inputs,
     
     pred_beta, pred_ccoords, pred_dist,\
     pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
-    pred_pos, pred_time, pred_id = create_outputs(x, n_ccoords=n_cluster_space_coordinates)
+    pred_pos, pred_time, pred_time_unc, pred_id = create_outputs(x, n_ccoords=n_cluster_space_coordinates)
     
     # loss
     pred_beta = LLFullObjectCondensation(scale=4.,
                                          position_loss_weight=1e-5,
-                                         timing_loss_weight=1e-5,
+                                         timing_loss_weight=0.5,
                                          beta_loss_scale=1.,
                                          use_energy_weights=True,
                                          record_metrics=True,
@@ -240,7 +240,8 @@ def gravnet_model(Inputs,
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
          pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile,
-         pred_pos, pred_time, pred_id] +
+         pred_pos, pred_time, pred_time_unc,
+         pred_id] +
         [energy]+
         # truth information
         [pre_selection['t_idx'] ,
@@ -343,9 +344,18 @@ cb += [
         output_file=train.outputDir+'/metrics.html',
         record_frequency= 2,
         plot_frequency = plotfrequency,
-        select_metrics='FullOCLoss_*',
+        select_metrics='FullOCLoss_*loss',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/time_pred.html',
+        record_frequency= 2,
+        plot_frequency = plotfrequency,
+        select_metrics=['FullOCLoss_*time_std','FullOCLoss_*time_pred_std'],
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
     simpleMetricsCallback(
         output_file=train.outputDir+'/gooey_metrics.html',
         record_frequency= 2,

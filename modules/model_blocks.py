@@ -70,7 +70,8 @@ def create_outputs(x, energy=None, n_ccoords=3,
         pred_energy_high_quantile = Multiply()([pred_energy_high_quantile,energy])
         
     pred_pos =  Dense(2,use_bias=False,name = name_prefix+'_pos')(x)
-    pred_time = ScalarMultiply(10.)(Dense(1)(x))
+    pred_time = ScalarMultiply(10.)(Dense(1,name=name_prefix + '_time')(x))
+    pred_time_unc = Dense(1,activation='relu',use_bias=False,name = name_prefix+'_time_unc')(x)#strict positive
     
     pred_id = Dense(n_classes, activation="softmax",name = name_prefix+'_class')(x)
     
@@ -78,7 +79,7 @@ def create_outputs(x, energy=None, n_ccoords=3,
     if not fix_distance_scale:
         pred_dist = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x))
         #this needs to be bound otherwise fully anti-correlated with coordates scale
-    return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, pred_pos, pred_time, pred_id
+    return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id
 
 
 
