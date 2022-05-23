@@ -2,6 +2,8 @@
 
 import sys
 import os
+import uuid
+
 
 HGCALML=os.getenv("HGCALML")
 if HGCALML is None:
@@ -17,6 +19,8 @@ if '-h' in sys.argv or '--help' in sys.argv:
 
 #can be used by others on FI
 djcloc='/mnt/ceph/users/jkieseler/containers/deepjetcore3_latest.sif'
+
+uext = str(uuid.uuid4())
 
 workdir=None
 
@@ -56,16 +60,32 @@ bscript_temp='''#!/bin/bash
 
 #SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint=a100-40gb
 
-singularity  run  -B /mnt --nv {djcloc} /bin/bash -c "~/private/keytabd.sh >/dev/null & KTPID=\$! ; cd {hgcalml}; source env.sh; cd {cwd} ;  {commands} ; kill \$KTPID ; exit"
+singularity  run  -B /mnt --nv {djcloc} /bin/bash runscript_{uext}.sh
 
 '''.format(djcloc=djcloc,
-            hgcalml=HGCALML, 
+           uext=uext,
+            workdir=workdir)
+
+runscript_temp='''
+~/private/keytabd.sh >/dev/null & 
+KTPID=$!
+cd {hgcalml}
+source env.sh
+cd {cwd}
+{commands}
+kill $KTPID
+exit
+'''.format(hgcalml=HGCALML, 
             cwd=CWD,
             commands=commands )
 
-with open(workdir+'/batchscript.sh','w') as f:
-    f.write(bscript_temp)
 
-os.system('cd '+workdir + '; pwd; module load slurm singularity; sbatch batchscript.sh')
+with open(workdir+'/batchscript_'+uext+'.sh','w') as f:
+    f.write(bscript_temp)
+    
+with open(workdir+'/runscript_'+uext+'.sh','w') as f:
+    f.write(runscript_temp)
+    
+os.system('cd '+workdir + '; pwd; module load slurm singularity; unset PYTHONPATH ; sbatch batchscript_'+uext+'.sh')
 
 
