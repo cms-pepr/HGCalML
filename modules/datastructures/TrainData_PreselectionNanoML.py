@@ -19,6 +19,7 @@ from datastructures.TrainData_NanoML import TrainData_NanoML
 from DeepJetCore.dataPipeline import TrainDataGenerator
 
 def _getkeys():
+    import setGPU
     file = os.getenv("HGCALML")+'/models/pre_selection_may22/KERAS_model.h5'
     tmp_model = load_model(file)
     output_keys = list(tmp_model.output_shape.keys())
