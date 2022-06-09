@@ -27,11 +27,11 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     event_id = 0
 
     for i, file in enumerate(files_to_be_tested):
-        print("Analysing file", i, file)
+        print("Analysing file %d/%d"% (i, len(files_to_be_tested)))
         with mgzip.open(file, 'rb') as f:
             file_data = pickle.load(f)
             for j, endcap_data in enumerate(file_data):
-                print("Analysing endcap",j)
+                print("Analysing endcap %d/%d" % (j, len(file_data)))
                 stopwatch = time.time()
                 features_dict, truth_dict, predictions_dict = endcap_data
                 processed_pred_dict, pred_shower_alpha_idx = hits2showers.call(features_dict, predictions_dict)

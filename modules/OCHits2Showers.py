@@ -1,3 +1,6 @@
+import os.path
+import time
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -52,9 +55,9 @@ def reconstruct_showers(cc, beta, beta_threshold=0.5, dist_threshold=0.5, pred_d
     return np.array(pred_sid)[:, np.newaxis], pred_shower_alpha_idx
 
 def reconstruct_showers_binned(cc, beta, beta_threshold=0.5, dist_threshold=0.5, pred_dist=None):
-    from assign_condensate_op import BinnedBuildAndAssignCondenates
+    from assign_condensate_op import BinnedBuildAndAssignCondensates
 
-    assignment, alpha_idx = BinnedBuildAndAssignCondenates(
+    assignment, alpha_idx = BinnedBuildAndAssignCondensates(
         cc,
         beta,
         row_splits=np.array([0, len(cc)], np.int32),
@@ -110,7 +113,7 @@ def reconstruct_showers_no_op(cc, beta, beta_threshold=0.5, dist_threshold=0.5, 
 
 
 class OCHits2Showers():
-    def __init__(self, beta_threshold, distance_threshold, is_soft, with_local_distance_scaling, reco_method):
+    def __init__(self, beta_threshold, distance_threshold, is_soft, with_local_distance_scaling, reco_method='binned'):
         self.beta_threshold = beta_threshold
         self.distance_threshold = distance_threshold
         self.is_soft = is_soft
@@ -126,12 +129,10 @@ class OCHits2Showers():
         self.distance_threshold = distance_threshold
 
     def call(self, features_dict, pred_dict):
-        """
+        # with tf.device('/cpu'):
+        return self.priv_call(features_dict, pred_dict)
 
-        :param event_data: (features_dict, truth_dict, predictions_dict) coming from HGCal predictor for instance
-        :return: Pred sid
-        """
-
+    def priv_call(self, features_dict, pred_dict):
         if self.op == 'condensate_op':
             pred_sid, pred_shower_alpha_idx = reconstruct_showers(pred_dict['pred_ccoords'],
                                                                   pred_dict['pred_beta'],
@@ -154,14 +155,43 @@ class OCHits2Showers():
         else:
             raise KeyError('%s reco method not recognized'%self.op)
 
+
+
+        if not os.path.exists('my_dat.bin'):
+            import gzip
+            with gzip.open('my_dat.bin', 'wb') as f:
+                import pickle
+                pickle.dump((features_dict, pred_dict, pred_sid, pred_shower_alpha_idx), f)
+            print("Dumped", os.getcwd())
+        else:
+            print("Not dumped", os.getcwd())
+
         processed_pred_dict = dict()
         processed_pred_dict['pred_sid'] = pred_sid
         processed_pred_dict['pred_energy'] = np.zeros_like(processed_pred_dict['pred_sid'], np.float)
 
-        for idx in pred_shower_alpha_idx:
-            filter = (processed_pred_dict['pred_sid']==pred_sid[idx])[:,0]
-            processed_pred_dict['pred_energy'][filter] \
-                = np.sum(pred_dict['pred_energy_corr_factor'][filter] * features_dict['recHitEnergy'][filter])
+
+        # This uses correction factor based on alpha idx
+        # pred_shower_energy = (tf.math.unsorted_segment_sum(features_dict['recHitEnergy'][:, 0], pred_sid[:, 0], num_segments=len(pred_shower_alpha_idx)) * tf.gather(pred_dict['pred_energy_corr_factor'][:, 0], pred_shower_alpha_idx)).numpy()
+        # This uses correction factor independent for different hits
+        pred_shower_energy = (tf.math.unsorted_segment_sum(features_dict['recHitEnergy'][:, 0] * pred_dict['pred_energy_corr_factor'][:, 0], pred_sid[:, 0], num_segments=len(pred_shower_alpha_idx))).numpy()
+        pred_shower_energy_ = np.concatenate(([0], pred_shower_energy), axis=0)
+        pred_energy = tf.gather(pred_shower_energy_, pred_sid[:,0] + 1)
+
+        processed_pred_dict['pred_energy'] = pred_energy[..., np.newaxis]
+        # pred_shower_energy_2_ = [0]
+        # for idx in pred_shower_alpha_idx:
+        #     filter = (processed_pred_dict['pred_sid']==pred_sid[idx])[:,0]
+        #     this_energy = np.sum(pred_dict['pred_energy_corr_factor'][filter] * features_dict['recHitEnergy'][filter])
+        #     processed_pred_dict['pred_energy'][filter] \
+        #         = this_energy
+        #
+        #     pred_shower_energy_2_ = pred_shower_energy_2_ + [this_energy]
+        #
+        #     # print("Checking x", np.sum(pred_energy[filter]), this_energy)
+        #
+        # print("V", pred_shower_energy_, np.array(pred_shower_energy_2_))
+        # print("Checking", np.sum(np.abs(processed_pred_dict['pred_energy'][:, 0]-pred_energy)))
 
         if 'pred_energy_unc' in processed_pred_dict:
             processed_pred_dict['pred_energy_unc'] \
@@ -172,5 +202,3 @@ class OCHits2Showers():
         processed_pred_dict['pred_id'] = np.argmax(processed_pred_dict['pred_id'], axis=1)[:, np.newaxis]
 
         return processed_pred_dict, pred_shower_alpha_idx
-
-
