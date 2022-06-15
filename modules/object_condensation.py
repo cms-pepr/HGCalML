@@ -163,7 +163,7 @@ class Basic_OC_per_sample(object):
         V_att = self.att_func(dsq_k_m) * self.q_k_m * self.mask_k_m  #K x V-obj x 1
     
         V_att = self.q_k * tf.reduce_sum( V_att ,axis=1)  #K x 1
-        V_att = tf.math.divide_no_nan(V_att, N_k)  #K x 1
+        V_att = tf.math.divide_no_nan(V_att, N_k+1e-3)  #K x 1
         
         return V_att
     
@@ -184,7 +184,7 @@ class Basic_OC_per_sample(object):
         V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
         
         V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
-        V_rep = tf.math.divide_no_nan(V_rep, N_k)  #K x 1
+        V_rep = tf.math.divide_no_nan(V_rep, N_k+1e-3)  #K x 1
         
         return V_rep
     
@@ -207,11 +207,11 @@ class Basic_OC_per_sample(object):
         
         nsupp_v = self.beta_v * self.isn_v
         nsupp = tf.math.divide_no_nan(tf.reduce_sum(nsupp_v), 
-                                      tf.reduce_sum(self.isn_v)) # nodim
+                                      tf.reduce_sum(self.isn_v)+1e-3) # nodim
         
         specsupp_v = self.beta_v * self.sw_v
         specsupp = tf.math.divide_no_nan(tf.reduce_sum(specsupp_v), 
-                                      tf.reduce_sum(self.sw_v)) # nodim
+                                      tf.reduce_sum(self.sw_v)+1e-3) # nodim
         
         return self.s_b * nsupp + self.spect_supp * specsupp
         

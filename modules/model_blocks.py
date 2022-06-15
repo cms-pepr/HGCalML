@@ -266,7 +266,7 @@ def pre_selection_model(
             )([x_e,nidx])
             
     sel_t_spec_w, sel_t_idx = AmbiguousTruthToNoiseSpectator(
-        record_metrics=record_metrics)([sel_nidx, t_spec_w, t_idx])
+        record_metrics=record_metrics)([sel_nidx, t_spec_w, t_idx, energy])
                  
     hierarchy = GroupScoreFromEdgeScores()([x_e,sel_nidx])
     

@@ -56,19 +56,39 @@ class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
      - adapted spectator weights
      - adapted truth indices
     '''
-    def __init__(self,**kwargs):
+    def __init__(self, threshold=0.95, **kwargs):
         super(AmbiguousTruthToNoiseSpectator, self).__init__(**kwargs)
-        self.record_metrics=True #DEBUG
+        #self.record_metrics=True #DEBUG
+        self.threshold  = threshold
         
+    def get_config(self):
+        config = {'threshold': self.threshold}
+        base_config = super(AmbiguousTruthToNoiseSpectator, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
     def call(self, inputs):
-        assert len(inputs)==3
+        
+        nidx, sw, tidx, energy = None, None, None, None
+        if len(inputs)==3:
+            nidx, sw, tidx = inputs
+            energy = tf.cast(tf.ones_like(sw),dtype='float32')
+        elif len(inputs)==4:
+            nidx, sw, tidx, energy = inputs
+        else:
+            raise ValueError("# inputs must be 3 or 4")
+        
         padding_default = -10000
         
-        nidx, sw, tidx = inputs
         n_tidx = SelectWithDefault(nidx, tidx, padding_default)
+        n_energy = SelectWithDefault(nidx, energy, 0.)
+        group_energy = tf.reduce_sum(n_energy,axis=1)
+        
         
         is_same = tf.logical_or(n_tidx[:,0:1]==n_tidx, n_tidx==padding_default)
-        is_same = tf.reduce_all(is_same,axis=1)
+        is_same = tf.cast(is_same,dtype='float32')
+        
+        same_energy = tf.reduce_sum(n_energy*is_same,axis=1)
+        is_same = tf.math.divide_no_nan(same_energy, group_energy) > self.threshold
         
         sw = tf.where(is_same, sw, 1.)#set ambiguous to spectator
         tidx = tf.where(is_same, tidx, -1)#set ambiguous to noise
@@ -933,9 +953,9 @@ class LLFullObjectCondensation(LossLayerBase):
     
     def calc_timing_loss(self, t_time, pred_time, pred_time_unc):
         if not self.timing_loss_weight:
-            return pred_time**2
+            return pred_time**2 + pred_time_unc**2
         
-        tloss = (t_time - pred_time)**2 / (pred_time_unc**2+1e-6) + pred_time_unc**2
+        tloss = tf.math.divide_no_nan((t_time - pred_time)**2 , (pred_time_unc**2+1e-3)) + pred_time_unc**2
         return self.softclip(tloss, 6.) 
     
     def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
