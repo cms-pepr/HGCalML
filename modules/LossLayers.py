@@ -955,8 +955,8 @@ class LLFullObjectCondensation(LossLayerBase):
         if not self.timing_loss_weight:
             return pred_time**2 + pred_time_unc**2
         
-        tloss = tf.math.divide_no_nan((t_time - pred_time)**2 , (pred_time_unc**2+1e-3)) + pred_time_unc**2
-        return self.softclip(tloss, 6.) 
+        tloss = tf.math.divide_no_nan((t_time - pred_time)**2 , (pred_time_unc**2+1e-2)) + pred_time_unc**2
+        return tloss
     
     def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
         return tf.reduce_sum(pred_id, axis=1, keepdims=True) #until bug is found

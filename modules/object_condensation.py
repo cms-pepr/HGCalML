@@ -91,7 +91,7 @@ class Basic_OC_per_sample(object):
         if self.use_mean_x>0:
             w_k_m = self.q_k_m * self.mask_k_m
             x_kalpha_m_m = tf.reduce_sum(w_k_m * self.x_k_m,axis=1) # K x C
-            x_kalpha_m_m = tf.math.divide_no_nan(x_kalpha_m_m, tf.reduce_sum(w_k_m, axis=1)+1e-9)
+            x_kalpha_m_m = tf.math.divide_no_nan(x_kalpha_m_m, tf.reduce_sum(w_k_m, axis=1)+1e-4)
             x_kalpha_m = self.use_mean_x * x_kalpha_m_m + (1. - self.use_mean_x)*x_kalpha_m
         
         return x_kalpha_m 
@@ -158,7 +158,7 @@ class Basic_OC_per_sample(object):
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
         
         dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
-        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, d_k_e**2 + 1e-6)
+        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, d_k_e**2 + 1e-4)
             
         V_att = self.att_func(dsq_k_m) * self.q_k_m * self.mask_k_m  #K x V-obj x 1
     
@@ -179,7 +179,7 @@ class Basic_OC_per_sample(object):
         
         dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
-        dsq = tf.math.divide_no_nan(dsq, d_k_e**2 + 1e-6) #K x V x 1
+        dsq = tf.math.divide_no_nan(dsq, d_k_e**2 + 1e-4) #K x V x 1
         
         V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
         
@@ -196,7 +196,7 @@ class Basic_OC_per_sample(object):
         pw_k_m = SelectWithDefault(self.Msel, pw, 0.) #K x V-obj x P
         
         pll_k = tf.math.divide_no_nan(tf.reduce_sum(pll_k_m * pw_k_m, axis=1), 
-                                               tf.reduce_sum(pw_k_m, axis=1))#K x P
+                                               tf.reduce_sum(pw_k_m, axis=1)+1e-6)#K x P
         return pll_k
     
     def Beta_pen_k(self):
