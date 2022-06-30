@@ -218,7 +218,7 @@ def gravnet_model(Inputs,
 
     pred_beta, pred_ccoords, pred_dist,\
     pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
-    pred_pos, pred_time, pred_id = create_outputs(x,feat,add_distance_scale=True)
+    pred_pos, pred_time, pred_time_unc, pred_id = create_outputs(x,feat,add_distance_scale=True)
 
     #loss
     pred_beta = LLFullObjectCondensation(print_loss=True,
@@ -244,7 +244,7 @@ def gravnet_model(Inputs,
                                             pred_dist,
                                             pred_energy,
                                             pred_energy_low_quantile,pred_energy_high_quantile,
-                                            pred_pos, pred_time, pred_id,
+                                            pred_pos, pred_time, pred_time_unc, pred_id,
                                             orig_t_idx, orig_t_energy, orig_t_pos, orig_t_time, orig_t_pid,
                                             row_splits])
 

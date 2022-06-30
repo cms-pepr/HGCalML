@@ -59,21 +59,23 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
         n_bins = (dmax_coords) / bin_width  
         n_bins += 1.
         n_bins = tf.cast(n_bins, dtype='int32')
+        
     
+        
     binass,flatbinass,nperbin = _bin_by_coordinates.BinByCoordinates(coordinates=coordinates, 
                                                 row_splits=row_splits, 
                                                 bin_width=bin_width, nbins=n_bins,
                                                 calc_n_per_bin=calc_n_per_bin)
     #sanity checks
-    with tf.control_dependencies([tf.assert_less(binass, 
-                                                 tf.expand_dims(
-                                                     tf.concat([tf.constant([row_splits.shape[0]-1]) ,n_bins],axis=0),
-                                                     axis=0))]):
+    #with tf.control_dependencies([tf.assert_less(binass, 
+    #                                             tf.expand_dims(
+    #                                                 tf.concat([tf.constant([row_splits.shape[0]-1]) ,n_bins],axis=0),
+    #                                                 axis=0))]):
         
-        if calc_n_per_bin:                                            
-            return binass,flatbinass,n_bins,bin_width,nperbin
-        else:
-            return binass,flatbinass,n_bins,bin_width
+    if calc_n_per_bin:                                            
+        return binass,flatbinass,n_bins,bin_width,nperbin
+    else:
+        return binass,flatbinass,n_bins,bin_width
 
 @ops.RegisterGradient("BinByCoordinates")
 def _BinByCoordinatesGrad(op, idxout_grad, flatidxgrad,npbingrad):

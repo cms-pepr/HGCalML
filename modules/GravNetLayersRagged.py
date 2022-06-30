@@ -4,6 +4,7 @@ import yaml
 import os
 from select_knn_op import SelectKnn
 from slicing_knn_op import SlicingKnn
+from binned_select_knn_op import BinnedSelectKnn
 from select_mod_knn_op import SelectModKnn
 from accknn_op import AccumulateKnn, AccumulateLinKnn
 from local_cluster_op import LocalCluster
@@ -13,7 +14,6 @@ from neighbour_covariance_op import NeighbourCovariance as NeighbourCovarianceOp
 import numpy as np
 #just for the moment
 #### helper###
-from datastructures import TrainData_NanoML
 from Initializers import EyeInitializer
 
 from oc_helper_ops import SelectWithDefault
@@ -170,13 +170,17 @@ class CastRowSplits(tf.keras.layers.Layer):
             
     def call(self,inputs):
         assert inputs.dtype=='int64' or inputs.dtype=='int32'
-        assert len(inputs.shape)==2
-        return tf.cast(inputs[:,0],dtype='int32')
-        
+        if len(inputs.shape)==2:
+            return tf.cast(inputs[:,0],dtype='int32')
+        elif inputs.dtype=='int64':
+            return tf.cast(inputs,dtype='int32')
+        else:
+            return inputs
 
 class MaskTracksAsNoise(tf.keras.layers.Layer):
     def __init__(self, 
                  active=True,
+                 maskidx=-1,
                  **kwargs):
         '''
         Inputs:
@@ -185,10 +189,13 @@ class MaskTracksAsNoise(tf.keras.layers.Layer):
         '''
         super(MaskTracksAsNoise, self).__init__(**kwargs)
         self.active = active
+        self.maskidx = maskidx
     
     def get_config(self):
         base_config = super(MaskTracksAsNoise, self).get_config()
-        return dict(list(base_config.items()) + list({'active': self.active }.items()))
+        return dict(list(base_config.items()) + list({'active': self.active ,
+                                                      'maskidx': self.maskidx
+                                                      }.items()))
 
     def build(self, input_shape):
         super(MaskTracksAsNoise, self).build(input_shape)
@@ -201,7 +208,7 @@ class MaskTracksAsNoise(tf.keras.layers.Layer):
         assert inputs[0].dtype=='int32'
         tidx, trackcharge = inputs
         if self.active:
-            tidx = tf.where(tf.abs(trackcharge)>1e-3, -1, tidx)
+            tidx = tf.where(tf.abs(trackcharge)>1e-3, self.maskidx, tidx)
         return tidx
         
         
@@ -573,6 +580,8 @@ class ProcessFeatures(tf.keras.layers.Layer):
         will apply some simple fixed preprocessing to the standard TrainData_OC features
         
         """
+        
+        from datastructures import TrainData_NanoML
         self.td=TrainData_NanoML()
         self.newformat = newformat
         super(ProcessFeatures, self).__init__(**kwargs)
@@ -1188,6 +1197,38 @@ class RecalcDistances(tf.keras.layers.Layer):
         ncoords = SelectWithDefault(nidx, coords, 0.) # V x K x C
         dist = tf.reduce_sum( (ncoords - tf.expand_dims(coords,axis=1))**2, axis=2 )
         return dist
+
+class SelectFromIndicesWithPad(tf.keras.layers.Layer):
+    
+    '''
+    SelectWithDefault wrapper
+    
+    inputs: 
+    - indices
+    - to be selected
+    
+    options:
+    - default value
+    '''
+    def __init__(self, default = 0., **kwargs):  
+        self.default = default
+        if 'dynamic' in kwargs:
+            super(SelectFromIndicesWithPad, self).__init__(**kwargs)
+        else:
+            super(SelectFromIndicesWithPad, self).__init__(dynamic=False,**kwargs)
+            
+    def get_config(self):
+        config = {'default': self.default}
+        base_config = super(SelectFromIndicesWithPad, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):# 
+        return input_shapes[0][:-1]+input_shapes[1][-1:]
+    
+    def call(self, inputs):
+        assert len(inputs)==2
+        out = SelectWithDefault(inputs[0], inputs[1], self.default)
+        return out
     
     
 class SelectFromIndices(tf.keras.layers.Layer): 
@@ -1395,8 +1436,8 @@ class MultiBackScatterOrGather(tf.keras.layers.Layer):
 
 class KNN(LayerWithMetrics):
     def __init__(self,K: int, radius=-1., 
-                 use_approximate_knn=True,
-                 min_bins=[3,3],
+                 use_approximate_knn=False,
+                 min_bins=None,
                  **kwargs):
         """
         
@@ -1453,7 +1494,8 @@ class KNN(LayerWithMetrics):
                                   return_n_bins=True,
                                   min_bins = min_bins)
         else:
-            idx,dist = SelectKnn(K+1, coordinates,  row_splits,
+            idx,dist = BinnedSelectKnn(K+1, coordinates,  row_splits,
+                                       n_bins=min_bins,
                                  max_radius= radius, tf_compatible=False)
 
         idx = tf.reshape(idx, [-1,K+1])
@@ -1546,33 +1588,38 @@ class WarpedSpaceKNN(tf.keras.layers.Layer):
 
 
 class SortAndSelectNeighbours(tf.keras.layers.Layer):
-    def __init__(self,K: int, radius: float=-1., sort=True, **kwargs):
+    def __init__(self,K: int, radius: float=-1., sort=True, descending=False, **kwargs):
         """
         
         This layer will sort neighbour indices by distance and possibly select neighbours
         within a radius, or the closest ones up to K neighbours.
         
-        Inputs: distances, neighbour indices
+        If a sorting score is given the sorting will be based on that (will still return the same)
+        
+        Inputs: distances, neighbour indices, sorting_score (opt)
         
         Call will return 
-         - neighbour distances sorted by distance (increasing)
-         - neighbour indices sorted by distance (increasing)
+         - neighbour distances sorted by distance 
+         - neighbour indices sorted by distance 
         
         
         :param K: number of nearest neighbours, will do no selection if K<1
         :param radius: maximum distance of nearest neighbours (no effect if < 0)
+        :param descending: use descending order
         
         """
         super(SortAndSelectNeighbours, self).__init__(**kwargs) 
         self.K = K
         self.radius = radius
         self.sort=sort
+        self.descending = descending
         
         
     def get_config(self):
         config = {'K': self.K,
                   'radius': self.radius,
-                  'sort': self.sort}
+                  'sort': self.sort,
+                  'descending': self.descending}
         base_config = super(SortAndSelectNeighbours, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -1591,15 +1638,17 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         return [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i]) for i in range(len(output_shapes))]
         
     @staticmethod 
-    def raw_call(distances, nidx, K, radius, sort):
+    def raw_call(distances, nidx, K, radius, sort, incr_sorting_score):
         
+        K = K if K>0 else distances.shape[1]
         if not sort:
-            distances[:,:K],nidx[:,:K]
+            return distances[:,:K],nidx[:,:K]
         
-        tfdist = tf.where(nidx<0, 1e9, distances) #make sure the -1 end up at the end
-        tfdist = tf.concat([tf.zeros_like(tfdist[:,0:1])-1.,tfdist[:,1:]  ],axis=1) #make sure 'self' remains
+        tfssc = tf.where(nidx<0, 1e9, incr_sorting_score) #make sure the -1 end up at the end
+        tfssc = tf.concat([tf.zeros_like(tfssc[:,0:1])-1.,tfssc[:,1:]  ],axis=1) #make sure 'self' remains
 
-        sorting = tf.argsort(tfdist, axis=1)
+        sorting = tf.argsort(tfssc, axis=1)
+        
         snidx = tf.gather(nidx,sorting,batch_dims=1) #_nd(nidx,sorting,batch_dims=1)
         sdist = tf.gather(distances,sorting,batch_dims=1)
         if K > 0:
@@ -1610,7 +1659,6 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
             snidx = tf.where(sdist > radius, -1, snidx)
             sdist = tf.where(sdist > radius, 0. , sdist)
             
-        K = K if K>0 else distances.shape[1]
         #fix the shapes
         sdist = tf.reshape(sdist, [-1, K])
         snidx = tf.reshape(snidx, [-1, K])
@@ -1620,8 +1668,18 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
 
         
     def call(self, inputs):
-        distances, nidx = inputs
-        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius,self.sort)
+        distances, nidx, ssc = None, None, None
+        if len(inputs)==2:
+            distances, nidx = inputs
+            ssc = distances
+            
+        elif len(inputs)==3:
+            distances, nidx,ssc = inputs
+            
+        if self.descending:
+            ssc = -1.* ssc
+        
+        return SortAndSelectNeighbours.raw_call(distances,nidx,self.K,self.radius,self.sort, ssc)
         #make TF compatible
         
         
@@ -1842,7 +1900,7 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
         n_neigh = tf.cast(n_neigh,dtype='float32') - 1.
         groupscore = tf.reduce_sum(active[:,1:]*score[:,:,0], axis=1)
         #give slight priority to larger groups
-        groupscore = tf.math.divide_no_nan(groupscore,n_neigh+1.)#prefer larger groups
+        groupscore = tf.math.divide_no_nan(groupscore,n_neigh)
         return tf.expand_dims(groupscore,axis=1)
 
 
@@ -2318,7 +2376,8 @@ class RaggedGravNet(LayerWithMetrics):
                                   return_n_bins=True)
             self.add_prompt_metric(nbins, self.name+'_slicing_knn_bins')
         else:
-            idx,dist = SelectKnn(self.n_neighbours, coordinates,  row_splits,
+            #BinnedSelectKnn(K, coords, row_splits, n_bins, max_bin_dims, tf_compatible, max_radius)
+            idx,dist = BinnedSelectKnn(self.n_neighbours, coordinates,  row_splits,
                                  max_radius= -1.0, tf_compatible=False)
         idx = tf.reshape(idx, [-1, self.n_neighbours])
         dist = tf.reshape(dist, [-1, self.n_neighbours])

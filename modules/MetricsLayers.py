@@ -35,6 +35,27 @@ class MLBase(LayerWithMetrics):
         self.metrics_call(inputs)
         return inputs[0]
 
+class SimpleReductionMetrics(MLBase):
+    
+    def __init__(self, **kwargs):
+        '''
+        Inputs:
+        - after reduction row splits
+        - previous row splits
+        
+        
+        Output:
+        - previous row splits (unchanged)
+        
+        '''
+        super(SimpleReductionMetrics, self).__init__(**kwargs)
+        
+    def metrics_call(self, inputs):
+        assert len(inputs)==2
+        after,bef = inputs
+        self.add_prompt_metric(tf.reduce_mean(after[-1]/bef[-1]),self.name+'_rel_reduction')
+        
+
 class MLReductionMetrics(MLBase):
     
     def __init__(self, **kwargs):
@@ -111,6 +132,10 @@ class MLReductionMetrics(MLBase):
         
         reduced_to_fraction = tf.cast(srs[-1],dtype='float32')/tf.cast(rs[-1],dtype='float32')
         self.add_prompt_metric(reduced_to_fraction,self.name+'_reduction')
+        
+        no_noise_hits_bef = tf.cast(tf.math.count_nonzero(tidx+1)  ,dtype='float32')
+        no_noise_hits_aft = tf.cast(tf.math.count_nonzero(stidx+1) ,dtype='float32')
+        self.add_prompt_metric(no_noise_hits_aft/no_noise_hits_bef,self.name+'_no_noise_reduction')
         
         
         
