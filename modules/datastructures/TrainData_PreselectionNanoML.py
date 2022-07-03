@@ -27,6 +27,15 @@ def _getkeys():
     output_keys.remove('orig_row_splits')
     return output_keys
 
+
+def calc_eta(x, y, z):
+    rsq = np.sqrt(x ** 2 + y ** 2)
+    return -1 * np.sign(z) * np.log(rsq / np.abs(z + 1e-3) / 2.+1e-3)
+    
+   
+def calc_phi(x, y, z):
+    return np.arctan2(y,x)#cms like
+    
 #just load once at import
 TrainData_PreselectionNanoML_keys=None
 
@@ -145,3 +154,58 @@ class TrainData_PreselectionNanoML(TrainData):
     def readPredicted(self, predfile):
         with gzip.open(predfile) as mypicklefile:
             return pickle.load(mypicklefile)
+
+
+    def createFeatureDict(self,infeat,addxycomb=True):
+        '''
+        infeat is the full list of features, including truth
+        '''
+        
+        #small compatibility layer with old usage.
+        feat = infeat
+        if type(infeat) == list:
+            feat=infeat[0]
+        
+        d = {
+        'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
+        'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
+        'recHitID'    : feat[:,2:3] ,          #recHitID, #indicator if it is track or not
+        'recHitTheta' : feat[:,3:4] ,          #recHitTheta ,
+        'recHitR'     : feat[:,4:5] ,          #recHitR   ,
+        'recHitX'     : feat[:,5:6] ,          #recHitX     ,
+        'recHitY'     : feat[:,6:7] ,          #recHitY     ,
+        'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
+        'recHitTime'  : feat[:,8:9] ,            #recHitTime  
+        'recHitHitR'  : feat[:,9:10] ,            #recHitTime  
+        }
+        if addxycomb:
+            d['recHitXY']  = feat[:,5:7]    
+            
+        return d
+
+
+    def createTruthDict(self, allfeat, truthidx=None):
+        '''
+        This is deprecated and should be replaced by a more transparent way.
+        '''
+        print(__name__,'createTruthDict: should be deprecated soon and replaced by a more uniform interface')
+        data = self.interpretAllModelInputs(allfeat,returndict=True)
+        
+        out={
+            'truthHitAssignementIdx': data['t_idx'],
+            'truthHitAssignedEnergies': data['t_energy'],
+            'truthHitAssignedX': data['t_pos'][:,0:1],
+            'truthHitAssignedY': data['t_pos'][:,1:2],
+            'truthHitAssignedZ': data['t_pos'][:,2:3],
+            'truthHitAssignedEta': calc_eta(data['t_pos'][:,0:1], data['t_pos'][:,1:2], data['t_pos'][:,2:3]),
+            'truthHitAssignedPhi': calc_phi(data['t_pos'][:,0:1], data['t_pos'][:,1:2], data['t_pos'][:,2:3]),
+            'truthHitAssignedT': data['t_time'],
+            'truthHitAssignedPIDs': data['t_pid'],
+            'truthHitSpectatorFlag': data['t_spectator'],
+            'truthHitFullyContainedFlag': data['t_fully_contained'],
+            }
+        if 't_rec_energy' in data.keys():
+            out['t_rec_energy']=data['t_rec_energy']
+        if 't_hit_unique' in data.keys():
+            out['t_is_unique']=data['t_hit_unique']
+        return out
