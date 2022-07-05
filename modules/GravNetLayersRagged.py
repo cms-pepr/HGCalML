@@ -975,6 +975,7 @@ class ApproxPCA(tf.keras.layers.Layer):
                 self.layers.append(layer)
 
         super(ApproxPCA, self).build(input_shapes)  
+        del self.model # To avoid confusing error messages about missing gradients
         
         
     def compute_output_shape(self):

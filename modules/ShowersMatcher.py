@@ -1,3 +1,4 @@
+import pdb
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
@@ -50,7 +51,7 @@ def calculate_iou_tf(truth_sid,
 
         union_sum_matrix = pred_sum_matrix + truth_sum_matrix - intersection_sum_matrix
 
-        overlap_matrix = (intersection_sum_matrix / union_sum_matrix).numpy()
+        overlap_matrix = (intersection_sum_matrix / (union_sum_matrix + 1e-7)).numpy()
 
         if return_all:
             return overlap_matrix, pred_sum_matrix, truth_sum_matrix, intersection_sum_matrix
