@@ -376,7 +376,7 @@ def pre_selection_model(
         
         if debugplots_after > 0:
             isnotnoise = PlotNoiseDiscriminator(plot_every=debugplots_after,
-                                        outdir=debug_outdir,name=name+'_noise_score')([isnotnoise,out['t_idx']])
+                                        outdir=debug_outdir,name=name+'_noise_score')([isnotnoise,notnoisetruth])
                                         
         no_noise_sel, no_noise_rs, noise_backscatter = NoiseFilter(threshold = noise_threshold,record_metrics=record_metrics
             )([isnotnoise,g_sel_rs])
