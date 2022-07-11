@@ -2,12 +2,11 @@
 from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply, LeakyReLU
 from Layers import OnesLike
 from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply
-
+from tensorflow.keras.layers import Lambda
+import tensorflow as tf
 from Initializers import EyeInitializer
 
 
-
-from datastructures import TrainData_NanoML
 
 
 def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_extend'):
@@ -365,14 +364,19 @@ def pre_selection_model(
     
         isnotnoise = Dense(1, activation='sigmoid',trainable=trainable,name=name+'_noisescore_d1',
                            )(Concatenate(name=name+'concat_outf_outc')([out['features'],out['coords']]))
-                           
-        track_adjusted_t_idx = MaskTracksAsNoise(maskidx=1,active=trainable)([out['t_idx'],out['is_track']])
+        
+        #spectators are never noise here
+        notnoisetruth = Lambda(lambda x: tf.where(x[0]>0., 1, x[1]))([out['t_spectator_weight'], out['t_idx']])
+        
         isnotnoise = LLNotNoiseClassifier(active=trainable,record_metrics=record_metrics,
-            scale=1.)([isnotnoise, track_adjusted_t_idx])
+            scale=1.)([isnotnoise, notnoisetruth])
+            
+        #tracks are never noise here
+        isnotnoise = Lambda(lambda x: tf.where(x[0]>0., 1., x[1]))([out['is_track'], isnotnoise])
         
         if debugplots_after > 0:
             isnotnoise = PlotNoiseDiscriminator(plot_every=debugplots_after,
-                                        outdir=debug_outdir,name=name+'_noise_score')([isnotnoise,track_adjusted_t_idx])
+                                        outdir=debug_outdir,name=name+'_noise_score')([isnotnoise,out['t_idx']])
                                         
         no_noise_sel, no_noise_rs, noise_backscatter = NoiseFilter(threshold = noise_threshold,record_metrics=record_metrics
             )([isnotnoise,g_sel_rs])
