@@ -22,17 +22,14 @@ def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_e
     return coords
 
 #new format!
-def create_outputs(x, energy=None, n_ccoords=3, 
+def create_outputs(x, n_ccoords=3, 
                    n_classes=4,
                    fix_distance_scale=False,
-                   scale_energy=False,
                    energy_factor=True,
-                   energy_proxy=None,
                    name_prefix="output_module"):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,pred_pos, pred_time, pred_id
     '''
-    assert scale_energy != energy_factor
     
     pred_beta = Dense(1, activation='sigmoid',name = name_prefix+'_beta')(x)
     pred_ccoords = Dense(n_ccoords,
@@ -42,10 +39,7 @@ def create_outputs(x, energy=None, n_ccoords=3,
                          name = name_prefix+'_clustercoords'
                          )(x) #bias has no effect
     
-    if energy_proxy is None:
-        energy_proxy = x
-    else:
-        energy_proxy = Concatenate()([energy_proxy,x])
+
     energy_act=None
     if energy_factor:
         energy_act='relu'
@@ -53,25 +47,19 @@ def create_outputs(x, energy=None, n_ccoords=3,
     pred_energy = Dense(1,name = name_prefix+'_energy',
                         bias_initializer='ones',
                         activation=energy_act
-                        )(energy_proxy)
+                        )(x)
     pred_energy_low_quantile = Dense(1,name = name_prefix+'_energy_low_quantile',
                         bias_initializer='zeros',
                         activation=energy_res_act
-                        )(energy_proxy)
+                        )(x)
     pred_energy_high_quantile = Dense(1,name = name_prefix+'_energy_high_quantile',
                         bias_initializer='zeros',
                         activation=energy_res_act
-                        )(energy_proxy)
-    if scale_energy:
-        pred_energy = ScalarMultiply(10.)(pred_energy)
-    if energy is not None:
-        pred_energy = Multiply()([pred_energy,energy])
-        pred_energy_low_quantile = Multiply()([pred_energy_low_quantile,energy])
-        pred_energy_high_quantile = Multiply()([pred_energy_high_quantile,energy])
-        
+                        )(x)
+    
     pred_pos =  Dense(2,use_bias=False,name = name_prefix+'_pos')(x)
     pred_time = ScalarMultiply(10.)(Dense(1,name=name_prefix + '_time')(x))
-    pred_time_unc = Dense(1,activation='relu',use_bias=False,name = name_prefix+'_time_unc')(x)#strict positive
+    pred_time_unc = Dense(1,activation='relu',name = name_prefix+'_time_unc')(x)#strict positive
     
     pred_id = Dense(n_classes, activation="softmax",name = name_prefix+'_class')(x)
     
@@ -120,7 +108,7 @@ def re_integrate_to_full_hits(
     from GravNetLayersRagged import MultiBackScatterOrGather
     from globals import cluster_space as  cs
     
-    if not is_preselected:
+    if 'scatterids' in pre_selection.keys():
         scatterids = pre_selection['scatterids']
         pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
         pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
@@ -188,18 +176,31 @@ def pre_selection_model(
         trainable=False,
         name='pre_selection',
         debugplots_after=-1,
-        reduction_threshold=0.51,#doesn't make a huge difference
+        reduction_threshold=0.6,#doesn't make a huge difference
         noise_threshold=0.1, #0.4 % false-positive, 96% noise removal
         K=12,
         record_metrics=True,
         filter_noise=True,
+        pass_through=False
         ):
+    
+    '''
+    inputnames ['recHitFeatures', 'recHitFeatures_rowsplits', 't_idx', 't_idx_rowsplits', 't_energy', 't_energy_rowsplits', 't_pos', 't_pos_rowsplits', 
+    't_time', 't_time_rowsplits', 't_pid', 't_pid_rowsplits', 
+    't_spectator', 't_spectator_rowsplits', 't_fully_contained', 't_fully_contained_rowsplits', 
+    't_rec_energy', 't_rec_energy_rowsplits', 't_is_unique', 't_is_unique_rowsplits']
+
+    ['t_idx', 't_energy', 't_pos', 't_time', 't_pid', 't_spectator', 't_fully_contained', 
+    't_rec_energy', 't_is_unique', 't_spectator_weight', 'coords', 'rechit_energy', 
+    'features', 'is_track', 'row_splits', 'scatterids', 'orig_row_splits']
+    '''
     
     if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
         orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,minimum=1e-1,active=True
                                                          )([orig_inputs['t_spectator'], 
                                                             orig_inputs['t_idx']])
         orig_inputs['t_spectator_weight'] = orig_t_spectator_weight
+        
         
     if not 'is_track' in orig_inputs.keys():
         orig_inputs['is_track'] = SelectFeatures(2,3)(orig_inputs['features'])
@@ -215,6 +216,11 @@ def pre_selection_model(
     
     #get some things to work with    
     orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
+    
+    if pass_through:
+        orig_inputs['orig_row_splits'] = orig_inputs['row_splits'] 
+        return orig_inputs
+    
     rs = orig_inputs['row_splits']
     energy = orig_inputs['rechit_energy']
     coords = orig_inputs['coords']
@@ -334,7 +340,9 @@ def pre_selection_model(
         scale=1.
         )([coords_o,out['t_idx'],out['t_spectator_weight'],energy_o,g_sel_rs])
     
-    
+    #coords_o = LLFillSpace(active = trainable,
+    #                       scale=0.1,
+    #                       record_metrics=record_metrics)([coords_o,g_sel_rs,out['t_idx']])
     
     #add to dict:
     out['coords'] = coords_o
