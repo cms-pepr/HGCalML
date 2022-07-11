@@ -108,13 +108,16 @@ class Basic_OC_per_sample(object):
                          ):
         self.valid=True
         #used for pll and q
-        self.tanhsqbeta = tf.math.atanh(beta/(1.+1e-3))**2
+        self.tanhsqbeta = tf.math.atanh(beta/(1.01))**2
         
-        self.beta_v = beta
-        self.d_v = d
-        self.x_v = x
-        self.pll_v = pll
-        self.sw_v = is_spectator_weight
+        self.beta_v = tf.debugging.check_numerics(beta,"OC: beta input")
+        self.d_v = tf.debugging.check_numerics(d,"OC: d input")
+        self.x_v = tf.debugging.check_numerics(x,"OC: x input")
+        self.pll_v = tf.debugging.check_numerics(pll,"OC: pll input")
+        self.sw_v = tf.debugging.check_numerics(is_spectator_weight,"OC: is_spectator_weight input")
+
+        object_weight = tf.debugging.check_numerics(object_weight,"OC: object_weight input")
+        
         self.isn_v = tf.where(truth_idx<0, tf.zeros_like(truth_idx,dtype='float32')+1., 0.)
         
         #spectators do not participate in the potential losses
@@ -190,13 +193,19 @@ class Basic_OC_per_sample(object):
     
     def Pll_k(self):
         
-        pw = self.tanhsqbeta * (1.-tf.clip_by_value(self.isn_v+self.sw_v,0.,1.))
+        tanhsqbeta = self.beta_v**2 #softer here
+        tanhsqbeta = tf.debugging.check_numerics(tanhsqbeta, "OC: pw b**2")
+        pw = tanhsqbeta * tf.clip_by_value((1.-tf.clip_by_value(self.isn_v+self.sw_v,0.,1.)),0.,1.) + 1e-6
+        
+        pw = tf.debugging.check_numerics(pw, "OC: pw")
         
         pll_k_m = SelectWithDefault(self.Msel, self.pll_v, 0.) #K x V_perobj x P
         pw_k_m = SelectWithDefault(self.Msel, pw, 0.) #K x V-obj x P
+        pw_k_sum = tf.reduce_sum(pw_k_m, axis=1)
+        pw_k_sum = tf.where(pw_k_sum <= 0., 1e-2, pw_k_sum)
         
         pll_k = tf.math.divide_no_nan(tf.reduce_sum(pll_k_m * pw_k_m, axis=1), 
-                                               tf.reduce_sum(pw_k_m, axis=1)+1e-6)#K x P
+                                             pw_k_sum  )#K x P
         return pll_k
     
     def Beta_pen_k(self):

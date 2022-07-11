@@ -296,7 +296,7 @@ class RecHitCollection(CollectionBase):
         recHitX = self._readAndSplit(tree,"RecHitHGC_x")
         recHitY = self._readAndSplit(tree,"RecHitHGC_y")
         recHitZ = self._readAndSplit(tree,"RecHitHGC_z")
-        recHitSimClusIdx = self._readAndSplit(tree,"RecHitHGC_BestMergedSimClusterIdx")
+        recHitSimClusIdx = self._readAndSplit(tree,"RecHitHGC_MergedSimClusterBestMatchIdx")
         
         #Define spectators 
         recHit_df_events = [pd.DataFrame({"recHitX":recHitX[i],
@@ -337,7 +337,7 @@ class RecHitCollection(CollectionBase):
         return ak1.where(goodSimClus, noSplitRecHitSimClusIdx, -1)
     
     def _createTruthAssociation(self, tree):
-        noSplitRecHitSimClusIdx = self._readArray(tree,"RecHitHGC_BestMergedSimClusterIdx")
+        noSplitRecHitSimClusIdx = self._readArray(tree,"RecHitHGC_MergedSimClusterBestMatchIdx")
         return self._maskNoiseSC(tree,noSplitRecHitSimClusIdx)
     
     def _assignTruth(self,tree):

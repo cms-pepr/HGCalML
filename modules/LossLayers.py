@@ -56,7 +56,7 @@ class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
      - adapted spectator weights
      - adapted truth indices
     '''
-    def __init__(self, threshold=0.95, **kwargs):
+    def __init__(self, threshold=0.5, **kwargs):
         super(AmbiguousTruthToNoiseSpectator, self).__init__(**kwargs)
         #self.record_metrics=True #DEBUG
         self.threshold  = threshold
@@ -382,6 +382,9 @@ class LLClusterCoordinates(LossLayerBase):
         repdist = tf.expand_dims(coords, axis=0) - av_coords_m #K x V x C
         repdist = tf.expand_dims(q,axis=0) * tf.reduce_sum(repdist**2,axis=-1,keepdims=True) #K x V x 1
         reploss = M_not * tf.exp(-repdist)#K x V x 1
+        
+        #add a long range part to it
+        reploss += 0.05 * M_not * tf.exp(-repdist/(20.**2))
         #downweight noise
         reploss = q_k * tf.reduce_sum(reploss,axis=1)/( N_tot-N_per_obj )#K x 1
         reploss = tf.reduce_sum(reploss)/(tf.reduce_sum(q_k)+1e-3)
@@ -750,6 +753,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  super_attraction=False,
                  div_repulsion=False,
                  dynamic_payload_scaling_onset=-0.005,
+                 beta_push=0.,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -860,6 +864,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.alt_energy_weight = alt_energy_weight
         self.loc_time=time.time()
         self.call_count=0
+        self.beta_push = beta_push
         
         assert kalpha_damping_strength >= 0. and kalpha_damping_strength <= 1.
 
@@ -900,10 +905,12 @@ class LLFullObjectCondensation(LossLayerBase):
             eloss = tf.math.log(ediff**2 + 1. + 1e-5)
             
         eloss = self.softclip(eloss, 0.4) 
+        t_energy = tf.clip_by_value(t_energy,0.,1e12)
+        t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
 
         #calculate energy quantiles 
         euncloss=None
-        corrtruth = tf.math.divide_no_nan(t_energy, t_dep_energies)
+        corrtruth = tf.math.divide_no_nan(t_energy, t_dep_energies+1e-3)
         corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
         corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
         resolution =(1-pred_energy/corrtruth) 
@@ -913,6 +920,9 @@ class LLFullObjectCondensation(LossLayerBase):
         high_energy_tau = 0.84
         euncloss = quantile(l_low,low_energy_tau) + quantile(l_high,high_energy_tau) 
 
+        eloss = tf.debugging.check_numerics(eloss, "tloss loss")
+        euncloss = tf.debugging.check_numerics(euncloss, "tloss loss")
+        
         return eloss, euncloss
     
             
@@ -921,6 +931,8 @@ class LLFullObjectCondensation(LossLayerBase):
         #FIXME: this is just for debugging
         #return (t_energy-pred_energy)**2
         eloss=0
+        
+        t_energy = tf.clip_by_value(t_energy,1e-4,1e12)
         
         if self.huber_energy_scale > 0:
             l = tf.abs(t_energy-pred_energy)
@@ -932,9 +944,10 @@ class LLFullObjectCondensation(LossLayerBase):
             l = tf.math.log(ediff**2/(t_energy+1e-3) + 1.)
             eloss = l
         else:
-            eloss = tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + self.energy_den_offset))
+            eloss = tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + 1e-3))
         
         eloss = self.softclip(eloss, 0.2) 
+        eloss = tf.debugging.check_numerics(eloss, "tloss loss")
         return eloss
 
     def calc_qmin_weight(self, hitenergy):
@@ -949,17 +962,23 @@ class LLFullObjectCondensation(LossLayerBase):
             t_pos = t_pos[:,0:2]
         #reduce risk of NaNs
         ploss = huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) + 1e-2), 10.) #is in cm
+        ploss = tf.debugging.check_numerics(ploss, "tloss loss")
         return self.softclip(ploss, 3.) 
     
     def calc_timing_loss(self, t_time, pred_time, pred_time_unc):
-        if not self.timing_loss_weight:
+        if  self.timing_loss_weight<1e-6:
             return pred_time**2 + pred_time_unc**2
         
+        pred_time_unc = tf.nn.relu(pred_time_unc)#safety
         tloss = tf.math.divide_no_nan((t_time - pred_time)**2 , (pred_time_unc**2+1e-2)) + pred_time_unc**2
+        tloss = tf.debugging.check_numerics(tloss, "tloss loss")
         return tloss
     
     def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
+        
+        #DEBUG
         return tf.reduce_sum(pred_id, axis=1, keepdims=True) #until bug is found
+    
         depth = pred_id.shape[1]#add n_classes here?
         truthclass, mask = one_hot_encode_id(t_pid, depth) # V x Cl, V x 1
         mask = tf.cast(mask, dtype='float32')
@@ -977,7 +996,21 @@ class LLFullObjectCondensation(LossLayerBase):
             pid_w = tf.ones_like(mask)
         classloss = tf.expand_dims(tf.keras.metrics.categorical_crossentropy(truthclass, pred_id), axis=1) # V x 1
         
+        classloss = tf.debugging.check_numerics(classloss, "classloss loss")
         return self.softclip(classloss*mask*pid_w, 2.)#for high weights
+
+    def calc_beta_push(self, betas, tidx):
+        if self.beta_push <=0. :
+            return tf.reduce_mean(betas*0.)#dummy
+        
+        nonoise = tf.where(tidx>=0, betas*0.+ 1., betas*0.)
+        nnonoise = tf.reduce_sum(nonoise)
+        bpush = tf.nn.relu(self.beta_push - betas)
+        bpush = tf.math.log( bpush/self.beta_push + 0.1)**2
+        bsum = tf.reduce_sum(bpush*nonoise)
+        l = tf.math.divide_no_nan(bsum, nnonoise+1e-2)
+        l = tf.debugging.check_numerics(l, "calc_beta_push loss")
+        return l #goes up to 0.1
 
     def loss(self, inputs):
         
@@ -1050,6 +1083,9 @@ class LLFullObjectCondensation(LossLayerBase):
         if is_spectator is None:
             is_spectator = tf.zeros_like(pred_beta)
         
+        full_payload = tf.debugging.check_numerics(full_payload,"full_payload has nans of infs")
+        pred_ccoords = tf.debugging.check_numerics(pred_ccoords,"pred_ccoords has nans of infs")
+        energy_weights = tf.debugging.check_numerics(energy_weights,"energy_weights has nans of infs")
         pred_beta = tf.debugging.check_numerics(pred_beta,"beta has nans of infs")
         #safe guards
         with tf.control_dependencies(
@@ -1127,8 +1163,10 @@ class LLFullObjectCondensation(LossLayerBase):
         
         
         lossval = att + rep + min_b + noise + energy_loss + energy_unc_loss+ pos_loss + time_loss + class_loss + exceed_beta + ccdamp
+        
+        bpush = self.calc_beta_push(pred_beta,t_idx)    
             
-        lossval = tf.reduce_mean(lossval)
+        lossval = tf.reduce_mean(lossval)+bpush
         
         self.add_prompt_metric(att,self.name+'_attractive_loss')
         self.add_prompt_metric(rep,self.name+'_repulsive_loss')
@@ -1140,6 +1178,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.add_prompt_metric(time_loss,self.name+'_time_loss')
         self.add_prompt_metric(class_loss,self.name+'_class_loss')
         self.add_prompt_metric(exceed_beta,self.name+'_exceed_beta_loss')
+        self.add_prompt_metric(bpush,self.name+'_beta_push_loss')
         
         self.maybe_print_loss(lossval)
 
@@ -1191,7 +1230,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'energy_weighted_qmin': self.energy_weighted_qmin,
             'super_attraction':self.super_attraction,
             'div_repulsion' : self.div_repulsion,
-            'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset
+            'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset,
+            'beta_push': self.beta_push
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
