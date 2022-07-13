@@ -197,7 +197,7 @@ class Where(tf.keras.layers.Layer):
         super(Where, self).build(input_shape)
         
     def compute_output_shape(self, input_shapes):
-        return (input_shapes[0],)
+        return (input_shapes[1],)
     
     def call(self,inputs):
         assert len(inputs)==2
