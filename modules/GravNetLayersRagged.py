@@ -177,6 +177,41 @@ class CastRowSplits(tf.keras.layers.Layer):
         else:
             return inputs
 
+
+class Where(tf.keras.layers.Layer):
+    def __init__(self, outputval, condition = '>0', **kwargs):
+        conditions = ['>0','>=0','<0','<=0','==0']
+        assert condition in conditions
+        self.condition = condition
+        self.outputval = outputval
+        
+        super(Where, self).__init__(**kwargs)
+        
+    def get_config(self):
+        base_config = super(Where, self).get_config()
+        return dict(list(base_config.items()) + list({'outputval': self.outputval ,
+                                                      'condition': self.condition
+                                                      }.items()))
+        
+    def build(self, input_shape):
+        super(Where, self).build(input_shape)
+        
+    def compute_output_shape(self, input_shapes):
+        return (input_shapes[0],)
+    
+    def call(self,inputs):
+        assert len(inputs)==2
+        if self.condition == '>0':
+            return tf.where(inputs[0]>0, self.outputval, inputs[1])
+        elif self.condition == '>=0':
+            return tf.where(inputs[0]>=0, self.outputval, inputs[1])
+        elif self.condition == '<0':
+            return tf.where(inputs[0]<0, self.outputval, inputs[1])
+        elif self.condition == '<=0':
+            return tf.where(inputs[0]<=0, self.outputval, inputs[1])
+        else:
+            return tf.where(inputs[0]==0, self.outputval, inputs[1])
+
 class MaskTracksAsNoise(tf.keras.layers.Layer):
     def __init__(self, 
                  active=True,

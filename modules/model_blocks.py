@@ -158,7 +158,7 @@ def re_integrate_to_full_hits(
 from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
 from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
 from GravNetLayersRagged import CastRowSplits, ProcessFeatures
-from GravNetLayersRagged import GooeyBatchNorm, MaskTracksAsNoise
+from GravNetLayersRagged import GooeyBatchNorm, Where, MaskTracksAsNoise
 from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLFillSpace, LLEdgeClassifier
 from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics
 from Layers import CreateTruthSpectatorWeights
@@ -175,7 +175,7 @@ def pre_selection_model(
         trainable=False,
         name='pre_selection',
         debugplots_after=-1,
-        reduction_threshold=0.6,#doesn't make a huge difference
+        reduction_threshold=0.74,#doesn't make a huge difference, this is about the same as for layer clusters
         noise_threshold=0.1, #0.4 % false-positive, 96% noise removal
         K=12,
         record_metrics=True,
@@ -255,8 +255,9 @@ def pre_selection_model(
     x_e = Reshape((K,4))(x_e)
     x_e = Dense(1,activation='sigmoid',name=name+'_ed3',trainable=trainable)(x_e)#edge classifier    
     
-    
+    #not just where so that it ca be switched off without truth
     cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,is_track])
+    
     x_e = LLEdgeClassifier( name = name+'_LLEdgeClassifier',active=trainable,record_metrics=record_metrics,
             scale=5.#high scale
             )([x_e,nidx,cluster_tidx, t_spec_w, energy])    
@@ -366,13 +367,13 @@ def pre_selection_model(
                            )(Concatenate(name=name+'concat_outf_outc')([out['features'],out['coords']]))
         
         #spectators are never noise here
-        notnoisetruth = Lambda(lambda x: tf.where(x[0]>0., 1, x[1]))([out['t_spectator_weight'], out['t_idx']])
+        notnoisetruth = Where(outputval=1,condition='>0')([out['t_spectator_weight'], out['t_idx']])
         
         isnotnoise = LLNotNoiseClassifier(active=trainable,record_metrics=record_metrics,
             scale=1.)([isnotnoise, notnoisetruth])
             
         #tracks are never noise here
-        isnotnoise = Lambda(lambda x: tf.where(x[0]>0., 1., x[1]))([out['is_track'], isnotnoise])
+        isnotnoise = Where(outputval=1.,condition='>0')([out['is_track'], isnotnoise])
         
         if debugplots_after > 0:
             isnotnoise = PlotNoiseDiscriminator(plot_every=debugplots_after,
