@@ -27,9 +27,11 @@ from Layers import DictModel
 
 from model_blocks import  pre_selection_model
 
+K=12 #12
+
 def pretrain_model(Inputs,
                    td, 
-                   debugplots_after=1200, #10 minutes: ~600
+                   debugplots_after=600, #10 minutes: ~600
                    debug_outdir=None):
 
     orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
@@ -48,7 +50,8 @@ def pretrain_model(Inputs,
                              debug_outdir,
                              trainable=True,
                              debugplots_after=5*debugplots_after,
-                             record_metrics=True
+                             record_metrics=True,
+                             K=K
                              )
     
     if False: #the pre-selection model can be chained if needed
@@ -77,7 +80,7 @@ if not train.modelSet():
                    td = train.train_data.dataclass(),
                    debug_outdir=train.outputDir+'/intplots')
     
-    
+    train.saveCheckPoint("before_training.h5")
     train.setCustomOptimizer(tf.keras.optimizers.Adam())
     #
     train.compileModel(learningrate=1e-4)
@@ -101,11 +104,11 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 
-publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
+publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/June2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 
-plot_frequency=2*1200#every 20 minutes approx
+plot_frequency=600#every 20 minutes approx
 cb = [
     
     simpleMetricsCallback(

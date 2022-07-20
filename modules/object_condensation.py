@@ -161,12 +161,14 @@ class Basic_OC_per_sample(object):
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
         
         dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
-        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, d_k_e**2 + 1e-4)
+        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, d_k_e**2 + self.d_k_m**2 + 1e-4)
             
         V_att = self.att_func(dsq_k_m) * self.q_k_m * self.mask_k_m  #K x V-obj x 1
     
         V_att = self.q_k * tf.reduce_sum( V_att ,axis=1)  #K x 1
         V_att = tf.math.divide_no_nan(V_att, N_k+1e-3)  #K x 1
+        
+        print(tf.reduce_mean(self.d_v),tf.reduce_max(self.d_v))
         
         return V_att
     
@@ -175,14 +177,15 @@ class Basic_OC_per_sample(object):
         
     def V_rep_k(self):
         
-        d_k_e = tf.expand_dims(self.d_k, axis=1)
+        d_k_e = tf.expand_dims(self.d_k, axis=1) # K x 1 x 1
+        d_v_e = tf.expand_dims(self.d_v, axis=0) # K x V x 1
         
         N_k = tf.reduce_sum(self.Mnot, axis=1)
         #future remark: if this gets too large, one could use a kNN here
         
         dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
-        dsq = tf.math.divide_no_nan(dsq, d_k_e**2 + 1e-4) #K x V x 1
+        dsq = tf.math.divide_no_nan(dsq, d_k_e**2 + d_v_e**2 + 1e-4) #K x V x 1
         
         V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
         

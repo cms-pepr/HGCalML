@@ -185,15 +185,19 @@ class PlotCoordinates(_DebugPlotBase):
         
     def plot(self, inputs, training=None):
         
-        assert len(inputs) == 4
-        
-        coords, features, tidx, rs = inputs
+        coords, features, hoverfeat, tidx, rs = 5*[None]
+        if len(inputs) == 4:
+            coords, features, tidx, rs = inputs
+        elif len(inputs) == 5:
+            coords, features, hoverfeat, tidx, rs = inputs
         
         #just select first
         coords = coords[0:rs[1]]
         tidx = tidx[0:rs[1]]
         features = features[0:rs[1]]
-        
+        if hoverfeat is not None:
+            hoverfeat = hoverfeat[0:rs[1]]
+            hoverfeat = hoverfeat.numpy()
         #just project
         for i in range(coords.shape[1]-2):
             data={
@@ -203,13 +207,18 @@ class PlotCoordinates(_DebugPlotBase):
                 'tIdx': tidx[:,0:1].numpy(),
                 'features': features[:,0:1].numpy()
                 }
+            hoverdict={}
+            if hoverfeat is not None:
+                for i in range(hoverfeat.shape[1]):
+                    hoverdict['f_'+str(i)] = hoverfeat[:,i:i+1]
+                data.update(hoverdict)
             
             df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
             df['orig_tIdx']=df['tIdx']
             rdst = np.random.RandomState(1234567890)#all the same
             shuffle_truth_colors(df,'tIdx',rdst)
             
-            hover_data=['orig_tIdx']
+            hover_data=['orig_tIdx']+[k for k in hoverdict.keys()]
             fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
                                 color="tIdx",
                                 size='features',
