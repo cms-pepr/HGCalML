@@ -1,5 +1,3 @@
-import time
-
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
@@ -51,6 +49,7 @@ def calculate_iou_serial_fast(truth_sid,
 
     t_idx = _find_idx(t_unique, truth_shower_sid)
     p_idx = _find_idx(p_unique, pred_shower_sid)
+    # overlap_matrix = (intersection_sum_matrix / (union_sum_matrix + 1e-7)).numpy()
 
     intersection_matrix = np.zeros((len(p_unique)+1, len(t_unique)+1), np.float32)
     truth_sum = np.zeros((len(t_unique)+1), np.float32)

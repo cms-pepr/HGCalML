@@ -50,6 +50,7 @@ from LossLayers import LLFullObjectCondensation, LLClusterCoordinates,LLEdgeClas
 
 from DebugLayers import PlotCoordinates
 
+from GravNetLayersRagged import CastRowSplits
 '''
 
 make this about coordinate shifts
@@ -74,19 +75,17 @@ def gravnet_model(Inputs,
     ##################### Input processing, no need to change much here ################
     ####################################################################################
 
-    orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
+    is_preselected = isinstance(td, TrainData_PreselectionNanoML)
+
+    pre_selection = td.interpretAllModelInputs(Inputs,returndict=True)
+                                                
+    #can be loaded - or use pre-selected dataset (to be made)
+    if not is_preselected:
+        pre_selection = pre_selection_model(orig_inputs,trainable=False)
+    else:
+        pre_selection['row_splits'] = CastRowSplits()(pre_selection['row_splits'])
+        print(">> preselected dataset will omit pre-selection step")
     
-    pre_selection = pre_selection_model(orig_inputs,trainable=False)
-    
-    #just for info what's available
-    print([k for k in pre_selection.keys()])
-                                          
-    
-    t_spectator_weight = CreateTruthSpectatorWeights(threshold=3.,
-                                                     minimum=1e-1,
-                                                     active=True
-                                                     )([pre_selection['t_spectator'], 
-                                                        pre_selection['t_idx']])
     rs = pre_selection['row_splits']
               
                                
@@ -247,7 +246,8 @@ def gravnet_model(Inputs,
         pred_time,
         pred_id,
         pred_dist,
-        dict_output=True
+        dict_output=True,
+        is_preselected=is_preselected
         )
     
     return DictModel(inputs=Inputs, outputs=model_outputs)
@@ -269,11 +269,12 @@ if not train.modelSet():
     train.keras_model.summary()
     
     
-    from model_tools import apply_weights_from_path
-    import os
-    path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
-    train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
-    
+    if not isinstance(train.train_data.dataclass(), TrainData_PreselectionNanoML):
+        from model_tools import apply_weights_from_path
+        import os
+        path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_jan/KERAS_model.h5'
+        train.keras_model = apply_weights_from_path(path_to_pretrained,train.keras_model)
+        
 
 
 verbosity = 2
@@ -361,7 +362,7 @@ cb += build_callbacks(train)
 
 #cb=[]
 learningrate = 5e-5
-nbatch = 200000
+nbatch = 100000
 
 train.change_learning_rate(learningrate)
 

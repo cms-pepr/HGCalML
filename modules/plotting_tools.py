@@ -47,7 +47,16 @@ def shuffle_truth_colors(df, qualifier="truthHitAssignementIdx",rdst=None):
     df[qualifier] = out
        
     
-        
-        
-        
-    
+def reassign_indices_random(ta,rdst=None):   
+    unta = np.unique(ta)
+    unta = unta[unta>-0.1]
+    if rdst is None:
+        np.random.shuffle(unta)
+    else:
+        rdst.shuffle(unta)
+    out = ta.copy()
+    for i in range(len(unta)):
+        out[ta ==unta[i]]=i
+    return out   
+
+

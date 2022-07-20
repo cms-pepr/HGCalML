@@ -2,12 +2,11 @@
 from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply, LeakyReLU
 from Layers import OnesLike
 from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply
-
+from tensorflow.keras.layers import Lambda
+import tensorflow as tf
 from Initializers import EyeInitializer
+from GravNetLayersRagged import CondensateToIdxs
 
-
-
-from datastructures import TrainData_NanoML
 
 
 def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_extend'):
@@ -22,17 +21,14 @@ def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_e
     return coords
 
 #new format!
-def create_outputs(x, energy=None, n_ccoords=3, 
+def create_outputs(x, n_ccoords=3, 
                    n_classes=4,
                    fix_distance_scale=False,
-                   scale_energy=False,
                    energy_factor=True,
-                   energy_proxy=None,
                    name_prefix="output_module"):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,pred_pos, pred_time, pred_id
     '''
-    assert scale_energy != energy_factor
     
     pred_beta = Dense(1, activation='sigmoid',name = name_prefix+'_beta')(x)
     pred_ccoords = Dense(n_ccoords,
@@ -42,10 +38,7 @@ def create_outputs(x, energy=None, n_ccoords=3,
                          name = name_prefix+'_clustercoords'
                          )(x) #bias has no effect
     
-    if energy_proxy is None:
-        energy_proxy = x
-    else:
-        energy_proxy = Concatenate()([energy_proxy,x])
+
     energy_act=None
     if energy_factor:
         energy_act='relu'
@@ -53,24 +46,19 @@ def create_outputs(x, energy=None, n_ccoords=3,
     pred_energy = Dense(1,name = name_prefix+'_energy',
                         bias_initializer='ones',
                         activation=energy_act
-                        )(energy_proxy)
+                        )(x)
     pred_energy_low_quantile = Dense(1,name = name_prefix+'_energy_low_quantile',
                         bias_initializer='zeros',
                         activation=energy_res_act
-                        )(energy_proxy)
+                        )(x)
     pred_energy_high_quantile = Dense(1,name = name_prefix+'_energy_high_quantile',
                         bias_initializer='zeros',
                         activation=energy_res_act
-                        )(energy_proxy)
-    if scale_energy:
-        pred_energy = ScalarMultiply(10.)(pred_energy)
-    if energy is not None:
-        pred_energy = Multiply()([pred_energy,energy])
-        pred_energy_low_quantile = Multiply()([pred_energy_low_quantile,energy])
-        pred_energy_high_quantile = Multiply()([pred_energy_high_quantile,energy])
-        
+                        )(x)
+    
     pred_pos =  Dense(2,use_bias=False,name = name_prefix+'_pos')(x)
-    pred_time = ScalarMultiply(10.)(Dense(1)(x))
+    pred_time = ScalarMultiply(10.)(Dense(1,name=name_prefix + '_time')(x))
+    pred_time_unc = Dense(1,activation='elu',name = name_prefix+'_time_unc')(x)#strict positive with small turn on: elu
     
     pred_id = Dense(n_classes, activation="softmax",name = name_prefix+'_class')(x)
     
@@ -78,7 +66,7 @@ def create_outputs(x, energy=None, n_ccoords=3,
     if not fix_distance_scale:
         pred_dist = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name = name_prefix+'_dist')(x))
         #this needs to be bound otherwise fully anti-correlated with coordates scale
-    return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, pred_pos, pred_time, pred_id
+    return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id
 
 
 
@@ -94,7 +82,8 @@ def re_integrate_to_full_hits(
         pred_time,
         pred_id,
         pred_dist,
-        dict_output=False
+        dict_output=False,
+        is_preselected=False,
         ):
     '''
     To be called after OC loss is applied to pre-selected outputs to bring it all back to the full dimensionality
@@ -118,16 +107,23 @@ def re_integrate_to_full_hits(
     from GravNetLayersRagged import MultiBackScatterOrGather
     from globals import cluster_space as  cs
     
-    scatterids = pre_selection['scatterids']
-    pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
-    pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
-    pred_energy_corr = MultiBackScatterOrGather(default=1.)([pred_energy_corr, scatterids])
-    pred_energy_low_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_low_quantile, scatterids])
-    pred_energy_high_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_high_quantile, scatterids])
-    pred_pos = MultiBackScatterOrGather(default=0.)([pred_pos, scatterids])
-    pred_time = MultiBackScatterOrGather(default=10.)([pred_time, scatterids])
-    pred_id = MultiBackScatterOrGather(default=0.)([pred_id, scatterids])
-    pred_dist = MultiBackScatterOrGather(default=1.)([pred_dist, scatterids])
+    if 'scatterids' in pre_selection.keys():
+        scatterids = pre_selection['scatterids']
+        pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
+        pred_beta = MultiBackScatterOrGather(default=0.)([pred_beta, scatterids])
+        pred_energy_corr = MultiBackScatterOrGather(default=1.)([pred_energy_corr, scatterids])
+        pred_energy_low_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_low_quantile, scatterids])
+        pred_energy_high_quantile = MultiBackScatterOrGather(default=1.)([pred_energy_high_quantile, scatterids])
+        pred_pos = MultiBackScatterOrGather(default=0.)([pred_pos, scatterids])
+        pred_time = MultiBackScatterOrGather(default=10.)([pred_time, scatterids])
+        pred_id = MultiBackScatterOrGather(default=0.)([pred_id, scatterids])
+        pred_dist = MultiBackScatterOrGather(default=1.)([pred_dist, scatterids])
+    
+    row_splits = None
+    if is_preselected:
+        row_splits = pre_selection['row_splits']
+    else:
+        row_splits = pre_selection['orig_row_splits']
     
     if dict_output:
         return {
@@ -140,7 +136,7 @@ def re_integrate_to_full_hits(
             'pred_time': pred_time,
             'pred_id': pred_id,
             'pred_dist': pred_dist,
-            'row_splits': pre_selection['orig_row_splits'] }
+            'row_splits': row_splits }
         
     return [
         ('pred_beta', pred_beta), 
@@ -162,8 +158,8 @@ def re_integrate_to_full_hits(
 from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
 from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
 from GravNetLayersRagged import CastRowSplits, ProcessFeatures
-from GravNetLayersRagged import GooeyBatchNorm, MaskTracksAsNoise
-from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLFillSpace, LLEdgeClassifier
+from GravNetLayersRagged import GooeyBatchNorm, Where, MaskTracksAsNoise
+from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLBasicObjectCondensation, LLFillSpace, LLEdgeClassifier
 from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics
 from Layers import CreateTruthSpectatorWeights
 
@@ -172,25 +168,15 @@ from tensorflow.keras.layers import Flatten, Reshape
 from GravNetLayersRagged import NeighbourGroups,GroupScoreFromEdgeScores,ElementScaling, EdgeSelector, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
 from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
     
-#make this much simpler
-def pre_selection_model(
-        orig_inputs,
-        debug_outdir='',
-        trainable=False,
-        name='pre_selection',
-        debugplots_after=-1,
-        reduction_threshold=0.51,#doesn't make a huge difference
-        noise_threshold=0.1, #0.4 % false-positive, 96% noise removal
-        K=12,
-        record_metrics=True,
-        filter_noise=True,
-        ):
-    
+
+#also move this to the standard pre-selection  model
+def condition_input(orig_inputs):
     if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
         orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,minimum=1e-1,active=True
                                                          )([orig_inputs['t_spectator'], 
                                                             orig_inputs['t_idx']])
         orig_inputs['t_spectator_weight'] = orig_t_spectator_weight
+        
         
     if not 'is_track' in orig_inputs.keys():
         orig_inputs['is_track'] = SelectFeatures(2,3)(orig_inputs['features'])
@@ -201,16 +187,136 @@ def pre_selection_model(
     processed_features =  orig_inputs['features']   
     #coords have not been built so features not processed
     if not 'coords' in orig_inputs.keys():
-        processed_features = ProcessFeatures()(orig_inputs['features'])
+        processed_features = ProcessFeatures(name='precondition_process_features')(orig_inputs['features'])
         orig_inputs['coords'] = SelectFeatures(5, 8)(processed_features)
+        orig_inputs['features'] = processed_features
     
     #get some things to work with    
     orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
+    
+    orig_inputs['orig_row_splits'] = orig_inputs['row_splits'] 
+    return orig_inputs
+    
+    
+def pre_condensation_model(inputs,
+                           record_metrics=False,
+                           trainable=False,
+                           t_d=0.1,
+                           t_b=0.1,
+                           print_batch_time=False,
+                           name='pre_condensation',
+                           
+                           condensate=True,
+                           debug_outdir='',
+                           debugplots_after=-1
+                           ):    
+    
+    orig_inputs = condition_input(inputs)
+    coords = orig_inputs['coords']
+    rs = orig_inputs['row_splits']
+    
+    #allow explicit in-place coordinate transformation
+    xc = Dense(16, activation='relu', name = name+'_dc0', trainable=trainable)(coords)
+    xc = Dense(16, activation='relu', name = name+'_dc1', trainable=trainable)(xc)
+    xc = Dense(3, name = name+'_dc2', trainable=trainable)(xc)
+    xc = ScalarMultiply(0.01)(xc)
+    
+    coords = ElementScaling(name=name+'es1',trainable=trainable)(coords)
+    gncoords = Add()([coords,xc])
+    
+    
+    if debugplots_after>0:
+        gncoords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_gncoords')(
+                                            [gncoords,
+                                             orig_inputs['rechit_energy'],
+                                             orig_inputs['t_idx'],rs])
+    
+    # this is a by-hand gravnet
+    
+    nidx,dist = KNN(K=12,record_metrics=record_metrics,name=name+'_knn',
+                    tf_distance=True,#check this
+                    min_bins=20)([gncoords,rs])
+                    
+    x = DistanceWeightedMessagePassing([32,32],name=name+'dmp1',
+                                       trainable=trainable)(
+                                           [orig_inputs['features'],nidx,dist])# hops are rather light 
+    x = Dense(32,activation='relu',name=name+'gn_d0',trainable=trainable)(x)
+    x = Dense(32,activation='relu',name=name+'gn_d1',trainable=trainable)(x)     
+    
+    # now we define the pre-condensation space, that also does the noise removal
+    
+    beta = Dense(1, activation='sigmoid', name=name+'b_d0',trainable=trainable)(x)
+    d = Dense(1, activation='sigmoid', name=name+'d_d0',trainable=trainable)(x)
+    ccoords = Dense(3, name=name+'cc_d0',trainable=trainable)(x)
+    ccoords = ScalarMultiply(0.1)(ccoords)
+    ccoords = Add()([ccoords,coords])
+    
+    
+    beta = LLBasicObjectCondensation(
+        print_batch_time = print_batch_time,
+        record_batch_time = record_metrics,
+                             #print_loss=True,
+        record_metrics = record_metrics,
+        use_average_cc_pos=0.9
+        )([beta, ccoords, d,
+                                        orig_inputs['t_spectator_weight'], 
+                                        orig_inputs['t_idx'], rs])
+    
+    out = orig_inputs
+    out['beta'] = beta
+    out['ccoords'] = ccoords
+    
+    if debugplots_after>0:
+        ccoords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_ccoords')(
+                                            [ccoords,
+                                             beta, 
+                                             d,#additional features to add as hover data
+                                             orig_inputs['t_idx'],rs])
+    
+    out['cond_idx'] = CondensateToIdxs(t_d=t_d,t_b=t_b, active = condensate, name = name+'_condensation')([beta, ccoords, d, rs])
+    
+    return out
+    
+    
+#make this much simpler
+def pre_selection_model(
+        orig_inputs,
+        debug_outdir='',
+        trainable=False,
+        name='pre_selection',
+        debugplots_after=-1,
+        reduction_threshold=0.75,#doesn't make a huge difference, this is about the same as for layer clusters
+        noise_threshold=0.1, #0.4 % false-positive, 96% noise removal
+        K=12,
+        record_metrics=True,
+        filter_noise=True,
+        pass_through=False
+        ):
+    
+    '''
+    inputnames ['recHitFeatures', 'recHitFeatures_rowsplits', 't_idx', 't_idx_rowsplits', 't_energy', 't_energy_rowsplits', 't_pos', 't_pos_rowsplits', 
+    't_time', 't_time_rowsplits', 't_pid', 't_pid_rowsplits', 
+    't_spectator', 't_spectator_rowsplits', 't_fully_contained', 't_fully_contained_rowsplits', 
+    't_rec_energy', 't_rec_energy_rowsplits', 't_is_unique', 't_is_unique_rowsplits']
+
+    ['t_idx', 't_energy', 't_pos', 't_time', 't_pid', 't_spectator', 't_fully_contained', 
+    't_rec_energy', 't_is_unique', 't_spectator_weight', 'coords', 'rechit_energy', 
+    'features', 'is_track', 'row_splits', 'scatterids', 'orig_row_splits']
+    '''
+    
+    orig_inputs = condition_input(orig_inputs)
+    
+    if pass_through:
+        orig_inputs['orig_row_splits'] = orig_inputs['row_splits'] 
+        return orig_inputs
+    
     rs = orig_inputs['row_splits']
     energy = orig_inputs['rechit_energy']
     coords = orig_inputs['coords']
     is_track = orig_inputs['is_track']
-    x = processed_features
+    x = orig_inputs['features']
     
     #truth
     t_spec_w = orig_inputs['t_spectator_weight']
@@ -241,8 +347,9 @@ def pre_selection_model(
     x_e = Reshape((K,4))(x_e)
     x_e = Dense(1,activation='sigmoid',name=name+'_ed3',trainable=trainable)(x_e)#edge classifier    
     
-    
+    #not just where so that it ca be switched off without truth
     cluster_tidx = MaskTracksAsNoise(active=trainable)([t_idx,is_track])
+    
     x_e = LLEdgeClassifier( name = name+'_LLEdgeClassifier',active=trainable,record_metrics=record_metrics,
             scale=5.#high scale
             )([x_e,nidx,cluster_tidx, t_spec_w, energy])    
@@ -257,7 +364,7 @@ def pre_selection_model(
             )([x_e,nidx])
             
     sel_t_spec_w, sel_t_idx = AmbiguousTruthToNoiseSpectator(
-        record_metrics=record_metrics)([sel_nidx, t_spec_w, t_idx])
+        record_metrics=record_metrics)([sel_nidx, t_spec_w, t_idx, energy])
                  
     hierarchy = GroupScoreFromEdgeScores()([x_e,sel_nidx])
     
@@ -289,7 +396,7 @@ def pre_selection_model(
     
     ## create reduced features
     
-    x_to_flat = Concatenate(name=name+'concat_x_to_flat')([processed_features,x])
+    x_to_flat = Concatenate(name=name+'concat_x_to_flat')([orig_inputs['features'],x])
     x_to_flat = Dense(4, activation='relu',name=name+'flatten_dense')(x_to_flat)
     #this has output dimension now
     x_flat_o = SelectFromIndicesWithPad()([g_sel_sel_nidx, x_to_flat])
@@ -320,12 +427,15 @@ def pre_selection_model(
     #create a gradient for this
     coords_o = LLClusterCoordinates(
         record_metrics=record_metrics,
+        record_batch_time=record_metrics,
         name = name+'_LLClusterCoordinates_coords_o',
         active = trainable,
         scale=1.
         )([coords_o,out['t_idx'],out['t_spectator_weight'],energy_o,g_sel_rs])
     
-    
+    #coords_o = LLFillSpace(active = trainable,
+    #                       scale=0.1,
+    #                       record_metrics=record_metrics)([coords_o,g_sel_rs,out['t_idx']])
     
     #add to dict:
     out['coords'] = coords_o
@@ -348,14 +458,19 @@ def pre_selection_model(
     
         isnotnoise = Dense(1, activation='sigmoid',trainable=trainable,name=name+'_noisescore_d1',
                            )(Concatenate(name=name+'concat_outf_outc')([out['features'],out['coords']]))
-                           
-        track_adjusted_t_idx = MaskTracksAsNoise(maskidx=1,active=trainable)([out['t_idx'],out['is_track']])
+        
+        #spectators are never noise here
+        notnoisetruth = Where(outputval=1,condition='>0')([out['t_spectator_weight'], out['t_idx']])
+        
         isnotnoise = LLNotNoiseClassifier(active=trainable,record_metrics=record_metrics,
-            scale=1.)([isnotnoise, track_adjusted_t_idx])
+            scale=1.)([isnotnoise, notnoisetruth])
+            
+        #tracks are never noise here
+        isnotnoise = Where(outputval=1.,condition='>0')([out['is_track'], isnotnoise])
         
         if debugplots_after > 0:
             isnotnoise = PlotNoiseDiscriminator(plot_every=debugplots_after,
-                                        outdir=debug_outdir,name=name+'_noise_score')([isnotnoise,track_adjusted_t_idx])
+                                        outdir=debug_outdir,name=name+'_noise_score')([isnotnoise,notnoisetruth])
                                         
         no_noise_sel, no_noise_rs, noise_backscatter = NoiseFilter(threshold = noise_threshold,record_metrics=record_metrics
             )([isnotnoise,g_sel_rs])

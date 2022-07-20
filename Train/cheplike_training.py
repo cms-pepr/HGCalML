@@ -49,6 +49,11 @@ from LossLayers import LLFullObjectCondensation, LLClusterCoordinates,LLEdgeClas
 
 from DebugLayers import PlotCoordinates
 
+from datastructures import TrainData_PreselectionNanoML
+
+from GravNetLayersRagged import CastRowSplits
+
+
 '''
 
 make this about coordinate shifts
@@ -58,8 +63,8 @@ make this about coordinate shifts
 
 batchnorm_options={
     'viscosity': 0.1,
-    'fluidity_decay': 1e-3,
-    'max_viscosity': 0.99,
+    'fluidity_decay': 5e-1,
+    'max_viscosity': 0.99999,
     'soft_mean': True,
     'variance_only': False,
     'record_metrics': True
@@ -67,39 +72,51 @@ batchnorm_options={
 
 #loss options:
 loss_options={
-    'energy_loss_weight': .5,
-    'q_min': .1,
+    'energy_loss_weight': .25,
+    'q_min': .5,
     'use_average_cc_pos': 0.1,
-    'classification_loss_weight':1e-2,
-    'too_much_beta_scale': 1e-3 
+    'classification_loss_weight':0.,
+    'too_much_beta_scale': 1e-5 ,
+    'position_loss_weight':1e-5,
+    'timing_loss_weight':0.,
+    'beta_loss_scale':2.,
+    'beta_push': 0#0.01 #push betas gently up at low values to not lose the gradients
     }
 
 
 dense_activation='relu'
 
-plotfrequency=200
+record_frequency=20
+plotfrequency=50 #plots every 1k batches
 
-learningrate = 5e-5
-nbatch = 200000
+learningrate = 1e-5
+nbatch = 180000
 
 #iterations of gravnet blocks
 total_iterations = 2
-double_mp=True
+n_neighbours=[64,64]
+double_mp=False
 
 
 def gravnet_model(Inputs,
                   td,
                   debug_outdir=None,
-                  plot_debug_every=1000,
+                  plot_debug_every=2000,
                   ):
     ####################################################################################
     ##################### Input processing, no need to change much here ################
     ####################################################################################
 
-    orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
+    is_preselected = isinstance(td, TrainData_PreselectionNanoML)
+
+    pre_selection = td.interpretAllModelInputs(Inputs,returndict=True)
                                                 
     #can be loaded - or use pre-selected dataset (to be made)
-    pre_selection = pre_selection_model(orig_inputs,trainable=False)
+    if not is_preselected:
+        pre_selection = pre_selection_model(pre_selection,trainable=False,pass_through=False)
+    else:
+        pre_selection['row_splits'] = CastRowSplits()(pre_selection['row_splits'])
+        print(">> preselected dataset will omit pre-selection step")
     
     #just for info what's available
     print('available pre-selection outputs',[k for k in pre_selection.keys()])
@@ -143,7 +160,7 @@ def gravnet_model(Inputs,
         n_dims = 6
         #exchange information, create coordinates
         x = Concatenate()([c_coords,x])
-        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=64,
+        xgn, gncoords, gnnidx, gndist = RaggedGravNet(n_neighbours=n_neighbours[i],
                                                  n_dimensions=n_dims,
                                                  n_filters=64,
                                                  n_propagate=64,
@@ -215,21 +232,20 @@ def gravnet_model(Inputs,
     
     pred_beta, pred_ccoords, pred_dist,\
     pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile,\
-    pred_pos, pred_time, pred_id = create_outputs(x, n_ccoords=n_cluster_space_coordinates)
+    pred_pos, pred_time, pred_time_unc, pred_id = create_outputs(x, n_ccoords=n_cluster_space_coordinates)
     
     # loss
     pred_beta = LLFullObjectCondensation(scale=4.,
-                                         position_loss_weight=1e-5,
-                                         timing_loss_weight=1e-5,
-                                         beta_loss_scale=1.,
                                          use_energy_weights=True,
                                          record_metrics=True,
+                                         print_loss=False,
                                          name="FullOCLoss",
                                          **loss_options
                                          )(  # oc output and payload
         [pred_beta, pred_ccoords, pred_dist,
          pred_energy_corr,pred_energy_low_quantile,pred_energy_high_quantile,
-         pred_pos, pred_time, pred_id] +
+         pred_pos, pred_time, pred_time_unc,
+         pred_id] +
         [energy]+
         # truth information
         [pre_selection['t_idx'] ,
@@ -259,7 +275,8 @@ def gravnet_model(Inputs,
         pred_time,
         pred_id,
         pred_dist,
-        dict_output=True
+        dict_output=True,
+        is_preselected=is_preselected
         )
     
     return DictModel(inputs=Inputs, outputs=model_outputs)
@@ -274,16 +291,17 @@ if not train.modelSet():
                    td=train.train_data.dataclass(),
                    debug_outdir=train.outputDir+'/intplots')
     
-    train.setCustomOptimizer(tf.keras.optimizers.Adam())
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam(clipnorm=1.,epsilon=1e-2))
     #
     train.compileModel(learningrate=1e-4)
     
     train.keras_model.summary()
     
-    from model_tools import apply_weights_from_path
-    import os
-    path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_may22/KERAS_model.h5'
-    apply_weights_from_path(path_to_pretrained,train.keras_model)
+    if not isinstance(train.train_data.dataclass(), TrainData_PreselectionNanoML):
+        from model_tools import apply_weights_from_path
+        import os
+        path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_june22/KERAS_model.h5'
+        apply_weights_from_path(path_to_pretrained,train.keras_model)
     
 
 verbosity = 2
@@ -293,7 +311,7 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 
-publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/Jan2022/"
+publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/June2022/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 cb = []
@@ -328,21 +346,30 @@ from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 cb += [
     simpleMetricsCallback(
         output_file=train.outputDir+'/metrics.html',
-        record_frequency= 2,
+        record_frequency= record_frequency,
         plot_frequency = plotfrequency,
-        select_metrics='FullOCLoss_*',
+        select_metrics='FullOCLoss_*loss',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/time_pred.html',
+        record_frequency= record_frequency,
+        plot_frequency = plotfrequency,
+        select_metrics=['FullOCLoss_*time_std','FullOCLoss_*time_pred_std'],
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
     simpleMetricsCallback(
         output_file=train.outputDir+'/gooey_metrics.html',
-        record_frequency= 2,
+        record_frequency= record_frequency,
         plot_frequency = plotfrequency,
         select_metrics='gooey_*',
         publish=publishpath
         ),
     simpleMetricsCallback(
         output_file=train.outputDir+'/latent_space_metrics.html',
-        record_frequency= 2,
+        record_frequency= record_frequency,
         plot_frequency = plotfrequency,
         select_metrics='average_distance_*',
         publish=publishpath
@@ -350,7 +377,7 @@ cb += [
     
     simpleMetricsCallback(
         output_file=train.outputDir+'/non_amb_truth_fraction.html',
-        record_frequency= 2,
+        record_frequency= record_frequency,
         plot_frequency = plotfrequency,
         select_metrics='*_non_amb_truth_fraction',
         publish=publishpath #no additional directory here (scp cannot create one)
@@ -369,7 +396,7 @@ cb += [
     #if approxime knn is used
     #simpleMetricsCallback(
     #    output_file=train.outputDir+'/slicing_knn_metrics.html',
-    #    record_frequency= 2,
+    #    record_frequency= record_frequency,
     #    plot_frequency = plotfrequency,
     #    publish=publishpath,
     #    select_metrics='*_bins'
