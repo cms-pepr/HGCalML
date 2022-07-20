@@ -57,6 +57,9 @@ global_layers_list['Where']=Where
 from GravNetLayersRagged import MaskTracksAsNoise
 global_layers_list['MaskTracksAsNoise']=MaskTracksAsNoise
 
+from GravNetLayersRagged import CondensateToIdxs
+global_layers_list['CondensateToIdxs']=CondensateToIdxs
+
 from GravNetLayersRagged import ScaleBackpropGradient
 global_layers_list['ScaleBackpropGradient']=ScaleBackpropGradient
 
@@ -199,7 +202,7 @@ global_layers_list['PlotNoiseDiscriminator']=PlotNoiseDiscriminator
 
 from LossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
 from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace
-from LossLayers import LossLayerBase, LLFullObjectCondensation,LLNeighbourhoodClassifier
+from LossLayers import LossLayerBase, LLBasicObjectCondensation, LLFullObjectCondensation,LLNeighbourhoodClassifier
 from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator
 import traceback
 import os
@@ -218,6 +221,7 @@ global_layers_list['LLNotNoiseClassifier']=LLNotNoiseClassifier
 global_layers_list['LLFillSpace']=LLFillSpace
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
+global_layers_list['LLBasicObjectCondensation']=LLBasicObjectCondensation
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier
 global_layers_list['LLEdgeClassifier']=LLEdgeClassifier

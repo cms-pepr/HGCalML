@@ -245,7 +245,40 @@ class MaskTracksAsNoise(tf.keras.layers.Layer):
         if self.active:
             tidx = tf.where(tf.abs(trackcharge)>1e-3, self.maskidx, tidx)
         return tidx
+
+from assign_condensate_op import BuildAndAssignCondensates as ba_cond
+
+class CondensateToIdxs(tf.keras.layers.Layer):
+    
+    def __init__(self, t_d, t_b,active=True,**kwargs):
+        self.t_d=t_d
+        self.t_b=t_b
+        self.active = active
+        super(CondensateToIdxs, self).__init__(**kwargs)
         
+    def get_config(self):
+            #when saving always assume active!
+            config = {'t_d': self.t_d,
+                      't_b': self.t_b}
+            base_config = super(CondensateToIdxs, self).get_config()
+            return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes): #input is data, coords, beta, rs
+        return input_shapes[0]  
+
+    def call(self, inputs):
+        assert len(inputs) == 4
+        beta, ccoords, d, rs = inputs
+        
+        asso_idx = tf.range(tf.shape(beta)[0])
+        if self.active:
+            asso_idx, _, _ = ba_cond(ccoords, beta, rs, 
+                                 radius=self.t_d, min_beta=self.t_b,
+                                 dist=d)
+        
+        return asso_idx
+
+            
         
 
 class ScaleBackpropGradient(tf.keras.layers.Layer):
@@ -1473,6 +1506,7 @@ class KNN(LayerWithMetrics):
     def __init__(self,K: int, radius=-1., 
                  use_approximate_knn=False,
                  min_bins=None,
+                 tf_distance=False,
                  **kwargs):
         """
         
@@ -1494,6 +1528,7 @@ class KNN(LayerWithMetrics):
         
         self.use_approximate_knn = use_approximate_knn
         self.min_bins = min_bins
+        self.tf_distance = tf_distance
         
         if isinstance(radius,int):
             radius=float(radius)
@@ -1511,7 +1546,8 @@ class KNN(LayerWithMetrics):
         config = {'K': self.K,
                   'radius': self.radius,
                   'min_bins':self.min_bins,
-                  'use_approximate_knn': self.use_approximate_knn}
+                  'use_approximate_knn': self.use_approximate_knn,
+                  'tf_distance': self.tf_distance}
         base_config = super(KNN, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
@@ -1519,7 +1555,7 @@ class KNN(LayerWithMetrics):
         return (None, self.K+1),(None, self.K+1)
 
     @staticmethod 
-    def raw_call(coordinates, row_splits, K, radius, use_approximate_knn, min_bins):
+    def raw_call(coordinates, row_splits, K, radius, use_approximate_knn, min_bins, tfdist):
         nbins=None
         if use_approximate_knn:
             bin_width = radius # default value for SlicingKnn kernel
@@ -1533,8 +1569,16 @@ class KNN(LayerWithMetrics):
                                        n_bins=min_bins,
                                  max_radius= radius, tf_compatible=False)
 
+        
+        if tfdist:
+            ncoords = SelectWithDefault(idx, coordinates,0.)
+            distsq = tf.reduce_sum( (ncoords[:,0:1,:]-ncoords)**2, axis=-1)
+            distsq = tf.where(idx<0, 0., distsq)
+            
         idx = tf.reshape(idx, [-1,K+1])
         dist = tf.reshape(dist, [-1,K+1])
+        
+        
         return idx,dist,nbins
 
     def update_dynamic_radius(self, dist, training=None):
@@ -1552,11 +1596,11 @@ class KNN(LayerWithMetrics):
         if self.dynamic_radius is None:
             idx,dist,nbins = KNN.raw_call(coordinates, row_splits, self.K, 
                                           self.radius, self.use_approximate_knn,
-                                          self.min_bins)
+                                          self.min_bins, self.tf_distance)
         else:
             idx,dist,nbins = KNN.raw_call(coordinates, row_splits, self.K, 
                                           self.dynamic_radius, self.use_approximate_knn,
-                                          self.min_bins)
+                                          self.min_bins, self.tf_distance)
             self.update_dynamic_radius(dist,training)
             
         if self.use_approximate_knn:

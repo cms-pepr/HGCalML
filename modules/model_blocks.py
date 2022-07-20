@@ -5,7 +5,7 @@ from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply
 from tensorflow.keras.layers import Lambda
 import tensorflow as tf
 from Initializers import EyeInitializer
-
+from GravNetLayersRagged import CondensateToIdxs
 
 
 
@@ -58,7 +58,7 @@ def create_outputs(x, n_ccoords=3,
     
     pred_pos =  Dense(2,use_bias=False,name = name_prefix+'_pos')(x)
     pred_time = ScalarMultiply(10.)(Dense(1,name=name_prefix + '_time')(x))
-    pred_time_unc = Dense(1,activation='relu',name = name_prefix+'_time_unc')(x)#strict positive
+    pred_time_unc = Dense(1,activation='elu',name = name_prefix+'_time_unc')(x)#strict positive with small turn on: elu
     
     pred_id = Dense(n_classes, activation="softmax",name = name_prefix+'_class')(x)
     
@@ -159,7 +159,7 @@ from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectF
 from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
 from GravNetLayersRagged import CastRowSplits, ProcessFeatures
 from GravNetLayersRagged import GooeyBatchNorm, Where, MaskTracksAsNoise
-from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLFillSpace, LLEdgeClassifier
+from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLBasicObjectCondensation, LLFillSpace, LLEdgeClassifier
 from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics
 from Layers import CreateTruthSpectatorWeights
 
@@ -168,6 +168,118 @@ from tensorflow.keras.layers import Flatten, Reshape
 from GravNetLayersRagged import NeighbourGroups,GroupScoreFromEdgeScores,ElementScaling, EdgeSelector, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
 from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
     
+
+#also move this to the standard pre-selection  model
+def condition_input(orig_inputs):
+    if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
+        orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,minimum=1e-1,active=True
+                                                         )([orig_inputs['t_spectator'], 
+                                                            orig_inputs['t_idx']])
+        orig_inputs['t_spectator_weight'] = orig_t_spectator_weight
+        
+        
+    if not 'is_track' in orig_inputs.keys():
+        orig_inputs['is_track'] = SelectFeatures(2,3)(orig_inputs['features'])
+        
+    if not 'rechit_energy' in orig_inputs.keys():
+        orig_inputs['rechit_energy'] = SelectFeatures(0, 1)(orig_inputs['features'])    
+    
+    processed_features =  orig_inputs['features']   
+    #coords have not been built so features not processed
+    if not 'coords' in orig_inputs.keys():
+        processed_features = ProcessFeatures(name='precondition_process_features')(orig_inputs['features'])
+        orig_inputs['coords'] = SelectFeatures(5, 8)(processed_features)
+        orig_inputs['features'] = processed_features
+    
+    #get some things to work with    
+    orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
+    
+    orig_inputs['orig_row_splits'] = orig_inputs['row_splits'] 
+    return orig_inputs
+    
+    
+def pre_condensation_model(inputs,
+                           record_metrics=False,
+                           trainable=False,
+                           t_d=0.1,
+                           t_b=0.1,
+                           print_batch_time=False,
+                           name='pre_condensation',
+                           
+                           condensate=True,
+                           debug_outdir='',
+                           debugplots_after=-1
+                           ):    
+    
+    orig_inputs = condition_input(inputs)
+    coords = orig_inputs['coords']
+    rs = orig_inputs['row_splits']
+    
+    #allow explicit in-place coordinate transformation
+    xc = Dense(16, activation='relu', name = name+'_dc0', trainable=trainable)(coords)
+    xc = Dense(16, activation='relu', name = name+'_dc1', trainable=trainable)(xc)
+    xc = Dense(3, name = name+'_dc2', trainable=trainable)(xc)
+    xc = ScalarMultiply(0.01)(xc)
+    
+    coords = ElementScaling(name=name+'es1',trainable=trainable)(coords)
+    gncoords = Add()([coords,xc])
+    
+    
+    if debugplots_after>0:
+        gncoords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_gncoords')(
+                                            [gncoords,
+                                             orig_inputs['rechit_energy'],
+                                             orig_inputs['t_idx'],rs])
+    
+    # this is a by-hand gravnet
+    
+    nidx,dist = KNN(K=12,record_metrics=record_metrics,name=name+'_knn',
+                    tf_distance=True,#check this
+                    min_bins=20)([gncoords,rs])
+                    
+    x = DistanceWeightedMessagePassing([32,32],name=name+'dmp1',
+                                       trainable=trainable)(
+                                           [orig_inputs['features'],nidx,dist])# hops are rather light 
+    x = Dense(32,activation='relu',name=name+'gn_d0',trainable=trainable)(x)
+    x = Dense(32,activation='relu',name=name+'gn_d1',trainable=trainable)(x)     
+    
+    # now we define the pre-condensation space, that also does the noise removal
+    
+    beta = Dense(1, activation='sigmoid', name=name+'b_d0',trainable=trainable)(x)
+    d = Dense(1, activation='sigmoid', name=name+'d_d0',trainable=trainable)(x)
+    ccoords = Dense(3, name=name+'cc_d0',trainable=trainable)(x)
+    ccoords = ScalarMultiply(0.1)(ccoords)
+    ccoords = Add()([ccoords,coords])
+    
+    
+    beta = LLBasicObjectCondensation(
+        print_batch_time = print_batch_time,
+        record_batch_time = record_metrics,
+                             #print_loss=True,
+        record_metrics = record_metrics,
+        use_average_cc_pos=0.9
+        )([beta, ccoords, d,
+                                        orig_inputs['t_spectator_weight'], 
+                                        orig_inputs['t_idx'], rs])
+    
+    out = orig_inputs
+    out['beta'] = beta
+    out['ccoords'] = ccoords
+    
+    if debugplots_after>0:
+        ccoords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_ccoords')(
+                                            [ccoords,
+                                             beta, 
+                                             d,#additional features to add as hover data
+                                             orig_inputs['t_idx'],rs])
+    
+    out['cond_idx'] = CondensateToIdxs(t_d=t_d,t_b=t_b, active = condensate, name = name+'_condensation')([beta, ccoords, d, rs])
+    
+    return out
+    
+    
 #make this much simpler
 def pre_selection_model(
         orig_inputs,
@@ -175,7 +287,7 @@ def pre_selection_model(
         trainable=False,
         name='pre_selection',
         debugplots_after=-1,
-        reduction_threshold=0.74,#doesn't make a huge difference, this is about the same as for layer clusters
+        reduction_threshold=0.75,#doesn't make a huge difference, this is about the same as for layer clusters
         noise_threshold=0.1, #0.4 % false-positive, 96% noise removal
         K=12,
         record_metrics=True,
@@ -194,27 +306,7 @@ def pre_selection_model(
     'features', 'is_track', 'row_splits', 'scatterids', 'orig_row_splits']
     '''
     
-    if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
-        orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,minimum=1e-1,active=True
-                                                         )([orig_inputs['t_spectator'], 
-                                                            orig_inputs['t_idx']])
-        orig_inputs['t_spectator_weight'] = orig_t_spectator_weight
-        
-        
-    if not 'is_track' in orig_inputs.keys():
-        orig_inputs['is_track'] = SelectFeatures(2,3)(orig_inputs['features'])
-        
-    if not 'rechit_energy' in orig_inputs.keys():
-        orig_inputs['rechit_energy'] = SelectFeatures(0, 1)(orig_inputs['features'])    
-    
-    processed_features =  orig_inputs['features']   
-    #coords have not been built so features not processed
-    if not 'coords' in orig_inputs.keys():
-        processed_features = ProcessFeatures()(orig_inputs['features'])
-        orig_inputs['coords'] = SelectFeatures(5, 8)(processed_features)
-    
-    #get some things to work with    
-    orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
+    orig_inputs = condition_input(orig_inputs)
     
     if pass_through:
         orig_inputs['orig_row_splits'] = orig_inputs['row_splits'] 
@@ -224,7 +316,7 @@ def pre_selection_model(
     energy = orig_inputs['rechit_energy']
     coords = orig_inputs['coords']
     is_track = orig_inputs['is_track']
-    x = processed_features
+    x = orig_inputs['features']
     
     #truth
     t_spec_w = orig_inputs['t_spectator_weight']
@@ -304,7 +396,7 @@ def pre_selection_model(
     
     ## create reduced features
     
-    x_to_flat = Concatenate(name=name+'concat_x_to_flat')([processed_features,x])
+    x_to_flat = Concatenate(name=name+'concat_x_to_flat')([orig_inputs['features'],x])
     x_to_flat = Dense(4, activation='relu',name=name+'flatten_dense')(x_to_flat)
     #this has output dimension now
     x_flat_o = SelectFromIndicesWithPad()([g_sel_sel_nidx, x_to_flat])
@@ -335,6 +427,7 @@ def pre_selection_model(
     #create a gradient for this
     coords_o = LLClusterCoordinates(
         record_metrics=record_metrics,
+        record_batch_time=record_metrics,
         name = name+'_LLClusterCoordinates_coords_o',
         active = trainable,
         scale=1.

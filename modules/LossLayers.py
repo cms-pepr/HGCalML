@@ -121,6 +121,7 @@ class LossLayerBase(LayerWithMetrics):
                  print_batch_time=False,
                  return_lossval=False, 
                  print_time=False,#compat, has no effect
+                 record_batch_time=False,
                  **kwargs):
         super(LossLayerBase, self).__init__(**kwargs)
         
@@ -131,6 +132,7 @@ class LossLayerBase(LayerWithMetrics):
         self.scale = scale
         self.print_loss = print_loss
         self.print_batch_time = print_batch_time
+        self.record_batch_time = record_batch_time
         self.return_lossval=return_lossval
         with tf.init_scope():
             now = tf.timestamp()
@@ -142,6 +144,7 @@ class LossLayerBase(LayerWithMetrics):
                   'scale': self.scale,
                   'print_loss': self.print_loss,
                   'print_batch_time': self.print_batch_time,
+                  'record_batch_time': self.record_batch_time,
                   'return_lossval': self.return_lossval}
         base_config = super(LossLayerBase, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -152,7 +155,9 @@ class LossLayerBase(LayerWithMetrics):
     def call(self, inputs):
         lossval = tf.constant([0.],dtype='float32')
         if self.active:
+            now = tf.timestamp() 
             lossval = self.scale * self.loss(inputs)
+            self.maybe_print_loss(lossval,now)
             if not self.return_lossval:
                 self.add_loss(lossval)
                 
@@ -170,22 +175,34 @@ class LossLayerBase(LayerWithMetrics):
         '''
         return tf.constant(0.,dtype='float32')
     
-    def maybe_print_loss(self,lossval):
+    def maybe_print_loss(self,lossval,stime=None):
         if self.print_loss:
             if hasattr(lossval, 'numpy'):
                 print(self.name, 'loss', lossval.numpy())
             else:
                 tf.print(self.name, 'loss', lossval)
+                
         
         if self.print_batch_time or self.record_metrics:
             now = tf.timestamp() 
             prev = self.time
             prev = tf.where(prev<0.,now,prev)
             batchtime = now - prev            #round((time.time()-self.time)*1000.)/1000.
+            losstime = 0.
+            if stime is not None:
+                losstime = now - stime
             tf.keras.backend.update(self.time,now)
             if self.print_batch_time:
                 tf.print(self.name,'batch time',batchtime*1000.,'ms')
-            self.add_prompt_metric(batchtime, self.name+'_batch_time')
+                if stime is not None:
+                    tf.print(self.name,'loss time',losstime*1000.,'ms')
+                print(self.name,'batch time',batchtime*1000.,'ms')
+                if stime is not None:
+                    print(self.name,'loss time',losstime*1000.,'ms')
+            if self.record_batch_time and self.record_metrics:
+                self.add_prompt_metric(batchtime, self.name+'_batch_time')
+                if stime is not None:
+                    self.add_prompt_metric(losstime, self.name+'_loss_time')
             
 
     def compute_output_shape(self, input_shapes):
@@ -322,7 +339,6 @@ class LLFillSpace(LossLayerBase):
                 return tf.zeros_like(coords[0,0])
             self.counter = 0
         lossval = LLFillSpace.raw_loss(coords, rs, tidx, self.maxhits)
-        self.maybe_print_loss(lossval)
         
         if self.counter == -1:
             self.counter+=1
@@ -398,6 +414,9 @@ class LLClusterCoordinates(LossLayerBase):
         reploss = tf.zeros_like(acoords[0,0])
         distloss = tf.zeros_like(acoords[0,0])
         
+        if rs.shape[0] is None:
+            return lossval, distloss, reploss
+        
         nbatches = rs.shape[0]-1
         for i in range(nbatches):
             coords = acoords[rs[i]:rs[i+1]]
@@ -420,14 +439,7 @@ class LLClusterCoordinates(LossLayerBase):
         nbatches = tf.cast(nbatches,dtype='float32')
         return lossval/nbatches, distloss/nbatches, reploss/nbatches
 
-    def maybe_print_loss(self, lossval,distloss, reploss, tidx):
-        LossLayerBase.maybe_print_loss(self, lossval)
-        #must be eager
-        if self.print_loss:
-            print(self.name,'attractive',distloss.numpy(),
-                  'repulsive',reploss.numpy(),'n_noise',
-                  tf.reduce_sum(tf.cast(tidx==-1,dtype='int32')).numpy()
-                  )
+    
         
     def loss(self, inputs):
         assert len(inputs) == 5 
@@ -437,8 +449,6 @@ class LLClusterCoordinates(LossLayerBase):
         
         self.add_prompt_metric(self.scale * distloss, self.name+'_att_loss')
         self.add_prompt_metric(self.scale * reploss, self.name+'_rep_loss')
-        
-        self.maybe_print_loss(lossval,distloss, reploss, tidx)
         
         return lossval
     
@@ -710,6 +720,60 @@ class LLEdgeClassifier(LossLayerBase):
         lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight, energy, self.downweight_spectators)
         self.maybe_print_loss(lossval)
         return lossval
+
+
+
+
+
+class LLBasicObjectCondensation(LossLayerBase):
+    
+    def __init__(self, 
+                 q_min=0.8, 
+                 s_b=1.,
+                 use_average_cc_pos=0.5,
+                 **kwargs):
+        
+        super(LLBasicObjectCondensation, self).__init__(**kwargs)
+        
+        self.oc_loss_object = OC_loss(
+            q_min= q_min,
+                 s_b=s_b,
+                 use_mean_x=use_average_cc_pos,
+                 spect_supp=1.
+            )
+        
+    
+    def loss(self, inputs):
+        assert len(inputs) == 6
+        beta, coords, d, spec, t_idx, rs = inputs
+        
+        spec = tf.clip_by_value(spec, 0., 1.)
+        
+        att, rep, noise, min_b, _, _ = self.oc_loss_object(
+                beta=beta,
+                x=coords,
+                d=d,
+                pll=tf.zeros_like(beta),
+                truth_idx=t_idx,
+                object_weight=tf.ones_like(beta),
+                is_spectator_weight=spec,
+                rs=rs)
+
+        self.add_prompt_metric(att,self.name+'_att_loss')
+        self.add_prompt_metric(rep,self.name+'_rep_loss')
+        self.add_prompt_metric(noise,self.name+'_noise_loss')
+        self.add_prompt_metric(min_b,self.name+'_min_b_loss')
+        
+        
+        loss = att + rep + noise + min_b
+        
+        self.add_prompt_metric(loss,self.name+'_loss')
+        
+        
+        self.add_prompt_metric(tf.reduce_mean(d),self.name+'_avg_dist')
+        
+        return loss
+        
 
 
 class LLFullObjectCondensation(LossLayerBase):
@@ -1179,6 +1243,8 @@ class LLFullObjectCondensation(LossLayerBase):
         self.add_prompt_metric(class_loss,self.name+'_class_loss')
         self.add_prompt_metric(exceed_beta,self.name+'_exceed_beta_loss')
         self.add_prompt_metric(bpush,self.name+'_beta_push_loss')
+        
+        self.add_prompt_metric(tf.reduce_mean(pred_distscale),self.name+'_avg_dist')
         
         self.maybe_print_loss(lossval)
 
