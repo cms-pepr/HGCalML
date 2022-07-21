@@ -9,24 +9,6 @@ _bc_op = tf.load_op_library('assign_to_condensates.so')
 _bc_op_binned = tf.load_op_library('assign_to_condensates_binned.so')
 import numpy as np
 
-def find_bins(ccoords, n_bins_sc, check=False):
-    dmax_coords = tf.reduce_max(ccoords,axis=0)
-    bin_width = (dmax_coords) / tf.cast(n_bins_sc, dtype='float32')
-    n_bins = None  # re-calc in dimensions
-    bin_width = tf.reduce_max(bin_width)[..., tf.newaxis]  # just add a '1' dimension
-    n_bins = tf.cast(dmax_coords/bin_width, tf.int32)+1
-
-    edges = tf.linspace(0.0, tf.reduce_max(dmax_coords), tf.reduce_max(n_bins), n_bins_sc)
-    bin_width = edges[1]-edges[0]
-
-    print(bin_width, edges, n_bins, n_bins_sc)
-    # 0/0
-
-    bins = tf.cast(tfp.stats.find_bins(ccoords, edges), tf.int32)
-    bins_flat = bins[:, 0]*n_bins[1]*n_bins[2] + bins[:, 1] * n_bins[2] + bins[:, 2]
-
-
-    return bins, bins_flat, n_bins, tf.reduce_max(bin_width)
 
 def AssignToCondensatesBinned(ccoords,
                         betas,
@@ -52,87 +34,70 @@ def AssignToCondensatesBinned(ccoords,
     n_bins_sc = 30
     min_coords = tf.reduce_min(ccoords,axis=0,keepdims=True)
     ccoords -= min_coords
-    # x, bins_flat, n_bins, bin_width, _ = BinByCoordinates(ccoords, row_splits, n_bins=n_bins_sc)
-    _, bins_flat, n_bins, bin_width = find_bins(ccoords, n_bins_sc, True)
-
-
-    flat_bin_finding_vector = np.concatenate((np.flip(np.cumprod(np.flip(n_bins.numpy())))[1:], [1]))
-    print("Bin finding vector", n_bins.numpy(),flat_bin_finding_vector)
+    _, bins_flat, n_bins, bin_width, _ = BinByCoordinates(ccoords, row_splits, n_bins=n_bins_sc)
+    # _, bins_flat, n_bins, bin_width = find_bins(ccoords, n_bins_sc, True)
 
     sorting_indices = tf.argsort(bins_flat)
+    sorting_indices_back = tf.argsort(sorting_indices)
     ccoords = tf.gather(ccoords, sorting_indices)
     betas = tf.gather(betas, sorting_indices)
     dist = tf.gather(dist, sorting_indices)
     bins_flat = tf.gather(bins_flat, sorting_indices)
+    orig_indices = tf.gather(tf.range(betas.shape[0]), sorting_indices)
     bin_splits = tf.ragged.segment_ids_to_row_splits(bins_flat,num_segments=tf.reduce_prod(n_bins))
-
-    # print(bin_width)
-    # 0/0
-
-    # min_coords = tf.reduce_min(ccoords_h,axis=0,keepdims=True)
-    # ccoords_h -= min_coords
-
-    # _, bins_flat_h, n_bins_h, bin_width_h, _ = BinByCoordinates(ccoords_h, row_splits, n_bins=n_bins_sc_2, pre_normalized=True)
 
     # _h is for high beta vertices, filtered ones for faster performance
     high_beta_indices = (betas>beta_threshold)[..., 0]
     betas_h = betas[high_beta_indices]
     ccoords_h = ccoords[high_beta_indices]
     dist_h = dist[high_beta_indices]
+    orig_indices_h = orig_indices[high_beta_indices]
     row_splits_h = tf.constant([0, len(ccoords_h)])
     n_bins_sc_2 = 10
-    bins_h, bins_flat_h, n_bins_h, bin_width_h = find_bins(ccoords_h, n_bins_sc_2, True)
+    # bins_h, bins_flat_h, n_bins_h, bin_width_h = find_bins(ccoords_h, n_bins_sc_2, True)
+    _, bins_flat_h, n_bins_h, bin_width_h, _ = BinByCoordinates(ccoords, row_splits, n_bins=n_bins_sc)
+    # x, bins_flat, n_bins, bin_width, _ = BinByCoordinates(ccoords, row_splits, n_bins=n_bins_sc)
 
-    sorting_indices_h = tf.argsort(bins_flat_h)
+
+    # _h tensors aren't sorted by bins because they are not currently being used. Maybe they'd be useful for the CUDA
+    # op.
+    # sorting_indices_h = tf.argsort(bins_flat_h)
     # ccoords_h = tf.gather(ccoords_h, sorting_indices_h)
     # betas_h = tf.gather(betas_h, sorting_indices_h)
     # dist_h = tf.gather(dist_h, sorting_indices_h)
     # bins_flat_h = tf.gather(bins_flat_h, sorting_indices_h)
     bin_splits_h = tf.ragged.segment_ids_to_row_splits(bins_flat_h,num_segments=tf.reduce_prod(n_bins_h))
 
-    beta_filtered_indices_full = np.zeros(len(betas), np.int32)-1
-    beta_filtered_indices_full[np.argwhere(betas > beta_threshold)[:, 0]] = np.arange(len(betas_h))
-
-    indices_to_filtered = np.zeros(len(betas), np.int32) -1
-    indices_to_filtered[high_beta_indices] = np.arange(len(betas_h))
-
-    # print(np.argwhere(indices_to_filtered>0))
-    # 0/0
-
-    # tf.scatter_nd(tf.scatter(tf.range(len(betas))), xyz_h)
-
-
-
-
-    print("Before", bin_width_h, bin_width, n_bins, n_bins_h)
+    # Would set default to -1 instead of 0 (where no scattering is done)
+    indices_to_filtered = tf.scatter_nd(tf.where(high_beta_indices),tf.range(betas_h.shape[0])+1, [betas.shape[0]])-1
 
 
     with tf.device('/cpu'):
-        x,y =  _bc_op_binned.AssignToCondensatesBinned(
-                beta_threshold=beta_threshold,
-                ccoords=ccoords,
-                dist=dist,
-                beta=betas,
-                bins_flat=bins_flat,
-                bin_splits=bin_splits,
-                n_bins=n_bins,
-                bin_widths=bin_width,
-                indices_to_filtered = indices_to_filtered,
-                ccoords_h=ccoords_h,
-                dist_h=dist_h,
-                beta_h=betas_h,
-                bins_flat_h=bins_flat_h,
-                bin_splits_h=bin_splits_h,
-                n_bins_h=n_bins_h,
-                bin_widths_h=bin_width_h,)
+        for x in range(10):
+            t1 = time.time()
+            condensates_assigned,assignment =  _bc_op_binned.AssignToCondensatesBinned(
+                    beta_threshold=beta_threshold,
+                    ccoords=ccoords,
+                    dist=dist,
+                    beta=betas,
+                    bins_flat=bins_flat,
+                    bin_splits=bin_splits,
+                    n_bins=n_bins,
+                    bin_widths=bin_width,
+                    indices_to_filtered = indices_to_filtered,
+                    ccoords_h=ccoords_h,
+                    dist_h=dist_h,
+                    beta_h=betas_h,
+                    bins_flat_h=bins_flat_h,
+                    bin_splits_h=bin_splits_h,
+                    n_bins_h=n_bins_h,
+                    bin_widths_h=bin_width_h,)
+            print("\tInside took ", time.time()-t1,"seconds")
 
-    print(x.numpy().tolist()[0:100])
-    print("The sum is", np.sum(x), np.sum(y))
-    print("U", np.unique(y), np.sum(y!=-1))
-    # print("X", y[y!=-1])
-    # print(np.argwhere(y.numpy()!=-1))
+    assignment = tf.gather(assignment, sorting_indices_back)
+    pred_shower_alpha_idx = orig_indices_h[condensates_assigned>0].numpy()
 
-    return x
+    return pred_shower_alpha_idx, assignment
 
 
 # @tf.function
