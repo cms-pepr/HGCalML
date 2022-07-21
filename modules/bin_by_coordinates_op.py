@@ -12,7 +12,7 @@ _bin_by_coordinates = tf.load_op_library('bin_by_coordinates.so')
     .Output("output: int32"); 
 '''
 
-def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_n_per_bin=True):
+def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_n_per_bin=True, pre_normalized=False):
     '''
     
     Assign bins to coordinates
@@ -44,8 +44,9 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
     '''
     
     #calculate
-    min_coords = tf.reduce_min(coordinates,axis=0,keepdims=True)
-    coordinates -= min_coords
+    if not pre_normalized:
+        min_coords = tf.reduce_min(coordinates,axis=0,keepdims=True)
+        coordinates -= min_coords
     dmax_coords = tf.reduce_max(coordinates,axis=0)
     
     if bin_width is None:

@@ -6,7 +6,6 @@ import pandas as pd
 import tensorflow as tf
 
 from numba import njit
-from bin_by_coordinates_op import BinByCoordinates
 
 def reconstruct_showers_cond_op(cc, beta, beta_threshold=0.5, dist_threshold=0.5, limit=500, return_alpha_indices=False,
                                 pred_dist=None, max_hits_per_shower=-1,
@@ -125,6 +124,7 @@ def reconstruct_showers_binned(coords, beta, beta_threshold=0.3, dist_threshold=
 
     pred_dist = pred_dist[:, 0] * dist_threshold
 
+    from bin_by_coordinates_op import BinByCoordinates
     _, bins_flat, n_bins, bin_width, _ = BinByCoordinates(coords, [0, len(coords)], n_bins=30)
 
     bins_flat = bins_flat.numpy()
@@ -134,6 +134,7 @@ def reconstruct_showers_binned(coords, beta, beta_threshold=0.3, dist_threshold=
     bin_width_x = bin_width_y = bin_width_z = bin_width
 
     sorting_indices = np.argsort(bins_flat)
+
     beta = beta[sorting_indices]
     coords = coords[sorting_indices]
     bins_flat = bins_flat[sorting_indices]
@@ -225,6 +226,40 @@ def reconstruct_showers_no_op(cc, beta, beta_threshold=0.5, dist_threshold=0.5, 
 
 
     return pred_sid[:, np.newaxis], alpha_indices
+
+
+class OCHits2ShowersTf():
+    def __init__(self, beta_threshold, distance_threshold, is_soft, with_local_distance_scaling):
+        self.beta_threshold = beta_threshold
+        self.distance_threshold = distance_threshold
+        self.is_soft = is_soft
+        self.with_local_distance_scaling = with_local_distance_scaling
+
+    def call(self, features_dict, pred_dict):
+        features_dict_2 = dict()
+        for k,v in features_dict.items():
+            if type(v) is np.ndarray:
+                v = tf.convert_to_tensor(v)
+            features_dict_2[k] = v
+        for k,v in pred_dict.items():
+            if type(v) is np.ndarray:
+                v = tf.convert_to_tensor(v)
+            features_dict_2[k] = v
+
+        return self.priv_call(features_dict, pred_dict)
+
+    def priv_call(self, features_dict, pred_dict):
+
+        print("In priv call...")
+        from assign_condensate_op import BuildAndAssignCondensatesBinned
+
+        BuildAndAssignCondensatesBinned(
+            pred_dict['pred_ccoords'],
+            pred_dict['pred_beta'],
+            row_splits=tf.convert_to_tensor(np.array([0, len(pred_dict['pred_ccoords'])], np.int32)),
+            dist=pred_dict['pred_dist'] if pred_dict['pred_dist'] is not None else None,
+            min_beta=self.beta_threshold,
+            radius=self.distance_threshold)
 
 
 class OCHits2Showers():
