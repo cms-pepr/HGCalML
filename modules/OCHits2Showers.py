@@ -232,6 +232,7 @@ def reconstruct_showers_no_op(cc, beta, beta_threshold=0.5, dist_threshold=0.5, 
 
 class OCHits2Showers():
     def __init__(self, beta_threshold, distance_threshold, is_soft, with_local_distance_scaling, reco_method='binned'):
+        print("Deprecated: Will be removed")
         self.beta_threshold = beta_threshold
         self.distance_threshold = distance_threshold
         self.is_soft = is_soft
@@ -313,7 +314,7 @@ class OCHits2Showers():
 
 
 class OCHits2ShowersTf(tf.keras.layers.Layer):
-    def __init__(self, beta_threshold, distance_threshold, with_local_distance_scaling, **kwargs):
+    def __init__(self, beta_threshold, distance_threshold, with_local_distance_scaling=True, **kwargs):
         self.beta_threshold = beta_threshold
         self.distance_threshold = distance_threshold
         self.with_local_distance_scaling = with_local_distance_scaling

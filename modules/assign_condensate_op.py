@@ -5,9 +5,9 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 
 from bin_by_coordinates_op import BinByCoordinates
-_bc_op = tf.load_op_library('assign_to_condensates.so')
+import numpy as np_
+
 _bc_op_binned = tf.load_op_library('assign_to_condensates_binned.so')
-import numpy as np
 
 
 def AssignToCondensatesBinned(ccoords,
@@ -48,6 +48,8 @@ def AssignToCondensatesBinned(ccoords,
 
     # _h is for high beta vertices, filtered ones for faster performance
     high_beta_indices = (betas>beta_threshold)[..., 0]
+    row_splits_h = tf.ragged.segment_ids_to_row_splits(tf.ragged.row_splits_to_segment_ids(row_splits)[high_beta_indices])
+
     betas_h = betas[high_beta_indices]
     ccoords_h = ccoords[high_beta_indices]
     dist_h = dist[high_beta_indices]
@@ -73,31 +75,31 @@ def AssignToCondensatesBinned(ccoords,
 
 
     with tf.device('/cpu'):
-        for x in range(10):
-            t1 = time.time()
-            condensates_assigned,assignment =  _bc_op_binned.AssignToCondensatesBinned(
-                    beta_threshold=beta_threshold,
-                    ccoords=ccoords,
-                    dist=dist,
-                    beta=betas,
-                    bins_flat=bins_flat,
-                    bin_splits=bin_splits,
-                    n_bins=n_bins,
-                    bin_widths=bin_width,
-                    indices_to_filtered = indices_to_filtered,
-                    ccoords_h=ccoords_h,
-                    dist_h=dist_h,
-                    beta_h=betas_h,
-                    bins_flat_h=bins_flat_h,
-                    bin_splits_h=bin_splits_h,
-                    n_bins_h=n_bins_h,
-                    bin_widths_h=bin_width_h,)
-            print("\tInside took ", time.time()-t1,"seconds")
+        condensates_assigned,assignment =  _bc_op_binned.AssignToCondensatesBinned(
+                beta_threshold=beta_threshold,
+                ccoords=ccoords,
+                dist=dist,
+                beta=betas,
+                bins_flat=bins_flat,
+                bin_splits=bin_splits,
+                n_bins=n_bins,
+                bin_widths=bin_width,
+                indices_to_filtered = indices_to_filtered,
+                ccoords_h=ccoords_h,
+                dist_h=dist_h,
+                beta_h=betas_h,
+                bins_flat_h=bins_flat_h,
+                bin_splits_h=bin_splits_h,
+                n_bins_h=n_bins_h,
+                row_splits=row_splits,
+                row_splits_h=row_splits_h,
+                bin_widths_h=bin_width_h,)
 
     assignment = tf.gather(assignment, sorting_indices_back)
-    pred_shower_alpha_idx = orig_indices_h[condensates_assigned>0].numpy()
+    pred_shower_alpha_idx = orig_indices_h[condensates_assigned>0]
+    is_cond = tf.scatter_nd(pred_shower_alpha_idx[:, tf.newaxis], tf.ones(pred_shower_alpha_idx.shape[0]), [betas.shape[0]])
 
-    return pred_shower_alpha_idx, assignment
+    return is_cond, assignment
 
 
 # @tf.function

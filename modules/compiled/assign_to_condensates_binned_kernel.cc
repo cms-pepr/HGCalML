@@ -22,15 +22,13 @@ namespace functor {
     void assign(
             int shower_idx,
             int alpha_idx_h,
-            const int n_vert_h,
             const int dimensions,
             float*max_search_dist_binning_h,
             int*condensates_assigned_h,
             const float* ccoords_h,
             const float* dist_h,
             const float* beta_h,
-            float* high_assigned_status_h,
-            const int n_vert,
+            int* high_assigned_status_h,
             const float* ccoords,
             const float* dist,
             const float* beta,
@@ -41,25 +39,28 @@ namespace functor {
             const float* bin_widths,
             const int *indices_to_filtered
             ) {
+
+        int n_vert = row_splits[1]-row_splits[0];
+        int n_vert_h = row_splits_h[1]-row_splits_h[0];
         float bin_width = bin_widths[0];
 
         float radius = dist_h[alpha_idx_h];
-        float min_[3];
-        float max_[3];
+        float *min_ = new float[dimensions];
+        float *max_ = new float[dimensions];
         float radius_sq = radius*radius;
 
-        float my_ccoords[3];
+        float *my_ccoords = new float[dimensions];
 
         for(int id=0;id<dimensions;id++) {
-            my_ccoords[id] = ccoords_h[alpha_idx_h*3+id];
-            min_[id] = my_ccoords[id] - radius*4;
-            max_[id] = my_ccoords[id] + radius*4;
+            my_ccoords[id] = ccoords_h[alpha_idx_h*dimensions+id];
+            min_[id] = my_ccoords[id] - radius;
+            max_[id] = my_ccoords[id] + radius;
 
         }
         high_assigned_status_h[alpha_idx_h]=1;
         condensates_assigned_h[alpha_idx_h]=1;
 
-        binstepper_2 stepper(3);
+        binstepper_2 stepper(dimensions);
         stepper.set(min_, max_, bin_width, n_bins);
 
 
@@ -103,7 +104,8 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
             const int* bin_splits_h,
             const int* n_bins_h,
             const float* bin_widths_h,
-            float* high_assigned_status_h,
+            int* high_assigned_status_h,
+            const int*row_splits_h,
             const int n_vert,
             const float* ccoords,
             const float* dist,
@@ -113,7 +115,9 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
             const int* bins_flat,
             const int* bin_splits,
             const int* n_bins,
-            const float* bin_widths
+            const float* bin_widths,
+            const int*row_splits,
+            const int num_rows
             ) {
         for(int i=0;i<n_vert_h;i++) {
             high_assigned_status_h[i] = 0;
@@ -135,9 +139,9 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
                     }
                 }
             }
-
             if (biggest_beta==-1)
                 break;
+
 
             assign(shower_idx,
                     alpha_idx_h,
@@ -176,25 +180,28 @@ public:
 
 
     void Compute(OpKernelContext *context) override {
-        const Tensor &t_ccoords = context->input(0);
-        const Tensor &t_dist = context->input(1);
-        const Tensor &t_beta = context->input(2);
-        const Tensor &t_bins_flat = context->input(3);
-        const Tensor &t_bin_splits = context->input(4);
-        const Tensor &t_n_bins = context->input(5);
-        const Tensor &t_bin_widths = context->input(6);
-        const Tensor &t_indices_to_filtered = context->input(7);
-        const Tensor &t_ccoords_h = context->input(8);
-        const Tensor &t_dist_h = context->input(9);
-        const Tensor &t_beta_h = context->input(10);
-        const Tensor &t_bins_flat_h = context->input(11);
-        const Tensor &t_bin_splits_h = context->input(12);
-        const Tensor &t_n_bins_h = context->input(13);
-        const Tensor &t_bin_widths_h = context->input(14);
+        const Tensor & t_ccoords = context->input(0);
+        const Tensor & t_dist = context->input(1);
+        const Tensor & t_beta = context->input(2);
+        const Tensor & t_bins_flat = context->input(3);
+        const Tensor & t_bin_splits = context->input(4);
+        const Tensor & t_indices_to_filtered = context->input(5);
+        const Tensor & t_row_splits = context->input(6);
+        const Tensor & t_n_bins = context->input(7);
+        const Tensor & t_bin_widths = context->input(8);
+        const Tensor & t_ccoords_h = context->input(9);
+        const Tensor & t_dist_h = context->input(10);
+        const Tensor & t_beta_h = context->input(11);
+        const Tensor & t_bins_flat_h = context->input(12);
+        const Tensor & t_bin_splits_h = context->input(13);
+        const Tensor & t_n_bins_h = context->input(14);
+        const Tensor & t_bin_widths_h = context->input(15);
+        const Tensor & t_row_splits_h = context->input(16);
 
         int length = t_ccoords.dim_size(0);
         int length_h = t_beta_h.dim_size(0);
         int dimensions = t_n_bins_h.dim_size(0);
+        int num_rows = t_row_splits.dim_size(0);
 
         Tensor *t_high_assigned_status_h = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(0,{length_h},&t_high_assigned_status_h));
@@ -209,9 +216,40 @@ public:
         OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, {length_h}, &t_condensates_assigned_h));
 //        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, {length_h}, &t_condensates_dominant_h));
 
+        /*
+        (
+            const CPUDevice &d,
+            const int n_vert_h,
+            const int dimensions,
+            float*max_search_dist_binning_h,
+            int*condensates_assigned_h,
+            int*condensates_dominant_h,
+            const float* ccoords_h,
+            const float* dist_h,
+            const float* beta_h,
+            const int* bins_flat_h,
+            const int* bin_splits_h,
+            const int* n_bins_h,
+            const float* bin_widths_h,
+            int* high_assigned_status_h,
+            const int*row_splits_h,
+            const int n_vert,
+            const float* ccoords,
+            const float* dist,
+            const float* beta,
+            const int* indices_to_filtered,
+            int* assigned,
+            const int* bins_flat,
+            const int* bin_splits,
+            const int* n_bins,
+            const float* bin_widths,
+            const int*row_splits,
+            const int num_rows
+            )
+        */
+
         BinnedCondensatesFinderOpFunctor<Device, int>() (
                 context->eigen_device<Device>(),
-                length_h,
                 dimensions,
                 nullptr,//t_max_search_dist_binning_h.flat<float>().data(),
                 t_condensates_assigned_h.flat<int>().data(),
@@ -223,8 +261,8 @@ public:
                 t_bin_splits_h.flat<int>().data(),
                 t_n_bins_h.flat<int>().data(),
                 t_bin_widths_h.flat<float>().data(),
-                t_high_assigned_status_h->flat<float>().data(),
-                length,
+                t_high_assigned_status_h->flat<int>().data(),
+                t_row_splits_h.flat<int>().data(),]
                 t_ccoords.flat<float>().data(),
                 t_dist.flat<float>().data(),
                 t_beta.flat<float>().data(),
@@ -233,7 +271,9 @@ public:
                 t_bins_flat.flat<int>().data(),
                 t_bin_splits.flat<int>().data(),
                 t_n_bins.flat<int>().data(),
-                t_bin_widths.flat<float>().data()
+                t_bin_widths.flat<float>().data(),
+                t_row_splits.flat<int>().data(),
+                num_rows
         );
 
     }

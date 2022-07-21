@@ -56,7 +56,6 @@ template<typename Device, typename dummy>
 struct BinnedCondensatesFinderOpFunctor {
     void operator()(
             const Device &d,
-            const int n_vert_h,
             const int dimensions,
             float*max_search_dist_binning_h,
             int*condensates_assigned_h,
@@ -68,8 +67,8 @@ struct BinnedCondensatesFinderOpFunctor {
             const int* bin_splits_h,
             const int* n_bins_h,
             const float* bin_widths_h,
-            float* high_assigned_status_h,
-            const int n_vert,
+            int* high_assigned_status_h,
+            const int*row_splits_h,
             const float* ccoords,
             const float* dist,
             const float* beta,
@@ -78,7 +77,9 @@ struct BinnedCondensatesFinderOpFunctor {
             const int* bins_flat,
             const int* bin_splits,
             const int* n_bins,
-            const float* bin_widths
+            const float* bin_widths,
+            const int*row_splits,
+            const int num_rows
             );
 };
 
