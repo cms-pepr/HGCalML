@@ -312,12 +312,17 @@ class OCHits2Showers():
         return processed_pred_dict, pred_shower_alpha_idx
 
 
+class OCCollectShowerEnergy(tf.keras.layers.Layer):
+    pass
 
 class OCHits2ShowersTf(tf.keras.layers.Layer):
-    def __init__(self, beta_threshold, distance_threshold, with_local_distance_scaling=True, **kwargs):
+    def __init__(self, beta_threshold, distance_threshold, use_local_distance_thresholding=False, **kwargs):
         self.beta_threshold = beta_threshold
         self.distance_threshold = distance_threshold
-        self.with_local_distance_scaling = with_local_distance_scaling
+
+        if use_local_distance_thresholding:
+            print("When calling the op, pass None to pred_dist if local distance thresholding isn't intended")
+            raise RuntimeError()
 
     def get_config(self):
         base_config = super(self, self).get_config()
@@ -327,20 +332,17 @@ class OCHits2ShowersTf(tf.keras.layers.Layer):
                                                       }.items()))
 
 
-    def call(self, pred_ccoords, pred_beta, pred_dist=None, row_splits=None):
+    def call(self, pred_ccoords, pred_beta, pred_dist, row_splits=None):
         if row_splits is None:
             row_splits = tf.constant([0,pred_dist.shape[0]], tf.int32)
 
         from assign_condensate_op import BuildAndAssignCondensatesBinned
 
-        if not self.with_local_distance_scaling:
-            pred_dist = pred_dist*0.0 + 1
 
         return BuildAndAssignCondensatesBinned(
             pred_ccoords,
             pred_beta,
             row_splits=row_splits,
-            dist=pred_dist,
-            min_beta=self.beta_threshold,
-            radius=self.distance_threshold)
+            dist=pred_dist*self.distance_threshold,
+            beta_threshold=self.beta_threshold)
 

@@ -10,11 +10,11 @@ import numpy as np_
 _bc_op_binned = tf.load_op_library('assign_to_condensates_binned.so')
 
 
-def AssignToCondensatesBinned(ccoords,
+def BuildAndAssignCondensatesBinned(ccoords,
                         betas,
+                        dist,
                         row_splits,
-                        beta_threshold,
-                        dist=None):
+                        beta_threshold):
 
     '''
 
@@ -50,9 +50,6 @@ def AssignToCondensatesBinned(ccoords,
     # _h is for high beta vertices, filtered ones for faster performance
     high_beta_indices = (betas>beta_threshold)[..., 0]
     row_splits_h = tf.ragged.segment_ids_to_row_splits(tf.ragged.row_splits_to_segment_ids(row_splits)[high_beta_indices])
-
-    print(row_splits)
-    print(row_splits_h)
 
     betas_h = betas[high_beta_indices]
     ccoords_h = ccoords[high_beta_indices]
@@ -169,22 +166,6 @@ def BuildAndAssignCondensates(ccoords, betas, row_splits,
     return asso_idx, iscond, ncond
 
 
-
-def BuildAndAssignCondensatesBinned(ccoords, betas, row_splits,
-                              radius=0.8, min_beta=0.1,
-                              dist=None,
-                              soft=False):
-
-    dist = dist*radius
-    t1 = time.time()
-    asso_idx = AssignToCondensatesBinned(ccoords=ccoords,
-                                   betas=betas,
-                                   row_splits=row_splits,
-                                   beta_threshold=min_beta,
-                                   dist=dist)
-    print("Took", time.time()-t1, "seconds.")
-
-    return asso_idx
 
 
 

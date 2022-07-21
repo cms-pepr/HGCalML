@@ -67,8 +67,6 @@ namespace functor {
         int max_flat_bin_index = 0;
         while(true) {
             int flat_bin_index = stepper.step();
-//            if(r==1)
-//                std::cout<<"E: "<<flat_bin_index<<std::endl;
 
             if(flat_bin_index==-1)
                 break;
@@ -91,42 +89,9 @@ namespace functor {
                 }
             }
         }
-
-//        if (r==2)
-//            std::cout<<"E :"<<min_flat_bin_index<<" "<<max_flat_bin_index<<std::endl;
     }
 
 
-/*
-
-        BinnedCondensatesFinderOpFunctor<Device, int>() (
-                context->eigen_device<Device>(),
-                dimensions,
-                nullptr,//t_max_search_dist_binning_h.flat<float>().data(),
-                t_condensates_assigned_h.flat<int>().data(),
-                nullptr,//t_condensates_dominant_h.flat<int>().data(),
-                t_ccoords_h.flat<float>().data(),
-                t_dist_h.flat<float>().data(),
-                t_beta_h.flat<float>().data(),
-                t_bins_flat_h.flat<int>().data(),
-                t_bin_splits_h.flat<int>().data(),
-                t_n_bins_h.flat<int>().data(),
-                t_bin_widths_h.flat<float>().data(),
-                t_high_assigned_status_h->flat<int>().data(),
-                t_row_splits_h.flat<int>().data(),
-                t_ccoords.flat<float>().data(),
-                t_dist.flat<float>().data(),
-                t_beta.flat<float>().data(),
-                t_indices_to_filtered.flat<int>().data(),
-                t_assigned->flat<int>().data(),
-                t_bins_flat.flat<int>().data(),
-                t_bin_splits.flat<int>().data(),
-                t_n_bins.flat<int>().data(),
-                t_bin_widths.flat<float>().data(),
-                t_row_splits.flat<int>().data(),
-                num_rows
-        );
-*/
 
 template<typename dummy>
 struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
@@ -190,9 +155,6 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
                             alpha_idx_h=iv_h;
                         }
                     }
-                }
-                if (r==1 and shower_idx<600) {
-                    std::cout<<"R "<<r<<" "<<shower_idx<<" "<<biggest_beta<<" "<<alpha_idx_h<<std::endl;
                 }
                 if (biggest_beta==-1)
                     break;
