@@ -16,8 +16,6 @@ def AssignToCondensatesBinned(ccoords,
                         beta_threshold,
                         dist=None):
 
-    assert len(row_splits) == 2
-
     '''
 
     REGISTER_OP("AssignToCondensates")
@@ -30,6 +28,9 @@ def AssignToCondensatesBinned(ccoords,
 
 
     '''
+
+    row_splits = tf.constant(row_splits)
+    num_rows = row_splits.shape[0]-1
 
     n_bins_sc = 30
     min_coords = tf.reduce_min(ccoords,axis=0,keepdims=True)
@@ -44,20 +45,23 @@ def AssignToCondensatesBinned(ccoords,
     dist = tf.gather(dist, sorting_indices)
     bins_flat = tf.gather(bins_flat, sorting_indices)
     orig_indices = tf.gather(tf.range(betas.shape[0]), sorting_indices)
-    bin_splits = tf.ragged.segment_ids_to_row_splits(bins_flat,num_segments=tf.reduce_prod(n_bins))
+    bin_splits = tf.ragged.segment_ids_to_row_splits(bins_flat,num_segments=tf.reduce_prod(n_bins)*num_rows)
 
     # _h is for high beta vertices, filtered ones for faster performance
     high_beta_indices = (betas>beta_threshold)[..., 0]
     row_splits_h = tf.ragged.segment_ids_to_row_splits(tf.ragged.row_splits_to_segment_ids(row_splits)[high_beta_indices])
 
+    print(row_splits)
+    print(row_splits_h)
+
     betas_h = betas[high_beta_indices]
     ccoords_h = ccoords[high_beta_indices]
     dist_h = dist[high_beta_indices]
     orig_indices_h = orig_indices[high_beta_indices]
-    row_splits_h = tf.constant([0, len(ccoords_h)])
+    # row_splits_h = tf.constant([0, len(ccoords_h)])
     n_bins_sc_2 = 10
     # bins_h, bins_flat_h, n_bins_h, bin_width_h = find_bins(ccoords_h, n_bins_sc_2, True)
-    _, bins_flat_h, n_bins_h, bin_width_h, _ = BinByCoordinates(ccoords, row_splits, n_bins=n_bins_sc)
+    _, bins_flat_h, n_bins_h, bin_width_h, _ = BinByCoordinates(ccoords_h, row_splits_h, n_bins=n_bins_sc)
     # x, bins_flat, n_bins, bin_width, _ = BinByCoordinates(ccoords, row_splits, n_bins=n_bins_sc)
 
 
@@ -68,11 +72,10 @@ def AssignToCondensatesBinned(ccoords,
     # betas_h = tf.gather(betas_h, sorting_indices_h)
     # dist_h = tf.gather(dist_h, sorting_indices_h)
     # bins_flat_h = tf.gather(bins_flat_h, sorting_indices_h)
-    bin_splits_h = tf.ragged.segment_ids_to_row_splits(bins_flat_h,num_segments=tf.reduce_prod(n_bins_h))
+    bin_splits_h = tf.ragged.segment_ids_to_row_splits(bins_flat_h,num_segments=tf.reduce_prod(n_bins_h)*num_rows)
 
     # Would set default to -1 instead of 0 (where no scattering is done)
     indices_to_filtered = tf.scatter_nd(tf.where(high_beta_indices),tf.range(betas_h.shape[0])+1, [betas.shape[0]])-1
-
 
     with tf.device('/cpu'):
         condensates_assigned,assignment =  _bc_op_binned.AssignToCondensatesBinned(

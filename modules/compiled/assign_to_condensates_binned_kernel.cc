@@ -20,10 +20,11 @@ typedef Eigen::GpuDevice GPUDevice;
 
 namespace functor {
     void assign(
+            const int n_vert,
+            const int n_vert_h,
             int shower_idx,
             int alpha_idx_h,
             const int dimensions,
-            float*max_search_dist_binning_h,
             int*condensates_assigned_h,
             const float* ccoords_h,
             const float* dist_h,
@@ -33,18 +34,16 @@ namespace functor {
             const float* dist,
             const float* beta,
             int*assignment,
-            const int* bins_flat,
             const int* bin_splits,
             const int* n_bins,
             const float* bin_widths,
-            const int *indices_to_filtered
+            const int *indices_to_filtered,
+            const int row_offset,
+            const int row_offset_h, int r
             ) {
-
-        int n_vert = row_splits[1]-row_splits[0];
-        int n_vert_h = row_splits_h[1]-row_splits_h[0];
         float bin_width = bin_widths[0];
 
-        float radius = dist_h[alpha_idx_h];
+        float radius = dist_h[row_offset_h+alpha_idx_h];
         float *min_ = new float[dimensions];
         float *max_ = new float[dimensions];
         float radius_sq = radius*radius;
@@ -52,29 +51,36 @@ namespace functor {
         float *my_ccoords = new float[dimensions];
 
         for(int id=0;id<dimensions;id++) {
-            my_ccoords[id] = ccoords_h[alpha_idx_h*dimensions+id];
+            my_ccoords[id] = ccoords_h[row_offset_h*dimensions + alpha_idx_h*dimensions+id];
             min_[id] = my_ccoords[id] - radius;
             max_[id] = my_ccoords[id] + radius;
 
         }
-        high_assigned_status_h[alpha_idx_h]=1;
-        condensates_assigned_h[alpha_idx_h]=1;
+        high_assigned_status_h[row_offset_h+alpha_idx_h]=1;
+        condensates_assigned_h[row_offset_h+alpha_idx_h]=1;
 
         binstepper_2 stepper(dimensions);
         stepper.set(min_, max_, bin_width, n_bins);
 
-
         int num_assigned = 0;
+        int min_flat_bin_index = 100000000;
+        int max_flat_bin_index = 0;
         while(true) {
             int flat_bin_index = stepper.step();
+//            if(r==1)
+//                std::cout<<"E: "<<flat_bin_index<<std::endl;
+
             if(flat_bin_index==-1)
                 break;
+            min_flat_bin_index = flat_bin_index<min_flat_bin_index?flat_bin_index:min_flat_bin_index;
+            max_flat_bin_index = flat_bin_index>max_flat_bin_index?flat_bin_index:max_flat_bin_index;
+
 
             for(int iv=bin_splits[flat_bin_index];iv<bin_splits[flat_bin_index+1];iv++) {
                 if(assignment[iv]==-1) {
                     float dist = 0;
                     for(int id=0;id<dimensions;id++)
-                        dist += (my_ccoords[id] - ccoords[iv*3+id]) * (my_ccoords[id] - ccoords[iv*3+id]);
+                        dist += (my_ccoords[id] - ccoords[iv*dimensions+id]) * (my_ccoords[id] - ccoords[iv*dimensions+id]);
                     if(dist < radius_sq) {
                         assignment[iv] = shower_idx;
                         num_assigned += 1;
@@ -85,14 +91,47 @@ namespace functor {
                 }
             }
         }
+
+//        if (r==2)
+//            std::cout<<"E :"<<min_flat_bin_index<<" "<<max_flat_bin_index<<std::endl;
     }
 
+
+/*
+
+        BinnedCondensatesFinderOpFunctor<Device, int>() (
+                context->eigen_device<Device>(),
+                dimensions,
+                nullptr,//t_max_search_dist_binning_h.flat<float>().data(),
+                t_condensates_assigned_h.flat<int>().data(),
+                nullptr,//t_condensates_dominant_h.flat<int>().data(),
+                t_ccoords_h.flat<float>().data(),
+                t_dist_h.flat<float>().data(),
+                t_beta_h.flat<float>().data(),
+                t_bins_flat_h.flat<int>().data(),
+                t_bin_splits_h.flat<int>().data(),
+                t_n_bins_h.flat<int>().data(),
+                t_bin_widths_h.flat<float>().data(),
+                t_high_assigned_status_h->flat<int>().data(),
+                t_row_splits_h.flat<int>().data(),
+                t_ccoords.flat<float>().data(),
+                t_dist.flat<float>().data(),
+                t_beta.flat<float>().data(),
+                t_indices_to_filtered.flat<int>().data(),
+                t_assigned->flat<int>().data(),
+                t_bins_flat.flat<int>().data(),
+                t_bin_splits.flat<int>().data(),
+                t_n_bins.flat<int>().data(),
+                t_bin_widths.flat<float>().data(),
+                t_row_splits.flat<int>().data(),
+                num_rows
+        );
+*/
 
 template<typename dummy>
 struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
     void operator()(
             const CPUDevice &d,
-            const int n_vert_h,
             const int dimensions,
             float*max_search_dist_binning_h,
             int*condensates_assigned_h,
@@ -100,71 +139,86 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
             const float* ccoords_h,
             const float* dist_h,
             const float* beta_h,
-            const int* bins_flat_h,
             const int* bin_splits_h,
             const int* n_bins_h,
             const float* bin_widths_h,
             int* high_assigned_status_h,
             const int*row_splits_h,
-            const int n_vert,
             const float* ccoords,
             const float* dist,
             const float* beta,
             const int* indices_to_filtered,
-            int* assigned,
-            const int* bins_flat,
+            int* assignment,
             const int* bin_splits,
             const int* n_bins,
             const float* bin_widths,
             const int*row_splits,
             const int num_rows
             ) {
-        for(int i=0;i<n_vert_h;i++) {
-            high_assigned_status_h[i] = 0;
-            condensates_assigned_h[i] = 0;
+        int total_bins = 1;
+            for(int id=0;id<dimensions;id++) {
+                total_bins*=n_bins[id];
         }
-        for(int i=0;i<n_vert;i++) {
-            assigned[i] = -1;
-        }
-        int shower_idx=0;
-        for (int i=0;i<500;i++) {
-            float biggest_beta=-1;
-            int alpha_idx_h=-1;
-            // Find the biggest beta vertex
-            for(int iv_h=0;iv_h<n_vert_h;iv_h++) {
-                if (condensates_assigned_h[iv_h]==0) {
-                    if(beta_h[iv_h]>biggest_beta) {
-                        biggest_beta = beta_h[iv_h];
-                        alpha_idx_h=iv_h;
+
+        for (int r = 0; r<num_rows;r++) {
+            int n_vert = row_splits[r+1]-row_splits[r];
+            int n_vert_h = row_splits_h[r+1]-row_splits_h[r];
+
+            int row_offset=row_splits[r];
+            int row_offset_h=row_splits_h[r];
+
+
+            for(int i=0;i<n_vert_h;i++) {
+                high_assigned_status_h[row_offset_h+i] = 0;
+                condensates_assigned_h[row_offset_h+i] = 0;
+            }
+            for(int i=0;i<n_vert;i++) {
+                assignment[row_offset+i] = -1;
+            }
+            int shower_idx=0;
+            int last_idx=-1;
+
+
+            while(true) {
+                float biggest_beta=-1;
+                int alpha_idx_h=-1;
+                // Find the biggest beta vertex
+                for(int iv_h=0;iv_h<n_vert_h;iv_h++) {
+                    if (condensates_assigned_h[row_offset_h+iv_h]==0) {
+                        if(beta_h[row_offset_h+iv_h]>biggest_beta) {
+                            biggest_beta = beta_h[row_offset_h+iv_h];
+                            alpha_idx_h=iv_h;
+                        }
                     }
                 }
+                if (r==1 and shower_idx<600) {
+                    std::cout<<"R "<<r<<" "<<shower_idx<<" "<<biggest_beta<<" "<<alpha_idx_h<<std::endl;
+                }
+                if (biggest_beta==-1)
+                    break;
+                if (biggest_beta==last_idx) {
+                    throw std::runtime_error("Error progressing to next highest beta, something might be wrong in binning or in indices_to_filtered");
+                }
+                last_idx = alpha_idx_h;
+                assign(n_vert, n_vert_h,shower_idx,
+                        alpha_idx_h,
+                        dimensions,
+                        condensates_assigned_h,
+                        ccoords_h,
+                        dist_h,
+                        beta_h,
+                        high_assigned_status_h,
+                        ccoords,
+                        dist,
+                        beta,
+                        assignment,
+                        bin_splits+(total_bins)*r,
+                        n_bins,
+                        bin_widths,
+                        indices_to_filtered, row_offset, row_offset_h, r);
+                shower_idx += 1;
+    //        break;
             }
-            if (biggest_beta==-1)
-                break;
-
-
-            assign(shower_idx,
-                    alpha_idx_h,
-                    n_vert_h,
-                    dimensions,
-                    max_search_dist_binning_h,
-                    condensates_assigned_h,
-                    ccoords_h,
-                    dist_h,
-                    beta_h,
-                    high_assigned_status_h,
-                    n_vert,
-                    ccoords,
-                    dist,
-                    beta,
-                    assigned,
-                    bins_flat,
-                    bin_splits,
-                    n_bins,
-                    bin_widths,
-                    indices_to_filtered);
-            shower_idx += 1;
-//        break;
         }
     }
 };
@@ -201,7 +255,7 @@ public:
         int length = t_ccoords.dim_size(0);
         int length_h = t_beta_h.dim_size(0);
         int dimensions = t_n_bins_h.dim_size(0);
-        int num_rows = t_row_splits.dim_size(0);
+        int num_rows = t_row_splits.dim_size(0)-1;
 
         Tensor *t_high_assigned_status_h = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(0,{length_h},&t_high_assigned_status_h));
@@ -257,18 +311,16 @@ public:
                 t_ccoords_h.flat<float>().data(),
                 t_dist_h.flat<float>().data(),
                 t_beta_h.flat<float>().data(),
-                t_bins_flat_h.flat<int>().data(),
                 t_bin_splits_h.flat<int>().data(),
                 t_n_bins_h.flat<int>().data(),
                 t_bin_widths_h.flat<float>().data(),
                 t_high_assigned_status_h->flat<int>().data(),
-                t_row_splits_h.flat<int>().data(),]
+                t_row_splits_h.flat<int>().data(),
                 t_ccoords.flat<float>().data(),
                 t_dist.flat<float>().data(),
                 t_beta.flat<float>().data(),
                 t_indices_to_filtered.flat<int>().data(),
                 t_assigned->flat<int>().data(),
-                t_bins_flat.flat<int>().data(),
                 t_bin_splits.flat<int>().data(),
                 t_n_bins.flat<int>().data(),
                 t_bin_widths.flat<float>().data(),
