@@ -5,9 +5,9 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from select_knn_op import SelectKnn
 from accknn_op import AccumulateKnn
-from condensate_op import BuildCondensates
 from pseudo_rs_op import CreatePseudoRS
 from select_threshold_op import SelectThreshold
+from assign_condensate_op import BuildAndAssignCondensatesBinned
 
 from latent_space_grid_op import LatentSpaceGrid
 
@@ -65,15 +65,20 @@ class Condensate(tf.keras.layers.Layer):
         
         _, row_splits = RaggedConstructTensor()([x, row_splits])
         row_splits = tf.cast(row_splits,dtype='int32')
-        
-        asso, iscond, ncond = BuildCondensates(ccoords, betas, row_splits, 
-                                               radius=self.t_d, min_beta=self.t_b, 
-                                               soft=self.soft)
-        iscond = tf.reshape(iscond, (-1,))
-        ncond = tf.reshape(ncond, (-1,1))
 
-        zero = tf.constant([[0]],dtype='int32')
-        ncond = tf.concat([zero,ncond],axis=0,name='output_row_splits')
+        d = tf.ones_like(betas)*self.t_d
+
+        # This op replaces BuildCondensates fully
+        _, asso, _, is_cond, ncond = BuildAndAssignCondensatesBinned(ccoords, betas, d, row_splits=row_splits, beta_threshold=self.t_b)
+
+        # iscond = iscond[-1] # This is like row splits, if there are 100 showers in first rs and 50 in the second, it will return
+                            # [0, 100, 150], so the last element represents the total number of condensates
+        # asso, iscond, ncond
+        iscond = tf.reshape(iscond, (-1,))
+        # ncond = tf.reshape(ncond, (-1,1))
+
+        # zero = tf.constant([[0]],dtype='int32')
+        # ncond = tf.concat([zero,ncond],axis=0,name='output_row_splits')
         dout = x[iscond>0]
         dout = tf.reshape(dout,[-1,dout.shape[-1]], name="predicted_final_condensates")
         

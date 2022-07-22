@@ -97,7 +97,7 @@ private:
 };
 
 // To be replaced by binstepper.h
-struct binstepper_2 {
+struct ccoords2flat_binstepper {
     int dims;
     const int*n_bins;
     int low_bin_indices[3];
@@ -109,7 +109,7 @@ struct binstepper_2 {
 
 //    __device__
 //    __host__
-    binstepper_2(const int dims) {
+    ccoords2flat_binstepper(const int dims) {
         this->dims = dims;
     }
 //    __device__
@@ -121,36 +121,28 @@ struct binstepper_2 {
         flat_bin_index=0;
         total_bins = 1;
 
-//        std::cout<<"Total bins to search in "<<total_bins_to_search<<std::endl;
-
         for(int id=0;id<dims;id++) {
             low_bin_indices[id] = std::floor(min_[id] / bin_width);
             high_bin_indices[id] = std::ceil(max_[id] / bin_width);
             total_bins_to_search *= high_bin_indices[id] - low_bin_indices[id] + 1;
             total_bins*=n_bins[id];
 
-//            std::cout<<"HL "<<low_bin_indices[id]<<" "<< high_bin_indices[id]<<" "<<bin_width<<" "<<min_[id]<<" "<<max_[id]<<std::endl;
-
-        }// 2 2 2, 2*80+2*8+2
+        }
     }
 //    __device__
 //    __host__
     int step() {
         while(true) {
-//            std::cout<<"Now searching"<<std::endl;
-
             int offset1 = 1;
             int offset2 = 1;
             flat_bin_index = 0;
             for(int id=dims-1;id>-1;id--) {
                 int dim_bin_index = low_bin_indices[id] + (index / offset2) % (
                             high_bin_indices[id] - low_bin_indices[id] + 1);
-//                std::cout<<"Ex "<<dim_bin_index<<" "<<flat_bin_index<<" "<<offset1<<" "<<offset2<<std::endl;
                 flat_bin_index += dim_bin_index * offset1;
                 offset1 *= n_bins[id];
                 offset2 *= high_bin_indices[id] - low_bin_indices[id] + 1;
             }
-//            std::cout<<"Check X"<<total_bins_to_search<<" "<<flat_bin_index<<" "<<index<<" "<<total_bins<<std::endl;
 
             if(index >= total_bins_to_search)
                 return -1;

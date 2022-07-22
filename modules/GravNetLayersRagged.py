@@ -246,8 +246,7 @@ class MaskTracksAsNoise(tf.keras.layers.Layer):
             tidx = tf.where(tf.abs(trackcharge)>1e-3, self.maskidx, tidx)
         return tidx
 
-from assign_condensate_op import BuildAndAssignCondensates as ba_cond
-
+from assign_condensate_op import BuildAndAssignCondensatesBinned as ba_cond
 class CondensateToIdxs(tf.keras.layers.Layer):
     
     def __init__(self, t_d, t_b,active=True,**kwargs):
@@ -272,8 +271,8 @@ class CondensateToIdxs(tf.keras.layers.Layer):
         
         asso_idx = tf.range(tf.shape(beta)[0])
         if self.active:
-            asso_idx, _, _ = ba_cond(ccoords, beta, rs, 
-                                 radius=self.t_d, min_beta=self.t_b,
+            d = d*self.t_d
+            _, asso_idx, _, _ ,_ = ba_cond(ccoords, beta, row_splits=rs, beta_threshold=self.t_b,
                                  dist=d)
         
         return asso_idx

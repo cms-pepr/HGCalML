@@ -2,6 +2,8 @@
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 from multiprocessing import Process
 import numpy as np
+
+from OCHits2Showers import process_endcap, OCGatherEnergyCorrFac
 from datastructures import TrainData_NanoML
 import os
 
@@ -516,6 +518,7 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
         self.trial_batch = trial_batch
         self.hits2showers = hits2showers
         self.showers_matcher = showers_matcher
+        self.energy_gatherer = OCGatherEnergyCorrFac()
 
         if pdfs_path is None:
             raise RuntimeError("Set pdf output path")
@@ -566,7 +569,10 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
                     features_dict, truth_dict, predictions_dict = endcap_data
                     self.hits2showers.set_beta_threshold(b)
                     self.hits2showers.set_distance_threshold(d)
-                    processed_pred_dict, pred_shower_alpha_idx = self.hits2showers.call(features_dict, predictions_dict)
+
+                    processed_pred_dict, pred_shower_alpha_idx = process_endcap(self.hits2showers, self.energy_gatherer,
+                                                                                features_dict, predictions_dict)
+
                     self.showers_matcher.set_inputs(
                         features_dict=features_dict,
                         truth_dict=truth_dict,
