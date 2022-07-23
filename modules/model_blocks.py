@@ -7,7 +7,7 @@ import tensorflow as tf
 from Initializers import EyeInitializer
 from GravNetLayersRagged import CondensateToIdxs
 
-
+from datastructures.TrainData_NanoML import n_id_classes
 
 def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_extend'):
     if n_cluster_space_coordinates > 3:
@@ -22,7 +22,7 @@ def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_e
 
 #new format!
 def create_outputs(x, n_ccoords=3, 
-                   n_classes=4,
+                   n_classes=n_id_classes,
                    fix_distance_scale=False,
                    energy_factor=True,
                    name_prefix="output_module"):

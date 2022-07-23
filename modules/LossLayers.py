@@ -1040,28 +1040,11 @@ class LLFullObjectCondensation(LossLayerBase):
     
     def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
         
-        #DEBUG
-        return tf.reduce_sum(pred_id, axis=1, keepdims=True) #until bug is found
+        classloss = tf.keras.metrics.categorical_crossentropy(t_pid, pred_id)
+        classloss = tf.where( t_pid[:,-1]>0. , 0., classloss)#remove ambiguous
+        classloss = tf.debugging.check_numerics(classloss, "classloss")
+        return self.softclip(classloss, 2.)#for high weights
     
-        depth = pred_id.shape[1]#add n_classes here?
-        truthclass, mask = one_hot_encode_id(t_pid, depth) # V x Cl, V x 1
-        mask = tf.cast(mask, dtype='float32')
-        pid_w = None
-        if hasunique:
-        #weight for 
-            u_pids = truthclass[t_is_unique[:,0]>0]# U x Cl
-            N_u_pids = tf.reduce_sum(u_pids,axis=0) # Cl
-            pid_w = tf.cast(N_u_pids, dtype='float32') # Cl
-            pid_w = tf.reduce_mean(pid_w,keepdims=True) / (pid_w + 1e-3) # Cl, average weight 1
-            pid_w = tf.expand_dims(pid_w, axis=0)# 1 x Cl
-            pid_w *= tf.cast(truthclass, dtype='float32') # V x Cl, one-hot
-            pid_w = tf.reduce_sum(pid_w, axis=1,keepdims=True) # V x 1
-        else:
-            pid_w = tf.ones_like(mask)
-        classloss = tf.expand_dims(tf.keras.metrics.categorical_crossentropy(truthclass, pred_id), axis=1) # V x 1
-        
-        classloss = tf.debugging.check_numerics(classloss, "classloss loss")
-        return self.softclip(classloss*mask*pid_w, 2.)#for high weights
 
     def calc_beta_push(self, betas, tidx):
         if self.beta_push <=0. :
