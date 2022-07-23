@@ -1717,14 +1717,18 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         return [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i]) for i in range(len(output_shapes))]
         
     @staticmethod 
-    def raw_call(distances, nidx, K, radius, sort, incr_sorting_score):
+    def raw_call(distances, nidx, K, radius, sort, incr_sorting_score, keep_self=True):
         
         K = K if K>0 else distances.shape[1]
         if not sort:
             return distances[:,:K],nidx[:,:K]
         
+        if tf.shape(incr_sorting_score)[1] is not None and tf.shape(incr_sorting_score)[1]==1:
+            incr_sorting_score = SelectWithDefault(nidx, incr_sorting_score, 0.)[:,0]
+        
         tfssc = tf.where(nidx<0, 1e9, incr_sorting_score) #make sure the -1 end up at the end
-        tfssc = tf.concat([tf.zeros_like(tfssc[:,0:1])-1.,tfssc[:,1:]  ],axis=1) #make sure 'self' remains
+        if keep_self:
+            tfssc = tf.concat([tf.reduce_min(tfssc[:,1:],axis=1,keepdims=True)-1.,tfssc[:,1:]  ],axis=1) #make sure 'self' remains in first place
 
         sorting = tf.argsort(tfssc, axis=1)
         
@@ -1951,7 +1955,7 @@ class DampenGradient(tf.keras.layers.Layer):
         return self.strength*tf.stop_gradient(inputs)+ (1.-self.strength)*inputs
             
 class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self, den_offset=0., **kwargs):
         '''
         Input: 
         - edge scores (V x K-1 x 1)
@@ -1961,11 +1965,15 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
         - group score (V x 1)
         
         '''
-        
+        self.den_offset = den_offset
         if 'dynamic' in kwargs:
             super(GroupScoreFromEdgeScores, self).__init__(**kwargs)
         else:
             super(GroupScoreFromEdgeScores, self).__init__(dynamic=False,**kwargs)
+            
+    def get_config(self):
+        base_config = super(GroupScoreFromEdgeScores, self).get_config()
+        return dict(list(base_config.items()) + list({'den_offset': self.den_offset}.items()))
     
     def compute_output_shape(self, input_shapes): 
         return (None,1)
@@ -1979,6 +1987,8 @@ class GroupScoreFromEdgeScores(tf.keras.layers.Layer):
         n_neigh = tf.cast(n_neigh,dtype='float32') - 1.
         groupscore = tf.reduce_sum(active[:,1:]*score[:,:,0], axis=1)
         #give slight priority to larger groups
+        n_neigh += self.den_offset
+        n_neigh = tf.where(n_neigh<=0, 1e-2, n_neigh)
         groupscore = tf.math.divide_no_nan(groupscore,n_neigh)
         return tf.expand_dims(groupscore,axis=1)
 
