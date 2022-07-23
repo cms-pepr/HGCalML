@@ -1040,6 +1040,9 @@ class LLFullObjectCondensation(LossLayerBase):
     
     def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
         
+        if self.classification_loss_weight <= 0:
+            return tf.reduce_mean(pred_id,axis=1, keepdims=True)
+        
         classloss = tf.keras.metrics.categorical_crossentropy(t_pid, pred_id)
         classloss = tf.where( t_pid[:,-1]>0. , 0., classloss)#remove ambiguous
         classloss = tf.debugging.check_numerics(classloss, "classloss")
