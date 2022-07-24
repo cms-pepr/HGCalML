@@ -15,6 +15,8 @@ if '-h' in sys.argv or '--help' in sys.argv:
     print('script to submit commands within the djc container to sbatch.\n')
     print('all commands are fully forwarded with one exception:')
     print('\n    ---d <workdir>    specifies a working directory can be specified that\n                      will contain the batch logs. It is created if \n                      it does not exist.\n')
+    print('\n    ---n <name> (opt) specifies a name for the batch script\n')
+    
     exit()
 
 #can be used by others on FI
@@ -26,7 +28,17 @@ workdir=None
 
 filtered_clo=[]
 triggered=False
+triggeredname=False
+name="batchscript"
 for clo in sys.argv:
+    if clo == '---n':
+        triggeredname = True
+        continue
+    if triggeredname:
+        name = clo
+        triggeredname=False
+        continue
+    
     if clo == '---d':
         triggered=True
         continue
@@ -34,6 +46,7 @@ for clo in sys.argv:
         workdir=clo
         triggered=False
         continue
+    
     filtered_clo.append(clo)
 
 if workdir is None:
@@ -80,12 +93,12 @@ exit
             commands=commands )
 
 
-with open(workdir+'/batchscript_'+uext+'.sh','w') as f:
+with open(workdir+'/'+name+'_'+uext+'.sh','w') as f:
     f.write(bscript_temp)
     
 with open(workdir+'/runscript_'+uext+'.sh','w') as f:
     f.write(runscript_temp)
     
-os.system('cd '+workdir + '; pwd; module load slurm singularity; unset PYTHONPATH ; sbatch batchscript_'+uext+'.sh')
+os.system('cd '+workdir + '; pwd; module load slurm singularity; unset PYTHONPATH ; sbatch '+name+'_'+uext+'.sh')
 
 

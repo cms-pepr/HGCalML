@@ -1,10 +1,10 @@
 '''
 
 Compatible with the dataset here:
-/eos/cms/store/cmst3/group/hgcal/CMG_studies/pepr/Jan2022_production_3
+/eos/home-j/jkiesele/ML4Reco/Gun20Part_NewMerge/train
 
 On flatiron:
-/mnt/ceph/users/jkieseler/HGCalML_data/Jan2022_production_3
+/mnt/ceph/users/jkieseler/HGCalML_data/Gun20Part_NewMerge/train
 
 not compatible with datasets before end of Jan 2022
 
@@ -54,6 +54,9 @@ from datastructures import TrainData_PreselectionNanoML
 from GravNetLayersRagged import CastRowSplits
 
 
+import globals
+#globals.acc_ops_use_tf_gradients = True #for testing
+
 '''
 
 make this about coordinate shifts
@@ -73,7 +76,7 @@ batchnorm_options={
 #loss options:
 loss_options={
     'energy_loss_weight': .25,
-    'q_min': .5,
+    'q_min': 1.5,
     'use_average_cc_pos': 0.1,
     'classification_loss_weight':0.,
     'too_much_beta_scale': 1e-5 ,
@@ -91,11 +94,15 @@ plotfrequency=50 #plots every 1k batches
 
 learningrate = 1e-5
 nbatch = 180000
+if globals.acc_ops_use_tf_gradients: #for tf gradients the memory is limited
+    nbatch = 60000
 
 #iterations of gravnet blocks
 total_iterations = 2
 n_neighbours=[64,64]
 double_mp=False
+
+n_cluster_space_coordinates = 6
 
 
 def gravnet_model(Inputs,
@@ -139,7 +146,6 @@ def gravnet_model(Inputs,
     
     allfeat = []
     
-    n_cluster_space_coordinates = 3
     
     
     #extend coordinates already here if needed
@@ -311,7 +317,7 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 
-publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/June2022/"
+publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/July2022_jk/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 cb = []
@@ -405,7 +411,7 @@ cb += [
     
     ]
 
-#cb += build_callbacks(train)
+cb += build_callbacks(train)
 
 #cb=[]
 
@@ -419,7 +425,7 @@ print("freeze BN")
 # Note the submodel here its not just train.keras_model
 for l in train.keras_model.layers:
     if 'gooey_batch_norm' in l.name:
-        l.max_viscosity = 0.995
+        l.max_viscosity = 1.
         l.fluidity_decay= 1e-3 #reaches constant 1 very quickly
     if 'FullOCLoss' in l.name:
         continue
