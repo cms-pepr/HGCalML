@@ -10,14 +10,16 @@ import time
 
 import pandas as pd
 
-from OCHits2Showers import OCHits2Showers
+from OCHits2Showers import OCHits2ShowersLayer, process_endcap, OCGatherEnergyCorrFac
 from ShowersMatcher import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 
 def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold, matching_mode, analysisoutpath, nfiles,
-            local_distance_scaling, is_soft, op, de_e_cut, angle_cut, kill_pu=True):
-    hits2showers = OCHits2Showers(beta_threshold, distance_threshold, is_soft, local_distance_scaling, op=op)
+            local_distance_scaling, is_soft, de_e_cut, angle_cut, kill_pu=False):
+    hits2showers = OCHits2ShowersLayer(beta_threshold, distance_threshold, local_distance_scaling)
     showers_matcher = ShowersMatcher(matching_mode, iou_threshold, de_e_cut, angle_cut)
+
+    energy_gatherer = OCGatherEnergyCorrFac()
 
     files_to_be_tested = [os.path.join(preddir, x) for x in os.listdir(preddir) if x.endswith('.bin.gz')]
     if nfiles!=-1:
@@ -27,14 +29,16 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     event_id = 0
 
     for i, file in enumerate(files_to_be_tested):
-        print("Analysing file", i, file)
+        print("Analysing file %d/%d"% (i, len(files_to_be_tested)))
         with mgzip.open(file, 'rb') as f:
             file_data = pickle.load(f)
             for j, endcap_data in enumerate(file_data):
-                print("Analysing endcap",j)
+                print("Analysing endcap %d/%d" % (j, len(file_data)))
                 stopwatch = time.time()
                 features_dict, truth_dict, predictions_dict = endcap_data
-                processed_pred_dict, pred_shower_alpha_idx = hits2showers.call(features_dict, predictions_dict)
+
+                processed_pred_dict, pred_shower_alpha_idx = process_endcap(hits2showers, energy_gatherer, features_dict, predictions_dict)
+
                 print('took',time.time()-stopwatch,'s for inference clustering')
                 stopwatch = time.time()
                 showers_matcher.set_inputs(
@@ -103,7 +107,6 @@ if __name__ == '__main__':
     parser.add_argument('--no_local_distance_scaling', help='With local distance scaling', action='store_true')
     parser.add_argument('--de_e_cut', help='dE/E threshold to allow match.', default=-1)
     parser.add_argument('--angle_cut', help='Angle cut for angle based matching', default=-1)
-    parser.add_argument('--no_op', help='Use condensate op', action='store_true')
     parser.add_argument('--no_soft', help='Use condensate op', action='store_true')
 
     args = parser.parse_args()
@@ -111,6 +114,6 @@ if __name__ == '__main__':
     analyse(preddir=args.preddir, pdfpath=args.p, beta_threshold=float(args.b), distance_threshold=float(args.d),
             iou_threshold=float(args.i), matching_mode=args.m, analysisoutpath=args.analysisoutpath,
             nfiles=int(args.nfiles), local_distance_scaling=not args.no_local_distance_scaling,
-            is_soft=not args.no_soft, op=not args.no_op, de_e_cut=float(args.de_e_cut), angle_cut=float(args.angle_cut))
+            is_soft=not args.no_soft, de_e_cut=float(args.de_e_cut), angle_cut=float(args.angle_cut))
 
 

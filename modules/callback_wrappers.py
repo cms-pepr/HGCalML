@@ -2,7 +2,7 @@
 import os
 import uuid
 
-from OCHits2Showers import OCHits2Showers
+from OCHits2Showers import OCHits2ShowersLayer
 from ShowersMatcher import ShowersMatcher
 from hgcal_predictor import HGCalPredictor
 from callbacks import RunningFullValidation
@@ -44,7 +44,7 @@ def build_callbacks(train,
                                    model_path=os.path.join(train.outputDir, 'KERAS_check_model_last_save'),
                                    inputdir=os.path.split(train.inputData)[0], max_files=1)
 
-        hits2showers = OCHits2Showers(0.1, 0.1, is_soft, local_distance_scaling, op=True)
+        hits2showers = OCHits2ShowersLayer(0.1, 0.1, local_distance_scaling)
         showers_matcher = ShowersMatcher(matching_mode, iou_threshold, de_e_cut, angle_cut)
 
         os.system('mkdir -p %s/full_validation_plots' % (train.outputDir))

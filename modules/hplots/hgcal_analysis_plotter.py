@@ -113,6 +113,7 @@ class HGCalAnalysisPlotter:
         plot = EfficiencyFakeRatePlot(bins=self.eta_bins, x_label='$|\\eta_{true}|$', y_label='Fake rate')
         plot.add_raw_values(
             eta_transform(self.showers_dataframe['pred_energy'][filter_has_pred].to_numpy()), fake)
+
         self.pdf_fake_rate.savefig(plot.draw())
 
     def _make_resolution_plots(self):
@@ -310,7 +311,8 @@ class HGCalAnalysisPlotter:
         self._make_fake_rate_plots()
         self._make_response_plots()
         self._make_resolution_plots()
-        self._make_resolution_estimator_plots()
+        if 'pred_energy_unc' in self.showers_dataframe:
+            self._make_resolution_estimator_plots()
         self._make_response_histograms()
 
         self._close_pdfs()
