@@ -168,7 +168,7 @@ class Basic_OC_per_sample(object):
         V_att = self.q_k * tf.reduce_sum( V_att ,axis=1)  #K x 1
         V_att = tf.math.divide_no_nan(V_att, N_k+1e-3)  #K x 1
         
-        print(tf.reduce_mean(self.d_v),tf.reduce_max(self.d_v))
+        #print(tf.reduce_mean(self.d_v),tf.reduce_max(self.d_v))
         
         return V_att
     

@@ -44,6 +44,81 @@ def deltaPhi(a,b):
     
 ######## helper classes ###########
 
+'''
+
+    valued_pids = tf.zeros_like(t_pid)+4 #defaults to 4 as unkown
+    valued_pids = tf.where(tf.math.logical_or(t_pid==22, tf.abs(t_pid) == 11), 0, valued_pids) #isEM
+    
+    valued_pids = tf.where(tf.abs(t_pid)==211, 1, valued_pids) #isHad
+    valued_pids = tf.where(tf.abs(t_pid)==2212, 1, valued_pids) #proton isChHad
+    valued_pids = tf.where(tf.abs(t_pid)==321, 1, valued_pids) #K+
+    
+    valued_pids = tf.where(tf.abs(t_pid)==13, 2, valued_pids) #isMIP
+    
+    valued_pids = tf.where(tf.abs(t_pid)==111, 3, valued_pids) #pi0 isNeutrHadOrOther
+    valued_pids = tf.where(tf.abs(t_pid)==2112, 3, valued_pids) #neutron isNeutrHadOrOther
+    valued_pids = tf.where(tf.abs(t_pid)==130, 3, valued_pids) #K0 isNeutrHadOrOther
+    valued_pids = tf.where(tf.abs(t_pid)==310, 3, valued_pids) #K0 short
+    valued_pids = tf.where(tf.abs(t_pid)==3122, 3, valued_pids) #lambda isNeutrHadOrOther
+    
+    valued_pids = tf.cast(valued_pids, tf.int32)[:,0]
+    
+    known = tf.where(valued_pids==4,tf.zeros_like(valued_pids),1)
+    valued_pids = tf.where(known<1,3,valued_pids)#set to 3
+    known = tf.expand_dims(known,axis=1) # V x 1 style
+'''
+
+#for import
+n_id_classes = 6 
+id_idx_to_str = {
+    0: 'muon',
+    1: 'elec',
+    2: 'gamma',
+    3: 'chad',
+    4: 'nhad',
+    5: 'amb'}
+
+
+id_str_to_idx = {
+    'muon':0,
+    'elec':1,
+    'gamma':2,
+    'chad':3,
+    'nhad':4,
+    'amb': 5}
+
+def pdgIDToOneHot(pdgid, charge=None):
+    #PF: [muon, Electron, gamma, charged had, neutral hadr, amb] -> 6
+    # 
+    
+    #everything is a netrual hadron to begin with
+    #create start array, use float multi to cast to float
+    templ = ak1.zeros_like(pdgid,dtype=np.float64) 
+    
+    #default is nhad
+    onehot = ak1.concatenate(4*[templ] + [templ+1.] + [templ],axis=-1)
+    
+    muon  = ak1.concatenate([templ+1.] + 5*[templ],axis=-1)
+    elec  = ak1.concatenate(1*[templ] + [templ+1.] + 4*[templ],axis=-1)
+    gamma = ak1.concatenate(2*[templ] + [templ+1.] + 3*[templ],axis=-1)
+    chad  = ak1.concatenate(3*[templ] + [templ+1.] + 2*[templ],axis=-1)
+    amb   = ak1.concatenate(5*[templ] + [templ+1.],axis=-1)
+    #nhad  =  ak1.concatenate(4*[templ] + [templ+1.],axis=-1)
+    
+    #from IPython import embed
+    #embed()
+    
+    if charge is not None:
+        onehot = ak1.where(charge[...,0] != 0., chad, onehot)
+        
+    onehot = ak1.where(np.abs(pdgid[...,0])==11, elec, onehot)
+    onehot = ak1.where(np.abs(pdgid[...,0])==13, muon, onehot)
+    onehot = ak1.where(np.abs(pdgid[...,0])==22, gamma, onehot)
+    onehot = ak1.where(np.abs(pdgid[...,0])==0, amb, onehot)
+    
+    return onehot
+
+
 class CollectionBase(object):
     def __init__(self, tree):
         '''
@@ -231,6 +306,7 @@ class RecHitCollection(CollectionBase):
     def __init__(self, use_true_muon_momentum=False, 
                  cp_plus_pu_mode=False,
                  cp_plus_pu_mode_reduce=False,
+                 usematchidx = "RecHitHGC_MergedSimClusterBestMatchIdx",
                  **kwargs):
         '''
         Guideline: this is more about clarity than performance. 
@@ -239,6 +315,7 @@ class RecHitCollection(CollectionBase):
         self.use_true_muon_momentum = use_true_muon_momentum
         self.cp_plus_pu_mode = cp_plus_pu_mode
         self.cp_plus_pu_mode_reduce = cp_plus_pu_mode_reduce
+        self.usematchidx = usematchidx
         
         #call this last!
         super(RecHitCollection, self).__init__(**kwargs)
@@ -296,7 +373,7 @@ class RecHitCollection(CollectionBase):
         recHitX = self._readAndSplit(tree,"RecHitHGC_x")
         recHitY = self._readAndSplit(tree,"RecHitHGC_y")
         recHitZ = self._readAndSplit(tree,"RecHitHGC_z")
-        recHitSimClusIdx = self._readAndSplit(tree,"RecHitHGC_MergedSimClusterBestMatchIdx")
+        recHitSimClusIdx = self._readAndSplit(tree, self.usematchidx)
         
         #Define spectators 
         recHit_df_events = [pd.DataFrame({"recHitX":recHitX[i],
@@ -337,7 +414,7 @@ class RecHitCollection(CollectionBase):
         return ak1.where(goodSimClus, noSplitRecHitSimClusIdx, -1)
     
     def _createTruthAssociation(self, tree):
-        noSplitRecHitSimClusIdx = self._readArray(tree,"RecHitHGC_MergedSimClusterBestMatchIdx")
+        noSplitRecHitSimClusIdx = self._readArray(tree, self.usematchidx)
         return self._maskNoiseSC(tree,noSplitRecHitSimClusIdx)
     
     def _assignTruth(self,tree):
@@ -347,115 +424,13 @@ class RecHitCollection(CollectionBase):
             self._assignTruthDef(tree)
             
     def _assignTruthCPPU(self, tree):
-        '''
-        
-
-        '''
         print('\n\n>>>>>>WARNING: using calo particle plus PU mode: unless this is a special testing sample, you should not be using this function!<<<<\n\n')
         print('\n\n>>>>>> The configuration here also assumes exactly 1 non PU particle per endcap!<<<<<<<\n\n')
-        
+        raise ValueError("not to be used anymore")
         
         assert self.splitIdx is not None
         
-        scidx = self._readArray(tree,"RecHitHGC_BestSimClusterIdx")
-        cpidx = self._readArray(tree,"SimCluster_CaloPartIdx")
-        nonSplitRecHitSimClusIdx = ak1.where(scidx >= 0, cpidx[scidx], -1)#mark noise
-        
-        non_pu_cp = (self._readArray(tree,"CaloPart_eventId")+self._readArray(tree,"CaloPart_bunchCrossing"))<1
-        
-        recHitNotPU = self._assignTruthByIndexAndSplit(tree,non_pu_cp,nonSplitRecHitSimClusIdx)
-        
-        recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"CaloPart_pdgId",nonSplitRecHitSimClusIdx)
-        recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"CaloPart_energy",nonSplitRecHitSimClusIdx)
-        
-        fzeros      = self._assignTruthByIndexAndSplit(tree,"CaloPart_pt",nonSplitRecHitSimClusIdx)*0.
-        recHitTruthX      = fzeros
-        recHitTruthY      = fzeros 
-        recHitTruthZ      = fzeros 
-        recHitTruthTime   = fzeros 
-        
-        recHitDepEnergy = fzeros
-        
-        fullyContained = ak1.ones_like(fzeros)
-        
-        
-        from globals import pu
-        recHitSimClusIdx = self._splitJaggedArray(nonSplitRecHitSimClusIdx)
-        recHitSimClusIdx = self._expand(recHitSimClusIdx)
-        recHitSimClusIdx = recHitSimClusIdx + pu.t_idx_offset*(1-recHitNotPU)*(recHitSimClusIdx>=0)#only for not noise
-        #pu_idx_offset[recHitNotPU[...,0]>0]=0
-        #recHitSimClusIdx += pu_idx_offset
-        #recHitSimClusIdx = recHitSimClusIdx + pu.t_idx_offset * (1-recHitNotPU[...,0])
-        #testing
-        #recHitSimClusIdx = recHitNotPU #(1+recHitSimClusIdx)*recHitNotPU[...,0]#[...,0]
-        
-        recHitSpectatorFlag = fzeros
-        
-        self.truth={}
-        self.truth['t_idx'] = recHitSimClusIdx
-        self.truth['t_energy'] = recHitTruthEnergy
-        self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
-        self.truth['t_time'] = recHitTruthTime
-        self.truth['t_pid'] = recHitTruthPID
-        self.truth['t_spectator'] = recHitSpectatorFlag
-        self.truth['t_fully_contained'] = fullyContained
-        self.truth['t_rec_energy'] = recHitDepEnergy
-        
-        if not self.cp_plus_pu_mode_reduce:
-            return
-        print('\n>>>reducing set by ∆R: handle with care<<<\n')
-        #return
-        #now remove access particles around initial one
-        #this might not work because of close by gun
-        #.... it does not work....
-        #npu_cpeta = self._readArray(tree,"CaloPart_eta")
-        #npu_cpphi = self._readArray(tree,"CaloPart_phi")
-        
-        
-        recHitX = self._readSplitAndExpand(tree,"RecHitHGC_x")# EC x V x 1
-        recHitY = self._readSplitAndExpand(tree,"RecHitHGC_y")
-        recHitZ = self._readSplitAndExpand(tree,"RecHitHGC_z")
-        
-        cp_x = ak1.mean(recHitX[recHitNotPU[...,0]>0],axis=1)
-        cp_y = ak1.mean(recHitY[recHitNotPU[...,0]>0],axis=1)
-        cp_z = ak1.mean(recHitZ[recHitNotPU[...,0]>0],axis=1)
-        
-        recHitEta = calc_eta(recHitX, recHitY, recHitZ)
-        recHitPhi = calc_phi(recHitX, recHitY, recHitZ)
-        
-        #return
-        # ...
-        #just loop over EC, there are only very few
-        hitselector=[]
-        for i_endcap in range(len(recHitEta)):
-            
-            ecps_eta=calc_eta(cp_x[i_endcap], cp_y[i_endcap], cp_z[i_endcap])
-            ecps_phi=calc_phi(cp_x[i_endcap], cp_y[i_endcap], cp_z[i_endcap])
-            
-            ec_heta = recHitEta[i_endcap].to_numpy() # V x 1
-            ec_hphi = recHitPhi[i_endcap].to_numpy() 
-            
-            deta = ec_heta-ecps_eta
-            dphi = deltaPhi(ec_hphi,ecps_phi) # V x 1
-            
-            drsq = deta**2 + dphi**2  # V x 1
-            
-            close = np.array(drsq < 0.5**2,dtype='int')[...,0]
-            #either_close = np.sum(close, axis=1)#does sum work on bool?
-            #print(close.shape)
-            hitselector.append(close)
-            
-            #last
-        
-        hitselector = ak1.from_iter(hitselector) # EC x V'
-        #hitselector = recHitNotPU[...,0]
-        #print('hitselector',ak1.sum(hitselector))
-        
-        for k in self.truth.keys():
-            self.truth[k] = self.truth[k][hitselector>0]
-        self.features = self.features[hitselector>0]
          
-            
     def _assignTruthDef(self, tree):
         
         assert self.splitIdx is not None
@@ -463,6 +438,10 @@ class RecHitCollection(CollectionBase):
         nonSplitRecHitSimClusIdx = self._createTruthAssociation(tree)
         
         recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_pdgId",nonSplitRecHitSimClusIdx)
+        recHitTruthcharge    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_charge",nonSplitRecHitSimClusIdx)
+        
+        recHitTruthOneHotID = pdgIDToOneHot(recHitTruthPID, recHitTruthcharge)
+        
         recHitTruthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitRecHitSimClusIdx)
         
         recHitDepEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_recEnergy",nonSplitRecHitSimClusIdx)
@@ -494,7 +473,7 @@ class RecHitCollection(CollectionBase):
         recHitTruthZ = ak1.where(recHitSimClusIdx<0, recHitZ, recHitTruthZ)
         recHitTruthTime = ak1.where(recHitSimClusIdx<0, recHitTime, recHitTruthTime)
         recHitDepEnergy = ak1.where(recHitSimClusIdx<0, recHitEnergy, recHitDepEnergy)
-
+    
         recHitSpectatorFlag = self._createSpectators(tree)
         #remove spectator flag for noise
         recHitSpectatorFlag = ak1.where(recHitSimClusIdx<0 , ak1.zeros_like(recHitSpectatorFlag), recHitSpectatorFlag)#this doesn't work for some reason!
@@ -507,7 +486,7 @@ class RecHitCollection(CollectionBase):
         self.truth['t_energy'] = recHitTruthEnergy
         self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
         self.truth['t_time'] = recHitTruthTime
-        self.truth['t_pid'] = recHitTruthPID
+        self.truth['t_pid'] = recHitTruthOneHotID
         self.truth['t_spectator'] = recHitSpectatorFlag
         self.truth['t_fully_contained'] = fullyContained
         self.truth['t_rec_energy'] = recHitDepEnergy
@@ -515,13 +494,109 @@ class RecHitCollection(CollectionBase):
         
 
 ############
+class RecHitPFCollection(RecHitCollection):
+    def __init__(self, **kwargs):
+        
+        super(RecHitPFCollection, self).__init__(
+                 use_true_muon_momentum=False, 
+                 cp_plus_pu_mode=False,
+                 cp_plus_pu_mode_reduce=False,
+                 usematchidx = "RecHitHGC_BestPFTruthPartIdx",
+                 **kwargs)
+        
+    
+    def _maskNoiseSC(self, tree,noSplitRecHitSimClusIdx):
+        return noSplitRecHitSimClusIdx
+        
+        #this needs some work, does this exist for PF?
+        goodSimClus = self._readArray(tree, "MergedSimCluster_isTrainable")
+        goodSimClus = goodSimClus[noSplitRecHitSimClusIdx]
+        return ak1.where(goodSimClus, noSplitRecHitSimClusIdx, -1)
+    
+    
+    def _assignTruthDef(self, tree):
+        '''
+        This one is (obviously) different for PF
+        '''
+        
+        assert self.splitIdx is not None
+        
+        nonSplitRecHitSimClusIdx = self._createTruthAssociation(tree)
+        
+        # read some raw inputs
+        
+        recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_pdgId",nonSplitRecHitSimClusIdx)
+        recHitTruthPt  = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_pt",nonSplitRecHitSimClusIdx)
+        recHitTruthEta = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_eta",nonSplitRecHitSimClusIdx)
+        
+        #recHitTruthPhi = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_phi",nonSplitRecHitSimClusIdx)
+        
+        recHitTruthCharge = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_charge",nonSplitRecHitSimClusIdx)
 
+        recHitTruthOneHotID = pdgIDToOneHot(recHitTruthPID, recHitTruthCharge)
+        
+        zeros = ak1.zeros_like(recHitTruthPt)
+        
+        recHitTruthMomentum = recHitTruthPt * np.cosh(recHitTruthEta)
+        
+        #this is tricky, would need to be boundary info
+        recHitTruthX      = zeros
+        recHitTruthY      = zeros
+        recHitTruthZ      = zeros
+        recHitTruthTime   = zeros
+        
+        fullyContained = ak1.where(np.abs(recHitTruthZ)[:,:,0]<323.,#somehow that seems necessary
+                                   ak1.ones_like(recHitTruthZ),
+                                   ak1.zeros_like(recHitTruthZ))
+        
+        recHitEnergy = self._readSplitAndExpand(tree,"RecHitHGC_energy")
+        recHitTime   = self._readSplitAndExpand(tree,"RecHitHGC_time")
+        recHitX = self._readSplitAndExpand(tree,"RecHitHGC_x")
+        recHitY = self._readSplitAndExpand(tree,"RecHitHGC_y")
+        recHitZ = self._readSplitAndExpand(tree,"RecHitHGC_z")
+        
+        # should not expand here to allow indexing as done below
+        recHitSimClusIdx = self._splitJaggedArray(nonSplitRecHitSimClusIdx)
+        
+        # set noise to rec features
+        recHitTruthMomentum = ak1.where(recHitSimClusIdx<0, recHitEnergy, recHitTruthMomentum)
+        recHitTruthX = ak1.where(recHitSimClusIdx<0, recHitX, recHitTruthX)
+        recHitTruthY = ak1.where(recHitSimClusIdx<0, recHitY, recHitTruthY)
+        recHitTruthZ = ak1.where(recHitSimClusIdx<0, recHitZ, recHitTruthZ)
+        recHitTruthTime = ak1.where(recHitSimClusIdx<0, recHitTime, recHitTruthTime)
+        
+        #be careful here! this is truth momentum
+        recHitDepEnergy = zeros + 1.
+        print('FIXME recHitDepEnergy is currently set to 1 -> constant. Needs ntuple input')
+        
+
+        recHitSpectatorFlag = self._createSpectators(tree)
+        #remove spectator flag for noise
+        recHitSpectatorFlag = ak1.where(recHitSimClusIdx<0 , ak1.zeros_like(recHitSpectatorFlag), recHitSpectatorFlag)#this doesn't work for some reason!
+        
+        #DEBUG!!!
+        #ticlidx = self._readSplitAndExpand(tree,'RecHitHGC_TICLCandIdx')
+        
+        self.truth={}     #DEBUG!!!
+        self.truth['t_idx'] = self._expand(recHitSimClusIdx)# now expand to a trailing dimension
+        self.truth['t_energy'] = recHitTruthMomentum
+        self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
+        self.truth['t_time'] = recHitTruthTime
+        self.truth['t_pid'] = recHitTruthOneHotID
+        self.truth['t_spectator'] = recHitSpectatorFlag
+        self.truth['t_fully_contained'] = fullyContained
+        self.truth['t_rec_energy'] = recHitDepEnergy
+        
+####        
  
-class TrackCollection(CollectionBase):
+class TrackCollection(RecHitPFCollection):
     def __init__(self, **kwargs):
         '''
         Guideline: this is more about clarity than performance. 
         If it improves clarity read stuff twice or more!
+        
+        For tracks, only PF makes sense in the first place, so no non-PF implementation here
+        
         '''
         super(TrackCollection, self).__init__(**kwargs)
                                        
@@ -569,106 +644,61 @@ class TrackCollection(CollectionBase):
             ]
     
     
-    def _getMatchIdxs(self, tree):
-        
-        
-        #no split here
-        truthMom    = self._readArray(tree,"MergedSimCluster_boundaryEnergy")
-        truthEta      = self._readArray(tree,"MergedSimCluster_impactPoint_eta")
-        truthPhi      = self._readArray(tree,"MergedSimCluster_impactPoint_phi")
-        truthpos = ak1.concatenate([self._expand(truthEta),self._expand(truthPhi)],axis=-1)
-        
-        impactEta = self._readArray(tree,"Track_HGCFront_eta")
-        impactPhi = self._readArray(tree,"Track_HGCFront_phi")
-        impactpos = ak1.concatenate([self._expand(impactEta),self._expand(impactPhi)],axis=-1)
-        
-        trackPt = self._readArray(tree,"Track_pt")
-        trackVertEta = self._readArray(tree,"Track_eta")
-        trackMom = trackPt * np.cosh(trackVertEta)
-        
-        #match by x,y, and momentum
-        finalidxs = []
-        for tpos, ipos, tmom, imom, ipt in zip(truthpos, impactpos, truthMom, trackMom, trackPt):
-            # create default
-            tpos, ipos, tmom, imom,ipt = tpos.to_numpy(), ipos.to_numpy(), tmom.to_numpy(), imom.to_numpy(), ipt.to_numpy()
-            
-            tpos = np.expand_dims(tpos, axis=0) #one is truth
-            tmom = np.expand_dims(tmom, axis=0) #one is truth
-            ipos = np.expand_dims(ipos, axis=1)
-            imom = np.expand_dims(imom, axis=1)
-            
-            ipt = np.expand_dims(ipt,axis=1)
-            #this is in cm. 
-            posdiffsq = np.sum( (tpos[:,:,0:1]-ipos[:,:,0:1])**2 +deltaPhi(tpos[:,:,1:2],ipos[:,:,1:2])**2, axis=-1) # Trk x K
-            #this is in %
-            momdiff = 100.*np.abs(tmom - imom)/(imom+1e-3) #rel diff
-            #scale position by 100 (DeltaR)
-            totaldiff = np.sqrt(100.**2*posdiffsq + (momdiff*np.exp(-0.05*ipt))**2)#weight momentum difference less with higher momenta
-            
-            closestSC = np.argmin(totaldiff, axis=1) # Trk
-            
-            #more than 5 percent/1cm total difference
-            closestSC[totaldiff[np.arange(len(closestSC)),closestSC] > 5] = -1
-            
-            finalidxs.append(closestSC)
-            
-        return ak1.from_iter(finalidxs)
-        
+    
     
     def _assignTruth(self, tree):
         
-        nonSplitTrackSimClusIdx = self._getMatchIdxs(tree)
+        assert self.splitIdx is not None
         
-        truthEnergy = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_boundaryEnergy",nonSplitTrackSimClusIdx)
+        nonSplitTrackSimClusIdx = self._readArray(tree, "Track_PFTruthPartIdx")#no 'best' this is 1:1
         
+        # read some raw inputs
         
-        truthPID    = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_pdgId",nonSplitTrackSimClusIdx)
-        truthX      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_x",nonSplitTrackSimClusIdx)
-        truthY      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_y",nonSplitTrackSimClusIdx)
-        truthZ      = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_z",nonSplitTrackSimClusIdx)
-        truthTime   = self._assignTruthByIndexAndSplit(tree,"MergedSimCluster_impactPoint_t",nonSplitTrackSimClusIdx)
+        trackTruthPID    = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_pdgId",nonSplitTrackSimClusIdx)
+        trackTruthPt  = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_pt",nonSplitTrackSimClusIdx)
+        trackTruthEta = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_eta",nonSplitTrackSimClusIdx)
         
+        #trackTruthPhi = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_phi",nonSplitTrackSimClusIdx)
         
-        #some manual sets
+        trackTruthCharge = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_charge",nonSplitTrackSimClusIdx)
+
+        trackTruthOneHotID = pdgIDToOneHot(trackTruthPID, trackTruthCharge)
         
-        zeros = ak1.zeros_like(truthEnergy)
-        splittruthidx = self._splitJaggedArray(nonSplitTrackSimClusIdx)
+        zeros = ak1.zeros_like(trackTruthPt)
         
-        spectator = ak1.where(splittruthidx<0, zeros+100., zeros)
+        recHitTruthMomentum = trackTruthPt * np.cosh(trackTruthEta)
+        
+        #this is tricky, would need to be boundary info
+        trackTruthX      = zeros
+        trackTruthY      = zeros
+        trackTruthZ      = zeros
+        trackTruthTime   = zeros
         
         trackPt = self._readSplitAndExpand(tree,"Track_pt")
         trackVertEta = self._readSplitAndExpand(tree,"Track_eta")
         trackMom = trackPt * np.cosh(trackVertEta)
         
-        impactX = self._readSplitAndExpand(tree,"Track_HGCFront_x")
-        impactY = self._readSplitAndExpand(tree,"Track_HGCFront_y")
-        impactZ = self._readSplitAndExpand(tree,"Track_HGCFront_z")
+        #be careful here! this is truth momentum
+        trackDepEnergy = trackMom
         
-        truthX = ak1.where(splittruthidx<0, impactX, truthX)
-        truthY = ak1.where(splittruthidx<0, impactY, truthY)
-        truthZ = ak1.where(splittruthidx<0, impactZ, truthZ)
+        trackSimClusIdx = self._splitJaggedArray(nonSplitTrackSimClusIdx)
         
-        truthEnergy = ak1.where(splittruthidx<0, trackMom, truthEnergy)
+        self.truth={}     #DEBUG!!!
+        self.truth['t_idx'] = self._expand(trackSimClusIdx)# now expand to a trailing dimension
+        self.truth['t_energy'] = recHitTruthMomentum
+        self.truth['t_pos'] = ak1.concatenate([trackTruthX, trackTruthY,trackTruthZ],axis=-1)
+        self.truth['t_time'] = trackTruthTime
+        self.truth['t_pid'] = trackTruthOneHotID
+        self.truth['t_spectator'] = zeros
+        self.truth['t_fully_contained'] = zeros+1.
+        self.truth['t_rec_energy'] = trackDepEnergy
         
-        truthidx = self._expand(splittruthidx)
         
-        self.truth={}
-        self.truth['t_idx'] = truthidx# for now
-        self.truth['t_energy'] = truthEnergy
-        self.truth['t_pos'] = ak1.concatenate([truthX,truthY,truthZ],axis=-1)
-        self.truth['t_time'] = truthTime
-        self.truth['t_pid'] = truthPID
-        self.truth['t_spectator'] = spectator
-        self.truth['t_fully_contained'] = zeros+1
-        self.truth['t_rec_energy'] = trackMom
-        
-    
 ####################### end helpers        
     
 class TrainData_NanoML(TrainData):
     def __init__(self):
         TrainData.__init__(self)
-        self.include_tracks = False
         self.cp_plus_pu_mode = False
 
     
@@ -694,14 +724,9 @@ class TrainData_NanoML(TrainData):
         tree = uproot.open(filename)[treename]
         
         
-        rechitcoll = RecHitCollection(use_true_muon_momentum=self.include_tracks,
-                                      cp_plus_pu_mode=self.cp_plus_pu_mode,
-                                      tree=tree)
+        rechitcoll = RecHitCollection(tree=tree)
         
         #in a similar manner, we can also add tracks from conversions etc here
-        if self.include_tracks:
-            trackcoll = TrackCollection(tree=tree)
-            rechitcoll.append(trackcoll)
         
         # adds t_is_unique
         rechitcoll.addUniqueIndices()
@@ -841,7 +866,12 @@ class TrainData_NanoML(TrainData):
         #frame = pd.DataFrame()
         for k in featd.keys():
             #frame.insert(0,k,featd[k])
-            featd[k] = np.squeeze(featd[k],axis=1)
+            if featd[k].shape[1] == 1:
+                featd[k] = np.squeeze(featd[k],axis=1)
+            elif k=='truthHitAssignedPIDs' or k== 't_pid':
+                featd[k] =  np.argmax(featd[k], axis=-1)
+            else:
+                raise ValueError("only pid one-hot allowed to have more than one additional dimension, tried to squeeze "+ k)
         
         frame = pd.DataFrame.from_records(featd)
         
@@ -879,10 +909,32 @@ class TrainData_NanoML(TrainData):
             return pickle.load(mypicklefile)
 
 
-class TrainData_NanoMLTracks(TrainData_NanoML):
+class TrainData_NanoMLPF(TrainData_NanoML):
     def __init__(self):
         TrainData_NanoML.__init__(self)
-        self.include_tracks = True
+        
+    def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="Events"):
+        
+        fileTimeOut(filename, 10)#10 seconds for eos to recover 
+        tree = uproot.open(filename)[treename]
+        
+        
+        rechitcoll = RecHitPFCollection(tree=tree)
+        trackcoll = TrackCollection(tree=tree)
+        
+        rechitcoll.append(trackcoll)
+        
+        # adds t_is_unique
+        rechitcoll.addUniqueIndices()
+        
+        # converts to DeepJetCore.SimpleArray
+        farr = rechitcoll.getFinalFeaturesSA()
+        t = rechitcoll.getFinalTruthDictSA()
+        
+        return [farr, 
+                t['t_idx'], t['t_energy'], t['t_pos'], t['t_time'], 
+                t['t_pid'], t['t_spectator'], t['t_fully_contained'],
+                t['t_rec_energy'], t['t_is_unique'] ],[], []
         
         
 

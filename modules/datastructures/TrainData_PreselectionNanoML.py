@@ -1,26 +1,20 @@
-from DeepJetCore.TrainData import TrainData, fileTimeOut
+from DeepJetCore.TrainData import TrainData
 from DeepJetCore import SimpleArray
 from DeepJetCore.modeltools import load_model
-import uproot3 as uproot
-import awkward as ak1
 import pickle
-import gzip
 import numpy as np
-import gzip
-import pandas as pd
-from sklearn.decomposition import PCA
-from scipy.spatial.distance import cdist
-from sklearn.preprocessing import StandardScaler
-import time
 #from IPython import embed
 import os
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from DeepJetCore.dataPipeline import TrainDataGenerator
 
+
+modelfile = os.getenv("HGCALML")+'/models/pre_selection_june22/KERAS_model.h5'
+
+
 def _getkeys():
-    import setGPU
-    file = os.getenv("HGCALML")+'/models/pre_selection_may22/KERAS_model.h5'
+    file = modelfile
     tmp_model = load_model(file)
     output_keys = list(tmp_model.output_shape.keys())
     output_keys.remove('row_splits')
@@ -52,14 +46,13 @@ class TrainData_PreselectionNanoML(TrainData):
         self.include_tracks = False
         self.cp_plus_pu_mode = False
         #preselection model used
-        self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_may22/KERAS_model.h5'
+        self.path_to_pretrained = modelfile
         
         self.output_keys = TrainData_PreselectionNanoML_keys
 
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename=""):
 
         #this needs GPU
-        import setGPU
         model = load_model(self.path_to_pretrained)
         print("Loaded preselection model : ", self.path_to_pretrained)
 

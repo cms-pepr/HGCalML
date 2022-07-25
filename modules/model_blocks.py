@@ -7,7 +7,7 @@ import tensorflow as tf
 from Initializers import EyeInitializer
 from GravNetLayersRagged import CondensateToIdxs
 
-
+from datastructures.TrainData_NanoML import n_id_classes
 
 def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_extend'):
     if n_cluster_space_coordinates > 3:
@@ -22,7 +22,7 @@ def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_e
 
 #new format!
 def create_outputs(x, n_ccoords=3, 
-                   n_classes=4,
+                   n_classes=n_id_classes,
                    fix_distance_scale=False,
                    energy_factor=True,
                    name_prefix="output_module"):
@@ -184,7 +184,8 @@ def condition_input(orig_inputs):
     if not 'rechit_energy' in orig_inputs.keys():
         orig_inputs['rechit_energy'] = SelectFeatures(0, 1)(orig_inputs['features'])    
     
-    processed_features =  orig_inputs['features']   
+    processed_features =  orig_inputs['features']  
+    orig_inputs['orig_features'] = orig_inputs['features']  
     #coords have not been built so features not processed
     if not 'coords' in orig_inputs.keys():
         processed_features = ProcessFeatures(name='precondition_process_features')(orig_inputs['features'])
@@ -208,7 +209,8 @@ def pre_condensation_model(inputs,
                            
                            condensate=True,
                            debug_outdir='',
-                           debugplots_after=-1
+                           debugplots_after=-1,
+                           N_gravnet=2,
                            ):    
     
     orig_inputs = condition_input(inputs)
@@ -219,37 +221,52 @@ def pre_condensation_model(inputs,
     xc = Dense(16, activation='relu', name = name+'_dc0', trainable=trainable)(coords)
     xc = Dense(16, activation='relu', name = name+'_dc1', trainable=trainable)(xc)
     xc = Dense(3, name = name+'_dc2', trainable=trainable)(xc)
-    xc = ScalarMultiply(0.01)(xc)
+    
     
     coords = ElementScaling(name=name+'es1',trainable=trainable)(coords)
-    gncoords = Add()([coords,xc])
-    
-    
-    if debugplots_after>0:
-        gncoords = PlotCoordinates(plot_every=debugplots_after,
-                                        outdir=debug_outdir,name=name+'_gncoords')(
-                                            [gncoords,
-                                             orig_inputs['rechit_energy'],
-                                             orig_inputs['t_idx'],rs])
     
     # this is a by-hand gravnet
+    x = orig_inputs['features']
+    allgn = []
+    for i in range(N_gravnet):
+        
+        xc = ScalarMultiply(0.1)(xc)
+        gncoords = Add()([coords,xc])
+        
+        if debugplots_after>0:
+            gncoords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_gncoords_'+str(i))(
+                                            [gncoords,orig_inputs['rechit_energy'],
+                                             orig_inputs['t_idx'],rs])
+        
     
-    nidx,dist = KNN(K=12,record_metrics=record_metrics,name=name+'_knn',
-                    tf_distance=True,#check this
-                    min_bins=20)([gncoords,rs])
-                    
-    x = DistanceWeightedMessagePassing([32,32],name=name+'dmp1',
-                                       trainable=trainable)(
-                                           [orig_inputs['features'],nidx,dist])# hops are rather light 
-    x = Dense(32,activation='relu',name=name+'gn_d0',trainable=trainable)(x)
-    x = Dense(32,activation='relu',name=name+'gn_d1',trainable=trainable)(x)     
+        nidx,dist = KNN(K=12,record_metrics=record_metrics,name=name+'_knn_'+str(i),
+                        tf_distance=True,#check this
+                        min_bins=20)([gncoords,rs])
+                        
+        x = DistanceWeightedMessagePassing([32,32],name=name+'dmp'+str(i)+'_0',
+                                           trainable=trainable)(
+                                               [x,nidx,dist])# hops are rather light 
+        x = Dense(32,activation='relu',name=name+'gn_d'+str(i)+'_0',trainable=trainable)(x)
+        x = Dense(32,activation='relu',name=name+'gn_d'+str(i)+'_1',trainable=trainable)(x)  
+        xc = Dense(3, name = name+'_dc2_'+str(i), trainable=trainable)(x)
+        
+         
+        allgn.append(x)  
     
     # now we define the pre-condensation space, that also does the noise removal
-    
+    if len(allgn)>1:
+        x = Concatenate()(allgn)
+    else:
+        x = allgn[0]
+        
     beta = Dense(1, activation='sigmoid', name=name+'b_d0',trainable=trainable)(x)
     d = Dense(1, activation='sigmoid', name=name+'d_d0',trainable=trainable)(x)
     ccoords = Dense(3, name=name+'cc_d0',trainable=trainable)(x)
+    
     ccoords = ScalarMultiply(0.1)(ccoords)
+    
+    coords = ElementScaling(name=name+'es2',trainable=trainable)(coords)
     ccoords = Add()([ccoords,coords])
     
     
@@ -258,14 +275,14 @@ def pre_condensation_model(inputs,
         record_batch_time = record_metrics,
                              #print_loss=True,
         record_metrics = record_metrics,
-        use_average_cc_pos=0.9
-        )([beta, ccoords, d,
-                                        orig_inputs['t_spectator_weight'], 
+        use_average_cc_pos=0.1
+        )([beta, ccoords, d,orig_inputs['t_spectator_weight'], 
                                         orig_inputs['t_idx'], rs])
     
     out = orig_inputs
     out['beta'] = beta
     out['ccoords'] = ccoords
+    out['features'] = Concatenate()([orig_inputs['features'],x])
     
     if debugplots_after>0:
         ccoords = PlotCoordinates(plot_every=debugplots_after,
@@ -292,6 +309,7 @@ def pre_selection_model(
         K=12,
         record_metrics=True,
         filter_noise=True,
+        double_knn=False,
         pass_through=False
         ):
     
@@ -337,8 +355,30 @@ def pre_selection_model(
     
     x = DistanceWeightedMessagePassing([32,32],name=name+'dmp1',trainable=trainable)([x,nidx,dist])# hops are rather light 
     x = Dense(32,activation='relu',name=name+'dense1a',trainable=trainable)(x)
-    x = Dense(32,activation='relu',name=name+'dense1b',trainable=trainable)(x)                
+    x = Dense(32,activation='relu',name=name+'dense1b',trainable=trainable)(x)   
     
+    if double_knn:
+        
+        xc = Dense(3,name=name+'dense_xc_knn_2',trainable=trainable)(x) 
+        coords = Add()([coords, xc])
+        nidx,dist = KNN(K=K,record_metrics=record_metrics,name=name+'_knn_2',
+                    min_bins=20)([coords,rs])  
+                       
+        coords = LLClusterCoordinates(
+            record_metrics=record_metrics,
+            #print_batch_time=True,
+            record_batch_time=record_metrics,
+            name = name+'_LLClusterCoordinates_coords_knn_2',
+            active = trainable,
+            scale=1.
+            )([coords,t_idx,t_spec_w,energy,rs])   
+            
+        x = DistanceWeightedMessagePassing([32,32],name=name+'dmp2',trainable=trainable)([x,nidx,dist])# hops are rather light 
+        x = Dense(32,activation='relu',name=name+'dense2a',trainable=trainable)(x)
+        x = Dense(32,activation='relu',name=name+'dense2b',trainable=trainable)(x)  
+    
+    #sort by energy, descending (not that it matters really)
+    dist,nidx = SortAndSelectNeighbours(K=-1,descending=True)([dist,nidx,energy])
     #create reduction, very simple, this gets expanded with K! be careful
     x_e = Dense(6,activation='relu',name=name+'dense_x_e',trainable=trainable)(x)
     x_e = SelectFromIndicesWithPad()([nidx, x_e])#this will be big
@@ -415,6 +455,10 @@ def pre_selection_model(
     coords_o = AccumulateNeighbours('mean')([coords, g_sel_nidx, energy])
     coords_o = SelectFromIndices()([g_sel,coords_o])
     
+    #pass original features
+    mean_orig_feat = AccumulateNeighbours('mean')([orig_inputs['orig_features'], g_sel_nidx, energy])
+    mean_orig_feat = SelectFromIndices()([g_sel,mean_orig_feat])
+    
     ## selection done work on selected ones
     
     coord_add_o = Dense(16,activation='relu',name=name+'dense_coord_add1')(x_o)
@@ -441,6 +485,7 @@ def pre_selection_model(
     out['coords'] = coords_o
     out['rechit_energy'] = energy_o
     out['features'] = x_o
+    out['orig_features'] = mean_orig_feat
     out['is_track'] = is_track_o
     
     if debugplots_after>0:
@@ -505,6 +550,21 @@ def pre_selection_model(
         name=name+'full_reduction',
         record_metrics=record_metrics
         )([out['row_splits'],orig_inputs['row_splits']])
+        
+        
+    beta = Dense(1,activation='sigmoid',trainable=trainable,name=name+'_proto_beta')(out['features'])
+    d = ScalarMultiply(2.)(Dense(1,activation='sigmoid',trainable=trainable,name=name+'_proto_d')(out['features']))
+    if trainable:
+        beta = LLBasicObjectCondensation(
+            scale=0.1,
+            active=trainable,
+            record_batch_time = record_metrics,
+            record_metrics = record_metrics,
+            use_average_cc_pos=0.1,
+            name=name+'_basic_object_condensation' 
+            )([beta, out['coords'], d,out['t_spectator_weight'],out['t_idx'], out['row_splits']])    
+    
+    out['features'] = Concatenate()([out['features'],d,beta])
     
     return out
     
