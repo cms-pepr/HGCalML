@@ -9,3 +9,5 @@ Please follow the naming scheme:
 <module name>_kernel.h
 
 <module name>_module.cc
+
+Always create *all* files, even if they remain empty
