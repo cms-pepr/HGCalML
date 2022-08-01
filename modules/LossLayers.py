@@ -973,7 +973,10 @@ class LLFullObjectCondensation(LossLayerBase):
         t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
 
         #calculate energy quantiles 
-        euncloss=None
+        
+        #do not propagate the gradient for quantiles further up
+        pred_energy = tf.stop_gradient(pred_energy)
+        
         corrtruth = tf.math.divide_no_nan(t_energy, t_dep_energies+1e-3)
         corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
         corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
@@ -982,7 +985,7 @@ class LLFullObjectCondensation(LossLayerBase):
         l_high = resolution - pred_energy_high_quantile
         low_energy_tau = 0.16
         high_energy_tau = 0.84
-        euncloss = quantile(l_low,low_energy_tau) + quantile(l_high,high_energy_tau) 
+        euncloss = quantile(l_low,low_energy_tau) + quantile(l_high,high_energy_tau)
 
         eloss = tf.debugging.check_numerics(eloss, "tloss loss")
         euncloss = tf.debugging.check_numerics(euncloss, "tloss loss")
@@ -1034,8 +1037,10 @@ class LLFullObjectCondensation(LossLayerBase):
             return pred_time**2 + pred_time_unc**2
         
         pred_time_unc = tf.nn.relu(pred_time_unc)#safety
+        
         tloss = tf.math.divide_no_nan((t_time - pred_time)**2 , (pred_time_unc**2+1e-2)) + pred_time_unc**2
         tloss = tf.debugging.check_numerics(tloss, "tloss loss")
+        
         return tloss
     
     def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
@@ -1043,10 +1048,13 @@ class LLFullObjectCondensation(LossLayerBase):
         if self.classification_loss_weight <= 0:
             return tf.reduce_mean(pred_id,axis=1, keepdims=True)
         
-        classloss = tf.keras.metrics.categorical_crossentropy(t_pid, pred_id)
-        classloss = tf.where( t_pid[:,-1]>0. , 0., classloss)#remove ambiguous
+        pred_id = tf.clip_by_value(pred_id,0. + 1e-9, 1. - 1e-9)
+        t_pid = tf.clip_by_value(t_pid,0. + 1e-9, 1. - 1e-9)
+        classloss = tf.keras.losses.categorical_crossentropy(t_pid, pred_id)
+        classloss = tf.where( t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
         classloss = tf.debugging.check_numerics(classloss, "classloss")
-        return self.softclip(classloss, 2.)#for high weights
+        
+        return self.softclip(classloss[...,tf.newaxis], 2.)#for high weights
     
 
     def calc_beta_push(self, betas, tidx):
