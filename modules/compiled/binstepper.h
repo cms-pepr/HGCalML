@@ -100,8 +100,8 @@ private:
 struct ccoords2flat_binstepper {
     int dims;
     const int*n_bins;
-    int low_bin_indices[3];
-    int high_bin_indices[3];
+    int *low_bin_indices;
+    int *high_bin_indices;
     int total_bins_to_search;
     int index;
     int flat_bin_index;
@@ -111,6 +111,13 @@ struct ccoords2flat_binstepper {
 //    __host__
     ccoords2flat_binstepper(const int dims) {
         this->dims = dims;
+        low_bin_indices = new int[dims];
+        high_bin_indices = new int[dims];
+    }
+
+    ~ccoords2flat_binstepper() {
+        delete low_bin_indices;
+        delete high_bin_indices;
     }
 //    __device__
 //    __host__

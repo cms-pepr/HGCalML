@@ -529,7 +529,7 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
         except Exception as e:
             print('encountered the following exception when running RunningFullValidation callback:')
             print(e)
-        
+
     def _on_train_batch_end(self, batch, logs=None):
         
         runcallback = False
@@ -592,7 +592,6 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
                 'distance_threshold': str(d),
                 'iou_threshold': str(self.showers_matcher.iou_threshold),
                 'matching_mode': str(self.showers_matcher.match_mode),
-                'is_soft': str(self.hits2showers.is_soft),
                 'de_e_cut': str(self.showers_matcher.de_e_cut),
                 'angle_cut': str(self.showers_matcher.angle_cut),
             }

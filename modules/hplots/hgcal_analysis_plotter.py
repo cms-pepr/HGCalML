@@ -120,8 +120,9 @@ class HGCalAnalysisPlotter:
         filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull()
         filter_has_pred = self.showers_dataframe['pred_sid'].notnull()
         filter = np.logical_and(filter_has_truth, filter_has_pred)
-        response = self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy() \
-                   / self.showers_dataframe['pred_energy'][filter].to_numpy()
+
+        response = self.showers_dataframe['pred_energy'][filter].to_numpy() /\
+                   self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy();
 
         # Resolution fo true energy
         plot = ResolutionPlot(bins=self.energy_bins, x_label='True Energy [GeV]', y_label='Resolution')
@@ -188,8 +189,8 @@ class HGCalAnalysisPlotter:
         filter_has_truth = self.showers_dataframe['truthHitAssignementIdx'].notnull()
         filter_has_pred = self.showers_dataframe['pred_sid'].notnull()
         filter = np.logical_and(filter_has_truth, filter_has_pred)
-        response = self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy() \
-                   / self.showers_dataframe['pred_energy'][filter].to_numpy()
+        response = self.showers_dataframe['pred_energy'][filter].to_numpy() /\
+                   self.showers_dataframe['truthHitAssignedEnergies'][filter].to_numpy()
 
         # Response fo true energy
         plot = ResponsePlot(bins=self.energy_bins, x_label='True Energy [GeV]', y_label='Response')

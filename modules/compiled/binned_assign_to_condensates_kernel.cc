@@ -18,6 +18,7 @@ namespace tensorflow {
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
 
+
 namespace functor {
     void assign(
             const int n_vert,
@@ -25,6 +26,7 @@ namespace functor {
             int shower_idx,
             int alpha_idx_h,
             const int dimensions,
+            const int dimensions_binning,
             int*condensates_assigned_h,
             const float* ccoords_h,
             const float* dist_h,
@@ -46,35 +48,31 @@ namespace functor {
         float bin_width = bin_widths[0];
 
         float radius = dist_h[row_offset_h+alpha_idx_h];
-        float *min_ = new float[dimensions];
-        float *max_ = new float[dimensions];
+        float *min_ = new float[dimensions_binning];
+        float *max_ = new float[dimensions_binning];
         float radius_sq = radius*radius;
 
         float *my_ccoords = new float[dimensions];
 
         for(int id=0;id<dimensions;id++) {
             my_ccoords[id] = ccoords_h[row_offset_h*dimensions + alpha_idx_h*dimensions+id];
+        }
+
+        for(int id=0;id<dimensions_binning;id++) {
             min_[id] = my_ccoords[id] - radius;
             max_[id] = my_ccoords[id] + radius;
-
         }
+
         high_assigned_status_h[row_offset_h+alpha_idx_h]=1;
         condensates_assigned_h[row_offset_h+alpha_idx_h]=1;
 
-        ccoords2flat_binstepper stepper(dimensions);
+        ccoords2flat_binstepper stepper(dimensions_binning);
         stepper.set(min_, max_, bin_width, n_bins);
 
-        int min_flat_bin_index = 100000000;
-        int max_flat_bin_index = 0;
         while(true) {
             int flat_bin_index = stepper.step();
-
             if(flat_bin_index==-1)
                 break;
-
-            min_flat_bin_index = flat_bin_index<min_flat_bin_index?flat_bin_index:min_flat_bin_index;
-            max_flat_bin_index = flat_bin_index>max_flat_bin_index?flat_bin_index:max_flat_bin_index;
-
 
             for(int iv=bin_splits[flat_bin_index];iv<bin_splits[flat_bin_index+1];iv++) {
                 if (assign_by_max_beta) {
@@ -120,6 +118,7 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
     void operator()(
             const CPUDevice &d,
             const int dimensions,
+            const int dimensions_binning,
             int*condensates_assigned_h,
             const float* ccoords_h,
             const float* dist_h,
@@ -145,7 +144,7 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
         int total_bins = 1;
         int shower_rs_offset=0;
         n_condensates[0] = 0;
-            for(int id=0;id<dimensions;id++) {
+        for(int id=0;id<dimensions_binning;id++) {
                 total_bins*=n_bins[id];
         }
 
@@ -155,7 +154,6 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
 
             int row_offset=row_splits[r];
             int row_offset_h=row_splits_h[r];
-
 
             for(int i=0;i<n_vert_h;i++) {
                 high_assigned_status_h[row_offset_h+i] = 0;
@@ -168,10 +166,9 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
                 if (not assign_by_max_beta)
                     assignment_min_distance[row_offset+i] = 10e20;
             }
+
             int shower_idx=0;
             int last_idx=-1;
-
-
 
             while(true) {
                 float biggest_beta=-1;
@@ -185,15 +182,18 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
                         }
                     }
                 }
+
                 if (biggest_beta==-1)
                     break;
-                if (biggest_beta==last_idx) {
+                if (alpha_idx_h==last_idx) {
                     throw std::runtime_error("Error progressing to next highest beta, something might be wrong in binning or in indices_to_filtered");
                 }
                 last_idx = alpha_idx_h;
+
                 assign(n_vert, n_vert_h,shower_idx,
                         alpha_idx_h,
                         dimensions,
+                        dimensions_binning,
                         condensates_assigned_h,
                         ccoords_h,
                         dist_h,
@@ -209,6 +209,7 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
                         n_bins,
                         bin_widths,
                         indices_to_filtered, row_offset, row_offset_h, r, assign_by_max_beta);
+
                 alpha_indices[row_offset_h+shower_idx] = original_indices_h[row_offset_h+alpha_idx_h];
                 shower_idx += 1;
             }
@@ -247,7 +248,8 @@ public:
 
         int length = t_ccoords.dim_size(0);
         int length_h = t_beta_h.dim_size(0);
-        int dimensions = t_n_bins.dim_size(0);
+        int dimensions = t_ccoords.dim_size(1);
+        int dimensions_binning = t_n_bins.dim_size(0);
         int num_rows = t_row_splits.dim_size(0)-1;
 
         Tensor *t_high_assigned_status_h = NULL;
@@ -273,12 +275,10 @@ public:
         Tensor t_max_distance;
         OP_REQUIRES_OK(context, context->allocate_temp(DT_FLOAT, {length}, &t_max_distance));
 
-        if(not assign_by_max_beta) {
-        }
-
         BinnedCondensatesFinderOpFunctor<Device, int>() (
                 context->eigen_device<Device>(),
                 dimensions,
+                dimensions_binning,
                 t_condensates_assigned_h.flat<int>().data(),
                 t_ccoords_h.flat<float>().data(),
                 t_dist_h.flat<float>().data(),
