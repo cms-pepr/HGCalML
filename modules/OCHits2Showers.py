@@ -28,13 +28,14 @@ class OCGatherEnergyCorrFac(tf.keras.layers.Layer):
         return pred_energy[:, tf.newaxis]
 
 class OCHits2ShowersLayer(tf.keras.layers.Layer):
-    def __init__(self, beta_threshold, distance_threshold, use_local_distance_thresholding=True, assign_by_max_beta=True, **kwargs):
+    def __init__(self, beta_threshold, distance_threshold, use_local_distance_thresholding=True, assign_by_max_beta=True, nbinning_dims=3,**kwargs):
         super(OCHits2ShowersLayer, self).__init__(**kwargs)
 
         self.beta_threshold = beta_threshold
         self.distance_threshold = distance_threshold
         self.assign_by_max_beta = assign_by_max_beta
         self.use_local_distance_thresholding = use_local_distance_thresholding
+        self.nbinning_dims=nbinning_dims
 
     def set_beta_threshold(self, b):
         self.beta_threshold = b
@@ -60,15 +61,16 @@ class OCHits2ShowersLayer(tf.keras.layers.Layer):
         if not self.use_local_distance_thresholding:
             pred_dist = np.ones_like(pred_dist)
 
-        t1 = time.time()
+        # t1 = time.time()
         x = BuildAndAssignCondensatesBinned(
             pred_ccoords,
             pred_beta,
             row_splits=row_splits,
             dist=pred_dist*self.distance_threshold,
             assign_by_max_beta=self.assign_by_max_beta,
-            beta_threshold=self.beta_threshold)
-        print("New one took", time.time()-t1,"seconds")
+            beta_threshold=self.beta_threshold,
+            nbin_dims=self.nbinning_dims)
+        # print("New one took", time.time()-t1,"seconds")
 
         return x
 

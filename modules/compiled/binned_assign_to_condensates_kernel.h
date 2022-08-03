@@ -11,6 +11,7 @@ struct BinnedCondensatesFinderOpFunctor {
     void operator()(
             const Device &d,
             const int dimensions,
+            const int dimensions_binning,
             int*condensates_assigned_h,
             const float* ccoords_h,
             const float* dist_h,

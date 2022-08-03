@@ -41,6 +41,7 @@ def calculate_iou_serial_fast(truth_sid,
                      truth_shower_sid,
                      pred_shower_sid,
                      hit_weight, return_all=False):
+
     truth_shower_sid = np.array(truth_shower_sid)
     pred_shower_sid = np.array(pred_shower_sid)
 
@@ -54,7 +55,9 @@ def calculate_iou_serial_fast(truth_sid,
     intersection_matrix = np.zeros((len(p_unique)+1, len(t_unique)+1), np.float32)
     truth_sum = np.zeros((len(t_unique)+1), np.float32)
     pred_sum = np.zeros((len(p_unique)+1), np.float32)
+
     _calculate_iou_serial_fast_comp(intersection_matrix, pred_sum, truth_sum, truth_sid_2, pred_sid_2, hit_weight)
+
 
     intersection_matrix = intersection_matrix[p_idx]
     intersection_matrix = intersection_matrix[:, t_idx]
@@ -62,8 +65,9 @@ def calculate_iou_serial_fast(truth_sid,
     truth_sum = truth_sum[t_idx]
     pred_sum = pred_sum[p_idx]
 
+
     union_matrix = pred_sum[:, np.newaxis] + truth_sum[np.newaxis, :] - intersection_matrix
-    overlap_matrix = (intersection_matrix / union_matrix)
+    overlap_matrix = np.nan_to_num(intersection_matrix / union_matrix)
 
     if return_all:
         return overlap_matrix, pred_sum, truth_sum, intersection_matrix
@@ -203,21 +207,23 @@ class ShowersMatcher:
         truth_shower_sid = [x[0] for x in self.graph.nodes(data=True) if x[1]['type']==ShowersMatcher._NODE_TYPE_TRUTH_SHOWER]
         pred_shower_sid = [x[0] for x in self.graph.nodes(data=True) if x[1]['type']==ShowersMatcher._NODE_TYPE_PRED_SHOWER]
 
-        if self.match_mode == 'iou_max' or self.match_mode == 'emax_iou':
-            C = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
-        elif self.match_mode == 'emax_angle':
-            C = self._cost_matrix_angle_based(truth_shower_sid, pred_shower_sid)
-        else:
-            raise NotImplementedError('Error in match mode')
+        if len(truth_shower_sid) > 0 and len(pred_shower_sid) > 0:
+            if self.match_mode == 'iou_max' or self.match_mode == 'emax_iou':
+                C = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
+            elif self.match_mode == 'emax_angle':
+                C = self._cost_matrix_angle_based(truth_shower_sid, pred_shower_sid)
+            else:
+                raise NotImplementedError('Error in match mode')
 
-        row_id, col_id = linear_sum_assignment(C, maximize=True)
+            row_id, col_id = linear_sum_assignment(C, maximize=True)
 
         matched_full_graph = nx.Graph()
         matched_full_graph.add_nodes_from(self.graph.nodes(data=True))
 
-        for p, t in zip(row_id, col_id):
-            if C[p, t] > 0:
-                matched_full_graph.add_edge(truth_shower_sid[t], pred_shower_sid[p], attached_in_pass=0)
+        if len(truth_shower_sid) > 0 and len(pred_shower_sid) > 0:
+            for p, t in zip(row_id, col_id):
+                if C[p, t] > 0:
+                    matched_full_graph.add_edge(truth_shower_sid[t], pred_shower_sid[p], attached_in_pass=0)
 
         self.calculated_graph = matched_full_graph
 
