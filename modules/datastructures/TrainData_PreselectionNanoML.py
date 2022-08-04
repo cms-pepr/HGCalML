@@ -5,7 +5,6 @@ import pickle
 import numpy as np
 #from IPython import embed
 import os
-import gzip
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from DeepJetCore.dataPipeline import TrainDataGenerator
@@ -157,8 +156,13 @@ class TrainData_PreselectionNanoML(TrainData):
         
         #small compatibility layer with old usage.
         feat = infeat
-        if type(infeat) == list:
-            feat=infeat[0]
+        if (isinstance(feat, tuple)) and (len(feat) == 2):
+            feat = feat[0]
+        if not isinstance(feat, list) or not len(feat) == 30:
+            raise ValueError('Expected first entry of features to be a list of length 30')
+        if not isinstance(feat[26], np.ndarray) or not feat[26].shape[1] == 10:
+            raise ValueError('Expected to find Nx10 array in features[0][26]')
+        feat = feat[26] # This is not very elegant, but that's where the features are stored.
         
         d = {
         'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
