@@ -1043,15 +1043,15 @@ class LLFullObjectCondensation(LossLayerBase):
         
         return tloss
     
-    def calc_classification_loss(self, t_pid, pred_id, t_is_unique, hasunique):
+    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique, hasunique):
         
         if self.classification_loss_weight <= 0:
             return tf.reduce_mean(pred_id,axis=1, keepdims=True)
         
-        pred_id = tf.clip_by_value(pred_id,0. + 1e-9, 1. - 1e-9)
-        t_pid = tf.clip_by_value(t_pid,0. + 1e-9, 1. - 1e-9)
+        pred_id = tf.clip_by_value(pred_id, 1e-9, 1. - 1e-9)
+        t_pid = tf.clip_by_value(orig_t_pid, 1e-9, 1. - 1e-9)
         classloss = tf.keras.losses.categorical_crossentropy(t_pid, pred_id)
-        classloss = tf.where( t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
+        classloss = tf.where( orig_t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
         classloss = tf.debugging.check_numerics(classloss, "classloss")
         
         return self.softclip(classloss[...,tf.newaxis], 2.)#for high weights
