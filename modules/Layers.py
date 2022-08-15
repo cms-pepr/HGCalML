@@ -81,6 +81,9 @@ global_layers_list['ElementScaling']=ElementScaling
 from GravNetLayersRagged import GooeyBatchNorm
 global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
 
+from GravNetLayersRagged import ScaledGooeyBatchNorm
+global_layers_list['ScaledGooeyBatchNorm']=ScaledGooeyBatchNorm
+
 from GravNetLayersRagged import ProcessFeatures
 global_layers_list['ProcessFeatures']=ProcessFeatures
 

@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import tensorflow as tf
-import numpy as np
-import sys
-import time
 from oc_helper_ops import CreateMidx, SelectWithDefault
 
 
@@ -161,7 +158,10 @@ class Basic_OC_per_sample(object):
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
         
         dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
-        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, d_k_e**2 + self.d_k_m**2 + 1e-4)
+        
+        sigma = 0.95 * d_k_e**2 + 0.05 * self.d_k_m**2 #create gradients for all
+        
+        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, sigma + 1e-4)
             
         V_att = self.att_func(dsq_k_m) * self.q_k_m * self.mask_k_m  #K x V-obj x 1
     
@@ -185,7 +185,10 @@ class Basic_OC_per_sample(object):
         
         dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
-        dsq = tf.math.divide_no_nan(dsq, d_k_e**2 + d_v_e**2 + 1e-4) #K x V x 1
+        
+        sigma = 0.95 * d_k_e**2 + 0.05 * d_v_e**2 #create gradients for all, but prefer k vertex
+        
+        dsq = tf.math.divide_no_nan(dsq, sigma + 1e-4) #K x V x 1
         
         V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
         
