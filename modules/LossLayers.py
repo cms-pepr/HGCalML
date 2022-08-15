@@ -1052,9 +1052,14 @@ class LLFullObjectCondensation(LossLayerBase):
         t_pid = tf.clip_by_value(orig_t_pid, 1e-9, 1. - 1e-9)
         classloss = tf.keras.losses.categorical_crossentropy(t_pid, pred_id)
         classloss = tf.where( orig_t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
+        
+        #take out undefined
+        classloss = tf.where( tf.reduce_sum(t_pid,axis=1)>1. , 0., classloss)
+        classloss = tf.where( tf.reduce_sum(t_pid,axis=1)<1.-1e-3 , 0., classloss)
+        
         classloss = tf.debugging.check_numerics(classloss, "classloss")
         
-        return self.softclip(classloss[...,tf.newaxis], 2.)#for high weights
+        return classloss[...,tf.newaxis] # self.softclip(classloss[...,tf.newaxis], 2.)#for high weights
     
 
     def calc_beta_push(self, betas, tidx):
