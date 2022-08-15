@@ -92,7 +92,7 @@ def re_integrate_to_full_hits(
         pred_id,
         pred_dist,
         dict_output=False,
-        is_preselected=False,
+        is_preselected_dataset=False,
         ):
     '''
     To be called after OC loss is applied to pre-selected outputs to bring it all back to the full dimensionality
@@ -116,6 +116,7 @@ def re_integrate_to_full_hits(
     from GravNetLayersRagged import MultiBackScatterOrGather
     from globals import cluster_space as  cs
     
+    #this is only true if the preselection is run in situ - no preselected data set
     if 'scatterids' in pre_selection.keys():
         scatterids = pre_selection['scatterids']
         pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
@@ -127,10 +128,13 @@ def re_integrate_to_full_hits(
         pred_time = MultiBackScatterOrGather(default=10.)([pred_time, scatterids])
         pred_id = MultiBackScatterOrGather(default=0.)([pred_id, scatterids])
         pred_dist = MultiBackScatterOrGather(default=1.)([pred_dist, scatterids])
+        
+        rechit_energy = ScalarMultiply(0.)(pred_beta) #FIXME, will duplicate.
     
     row_splits = None
-    if is_preselected:
+    if is_preselected_dataset:
         row_splits = pre_selection['row_splits']
+        rechit_energy = pre_selection['rechit_energy']
     else:
         row_splits = pre_selection['orig_row_splits']
     
@@ -145,23 +149,12 @@ def re_integrate_to_full_hits(
             'pred_time': pred_time,
             'pred_id': pred_id,
             'pred_dist': pred_dist,
+            'rechit_energy': rechit_energy, #can also be summed if pre-selection
             'row_splits': row_splits }
         
-    return [
-        ('pred_beta', pred_beta), 
-        ('pred_ccoords', pred_ccoords),
-        ('pred_energy_corr_factor', pred_energy_corr),
-        ('pred_energy_low_quantile', pred_energy_low_quantile),
-        ('pred_energy_high_quantile', pred_energy_high_quantile),
-        ('pred_pos', pred_pos),
-        ('pred_time', pred_time),
-        ('pred_id', pred_id),
-        ('pred_dist', pred_dist),
-        ('row_splits', pre_selection['orig_row_splits'])]
+    raise ValueError("only dict output")
     
     
-
-
 
 
 from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
