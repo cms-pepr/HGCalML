@@ -270,7 +270,7 @@ def gravnet_model(Inputs,
         pred_id,
         pred_dist,
         dict_output=True,
-        is_preselected=is_preselected
+        is_preselected_dataset=is_preselected
         )
     
     return DictModel(inputs=Inputs, outputs=model_outputs)

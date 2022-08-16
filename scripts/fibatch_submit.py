@@ -20,7 +20,7 @@ if '-h' in sys.argv or '--help' in sys.argv:
     exit()
 
 #can be used by others on FI
-djcloc='/mnt/ceph/users/jkieseler/containers/deepjetcore3_latest.sif'
+djcloc='/mnt/ceph/users/jkieseler/containers/deepjetcore_latest.sif'
 
 uext = str(uuid.uuid4())
 

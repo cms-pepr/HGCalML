@@ -137,6 +137,7 @@ def re_integrate_to_full_hits(
         rechit_energy = pre_selection['rechit_energy']
     else:
         row_splits = pre_selection['orig_row_splits']
+        rechit_energy = pre_selection['rechit_energy'] #FIXME if not included here, return statement will fail, probably should be moved outside of if-statement
     
     if dict_output:
         return {
