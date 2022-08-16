@@ -73,6 +73,7 @@ bscript_temp='''#!/bin/bash
 
 #SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint=a100-40gb
 
+nvidia-smi
 singularity  run  -B /mnt --nv {djcloc} /bin/bash runscript_{uext}.sh
 
 '''.format(djcloc=djcloc,
