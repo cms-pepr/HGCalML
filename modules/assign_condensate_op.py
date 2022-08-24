@@ -25,13 +25,16 @@ def BuildAndAssignCondensatesBinned(ccoords,
     :param row_splits: Row splits of shape [nvert+1]
     :param beta_threshold: Minimum beta threshold
     :param nbin_dims <= ccoords.shape[1]. Binning to be done in these many number of coordinates
+    :param assign_by_max_beta: If set to True, the higher beta vertex eats up all the vertices in its radius. If set to
+             False, the assignment for a vertex is done to the condensate it is the closest to. True behaves like
+             anti-kt jet clustering algorighm while False behaves like XCone.
     :return: 5 elements: (in order)
     1. assignment: Assignment in ascending order from 0,1,2,3...N. Resents at every ragged segment.
     2. association: elements correspond to condensate index associated to each vertex  (self indexing). -1 for noise
     3. alpha_idx: alpha indices of the condensate points, this corresponds to `assignment`. n_condensates return can be used
                     as row split with it to make a ragged tensor
     4. is_cond: [nvert,1], 1 if the vertex is condensate otherwise 0
-    5. n_condensates: a row splits like structure representing number of showrs in each segment
+    5. n_condensates: a row splits like structure representing number of showers in each segment
     """
 
     assert 1 <= nbin_dims <= 6
