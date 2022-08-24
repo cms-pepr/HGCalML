@@ -37,7 +37,7 @@ from GravNetLayersRagged import NeighbourGroups,AccumulateNeighbours,SelectFromI
 from GravNetLayersRagged import RecalcDistances, ElementScaling, RemoveSelfRef, CastRowSplits
 
 from Layers import CreateTruthSpectatorWeights, ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CreateGlobalIndices, SelectFromIndices, MultiBackScatter, KNN, MessagePassing, DictModel
-from Layers import GausActivation,GooeyBatchNorm #make a new line
+from Layers import GausActivation,GooeyBatchNorm, ScaledGooeyBatchNorm #make a new line
 from model_blocks import create_outputs
 from Regularizers import AverageDistanceRegularizer
 
@@ -55,8 +55,9 @@ from GravNetLayersRagged import CastRowSplits
 
 
 import globals
-#globals.acc_ops_use_tf_gradients = True #for testing
-
+if False: #for testing
+    globals.acc_ops_use_tf_gradients = True 
+    globals.knn_ops_use_tf_gradients = True
 '''
 
 make this about coordinate shifts
@@ -66,9 +67,9 @@ make this about coordinate shifts
 
 batchnorm_options={
     'viscosity': 0.1,
-    'fluidity_decay': 5e-1,
-    'max_viscosity': 0.99999,
-    'soft_mean': True,
+    'fluidity_decay': 1e-4,
+    'max_viscosity': 0.95,
+    'soft_mean': False,
     'variance_only': False,
     'record_metrics': True
     }
@@ -78,31 +79,31 @@ loss_options={
     'energy_loss_weight': .25,
     'q_min': 1.5,
     'use_average_cc_pos': 0.1,
-    'classification_loss_weight':0.,
+    'classification_loss_weight':0.1,
     'too_much_beta_scale': 1e-5 ,
     'position_loss_weight':1e-5,
-    'timing_loss_weight':0.,
+    'timing_loss_weight':0.1,
     'beta_loss_scale':2.,
     'beta_push': 0#0.01 #push betas gently up at low values to not lose the gradients
     }
 
 
-dense_activation='relu'
+#elu behaves much better when training
+dense_activation='elu'
 
 record_frequency=20
 plotfrequency=50 #plots every 1k batches
 
-learningrate = 1e-5
-nbatch = 180000
+learningrate = 4e-5
+nbatch = 100000
 if globals.acc_ops_use_tf_gradients: #for tf gradients the memory is limited
     nbatch = 60000
 
 #iterations of gravnet blocks
-total_iterations = 2
 n_neighbours=[64,64]
-double_mp=False
+total_iterations = len(n_neighbours)
 
-n_cluster_space_coordinates = 6
+n_cluster_space_coordinates = 3
 
 
 def gravnet_model(Inputs,
@@ -160,7 +161,7 @@ def gravnet_model(Inputs,
         x = Dense(64,activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
-        x = GooeyBatchNorm(**batchnorm_options)(x)
+        x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
         ### reduction done
         
         n_dims = 6
@@ -189,31 +190,17 @@ def gravnet_model(Inputs,
                                                                     rs]) 
         x = Concatenate()([gncoords,x])           
         
-        pre_gndist=gndist
-        if double_mp:
-            for im,m in enumerate([64,64,32,32,16,16]):
-                dscale=Dense(1)(x)
-                gndist = LocalDistanceScaling(4.)([pre_gndist,dscale])                                  
-                gndist = AverageDistanceRegularizer(strength=1e-6,
-                                            record_metrics=True,
-                                            name='average_distance_dmp_'+str(i)+'_'+str(im)
-                                            )(gndist)
-                                            
-                x = DistanceWeightedMessagePassing([m],
-                                           activation=dense_activation
-                                           )([x,gnnidx,gndist])
-        else:        
-            x = DistanceWeightedMessagePassing([64,64,32,32,16,16],
+        x = DistanceWeightedMessagePassing([64,64,32,32,16,16],
                                            activation=dense_activation
                                            )([x,gnnidx,gndist])
             
-        x = GooeyBatchNorm(**batchnorm_options)(x)
+        x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
         
         x = Dense(64,name='dense_past_mp_'+str(i),activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         
-        x = GooeyBatchNorm(**batchnorm_options)(x)
+        x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
         
         
         allfeat.append(x)
@@ -233,7 +220,8 @@ def gravnet_model(Inputs,
     ########### weights                                       #############
     #######################################################################
     
-    x = GooeyBatchNorm(**batchnorm_options,name='gooey_pre_out')(x)
+    #use a standard batch norm at the last stage
+    x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
     x = Concatenate()([c_coords]+[x])
     
     pred_beta, pred_ccoords, pred_dist,\
@@ -241,10 +229,10 @@ def gravnet_model(Inputs,
     pred_pos, pred_time, pred_time_unc, pred_id = create_outputs(x, n_ccoords=n_cluster_space_coordinates)
     
     # loss
-    pred_beta = LLFullObjectCondensation(scale=4.,
+    pred_beta = LLFullObjectCondensation(scale=1.,
                                          use_energy_weights=True,
                                          record_metrics=True,
-                                         print_loss=False,
+                                         print_loss=True,
                                          name="FullOCLoss",
                                          **loss_options
                                          )(  # oc output and payload
@@ -282,7 +270,7 @@ def gravnet_model(Inputs,
         pred_id,
         pred_dist,
         dict_output=True,
-        is_preselected=is_preselected
+        is_preselected_dataset=is_preselected
         )
     
     return DictModel(inputs=Inputs, outputs=model_outputs)
@@ -333,18 +321,18 @@ cb = []
 #    use_event=0)
 #    for i in [0, 2, 4]]
 #
-cb += [
-    plotEventDuringTraining(
-        outputfile=train.outputDir + "/condensation/c_"+str(i),
-        samplefile=samplepath,
-        after_n_batches=2*plotfrequency,
-        batchsize=200000,
-        on_epoch_end=False,
-        publish=None,
-        use_event=i)
-for i in range(5)
-]
-
+#cb += [
+#    plotEventDuringTraining(
+#        outputfile=train.outputDir + "/condensation/c_"+str(i),
+#        samplefile=samplepath,
+#        after_n_batches=2*plotfrequency,
+#        batchsize=200000,
+#        on_epoch_end=False,
+#        publish=None,
+#        use_event=i)
+#for i in range(5)
+#]
+#
 
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
@@ -370,7 +358,7 @@ cb += [
         output_file=train.outputDir+'/gooey_metrics.html',
         record_frequency= record_frequency,
         plot_frequency = plotfrequency,
-        select_metrics='gooey_*',
+        select_metrics='*gooey_*',
         publish=publishpath
         ),
     simpleMetricsCallback(
@@ -411,37 +399,39 @@ cb += [
     
     ]
 
-cb += build_callbacks(train)
+from callbacks import plotClusterSummary
+
+cb += [
+    plotClusterSummary(
+        outputfile=train.outputDir + "/clustering/",
+        samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
+        after_n_batches=1000
+        )
+    ]
 
 #cb=[]
 
 train.change_learning_rate(learningrate)
 
-model, history = train.trainModel(nepochs=1,
+model, history = train.trainModel(nepochs=3,
                                   batchsize=nbatch,
                                   additional_callbacks=cb)
 
 print("freeze BN")
 # Note the submodel here its not just train.keras_model
 for l in train.keras_model.layers:
-    if 'gooey_batch_norm' in l.name:
-        l.max_viscosity = 1.
-        l.fluidity_decay= 1e-3 #reaches constant 1 very quickly
     if 'FullOCLoss' in l.name:
-        continue
-    
+        l.q_min/=2.
 
-model, history = train.trainModel(nepochs=5,
-                                  batchsize=nbatch,
-                                  additional_callbacks=cb)
-    
-#also stop GravNetLLLocalClusterLoss* from being evaluated
-learningrate/=5.
-
-train.change_learning_rate(learningrate)
+train.change_learning_rate(learningrate/2.)
+nbatch = 160000
+if globals.acc_ops_use_tf_gradients: #for tf gradients the memory is limited
+    nbatch = 60000
 
 model, history = train.trainModel(nepochs=121,
                                   batchsize=nbatch,
                                   additional_callbacks=cb)
+    
+
 
 

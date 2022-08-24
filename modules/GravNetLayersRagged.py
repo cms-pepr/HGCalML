@@ -622,15 +622,28 @@ class GooeyBatchNorm(LayerWithMetrics):
         if self.variance_only:
             x += self.mean
         
-        #x_mean = tf.reduce_mean(x)
-        #
-        #self.add_prompt_metric(x_mean, self.name+'_post_mean')
-        #self.add_prompt_metric(tf.math.reduce_std(x-x_mean), self.name+'_post_variance')
-        
-        #print(self.name,'corr x mean', tf.reduce_mean(x))
-        #print(self.name,'corr x var', tf.math.reduce_std(x))
-        
         return x
+    
+
+class ScaledGooeyBatchNorm(GooeyBatchNorm):
+    
+    def __init__(self, **kwargs):
+        super(ScaledGooeyBatchNorm, self).__init__(**kwargs)
+        
+    def build(self, input_shapes):
+        shape = (1,)+input_shapes[1:]
+        
+        self.bias = self.add_weight(name = 'bias',shape = shape, 
+                                    initializer = 'zeros', trainable = self.trainable) 
+        
+        self.gamma = self.add_weight(name = 'gamma',shape = shape, 
+                                    initializer = 'ones', trainable = self.trainable) 
+        
+        super(ScaledGooeyBatchNorm, self).build(input_shapes)
+    
+    def call(self, inputs, training=None):
+        out = super(ScaledGooeyBatchNorm, self).call(inputs, training)
+        return out*self.gamma + self.bias
     
 
 class ProcessFeatures(tf.keras.layers.Layer):

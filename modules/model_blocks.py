@@ -41,24 +41,33 @@ def create_outputs(x, n_ccoords=3,
 
     energy_act=None
     if energy_factor:
-        energy_act='relu'
-    energy_res_act = LeakyReLU(alpha=0.3)
+        energy_act='elu'
+    energy_res_act = None 
     pred_energy = Dense(1,name = name_prefix+'_energy',
-                        bias_initializer='ones',
+                        kernel_initializer='zeros',
                         activation=energy_act
-                        )(x)
+                        )(ScalarMultiply(0.01)(x))
+                        
+    if energy_factor:
+        pred_energy = Add(name= name_prefix+'_one_plus_energy')([OnesLike()(pred_energy),pred_energy])    
+                        
     pred_energy_low_quantile = Dense(1,name = name_prefix+'_energy_low_quantile',
-                        bias_initializer='zeros',
-                        activation=energy_res_act
-                        )(x)
+                                     kernel_initializer='zeros',
+                        activation=energy_res_act)(x)
+    
     pred_energy_high_quantile = Dense(1,name = name_prefix+'_energy_high_quantile',
-                        bias_initializer='zeros',
-                        activation=energy_res_act
-                        )(x)
+                                      kernel_initializer='zeros',
+                        activation=energy_res_act)(x)
     
     pred_pos =  Dense(2,use_bias=False,name = name_prefix+'_pos')(x)
-    pred_time = ScalarMultiply(10.)(Dense(1,name=name_prefix + '_time')(x))
-    pred_time_unc = Dense(1,activation='elu',name = name_prefix+'_time_unc')(x)#strict positive with small turn on: elu
+    
+    pred_time = Dense(1,name=name_prefix + '_time_proxy')(ScalarMultiply(0.01)(x))
+    pred_time = Add(
+        name=name_prefix + '_time'
+        )([ScalarMultiply(10.)(OnesLike()(pred_time)),pred_time])
+    
+    pred_time_unc = Dense(1,activation='elu',name = name_prefix+'_time_unc')(ScalarMultiply(0.01)(x))
+    pred_time_unc = Add()([pred_time_unc, OnesLike()(pred_time_unc)])#strict positive with small turn on
     
     pred_id = Dense(n_classes, activation="softmax",name = name_prefix+'_class')(x)
     
@@ -83,7 +92,7 @@ def re_integrate_to_full_hits(
         pred_id,
         pred_dist,
         dict_output=False,
-        is_preselected=False,
+        is_preselected_dataset=False,
         ):
     '''
     To be called after OC loss is applied to pre-selected outputs to bring it all back to the full dimensionality
@@ -107,6 +116,7 @@ def re_integrate_to_full_hits(
     from GravNetLayersRagged import MultiBackScatterOrGather
     from globals import cluster_space as  cs
     
+    #this is only true if the preselection is run in situ - no preselected data set
     if 'scatterids' in pre_selection.keys():
         scatterids = pre_selection['scatterids']
         pred_ccoords = MultiBackScatterOrGather(default=cs.noise_coord)([pred_ccoords, scatterids])#set it far away for noise
@@ -118,12 +128,16 @@ def re_integrate_to_full_hits(
         pred_time = MultiBackScatterOrGather(default=10.)([pred_time, scatterids])
         pred_id = MultiBackScatterOrGather(default=0.)([pred_id, scatterids])
         pred_dist = MultiBackScatterOrGather(default=1.)([pred_dist, scatterids])
+        
+        rechit_energy = ScalarMultiply(0.)(pred_beta) #FIXME, will duplicate.
     
     row_splits = None
-    if is_preselected:
+    if is_preselected_dataset:
         row_splits = pre_selection['row_splits']
+        rechit_energy = pre_selection['rechit_energy']
     else:
         row_splits = pre_selection['orig_row_splits']
+        rechit_energy = pre_selection['rechit_energy'] #FIXME if not included here, return statement will fail, probably should be moved outside of if-statement
     
     if dict_output:
         return {
@@ -136,23 +150,12 @@ def re_integrate_to_full_hits(
             'pred_time': pred_time,
             'pred_id': pred_id,
             'pred_dist': pred_dist,
+            'rechit_energy': rechit_energy, #can also be summed if pre-selection
             'row_splits': row_splits }
         
-    return [
-        ('pred_beta', pred_beta), 
-        ('pred_ccoords', pred_ccoords),
-        ('pred_energy_corr_factor', pred_energy_corr),
-        ('pred_energy_low_quantile', pred_energy_low_quantile),
-        ('pred_energy_high_quantile', pred_energy_high_quantile),
-        ('pred_pos', pred_pos),
-        ('pred_time', pred_time),
-        ('pred_id', pred_id),
-        ('pred_dist', pred_dist),
-        ('row_splits', pre_selection['orig_row_splits'])]
+    raise ValueError("only dict output")
     
     
-
-
 
 
 from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
@@ -304,7 +307,7 @@ def pre_selection_model(
         trainable=False,
         name='pre_selection',
         debugplots_after=-1,
-        reduction_threshold=0.75,#doesn't make a huge difference, this is about the same as for layer clusters
+        reduction_threshold=0.8,#doesn't make a huge difference, this is higher purity than for layer clusters
         noise_threshold=0.1, #0.4 % false-positive, 96% noise removal
         K=12,
         record_metrics=True,

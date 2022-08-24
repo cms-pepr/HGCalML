@@ -1,6 +1,8 @@
 
 import tensorflow as tf
 from tensorflow.python.framework import ops
+import globals as gl
+from oc_helper_ops import SelectWithDefault
 
 _binned_select_knn = tf.load_op_library('binned_select_knn.so')
 
@@ -67,7 +69,14 @@ def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf
     dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, dist.shape)
     idx = tf.scatter_nd(sorting[...,tf.newaxis], idx, idx.shape)
     
-    return idx, dist
+    if not gl.knn_ops_use_tf_gradients:
+        return idx, dist
+        
+    ncoords = SelectWithDefault(idx, coords, 0.)
+    distsq = (ncoords[:,0:1,:]-ncoords)**2
+    distsq = tf.reduce_sum(distsq,axis=2)
+    distsq = tf.where(idx<0, 0., distsq)
+    return idx, distsq
 
 
 _sknn_grad_op = tf.load_op_library('select_knn_grad.so')
