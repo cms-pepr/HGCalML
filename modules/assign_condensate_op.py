@@ -11,6 +11,43 @@ import numpy as np_
 _bc_op_binned = tf.load_op_library('binned_assign_to_condensates.so')
 
 
+def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True):
+    """
+
+    :param assignment: [nvert, 1] First return value of BuildAndAssignCondensatesBinned. Unique assignment in order. -1
+                        for noise
+    :param row_splits: [nvert+1], row splits
+    :param gather_noise: boolean, whether to gather noise or not
+    :return: a double ragged tensor of indices, first ragged dimension iterates endcaps/samples and the second, showers
+             in that endcap
+    """
+    if gather_noise:
+        assignment = assignment[:, 0] + 1
+    else:
+        assignment = assignment[:, 0]
+        old_segment_ids = tf.ragged.row_splits_to_segment_ids(row_splits)
+        filter = assignment >= 0
+        new_segment_ids = old_segment_ids[filter]
+        back_indices = tf.range(len(assignment))[filter]
+        assignment = assignment[filter]
+
+        row_splits = tf.ragged.segment_ids_to_row_splits(new_segment_ids, num_segments=len(row_splits)-1)
+
+    n_condensates = tf.math.segment_max(assignment, tf.ragged.row_splits_to_segment_ids(row_splits)) + 1
+    n_condensates_n = tf.concat(([0], tf.cumsum(n_condensates)), axis=0)
+
+    assignment_u = assignment+tf.gather(n_condensates_n, tf.ragged.row_splits_to_segment_ids(row_splits))
+    rsx = tf.math.unsorted_segment_sum(tf.ones_like(assignment_u), assignment_u, n_condensates_n[-1])
+
+    sorting_indices_showers_ragged = tf.argsort(assignment_u)
+    if not gather_noise:
+        sorting_indices_showers_ragged = tf.gather(back_indices, sorting_indices_showers_ragged)
+
+    sorting_indices_showers_ragged = tf.RaggedTensor.from_row_lengths(sorting_indices_showers_ragged[..., tf.newaxis], rsx)
+    sorting_indices_showers_ragged = tf.RaggedTensor.from_row_splits(sorting_indices_showers_ragged, n_condensates_n)
+
+    return sorting_indices_showers_ragged
+
 def BuildAndAssignCondensatesBinned(ccoords,
                         betas,
                         dist,
@@ -19,17 +56,17 @@ def BuildAndAssignCondensatesBinned(ccoords,
                         assign_by_max_beta=True,
                         nbin_dims=3):
     """
-    :param ccoords: Clustering coordinates of shape [nvert,ndim]
-    :param betas: Betas of shape [nvert, 1]
-    :param dist: Local distance thresholds of shape [nvert, 1]
+    :param ccoords: [nvert,ndim] Clustering coordinates of shape
+    :param betas: [nvert, 1] Betas of shape
+    :param dist: [nvert, 1] Local distance thresholds of shape
     :param row_splits: Row splits of shape [nvert+1]
-    :param beta_threshold: Minimum beta threshold
-    :param nbin_dims <= ccoords.shape[1]. Binning to be done in these many number of coordinates
-    :param assign_by_max_beta: If set to True, the higher beta vertex eats up all the vertices in its radius. If set to
+    :param beta_threshold: Minimum beta threshold (scalar)
+    :param nbin_dims <= ccoords.shape[1]. Binning to be done in these many number of coordinates (scalar)
+    :param assign_by_max_beta: Boolean. If set to True, the higher beta vertex eats up all the vertices in its radius. If set to
              False, the assignment for a vertex is done to the condensate it is the closest to. True behaves like
              anti-kt jet clustering algorighm while False behaves like XCone.
     :return: 5 elements: (in order)
-    1. assignment: Assignment in ascending order from 0,1,2,3...N. Resents at every ragged segment.
+    1. assignment: [nvert,1] Assignment in ascending order from 0,1,2,3...N. Resents at every ragged segment.
     2. association: elements correspond to condensate index associated to each vertex  (self indexing). -1 for noise
     3. alpha_idx: alpha indices of the condensate points, this corresponds to `assignment`. n_condensates return can be used
                     as row split with it to make a ragged tensor
@@ -74,7 +111,7 @@ def BuildAndAssignCondensatesBinned(ccoords,
 
 
     with tf.device('/cpu'):
-        condensates_assigned_h,assignment, alpha_indices,asso, n_condensates =  _bc_op_binned.BinnedAssignToCondensates(
+        condensates_assigned_h,assignment, alpha_indices,asso,n_condensates =  _bc_op_binned.BinnedAssignToCondensates(
                 beta_threshold=beta_threshold,
                 assign_by_max_beta=assign_by_max_beta,
                 ccoords=ccoords,
@@ -94,6 +131,7 @@ def BuildAndAssignCondensatesBinned(ccoords,
 
     assignment = tf.gather(assignment, sorting_indices_back)
     asso = tf.gather(asso, sorting_indices_back)
+
     pred_shower_alpha_idx = alpha_indices[alpha_indices!=-1]
     is_cond = tf.cast(tf.scatter_nd(pred_shower_alpha_idx[:, tf.newaxis], tf.ones(pred_shower_alpha_idx.shape[0]), [betas.shape[0]]), tf.bool)
 
