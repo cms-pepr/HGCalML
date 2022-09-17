@@ -14,12 +14,17 @@ _bc_op_binned = tf.load_op_library('binned_assign_to_condensates.so')
 def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True):
     """
 
-    :param assignment: [nvert, 1] First return value of BuildAndAssignCondensatesBinned. Unique assignment in order. -1
-                        for noise
+    :param assignment: [nvert, 1] Values should be consecutive i.e. -1,0,1,2,3,...N. Same is true for the every segment
+                        i.e. for the second segment it should restart from -1,0,1,2,3...N. This is the first return
+                        value of BuildAndAssignCondensatesBinned.
     :param row_splits: [nvert+1], row splits
-    :param gather_noise: boolean, whether to gather noise or not
+    :param gather_noise: boolean, whether to gather noise or not. If set to True, the first element in the shower
+                         dimension will always correspond to the noise even if there is no noise vertex present.
     :return: a double ragged tensor of indices, first ragged dimension iterates endcaps/samples and the second, showers
-             in that endcap
+             in that endcap. This can be used in gather_nd as follows:
+                ragged_indices = calc_ragged_shower_indices(assignment, row_splits, gather_noise=False)
+                x = tf.gather_nd(assignment, ragged_indices)
+
     """
     if gather_noise:
         assignment = assignment[:, 0] + 1
@@ -66,7 +71,7 @@ def BuildAndAssignCondensatesBinned(ccoords,
              False, the assignment for a vertex is done to the condensate it is the closest to. True behaves like
              anti-kt jet clustering algorighm while False behaves like XCone.
     :return: 5 elements: (in order)
-    1. assignment: [nvert,1] Assignment in ascending order from 0,1,2,3...N. Resents at every ragged segment.
+    1. assignment: [nvert,1] Assignment in ascending order from 0,1,2,3...N. Resets at every ragged segment.
     2. association: elements correspond to condensate index associated to each vertex  (self indexing). -1 for noise
     3. alpha_idx: alpha indices of the condensate points, this corresponds to `assignment`. n_condensates return can be used
                     as row split with it to make a ragged tensor
