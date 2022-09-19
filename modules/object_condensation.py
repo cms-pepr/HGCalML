@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 from oc_helper_ops import CreateMidx, SelectWithDefault
+from binned_select_knn_op import BinnedSelectKnn
 
 
 
@@ -93,6 +94,9 @@ class Basic_OC_per_sample(object):
         
         return x_kalpha_m 
     
+    def create_Ms(self, truth_idx):
+        self.Msel, self.Mnot, _ = CreateMidx(truth_idx, calc_m_not=True)
+    
     def set_input(self, 
                          beta,
                          x,
@@ -120,7 +124,7 @@ class Basic_OC_per_sample(object):
         #spectators do not participate in the potential losses
         self.q_v = (self.tanhsqbeta + self.q_min)*tf.clip_by_value(1.-is_spectator_weight, 0., 1.)
         
-        self.Msel, self.Mnot, _ = CreateMidx(truth_idx, calc_m_not=True)
+        self.create_Ms(truth_idx)
         if self.Msel is None:
             self.valid=False
             return
@@ -215,6 +219,11 @@ class Basic_OC_per_sample(object):
         return pll_k
     
     def Beta_pen_k(self):
+        #use continuous max approximation through LSE
+        eps = 1e-3
+        beta_pen = 1. - eps * tf.reduce_logsumexp(self.beta_k_m/eps, axis=1)#sum over m
+        beta_pen = tf.debugging.check_numerics(beta_pen, "OC: beta pen")
+        return beta_pen
         #trivial but to keep the structure
         return (1. - self.beta_k)
         
@@ -275,6 +284,115 @@ class Basic_OC_per_sample(object):
         return V_att, V_rep, Noise_pen, B_pen, pll, high_B_pen
         
         
+
+
+class PushPull_OC_per_sample(Basic_OC_per_sample):
+    
+    def __init__(self, **kwargs):
+        super(PushPull_OC_per_sample, self).__init__(**kwargs)
+        
+    def V_att_k(self):
+         
+        x_k_e = tf.expand_dims(self.x_k,axis=1)
+        d_k_e = tf.expand_dims(self.d_k,axis=1)
+        
+        N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
+        
+        dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
+        
+        sigma = 0.95 * d_k_e**2 + 0.05 * self.d_k_m**2 #create gradients for all
+        
+        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, sigma + 1e-4)
+            
+        # attractive here scales with beta *not* with q!! (otherwise same)
+        V_att = self.att_func(dsq_k_m) * (self.beta_k_m + self.q_min/10.) * self.mask_k_m  #K x V-obj x 1
+    
+        # attractive here scales with beta *not* with q!! (otherwise same)
+        V_att = (self.beta_k + self.q_min/10.) * tf.reduce_sum( V_att ,axis=1)  #K x 1
+        V_att = tf.math.divide_no_nan(V_att, N_k+1e-3)  #K x 1
+        
+        #print(tf.reduce_mean(self.d_v),tf.reduce_max(self.d_v))
+        
+        return V_att
+        
+    def att_func(self,dsq_k_m):
+        return tf.where(dsq_k_m==0, 0., - self.rep_func(dsq_k_m/0.5**2)) #create a probability well
+    
+    def Beta_pen_k(self):
+        return 0.*(1. - self.beta_k) #always zero
+    
+class PreCond_OC_per_sample(Basic_OC_per_sample):
+    
+    def __init__(self, 
+                 att_scale=0.1,
+                 **kwargs):
+        self.att_scale = att_scale
+        super(PreCond_OC_per_sample, self).__init__(**kwargs)
+        
+    def att_func(self,dsq_k_m):
+        return 1. - tf.math.exp(-dsq_k_m/(2.* self.att_scale**2)) + 0.1*tf.sqrt(dsq_k_m + 1e-6)
+    
+    
+class PreCond_kNNOC_per_sample(PreCond_OC_per_sample):
+    
+    def __init__(self, 
+                 K=128,
+                 **kwargs):
+        self.K = K
+        self.Mnotsel = None
+        super(PreCond_kNNOC_per_sample, self).__init__(**kwargs)
+            
+    
+    def create_Ms(self, truth_idx):
+        #this is now based on kNN and needs as output indices
+        #
+        '''
+        already defined:
+        
+        self.beta_v = tf.debugging.check_numerics(beta,"OC: beta input")
+        self.d_v = tf.debugging.check_numerics(d,"OC: d input")
+        self.x_v = tf.debugging.check_numerics(x,"OC: x input")
+        self.pll_v = tf.debugging.check_numerics(pll,"OC: pll input")
+        '''
+        rs = tf.concat([0, tf.shape(self.x_v)[0] ],axis=0)
+        idx, _ = BinnedSelectKnn(self.K, self.x_v, rs)
+        
+        selfidx = idx[:,0:1]
+        nnidx = idx[:,1:]
+        
+        nntidx = SelectWithDefault(nnidx, truth_idx, -1)
+        
+        same = tf.where(truth_idx == nntidx, nnidx, -1)
+        nonoise_and_same = tf.where(truth_idx < 0, -1, same)
+        
+        self.Msel = tf.concat([selfidx, nonoise_and_same],axis=1)
+        
+        self.Mnot = None
+        self.Mnotsel = tf.where(truth_idx != nntidx, nnidx, -1)
+
+    #needs adjustment to avoid N**2
+    def V_rep_k(self):
+        
+        d_k_e = tf.expand_dims(self.d_k, axis=1) # K x 1 x 1
+        d_v_e = SelectWithDefault(self.Mnotsel, self.d_v, 0.) # K x k x 1
+        
+        x_v = SelectWithDefault(self.Mnotsel, self.d_v, 0.) # K x k x C
+        
+        N_k = tf.cast(self.K, 'float32')
+        
+        dsq = tf.expand_dims(self.x_k, axis=1) - x_v #K x k x C
+        dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x k x 1
+        
+        sigma = 0.95 * d_k_e**2 + 0.05 * d_v_e**2 #create gradients for all, but prefer k vertex
+        
+        dsq = tf.math.divide_no_nan(dsq, sigma + 1e-4) #K x V x 1
+        
+        V_rep = self.rep_func(dsq) * SelectWithDefault(self.Mnotsel, self.q_v, 0.)  #K x k x 1
+        
+        V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
+        V_rep = tf.math.divide_no_nan(V_rep, N_k+1e-3)  #K x 1
+        
+        return V_rep
 
 class OC_loss(object):
     def __init__(self, 

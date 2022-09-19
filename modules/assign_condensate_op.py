@@ -16,6 +16,7 @@ def BuildAndAssignCondensatesBinned(ccoords,
                         dist,
                         row_splits,
                         beta_threshold,
+                        distance_threshold = 1.,
                         assign_by_max_beta=True,
                         nbin_dims=3):
     """
@@ -38,9 +39,11 @@ def BuildAndAssignCondensatesBinned(ccoords,
     """
 
     assert 1 <= nbin_dims <= 6
-    row_splits = tf.constant(row_splits)
+    assert 0. <= beta_threshold <= 1.
+    #row_splits = tf.constant(row_splits)
     num_rows = row_splits.shape[0]-1
 
+    dist = distance_threshold * dist
 
     nvertmax = int(tf.reduce_sum(row_splits[1:] - row_splits[0:-1]))
     n_bins_sc = max(4,min(int(math.ceil(math.pow((nvertmax)/5, 1/3))), 25))
@@ -49,8 +52,8 @@ def BuildAndAssignCondensatesBinned(ccoords,
     ccoords -= min_coords
 
     ccoords_2 = ccoords[:, 0:min(ccoords.shape[1], nbin_dims)]
-    with tf.device('/cpu'):
-        _, bins_flat, n_bins, bin_width = BinByCoordinates(ccoords_2, row_splits, n_bins=n_bins_sc, calc_n_per_bin=False, pre_normalized=True)
+    #with tf.device('/cpu'):
+    _, bins_flat, n_bins, bin_width = BinByCoordinates(ccoords_2, row_splits, n_bins=n_bins_sc, calc_n_per_bin=False, pre_normalized=True)
 
     sorting_indices = tf.argsort(bins_flat)
     sorting_indices_back = tf.argsort(sorting_indices)

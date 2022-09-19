@@ -4,6 +4,7 @@ from oc_helper_ops import SelectWithDefault
 from oc_helper_ops import CreateMidx
 import time
 from baseModules import LayerWithMetrics
+from binned_select_knn_op import BinnedSelectKnn
 
 def one_hot_encode_id(t_pid, n_classes):
     valued_pids = tf.zeros_like(t_pid)+4 #defaults to 4 as unkown
@@ -252,8 +253,161 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
         #noise can never be spectator
         return tf.where(abovethresh, tf.ones_like(inputs[0])-self.minimum, 0.)
     
-
+class LLOCThresholds(LossLayerBase):
+    def __init__(self, 
+                 purity_target, 
+                 lowest_t_b = 0.01,
+                 lowest_t_d = 0.02,
+                 highest_t_d = 5.,
+                 **kwargs):
         
+        self.purity_target = purity_target
+        self.lowest_t_b = lowest_t_b
+        self.lowest_t_d = lowest_t_d
+        self.highest_t_d = highest_t_d
+        
+        assert highest_t_d > 0.
+        assert lowest_t_d > 0.
+        assert lowest_t_b >= 0.
+        
+        if 'dynamic' in kwargs:
+            super(LLOCThresholds, self).__init__(**kwargs)
+        else:
+            super(LLOCThresholds, self).__init__(dynamic=True,**kwargs)
+        
+    def get_config(self):
+        config={'purity_target': self.purity_target,
+                'lowest_t_b': self.lowest_t_b,
+                'lowest_t_d': self.lowest_t_d,
+                'highest_t_d': self.highest_t_d}
+        base_config = super(LLOCThresholds, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def loss(self, inputs):
+        
+        def thresh(x, d, t, invert=False):
+            a = 10. / (t + 1e-2)
+            if invert:
+                return x * (0.5 * (1. + tf.tanh(a * (d-t))))
+            return x * (0.5 * (1. - tf.tanh(a * (d-t))))
+        
+        asso_idx, beta, d, x , tidx, t_d, t_b = inputs
+        
+        t_d, t_b =  t_d[0], t_b[0]
+         
+        if tf.shape(asso_idx)[0] == None:
+            return tf.reduce_mean((1-t_d)**2  + (0.9-t_b)**2)
+        
+        #stop gradients:
+        beta = tf.stop_gradient(beta)
+        d = tf.stop_gradient(d)
+        x = tf.stop_gradient(x)
+        
+        #use MSel from OC here
+        # now creates a pseudo ragged asso index matrix
+        # already takes care of row splits
+        Msel,_,_ = CreateMidx(asso_idx, calc_m_not=False)
+        
+        #print('t_d',t_d, 't_b',t_b)
+        #return tf.reduce_mean((1-t_d)**2  + (0.9-t_b)**2)
+    
+        if tf.shape(Msel)[0] == None:
+            return 0.
+        
+        #OOM safe
+        if Msel.shape[1] > 8192:
+            Msel = Msel[:,:8192]
+        if Msel.shape[0] > 8192: #just select a few
+            Msel = Msel[:8192]
+        
+        beta_k_m = SelectWithDefault(Msel, beta, 0.) #K x V-obj x 1
+        mask_k_m = SelectWithDefault(Msel, tf.ones_like(beta), 0.) #K x V-obj x 1
+        x_k_m = SelectWithDefault(Msel, x, 0.) #K x V-obj x C
+        d_k_m = SelectWithDefault(Msel, d, 0.)
+        tidx_k_m = SelectWithDefault(Msel, tidx, -2) #K x V-obj x 1
+        
+        cluster_size = tf.reduce_sum(mask_k_m,axis=1) #K x 1
+        non_singular = tf.cast(cluster_size > 1., 'float32') # K x 1
+        
+        #print('beta_k_m',beta_k_m.shape)
+        #print('x_k_m',x_k_m.shape)
+        #print('d_k_m',d_k_m.shape)
+        #print('tidx_k_m',tidx_k_m.shape)
+        
+        alpha_k = tf.argmax(beta_k_m, axis=1)
+        x_k = tf.gather_nd(x_k_m, alpha_k, batch_dims=1) #K x C
+        d_k = tf.gather_nd(d_k_m, alpha_k, batch_dims=1) #K x 1
+        b_k = tf.gather_nd(beta_k_m, alpha_k, batch_dims=1) #K x 1
+        tidx_k = tf.gather_nd(tidx_k_m, alpha_k, batch_dims=1) #K x 1
+        
+        same_k_m = tf.cast( tf.expand_dims(tidx_k, axis=1)-tidx_k_m == 0 , 'float32' )
+        #print('same_k_m',same_k_m.shape)
+        
+        #print('x_k',x_k.shape)
+        #print('d_k',d_k.shape)
+        #print('b_k',b_k.shape)
+        
+        dsq_k_m = tf.reduce_sum((tf.expand_dims(x_k, axis=1) - x_k_m)**2, axis=2, keepdims=True) # K x V-obj x 1
+        #print('dsq_k_m',dsq_k_m.shape,d_k.shape)
+        d_k = tf.expand_dims(d_k, axis=1)
+        dsq_k_m = dsq_k_m/d_k**2 # K x V-obj x 1
+        
+        dsq_k_m = tf.sqrt(dsq_k_m+1e-3)
+        # get truth
+        
+        
+        den_k = tf.reduce_sum(thresh(mask_k_m, dsq_k_m, t_d), axis=1) # K x 1
+        p_k = tf.reduce_sum(thresh(mask_k_m*same_k_m, dsq_k_m, t_d), axis=1) # K x 1
+        
+        p_k = tf.math.divide_no_nan(p_k, den_k) # K x 1
+        
+        #print('p_k',tf.reduce_mean(p_k),t_d,t_b)
+        
+        any_non_singular = tf.reduce_sum(non_singular) > 0.
+        #now the same with beta
+        p_w = tf.reduce_sum(non_singular * thresh(p_k, b_k, t_b, True))
+        den_w = tf.reduce_sum(non_singular * thresh(tf.ones_like(p_k), b_k, t_b, True))
+        p_w = tf.math.divide_no_nan(p_w, den_w + 1e-2) # ()
+        
+        p_w = tf.where(any_non_singular, p_w, 1.)
+        
+        self.add_prompt_metric(p_w, self.name+'_weighted_purity')
+        
+        mean_cluster_size = tf.reduce_mean(cluster_size)
+        self.add_prompt_metric(mean_cluster_size, self.name+'_mean_cluster_size')
+        
+        #now the loss term, make it such that 0.1 -> 1. to have it on a good footing
+        loss_a = tf.reduce_mean(tf.nn.relu(self.purity_target - p_w)**2)
+        
+        self.add_prompt_metric(loss_a, self.name+'_purity_loss')
+        
+        #now a generic loss pushing t_b and t_d down/up
+        loss_b = 0.01*tf.abs(t_b) + 0.01 * (1. - tf.abs(t_d)/self.highest_t_d)
+        loss_b += tf.nn.relu(1e-6 - t_b)*1e7 #keep it positive
+        loss_b += tf.nn.relu(self.lowest_t_b - t_b)**2
+        loss_b += tf.nn.relu(self.lowest_t_d - t_d)**2
+        loss_b += tf.nn.relu(t_d - self.highest_t_d)**2
+        
+        
+        self.add_prompt_metric(loss_b, self.name+'_threshold_loss')
+        self.add_prompt_metric(t_b, self.name+'_t_b')
+        self.add_prompt_metric(t_d, self.name+'_t_d')
+        
+        #print('mask_k_m',mask_k_m.shape)
+        # just metrics here
+        # non-weighted purity for reference
+        p_k_t = tf.reduce_sum(mask_k_m*same_k_m, axis=1) / tf.reduce_sum(mask_k_m, axis=1)
+        
+        #print('p_k_t',p_k_t.shape)
+        
+        p_k_t = tf.reduce_sum(non_singular * p_k_t) / (tf.reduce_sum(non_singular) + 1e-6)
+        p_k_t = tf.where(any_non_singular, p_k_t, 1.)
+        self.add_prompt_metric(p_k_t, self.name+'_exact_purity')
+        
+    
+        return loss_a + loss_b
+        
+
 
 class LLFillSpace(LossLayerBase):
     def __init__(self, 
@@ -301,7 +455,8 @@ class LLFillSpace(LossLayerBase):
         sel = tf.expand_dims(sel,axis=1)
         coords = tf.gather_nd(coords, sel) # V' x C
         if tidx is not None:
-            coords = coords[tidx>=0]
+            tidx = tf.gather_nd(tidx, sel) # V' x C
+            coords = coords[tidx[:,0] >= 0]
         #print('coords',coords.shape)
         means = tf.reduce_mean(coords,axis=0,keepdims=True)#1 x C
         coords -= means # V' x C
@@ -553,7 +708,7 @@ class LLLocalClusterCoordinates(LossLayerBase):
 
 class LLNotNoiseClassifier(LossLayerBase):
     
-    def __init__(self, **kwargs):
+    def __init__(self, purity_metrics_threshold = -1, record_efficiency=False, **kwargs):
         '''
         Inputs:
         - score
@@ -565,6 +720,14 @@ class LLNotNoiseClassifier(LossLayerBase):
         
         '''
         super(LLNotNoiseClassifier, self).__init__(**kwargs)
+        self.purity_metrics_threshold = purity_metrics_threshold
+        self.record_efficiency = record_efficiency
+        
+    
+    def get_config(self):
+        base_config = super(LLNotNoiseClassifier, self).get_config()
+        return dict(list(base_config.items()) + list({'purity_metrics_threshold':self.purity_metrics_threshold,
+                                                      'record_efficiency': self.record_efficiency}.items()))
         
     @staticmethod
     def raw_loss(score, tidx, specweight):
@@ -585,6 +748,17 @@ class LLNotNoiseClassifier(LossLayerBase):
         isnotnoise = tf.cast(tidx>=0,dtype='float32')
         accuracy = tf.reduce_sum(isnotnoise * tf.cast(score>0.5,dtype='float32'))/tf.reduce_sum(isnotnoise)
         self.add_prompt_metric(accuracy,self.name+'_accuracy')
+        
+        if self.purity_metrics_threshold > 0:
+            isnoise = tf.cast(tidx<0,dtype='float32')
+            selnoise = tf.cast(score<self.purity_metrics_threshold,dtype='float32')
+            pur = tf.reduce_sum(isnoise * selnoise/tf.reduce_sum(selnoise))
+            pur = tf.where(tf.reduce_sum(selnoise) == 0., 1., pur) #define no selection as 1 purity
+            self.add_prompt_metric(pur,self.name+'_purity')
+            
+        if self.record_efficiency:
+            redeff = tf.reduce_sum(isnoise * selnoise/tf.reduce_sum(isnoise))
+            self.add_prompt_metric(redeff,self.name+'_red_efficiency')
         
         self.maybe_print_loss(lossval)
         return lossval
@@ -723,7 +897,260 @@ class LLEdgeClassifier(LossLayerBase):
 
 
 
+class LLGoodNeighbourHood(LossLayerBase):
+    
+    def __init__(self, sampling = 0.005, distscale = 1., **kwargs):
+        
+        self.sampling = sampling
+        self.distscale = distscale
+        super(LLGoodNeighbourHood, self).__init__(**kwargs)
+        
+    def get_config(self):
+        base_config = super(LLGoodNeighbourHood, self).get_config()
+        return dict(list(base_config.items()) + list({'sampling':self.sampling,
+                                                      'distscale':self.distscale}.items()))
+        
+    def loss(self, inputs):
+        assert len(inputs) == 5
+        score, coords, d, t_idx, rs = inputs
+        
+        coords = tf.stop_gradient(coords)
+        d = tf.stop_gradient(d)
+        
+        d /= self.distscale
+        
+        zero = tf.reduce_sum(score)*0.
+        
+        if rs.shape[0] is None:
+            return zero
+        
+        thisloss = zero
+        cont = zero
+        
+        for i in range(len(rs)-1):
+            
+            rstidx = t_idx[rs[i]:rs[i+1]]
+            rsd = d[rs[i]:rs[i+1]]
+            rscoords = coords[rs[i]:rs[i+1]]
+            rsscore = score[rs[i]:rs[i+1]]
+            #create random score with rsscore shape and then tf.boolean_mask(inputs, bl)
+            rand = tf.random.uniform(rsscore.shape)
+            sel = (rand < self.sampling)[:,0]
+            
+            scoords = tf.boolean_mask(rscoords, sel)
+            sd = tf.boolean_mask(rsd, sel) # S x 1
+            sscore =  tf.boolean_mask(rsscore, sel)
+            stidx = tf.boolean_mask(rstidx, sel)
+            
+            #now build a matrix for truth, 0 is the selected samples
+            tsame = tf.cast(tf.expand_dims(stidx,axis=1) == tf.expand_dims(rstidx,axis=0), dtype='float32') # S x V x 1
+            mdist = (tf.expand_dims(scoords,axis=1) - tf.expand_dims(rscoords,axis=0))**2
+            mdist = tf.reduce_sum(mdist, axis=2) / sd**2 # S x V
+            dist_weight = tf.exp(-mdist/2.)[:,:,tf.newaxis] # S x V x 1
+            
+            dist_weight = tf.cast(mdist[:,:,tf.newaxis] < 1., 'float32')
+            
+            sameprob = tf.math.divide_no_nan(
+                tf.reduce_sum(tsame * dist_weight, axis=1), 
+                tf.reduce_sum(dist_weight, axis=1) + 1e-3) # S x 1 
+            
+            print('(sameprob, sscore)',tf.reduce_mean(sameprob))
+            bcloss = tf.keras.losses.binary_crossentropy(sameprob, sscore) # S x 1 ?
+            #bcloss = 100.*(sameprob - sscore)**2 #simple MSE, but scaled reasonably
+            
+            #bcloss = tf.reduce_sum( bcloss*dist_weight, axis=1 )
+            #bcloss = tf.math.divide_no_nan( bcloss, tf.reduce_sum(dist_weight, axis=1) + 1e-3 ) #S
+            
+            thisloss += tf.reduce_mean(bcloss)
+            cont += tf.reduce_mean(sameprob)
+            #reduce mean over S
+            
+        l = thisloss / (len(rs)-1)
+        cont = cont / (len(rs)-1)
+        self.add_prompt_metric(l, self.name +'_loss')
+        self.add_prompt_metric(1.-cont, self.name +'_av_contamination')
+        print(self.name,l,1.-cont)
+        return l
+            
+class LLKnnSimpleObjectCondensation(LossLayerBase):
+    
+    def __init__(self, 
+          K=96,
+          purity_threshold = 0.95,
+          b_weight=0.5,
+          **kwargs):
+        
+        assert 0. <= b_weight <= 1.
+        
+        self.K = K
+        self.purity_threshold = purity_threshold
+        self.b_weight = b_weight
+        super(LLKnnSimpleObjectCondensation, self).__init__(**kwargs)
+    
+    
+    def get_config(self):
+        base_config = super(LLKnnSimpleObjectCondensation, self).get_config()
+        return dict(list(base_config.items()) + list({'K':self.K,
+                                                      'purity_threshold':self.purity_threshold,
+                                                      'b_weight':self.b_weight}.items()))
+    
+    def same_truth_mask(self, t_idx, idx):
+        
+        t_idx_k = SelectWithDefault(idx, t_idx, -1) # V x K x 1
+        sametidx = t_idx_k[:,0:1] == t_idx_k
+        notnoise = t_idx_k >= 0
+        sameobj = tf.cast(tf.logical_and(sametidx, notnoise), 'float32')
+        notsameobj = tf.cast(tf.logical_or(
+            tf.math.logical_not(sametidx),
+            tf.math.logical_not(notnoise)), 'float32')
+        
+        return sameobj, notsameobj
+    
+    def rep_func(self, dsq):
+        return tf.exp(-dsq/2.)
+    
+    def att_func(self, dsq):
+        return 1. - tf.exp(-dsq/2.) + 0.01 * tf.sqrt(dsq+1e-3)
+    
+    def loss(self, inputs):
+        assert len(inputs) == 5
+        beta, coords, d, t_idx, rs = inputs
+        
+        idx, distsq = BinnedSelectKnn(self.K, coords, rs)
+        
+        #needed?
+        ncoords = SelectWithDefault(idx, coords, 0.)
+        distsq = (ncoords[:,0:1,:]-ncoords)**2
+        distsq = tf.reduce_sum(distsq,axis=2)
+        distsq = tf.where(idx<0, 0., distsq)
+        
+        scaled_dsq = tf.math.divide_no_nan(distsq ,  d**2 + 1e-4)
+        
+        mask_k = SelectWithDefault(idx, 0.*beta + 1., 0.) # V x K x 1
+        mask_k_noself = tf.concat([ mask_k[:,0:1]*0., mask_k[:,1:] ], axis=1)
 
+        sameobj, notsameobj = self.same_truth_mask(t_idx, idx) # V x K x 1
+        
+        #beta part
+        
+        pweight = self.rep_func(scaled_dsq)
+        pweight = tf.stop_gradient(pweight)
+        purity = pweight * sameobj[:,:,0] # V x K 
+        purity = tf.math.divide_no_nan(tf.reduce_sum(purity,axis=1) , tf.reduce_sum(pweight,axis=1) + 1e-3) #K
+        ispure = tf.cast( purity>self.purity_threshold, 'float32' )[:,tf.newaxis]
+        
+        mean_ispure = tf.reduce_mean(ispure)
+        mean_ispure_no_noise = tf.reduce_sum(ispure) / tf.reduce_sum( tf.cast(t_idx>=0,'float32') )
+        
+        #print('mean_ispure',mean_ispure, mean_ispure_no_noise)
+        
+        self.add_prompt_metric(mean_ispure, name=self.name+'_truth_purity')
+        self.add_prompt_metric(mean_ispure_no_noise, name=self.name+'_truth_nonoise_purity')
+        
+        #create classification for beta
+        b_loss = tf.keras.losses.binary_crossentropy(ispure, beta)
+        b_loss = tf.reduce_mean(b_loss)
+        #print('beta_k',beta_k.shape)
+        
+        att = sameobj * mask_k_noself * self.att_func(scaled_dsq)[...,tf.newaxis]
+        rep = notsameobj * mask_k_noself * self.rep_func(scaled_dsq)[...,tf.newaxis]
+        
+        
+        att_loss = tf.reduce_mean(tf.reduce_sum(att, axis=1) / tf.reduce_sum(mask_k_noself, axis=1) + 1e-3) 
+        rep_loss = tf.reduce_mean(tf.reduce_sum(rep, axis=1) / tf.reduce_sum(mask_k_noself, axis=1) + 1e-3)
+        
+        
+        self.add_prompt_metric(b_loss, name=self.name+'_beta_loss')
+        self.add_prompt_metric(att_loss, name=self.name+'_att_loss')
+        self.add_prompt_metric(rep_loss, name=self.name+'_rep_loss')
+        
+        return self.b_weight * b_loss + (1. - self.b_weight) * (att_loss+rep_loss)
+        
+                
+class LLKnnPushPullObjectCondensation(LossLayerBase):
+    
+    def __init__(self, 
+          q_min=0.8, 
+          s_b=1.,
+          K=64,
+          mode='doubleexp',
+          **kwargs):
+        
+        self.q_min = q_min
+        self.s_b = s_b
+        self.K = K
+        self.mode = mode
+        
+        assert mode == 'doubleexp' or mode == 'dippedsq'
+        
+        super(LLKnnPushPullObjectCondensation, self).__init__(**kwargs)
+        
+    def rep_potential(self,dsq):
+        return tf.exp( - dsq/2.)
+    
+    def att_potential(self,dsq):
+        if self.mode == 'doubleexp':
+            return -tf.exp( - dsq/(2.*0.5**2))
+        if self.mode == 'dippedsq':
+            return dsq-1.
+        else:
+            raise ValueError("mode " + self.mode + " not implemented")
+        
+    def get_config(self):
+        base_config = super(LLKnnPushPullObjectCondensation, self).get_config()
+        return dict(list(base_config.items()) + list({'q_min':self.q_min,
+                                                      's_b':self.s_b,
+                                                      'K':self.K,
+                                                      'mode':self.mode,}.items()))
+                                                              
+    def beta_loss(self, beta_ka):
+        return tf.reduce_sum(beta_ka * 0.)
+        
+    def loss(self, inputs):
+        assert len(inputs) == 5
+        beta, coords, d, t_idx, rs = inputs
+        
+        idx, distsq = BinnedSelectKnn(self.K, coords, rs)
+        
+        scaled_dsq = tf.math.divide_no_nan(distsq ,  d**2 + 1e-4)  # V x K, [:,0] is self
+        
+        beta_k = SelectWithDefault(idx, beta, 0.) # V x K x 1
+        mask_k = SelectWithDefault(idx, 0.*beta + 1., 0.) # V x K x 1
+        mask_k_noself = tf.concat([ mask_k[:,0:1]*0., mask_k[:,1:] ], axis=1)
+        q_k = mask_k * (tf.math.atanh(beta_k/1.002)**2 + self.q_min)
+        t_idx_k = SelectWithDefault(idx, t_idx, -1) # V x K x 1
+        
+        #print('beta_k',beta_k.shape)
+        
+        sametidx = t_idx_k[:,0:1] == t_idx_k
+        notnoise = t_idx_k >= 0
+        sameobj = tf.cast(tf.logical_and(sametidx, notnoise), 'float32')
+        notsameobj = tf.cast(tf.logical_or(
+            tf.math.logical_not(sametidx),
+            tf.math.logical_not(notnoise)), 'float32')
+        
+        #print('sameobj',sameobj.shape, sameobj)
+        #print('notsameobj',notsameobj.shape, notsameobj)
+        attscaler = (beta_k[:,0:1] + self.q_min) * (beta_k + self.q_min)
+        repscaler = q_k[:,0:1] * q_k
+        att = sameobj * mask_k_noself * attscaler * self.att_potential(scaled_dsq)[...,tf.newaxis]
+        rep = notsameobj * mask_k_noself * repscaler * self.rep_potential(scaled_dsq)[...,tf.newaxis]
+        
+        att_loss = tf.reduce_mean(tf.reduce_sum(att, axis=1) / tf.reduce_sum(mask_k_noself, axis=1) + 1e-3) 
+        rep_loss = tf.reduce_mean(tf.reduce_sum(rep, axis=1) / tf.reduce_sum(mask_k_noself, axis=1) + 1e-3)
+        
+        isnoise = tf.cast(t_idx < 0, 'float32')
+        noise_loss = self.s_b * tf.math.divide_no_nan(tf.reduce_sum(beta * isnoise) , tf.reduce_sum(isnoise)+1e-3)
+        
+        
+        self.add_prompt_metric(tf.reduce_mean(beta), name=self.name+'_av_beta')
+        
+        self.add_prompt_metric(att_loss, name=self.name+'_att_loss')
+        self.add_prompt_metric(rep_loss, name=self.name+'_rep_loss')
+        self.add_prompt_metric(noise_loss, name=self.name+'_noise_loss')
+        
+        return att_loss + rep_loss + noise_loss
+        
 
 class LLBasicObjectCondensation(LossLayerBase):
     
@@ -731,11 +1158,24 @@ class LLBasicObjectCondensation(LossLayerBase):
                  q_min=0.8, 
                  s_b=1.,
                  use_average_cc_pos=0.5,
+                 implementation = 'std',
                  **kwargs):
+        
+        assert implementation == 'std' or \
+               implementation == 'pushpull' or \
+               implementation == 'precond' 
         
         super(LLBasicObjectCondensation, self).__init__(**kwargs)
         
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_kNNOC_per_sample, PreCond_OC_per_sample
+        impl = Basic_OC_per_sample
+        if implementation == 'pushpull':
+            impl = PushPull_OC_per_sample
+        if implementation == 'precond':
+            impl = PreCond_OC_per_sample
+        
         self.oc_loss_object = OC_loss(
+            loss_impl = impl,
             q_min= q_min,
                  s_b=s_b,
                  use_mean_x=use_average_cc_pos,

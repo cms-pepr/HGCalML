@@ -88,6 +88,7 @@ class Condensate(tf.keras.layers.Layer):
 class CondensateToPseudoRS(keras.layers.Layer):
     
     def __init__(self, radius, threshold, soft,**kwargs):
+        raise ValueError("to be replaced")
         self.radius=radius
         self.threshold=threshold
         self.soft=soft

@@ -11,7 +11,7 @@ import numpy as np
 from plotting_tools import shuffle_truth_colors
 from oc_helper_ops import SelectWithDefault
 from sklearn.metrics import roc_curve
-
+from DeepJetCore.training.DeepJet_callbacks import publish
 
 def quick_roc(fpr,tpr,thresholds):
     df = pd.DataFrame({
@@ -35,6 +35,7 @@ class _DebugPlotBase(tf.keras.layers.Layer):
                  plot_every: int,
                  outdir :str='' , 
                  plot_only_training=True,
+                 publish = None,
                  **kwargs):
         
         if 'dynamic' in kwargs:
@@ -54,9 +55,11 @@ class _DebugPlotBase(tf.keras.layers.Layer):
         if not os.path.isdir(os.path.dirname(self.outdir)): #could not be created
             self.outdir=''
             
+        self.publish = publish
+            
         
     def get_config(self):
-        config = {'plot_every': self.plot_every}#outdir is explicitly not saved and needs to be set again every time
+        config = {'plot_every': self.plot_every}#outdir/publish is explicitly not saved and needs to be set again every time
         base_config = super(_DebugPlotBase, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
@@ -138,6 +141,9 @@ class PlotEdgeDiscriminator(_DebugPlotBase):
         fig = quick_roc(fpr, tpr, thresholds)
         fig.write_html(self.create_base_output_path()+"_roc.html")
         
+        if self.publish is not None:
+            publish(self.create_base_output_path()+"_roc.html", self.publish)
+        
         
 class PlotNoiseDiscriminator(_DebugPlotBase):    
     def __init__(self,**kwargs):
@@ -165,7 +171,8 @@ class PlotNoiseDiscriminator(_DebugPlotBase):
         fig = quick_roc(fpr, tpr, thresholds)
         fig.write_html(self.create_base_output_path()+"_roc.html")
         
-        
+        if self.publish is not None:
+            publish(self.create_base_output_path()+"_roc.html", self.publish)
              
     
 class PlotCoordinates(_DebugPlotBase):
@@ -209,8 +216,8 @@ class PlotCoordinates(_DebugPlotBase):
                 }
             hoverdict={}
             if hoverfeat is not None:
-                for i in range(hoverfeat.shape[1]):
-                    hoverdict['f_'+str(i)] = hoverfeat[:,i:i+1]
+                for j in range(hoverfeat.shape[1]):
+                    hoverdict['f_'+str(j)] = hoverfeat[:,j:j+1]
                 data.update(hoverdict)
             
             df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
@@ -228,6 +235,10 @@ class PlotCoordinates(_DebugPlotBase):
             fig.update_traces(marker=dict(line=dict(width=0)))
             fig.write_html(self.outdir+'/'+self.name+'_'+str(i)+".html")
             
+            
+            if self.publish is not None:
+                publish(self.outdir+'/'+self.name+'_'+str(i)+".html", self.publish)
+            
             df = df[df['orig_tIdx']>=0]
             
             fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
@@ -239,4 +250,7 @@ class PlotCoordinates(_DebugPlotBase):
             fig.update_traces(marker=dict(line=dict(width=0)))
             fig.write_html(self.create_base_output_path()+'_'+str(i)+"_no_noise.html")
             
+            
+            if self.publish is not None:
+                publish(self.create_base_output_path()+'_'+str(i)+"_no_noise.html", self.publish)
         
