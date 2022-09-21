@@ -20,8 +20,7 @@ def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True, return
                            idx, revidx = calc_ragged_shower_indices(assignement)
                            xc = tf.gather_nd(x, idx)
                            xc = tf.reduce_mean(xc, axis=2) #mean of all associated hits
-                           xg = tf.gather_nd(xc, revidx) #ragged representation [event, V, F]
-                           xg = xg.values # [V x F], with duplicates         
+                           xg = tf.gather_nd(xc, revidx) #non-ragged representation [V x F], with the original row splits
     :return: a double ragged tensor of indices, first ragged dimension iterates endcaps/samples and the second, showers
              in that endcap. This can be used in gather_nd as follows:
                 ragged_indices = calc_ragged_shower_indices(assignment, row_splits, gather_noise=False)
@@ -63,7 +62,7 @@ def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True, return
         nrs = tf.shape(sorting_indices_showers_ragged.row_splits)[0]-1
         addrs = tf.range(nrs)[...,tf.newaxis][...,tf.newaxis]
         revidx = tf.concat([0 * revidx + addrs,revidx],axis=-1)
-        return sorting_indices_showers_ragged, revidx
+        return sorting_indices_showers_ragged, revidx.values
     else:
         return sorting_indices_showers_ragged
 
