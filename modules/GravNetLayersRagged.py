@@ -154,6 +154,13 @@ def countsame(idxs):
     
 ######################### actual layers: simple helpers first
 
+class AssertEqual(tf.keras.layers.Layer): 
+    def call(self,inputs):
+        assert len(inputs) == 2
+        tf.assert_equal(tf.shape(inputs[0]),tf.shape(inputs[1]), "shape not equal")
+        tf.assert_equal(inputs[0],inputs[1], "elements not equal")
+        return inputs[0]
+
 class CastRowSplits(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         '''
@@ -177,10 +184,35 @@ class CastRowSplits(tf.keras.layers.Layer):
         else:
             return inputs
 
+class CreateMask(tf.keras.layers.Layer):
+    def __init__(self, threshold, invert=False, **kwargs):
+        '''
+        Creates a mask.
+        For values below threshold: 0, above: 1
+        If invert=True, this is inverted
+        '''
+        super(CreateMask, self).__init__(**kwargs)
+        self.threshold = threshold
+        self.invert = invert
+        
+    def get_config(self):
+        base_config = super(CreateMask, self).get_config()
+        return dict(list(base_config.items()) + list({'threshold': self.threshold ,
+                                                      'invert': self.invert
+                                                      }.items()))    
+    def call(self, inputs ):
+        zeros = tf.zeros_like(inputs)
+        ones = tf.ones_like(inputs)
+        if self.invert:
+            return tf.where(inputs >= self.threshold, zeros, ones)
+        else:
+            return tf.where(inputs < self.threshold, zeros, ones)
+
+        
 
 class Where(tf.keras.layers.Layer):
     def __init__(self, outputval, condition = '>0', **kwargs):
-        conditions = ['>0','>=0','<0','<=0','==0']
+        conditions = ['>0','>=0','<0','<=0','==0', '!=0']
         assert condition in conditions
         self.condition = condition
         self.outputval = outputval
@@ -209,8 +241,96 @@ class Where(tf.keras.layers.Layer):
             return tf.where(inputs[0]<0, self.outputval, inputs[1])
         elif self.condition == '<=0':
             return tf.where(inputs[0]<=0, self.outputval, inputs[1])
+        elif self.condition == '!=0':
+            return tf.where(inputs[0]!=0, self.outputval, inputs[1])
         else:
             return tf.where(inputs[0]==0, self.outputval, inputs[1])
+
+
+class SplitOffTracks(tf.keras.layers.Layer):
+    
+    def __init__(self,**kwargs):
+        '''
+        This layer does not assume that tracks are at the end of the
+        input array.
+        
+        inputs:
+        - A: track identifier (non-zero for tracks)
+        - B: a list of other inputs that the detach should act on
+        - C: row splits
+        
+        Outputs:
+        - 1) list of all inputs (B) that are not tracks
+        - 2) list of all inputs (B) that are tracks
+        - row splits for outputs 1
+        - row splits for outputs 2
+        '''
+        super(SplitOffTracks, self).__init__(**kwargs)
+    
+    def call(self, inputs):
+        assert len(inputs) > 2
+        istrack, other, rs = inputs
+
+        ristrack = tf.RaggedTensor.from_row_splits(istrack,rs)
+        ristrack = tf.squeeze(ristrack,axis=-1)
+        rnottrack = ristrack == 0.
+        ristrack = ristrack != 0.
+        
+        outnotrack = []
+        outistrack = []
+        trs, ntrs = None, None
+        for a in other:
+            ra = tf.RaggedTensor.from_row_splits(a,rs)
+            nta = tf.ragged.boolean_mask(ra, rnottrack)
+            ta  = tf.ragged.boolean_mask(ra, ristrack)
+            
+            outnotrack.append(nta.values)
+            outistrack.append(ta.values)
+            
+            trs, ntrs = ta.row_splits, nta.row_splits
+            
+        return outnotrack, outistrack, ntrs, trs
+         
+###
+class ConcatRaggedTensors(tf.keras.layers.Layer):
+    
+    def __init__(self,**kwargs):
+        '''
+        This layer concatenates two lists of ragged tensors in values, row_split format.
+        It is assumed that the same row splits apply to all tensors in an individual list.
+        When used to merge-back tracks, make sure that the tracks are trailing to
+        keep same format as the input to the model.
+        
+        inputs:
+        - A: A list of value tensors to be concatenated at leading position
+        - B: A list of value tensors to be concatenated at trailing position
+        - C: common row splits for all tensors in A
+        - D: common row splits for all tensors in B
+        
+        Outputs:
+        - 1) a list of concatenated value tensors
+        - 2) row splits common to all tensors in output 1
+        '''
+        super(ConcatRaggedTensors, self).__init__(**kwargs)
+        
+    def call(self, inputs):
+        assert len(inputs) > 3
+        a, b, rsa, rsb = inputs
+        assert len(a) == len(b)
+        
+        merged = []
+        mrs = None
+        for ai,bi in zip(a, b):
+    
+            ra = tf.RaggedTensor.from_row_splits(ai,rsa)
+            rb = tf.RaggedTensor.from_row_splits(bi,rsb)
+            m = tf.concat([ra,rb],axis=1)#here defined as axis 1
+            
+            merged.append(m.values)
+            mrs = m.row_splits
+    
+        return merged, mrs
+
 
 class MaskTracksAsNoise(tf.keras.layers.Layer):
     def __init__(self, 
@@ -247,39 +367,244 @@ class MaskTracksAsNoise(tf.keras.layers.Layer):
         return tidx
 
 from assign_condensate_op import BuildAndAssignCondensatesBinned as ba_cond
-class CondensateToIdxs(tf.keras.layers.Layer):
+class CondensateToIdxs(LayerWithMetrics):
     
-    def __init__(self, t_d, t_b,active=True,**kwargs):
+    def __init__(self, t_d, t_b,
+                 active=True,
+                 keepnoise = False,
+                 return_thresholds = False,
+                 **kwargs):
+        '''
+        This layer builds condensates.
+        
+        Inputs:
+        
+        - beta
+        - cluster space coords
+        - individual distance scaler
+        - no condensation mask (1: do not condensate point) (optional)
+        - row splits
+        
+        Outputs:
+        - asso_idx (index of condensation point a point is associated to)
+        - predicted associated ID (0,1,2,3,... resets at each row split)
+        
+        Options:
+        - t_d: distance threshold for inference clustering
+        - t_b: beta threshold for inference clustering
+        - active: can switch off condensation, just for faster pre-training
+                  in this case (off) it each input point will be its own condensation point
+        - keepnoise: noise will not be assigned a negative association index but a 'self' index
+        - return_thresholds: returns t_b and t_d in addition to the outputs
+                             and initialises them dynamically, so they have to be trained
+        
+        
+        '''
+        assert 0. <= t_b <= 1.
         self.t_d=t_d
         self.t_b=t_b
         self.active = active
+        self.keepnoise = keepnoise
+        self.return_thresholds = return_thresholds
         super(CondensateToIdxs, self).__init__(**kwargs)
         
     def get_config(self):
             #when saving always assume active!
             config = {'t_d': self.t_d,
-                      't_b': self.t_b}
+                      't_b': self.t_b,
+                      'keepnoise': self.keepnoise,
+                      'return_thresholds': self.return_thresholds}
             base_config = super(CondensateToIdxs, self).get_config()
             return dict(list(base_config.items()) + list(config.items()))
+        
+    def build(self,input_shape):
+        
+        def tb_init(shape, dtype=None):
+            return -tf.math.log( 1 / tf.constant(self.t_b)[...,tf.newaxis] - 1)
+        def td_init(shape, dtype=None):
+            return tf.constant(self.t_d)[...,tf.newaxis]
+        
+        if self.return_thresholds:
+            self.dyn_t_d = self.add_weight(name = 'dyn_td', shape=(1,),
+                                        initializer = td_init, 
+                                        constraint = 'non_neg',
+                                        trainable = self.trainable and self.return_thresholds) 
+            
+            self._dyn_t_b = self.add_weight(name = 'dyn_tb', shape=(1,),
+                                        initializer = tb_init, 
+                                        #constraint = tf.keras.constraints.MinMaxNorm(1e-4, 1.),
+                                        trainable = self.trainable and self.return_thresholds) 
+        
+        else:
+            self.dyn_t_d = td_init(None)
+            self._dyn_t_b = tb_init(None)
+        
+        super(CondensateToIdxs, self).build(input_shape)
     
-    def compute_output_shape(self, input_shapes): #input is data, coords, beta, rs
-        return input_shapes[0]  
-
+    @property
+    def dyn_t_b(self):
+        return tf.nn.sigmoid(self._dyn_t_b)
+    
     def call(self, inputs):
-        assert len(inputs) == 4
-        beta, ccoords, d, rs = inputs
+        assert len(inputs) == 4 or len(inputs) == 5
+        if len(inputs) == 4:
+            beta, ccoords, d, rs = inputs
+            nocondmask = tf.zeros_like(beta)[:,0]
+        else:
+            beta, ccoords, d, nocondmask, rs = inputs
+            nocondmask = nocondmask[:,0]
         
-        asso_idx = tf.range(tf.shape(beta)[0])
+        ridxs = tf.range(tf.shape(beta)[0])
+        pred_sid = ridxs
+        
+        if rs.shape[0] == None:
+            if self.return_thresholds:
+                return ridxs, ridxs[...,tf.newaxis], tf.reduce_sum(beta)*0., tf.reduce_sum(beta)*0.
+            return ridxs, ridxs[...,tf.newaxis]
+        
+        asso_idx = ridxs
         if self.active:
-            d = d*self.t_d
-            _, asso_idx, _, _ ,_ = ba_cond(ccoords, beta, row_splits=rs, beta_threshold=self.t_b,
-                                 dist=d)
+            d = d * tf.stop_gradient(self.dyn_t_d[0])
+            t_b = tf.abs(self.dyn_t_b).numpy()[0] #abs is safety guard as the constraint does not seem to be inf
+            beta = tf.where(nocondmask>0, 0., beta[:,0])[:,tf.newaxis]
+            pred_sid, asso_idx, _, _ ,_ = ba_cond(ccoords, beta, row_splits=rs, 
+                                beta_threshold=t_b ,
+                                 dist=d, assign_by_max_beta=False)
+            asso_idx = tf.where(nocondmask != 0., ridxs, asso_idx) #mask out
+            if self.keepnoise:
+                asso_idx = tf.where(asso_idx<1, ridxs, asso_idx)
+                
+            # check pred_sid
+            if False:
+                for i in tf.range(rs.shape[0]-1):
+                    with tf.control_dependencies([pred_sid]):
+                        check = pred_sid[rs[i]:rs[i+1]]+1
+                        nseg_a = tf.reduce_sum(tf.cast(tf.unique(tf.squeeze(check))[0],dtype='int32') * 0 +  1)
+                        nseg_b = tf.reduce_max(check)+1
+                        try:
+                            tf.assert_equal(nseg_a, nseg_b)
+                        except Exception as e:
+                            print('error', check, t_b, self.dyn_t_d)
+                            import pickle
+                            with open('pred_sid_test','wb') as f:
+                                pickle.dump({'ccoords':ccoords.numpy(),
+                                 'beta':beta.numpy(),
+                                 'row_splits':rs.numpy(),
+                                 'd':d.numpy(),
+                                 'pred_sid':pred_sid.numpy(),
+                                 't_b':t_b,
+                                 't_d': self.dyn_t_d.numpy()
+                                 },f)
+                            raise e
+                    
         
-        return asso_idx
+        else: #output dummy 1:1 values
+            pred_sid = tf.ragged.row_splits_to_segment_ids(rs, out_type=tf.int32)
+            pred_sid = tf.gather(rs, pred_sid)
+            pred_sid = (ridxs - pred_sid)[:, tf.newaxis]
+            
+        if self.return_thresholds:
+            self.add_prompt_metric(self.dyn_t_d, self.name+'_dyn_t_d')
+            self.add_prompt_metric(self.dyn_t_b, self.name+'_dyn_t_b')
+            return asso_idx, pred_sid, \
+                self.dyn_t_d, \
+                self.dyn_t_b
+        
+        return asso_idx, pred_sid
+
+from pseudo_rs_op import create_prs_indices, revert_prs
+class CondensatesToPseudoRS(tf.keras.layers.Layer):            
+        def __init__(self, **kwargs):
+            '''
+            creates pseudo row splits, one for each condensate (and one for noise)
+            
+            Input:
+            - association index
+            - list of data
+            
+            Output:
+            - indices to revert operation (to be used with ReversePseudoRS layer)
+            - pseudo row splits
+            - sorted data
+            
+            '''
+            super(CondensatesToPseudoRS, self).__init__(**kwargs)
+        def call(self, inputs):
+            assert len(inputs)>1
+            asso_idx, *other = inputs
+            
+            toidxs, prs = create_prs_indices(asso_idx)
+            out = []
+            for a in other:
+                out.append(tf.gather_nd(a, toidxs))
+            
+            return [toidxs, prs] + out
 
             
+
+class ReversePseudoRS(tf.keras.layers.Layer):            
+        def __init__(self, **kwargs):
+            '''
+            Input:
+            - reverting index
+            - list of data
+            
+            Output:
+            - reverted data (list)
+            
+            '''
+            super(ReversePseudoRS, self).__init__(**kwargs)
+        def call(self, inputs):
+            assert len(inputs)>1
+            backidxs, *other = inputs
+            out = []
+            for a in other:
+                out.append(revert_prs(a, backidxs))
+                
+            return out
         
 
+class CleanCondensations(LayerWithMetrics):
+    def __init__(self, threshold, **kwargs):
+        '''
+        Resets the association index for individual points back to itself
+        and the pred_sid to -1 if a point is below threshold
+        
+        That means pred_sid is not regular anymore after this!!!
+        
+        inputs:
+        - asso idx
+        - pred_sid
+        - score
+        
+        output:
+        - asso idx 
+        - pred_sid
+        '''
+        super(CleanCondensations, self).__init__(**kwargs)
+        self.threshold = threshold
+        
+    def get_config(self):
+        base_config = super(CleanCondensations, self).get_config()
+        return dict(list(base_config.items()) + list({'threshold': self.threshold }.items()))
+
+    def call(self, inputs):
+        assert len(inputs) == 3
+        asso, pred_sid, score = inputs
+        
+        orig_pred_sid_cond = tf.cast(pred_sid >= 0, 'float32')
+        
+        pred_sid = tf.where(score[:,0] < self.threshold, -1, pred_sid[:,0])[:,tf.newaxis]
+        asso = tf.where(score[:,0] < self.threshold, tf.range(tf.shape(asso)[0]), asso)
+        #raise ValueError("lala")
+        
+        rem = tf.cast(score < self.threshold, 'float32')
+        sel = tf.reduce_sum(rem*orig_pred_sid_cond)#actually cleaned
+        allv = tf.reduce_sum(orig_pred_sid_cond)
+        self.add_prompt_metric(sel/allv, self.name+'_cleaned_fraction')
+        
+        return asso, pred_sid
+            
 class ScaleBackpropGradient(tf.keras.layers.Layer):
     def __init__(self, scale, **kwargs):
         '''
@@ -503,9 +828,9 @@ class ElementScaling(tf.keras.layers.Layer):
     
 class GooeyBatchNorm(LayerWithMetrics):
     def __init__(self,
-                 viscosity=0.2,
-                 fluidity_decay=1e-4,
-                 max_viscosity=0.99,
+                 viscosity=0.01,
+                 fluidity_decay=1e-5,
+                 max_viscosity=0.999,
                  epsilon=1e-4,
                  print_viscosity=False,
                  variance_only=False,
@@ -615,6 +940,7 @@ class GooeyBatchNorm(LayerWithMetrics):
         
         self.add_prompt_metric(tf.reduce_mean(self.variance), self.name+'_variance')
         self.add_prompt_metric(tf.reduce_mean(self.mean), self.name+'_mean')
+        self.add_prompt_metric(tf.reduce_mean(self.viscosity), self.name+'_viscosity')
         
         #apply
         x -= self.mean

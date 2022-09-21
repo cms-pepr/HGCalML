@@ -56,6 +56,93 @@ class SimpleReductionMetrics(MLBase):
         self.add_prompt_metric(tf.reduce_mean(after[-1]/bef[-1]),self.name+'_rel_reduction')
         
 
+from oc_helper_ops import per_rs_segids_to_unique
+class OCReductionMetrics(MLBase):
+    
+    def __init__(self, return_threshold_updates=False, **kwargs):
+        '''
+        Inputs:
+        - asso idx (V) 
+        - pred_sid (V)
+        - truth indices (V x 1)
+        - row splits (for V)
+        
+        Calculates the condensation purity (fraction of clusters with identical truth index)
+        
+        '''
+        super(OCReductionMetrics, self).__init__(**kwargs)
+        self.return_threshold_updates = return_threshold_updates
+
+    def get_config(self):
+        config = {'return_threshold_updates': self.return_threshold_updates}
+        base_config = super(OCReductionMetrics, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    
+    def metrics_call(self, inputs):
+        
+        assert len(inputs)==2 or len(inputs)==3
+        if len(inputs)==2:
+            asso_idx, tidx = inputs
+            energy = tf.ones_like(tidx, dtype='float32')
+        else:
+            asso_idx, tidx, energy = inputs
+            
+        energy = energy[:,0]
+        nafter = tf.cast(tf.shape(tf.unique(asso_idx)[0])[0], dtype='float32')
+        nbefore = tf.cast(tf.shape(asso_idx)[0], dtype='float32')
+        
+        reduction = nafter/nbefore
+        
+        self.add_prompt_metric(reduction, self.name + '_reduction')
+        
+        asso_idx = tf.where(asso_idx<0, tf.range(tf.shape(asso_idx)[0]), asso_idx)
+        #use asso index
+        asso_tidx = tf.gather(tidx[:,0], asso_idx)
+        sames = tf.cast(asso_tidx == tidx[:,0], 'float32')
+        purity = tf.reduce_sum( energy * sames ) / tf.reduce_sum(energy)
+        
+        self.add_prompt_metric(purity, self.name+'_purity')
+        
+        #print(self.name, 'purity',purity,'reduction',reduction)
+    
+        return purity*0., purity*0. #TBI
+    
+        #rpsid = tf.RaggedTensor.from_row_splits(pred_sid[:,0],rs)
+        #
+        #rtidx = tf.RaggedTensor.from_row_splits(tidx[:,0],rs)
+        ## remove noise
+        #rtidx = tf.ragged.boolean_mask(rtidx, rpsid>=0)
+        #rpsid = tf.ragged.boolean_mask(rpsid, rpsid>=0)
+        #
+        ##check if they are consecutive
+        #
+        #pred_sid, tidx, rs = rpsid.values, rtidx.values, rpsid.row_splits
+        
+        #can contain empty segments here
+        orig_pred_sid = pred_sid
+        pred_sid, nseg = per_rs_segids_to_unique(pred_sid+1, rs, 
+                                                 return_nseg=True, 
+                                                 strict_check=False)#pred_sid should be regular
+        
+        mintidx = tf.math.unsorted_segment_min(tidx, pred_sid, 
+                                               num_segments=nseg)
+        maxtidx = tf.math.unsorted_segment_max(tidx, pred_sid, 
+                                               num_segments=nseg)
+        
+        pidx = tf.math.unsorted_segment_min(orig_pred_sid, pred_sid, 
+                                               num_segments=nseg)
+        
+        ispure = tf.cast(mintidx == maxtidx, dtype='float32')
+        
+        ispure = tf.boolean_mask(ispure, pidx>=0)
+
+        purity = tf.reduce_mean(ispure)
+        
+        
+
+        
+
 class MLReductionMetrics(MLBase):
     
     def __init__(self, **kwargs):
