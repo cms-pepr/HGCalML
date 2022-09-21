@@ -1,12 +1,8 @@
 import math
-import time
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.framework import ops
-
 from bin_by_coordinates_op import BinByCoordinates
-import numpy as np_
 
 _bc_op_binned = tf.load_op_library('binned_assign_to_condensates.so')
 
