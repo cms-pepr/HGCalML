@@ -171,11 +171,11 @@ train.change_learning_rate(1e-4)
 train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
 
 nbatch = 100000 
-train.change_learning_rate(5e-5)
+train.change_learning_rate(3e-5)
 train.trainModel(nepochs=10,batchsize=nbatch,additional_callbacks=cb)
 
 print('reducing learning rate to 1e-4')
-train.change_learning_rate(5e-5)
+train.change_learning_rate(1e-5)
 nbatch = 200000 
 
 train.trainModel(nepochs=100,batchsize=nbatch,additional_callbacks=cb)

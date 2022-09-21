@@ -339,20 +339,20 @@ def pre_condensation_model(inputs,
     
     ### object condensation part
     beta = Dense(1, activation='sigmoid',name=name+'dense_beta')(sel['x'])
-    d = OnesLike()(beta)#ScalarMultiply(2.)(Dense(1, activation='sigmoid',name=name+'dense_d')(sel['x'])) 
+    d = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name=name+'dense_d')(sel['x'])) 
     
-    ccoords = Dense(cluster_dims,name=name+'dense_ccoords',trainable=trainable, kernel_initializer='zeros')(sel['x'])
-    ccoords = ScalarMultiply(0.1)(ccoords)
+    ccoords = Dense(cluster_dims,name=name+'dense_ccoords',trainable=trainable)(sel['x'])
     selcoordsscaled = ElementScaling(name=name+'es2',trainable=trainable)(sel['coords'])
     exporigcoords = expand_coords_if_needed(selcoordsscaled,sel['x'],
                                              cluster_dims, name+'ccoords_exp',
                                              trainable=trainable)
     ccoords = Add()([exporigcoords, ccoords])
     
-    ccoords = LLFillSpace(active = trainable,
-                           scale=0.1,
-                           runevery=20,
-                           record_metrics=record_metrics)([ccoords, sel['row_splits'],sel['t_idx']])
+    
+    #ccoords = LLFillSpace(active = trainable,
+    #                       scale=0.1,
+    #                       runevery=20,
+    #                       record_metrics=record_metrics)([ccoords, sel['row_splits'],sel['t_idx']])
     
     #beta = LLBasicObjectCondensation(
     #    q_min=q_min,

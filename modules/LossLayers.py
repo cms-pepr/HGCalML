@@ -975,7 +975,7 @@ class LLGoodNeighbourHood(LossLayerBase):
 class LLKnnSimpleObjectCondensation(LossLayerBase):
     
     def __init__(self, 
-          K=96,
+          K=196,
           purity_threshold = 0.95,
           b_weight=0.5,
           **kwargs):
@@ -1007,10 +1007,10 @@ class LLKnnSimpleObjectCondensation(LossLayerBase):
         return sameobj, notsameobj
     
     def rep_func(self, dsq):
-        return tf.exp(-dsq/2.)
+        return tf.exp(-dsq/(2. * 0.6**2))
     
     def att_func(self, dsq):
-        return 1. - tf.exp(-dsq/2.) + 0.01 * tf.sqrt(dsq+1e-3)
+        return dsq #1. - tf.exp(-dsq/2.) + 0.01 * tf.sqrt(dsq+1e-3)
     
     def loss(self, inputs):
         assert len(inputs) == 5
