@@ -17,7 +17,7 @@ def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True, return
     :param gather_noise: boolean, whether to gather noise or not. If set to True, the first element in the shower
                          dimension will always correspond to the noise even if there is no noise vertex present.
     :param return_reverse: returns the reverse operation to gather back. Example (x is some point feature vector [V x F]):
-                           idx, revidx = calc_ragged_shower_indices(assignement)
+                           idx, revidx = calc_ragged_shower_indices(assignement, row_splits, return_reverse=True)
                            xc = tf.gather_nd(x, idx)
                            xc = tf.reduce_mean(xc, axis=2) #mean of all associated hits
                            xg = tf.gather_nd(xc, revidx) #non-ragged representation [V x F], with the original row splits
