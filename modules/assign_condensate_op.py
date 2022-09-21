@@ -40,10 +40,11 @@ def BuildAndAssignCondensatesBinned(ccoords,
 
     assert 1 <= nbin_dims <= 6
     assert 0. <= beta_threshold <= 1.
+    assert distance_threshold > 0.
     #row_splits = tf.constant(row_splits)
     num_rows = row_splits.shape[0]-1
 
-    dist = distance_threshold * dist
+    dist =  dist / distance_threshold
 
     nvertmax = int(tf.reduce_sum(row_splits[1:] - row_splits[0:-1]))
     n_bins_sc = max(4,min(int(math.ceil(math.pow((nvertmax)/5, 1/3))), 25))
