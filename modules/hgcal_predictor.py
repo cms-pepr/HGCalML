@@ -3,6 +3,7 @@
 from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
 from datastructures.TrainData_NanoML import TrainData_NanoML
+from datastructures.TrainData_PreselectionNanoML import TrainData_PreselectionNanoML
 
 import os
 from DeepJetCore.modeltools import load_model
