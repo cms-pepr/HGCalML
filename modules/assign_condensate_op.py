@@ -7,7 +7,8 @@ from bin_by_coordinates_op import BinByCoordinates
 _bc_op_binned = tf.load_op_library('binned_assign_to_condensates.so')
 
 
-def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True, return_reverse=False):
+def calc_ragged_shower_indices(assignment, row_splits, 
+                               gather_noise=True):
     """
 
     :param assignment: [nvert, 1] Values should be consecutive i.e. -1,0,1,2,3,...N. Same is true for the every segment
@@ -16,24 +17,22 @@ def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True, return
     :param row_splits: [nvert+1], row splits
     :param gather_noise: boolean, whether to gather noise or not. If set to True, the first element in the shower
                          dimension will always correspond to the noise even if there is no noise vertex present.
-    :param return_reverse: returns the reverse operation to gather back. Example (x is some point feature vector [V x F]):
-                           idx, revidx = calc_ragged_shower_indices(assignement, row_splits, return_reverse=True)
-                           xc = tf.gather_nd(x, idx)
-                           xc = tf.reduce_mean(xc, axis=2) #mean of all associated hits
-                           xg = tf.gather_nd(xc, revidx) #non-ragged representation [V x F], with the original row splits
+    
+    
+                                                  
     :return: a double ragged tensor of indices, first ragged dimension iterates endcaps/samples and the second, showers
              in that endcap. This can be used in gather_nd as follows:
                 ragged_indices = calc_ragged_shower_indices(assignment, row_splits, gather_noise=False)
                 x = tf.gather_nd(assignment, ragged_indices)
-    :return: (opt) an index tensor to reverse the operation (TBI)
 
     """
-    if return_reverse:
-        assert  gather_noise #reverse cannot work when noise is discarded
     
-    orig_assignement = assignment
     if gather_noise:
-        assignment = assignment[:, 0] + 1
+        #move up one if there is any noise a row split
+        assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
+        assignment = assignment - tf.reduce_min(assignment, axis=1, keepdims=True)
+        assignment = assignment.values
+        assignment = assignment[:, 0]
     else:
         assignment = assignment[:, 0]
         old_segment_ids = tf.ragged.row_splits_to_segment_ids(row_splits)
@@ -57,22 +56,109 @@ def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True, return
     sorting_indices_showers_ragged = tf.RaggedTensor.from_row_lengths(sorting_indices_showers_ragged[..., tf.newaxis], rsx)
     sorting_indices_showers_ragged = tf.RaggedTensor.from_row_splits(sorting_indices_showers_ragged, n_condensates_n)
 
+    
+    return sorting_indices_showers_ragged
+    
+    
+def calc_ragged_cond_indices(assignment, alpha_idx, row_splits, 
+                           gather_noise=True, return_reverse=True, 
+                           return_flat_reverse=True):
+    '''
+    :param assignment: assignment indices from BuildAndAssignCondensatesBinned
+    :param alpha_idx: indices of condensation points (output of BuildAndAssignCondensatesBinned)
+           important: is must be guaranteed that tf.gather_nd(assignment, alpha_idx[...,tf.newaxis]) is 
+           [0,1,2,3,4...., (row split), 0,1,2,3,4...]
+    :param n_condensates: number of condensates per row split (output of BuildAndAssignCondensatesBinned)
+                          noise is not counted here
+    
+    :param return_reverse: returns the reverse operation to gather back. Example (x is some point feature vector [V x F]):
+                           cidx, revidx = calc_ragged_cond_indices...
+                           xc = tf.gather_nd(x, cidx)
+                           xg = tf.gather_nd(xc, revidx) # non-ragged representation [V x F], 
+                                                         # with the original row splits
+                           
+                           
+    :param return_flat_reverse: also returns flat reverse indices in addition. Only effective if
+                                return_reverse==True.
+                                Example:
+                                cidx, revidx, flat_revidx = calc_ragged_cond_indices...
+                                
+                                xc = tf.gather_nd(x, idx) #ragged [B, ragged, x.shape[-1]]
+                                xc = xc.values        #not ragged [B' , x.shape[-1]]
+                                xg = tf.gather_nd(xc, flat_revidx) #reverse operation [B , x.shape[-1]]
+                                
+    :return: indices to gather condensation point features into a ragged tensor of structure: 
+             [event, condensation point, F]
+             The first entry for each event will be a dummy entry for noise to have parallel structures
+             w.r.t. calc_ragged_shower_indices
+    '''
+    
+    alpha_exp = alpha_idx[...,tf.newaxis]
+    
+    adapted_assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
+    n_nonoise_condensates = tf.reduce_max(adapted_assignment, axis=1)[:,0] + 1
+    n_nonoise_condensates = tf.concat([n_nonoise_condensates[0:1]*0, 
+                                       tf.cumsum(n_nonoise_condensates, axis=0)],axis=0)
+    
+    rc_ass = tf.RaggedTensor.from_row_splits(alpha_exp, n_nonoise_condensates)
+    
+    
+    if gather_noise:
+        
+        noise_idx = tf.RaggedTensor.from_row_splits(assignment, row_splits)
+        #this is a workaround because argmin/max does not work on ragged
+        selidx = tf.RaggedTensor.from_row_splits(tf.range(tf.shape(assignment)[0]), row_splits)
+        selidx = tf.expand_dims(selidx, axis=-1)
+        selidx = tf.where(noise_idx < 0, selidx, -2)
+        noise_idx = tf.reduce_max(selidx, axis=1)
+        noise_idx = tf.RaggedTensor.from_row_splits(noise_idx, tf.range(tf.shape(noise_idx)[0]+1))#one per rs
+        #print('noise_idx',noise_idx.shape,noise_idx)
+        sel = noise_idx[...,0] >= 0
+        #print('sel',sel)
+        noise_idx = tf.ragged.boolean_mask(noise_idx, sel)[...,0]
+        #print('noise_idx2',noise_idx.shape,noise_idx)
+        
+        #end workaround
+        noise_idx = tf.expand_dims(noise_idx, axis=-1)
+        rc_ass = tf.concat([noise_idx, rc_ass],axis=1)
+        #print('rc_ass',rc_ass)
+        #exit()
+        
     if return_reverse:
-        revidx = tf.RaggedTensor.from_row_splits(orig_assignement+1, row_splits)
-        nrs = tf.shape(sorting_indices_showers_ragged.row_splits)[0]-1
+        
+        adapted_assignment = adapted_assignment - tf.reduce_min(adapted_assignment, axis=1, keepdims=True)
+        n_condensates = tf.reduce_max(adapted_assignment, axis=1)[:,0] + 1
+        n_condensates = tf.concat([n_condensates[0:1]*0, tf.cumsum(n_condensates, axis=0)],axis=0)
+    
+        #this needs to be done ragged; FIXME
+        revidx = adapted_assignment
+        nrs = tf.shape(row_splits)[0]-1
         addrs = tf.range(nrs)[...,tf.newaxis][...,tf.newaxis]
         revidx = tf.concat([0 * revidx + addrs,revidx],axis=-1)
-        return sorting_indices_showers_ragged, revidx.values
-    else:
-        return sorting_indices_showers_ragged
+        
+        if not return_flat_reverse:
+            return rc_ass, revidx.values
+        
+        add = n_condensates[:-1]
+        add = add[...,tf.newaxis][...,tf.newaxis]
+        mul = tf.concat([0*add, 0*add + 1],axis=-1)
+        add = tf.concat([add, 0*add],axis=-1)
+        maskedrevidx = revidx * mul
+        flat_rev = tf.reduce_sum(maskedrevidx+add, axis=-1, keepdims=True)
+        flat_rev = flat_rev.values #remove ragged
+        return rc_ass, revidx.values, flat_rev
+        
+    return rc_ass
+    
 
 def BuildAndAssignCondensatesBinned(ccoords,
                         betas,
                         dist,
                         row_splits,
                         beta_threshold,
+                        no_condensation_mask = None,
                         distance_threshold = 1.,
-                        assign_by_max_beta=True,
+                        assign_by_max_beta=False,
                         nbin_dims=3):
     """
     :param ccoords: [nvert,ndim] Clustering coordinates of shape
@@ -80,12 +166,15 @@ def BuildAndAssignCondensatesBinned(ccoords,
     :param dist: [nvert, 1] Local distance thresholds of shape
     :param row_splits: Row splits of shape [nvert+1]
     :param beta_threshold: Minimum beta threshold (scalar)
+    :param no_condensation_mask: 1 for each input that should become its own condensation point, 
+                                 right now, this uses way more resources than it needs to
     :param nbin_dims <= ccoords.shape[1]. Binning to be done in these many number of coordinates (scalar)
     :param assign_by_max_beta: Boolean. If set to True, the higher beta vertex eats up all the vertices in its radius. If set to
              False, the assignment for a vertex is done to the condensate it is the closest to. True behaves like
              anti-kt jet clustering algorighm while False behaves like XCone.
     :return: 5 elements: (in order)
     1. assignment: [nvert,1] Assignment in ascending order from 0,1,2,3...N. Resets at every ragged segment.
+                   tf.gather_nd(assignment, alpha_idx[...,tf.newaxis]) is guaranteed to be [0,1,2,3,4...., (row split), 0,1,2,3,4...]
     2. association: elements correspond to condensate index associated to each vertex  (self indexing). -1 for noise
     3. alpha_idx: alpha indices of the condensate points, this corresponds to `assignment`. n_condensates return can be used
                     as row split with it to make a ragged tensor
@@ -100,6 +189,16 @@ def BuildAndAssignCondensatesBinned(ccoords,
     num_rows = row_splits.shape[0]-1
 
     dist =  dist / distance_threshold
+    
+    if no_condensation_mask is not None:
+        assert len(no_condensation_mask.shape) == 2
+        
+        betas = tf.where(no_condensation_mask>0, 1., betas)
+        maxcoords = tf.reduce_max(ccoords, axis=0, keepdims=True) # 1 x C , just to know where to start
+        fidx = tf.cast(tf.range(tf.shape(ccoords)[0]) + 2, dtype='float32')
+        replcoords = ccoords + tf.expand_dims(fidx,axis=1) * maxcoords * 1.05 * tf.reduce_max(dist)
+        ccoords = tf.where( no_condensation_mask>0., replcoords, ccoords )
+        
 
     nvertmax = int(tf.reduce_sum(row_splits[1:] - row_splits[0:-1]))
     n_bins_sc = max(4,min(int(math.ceil(math.pow((nvertmax)/5, 1/3))), 25))

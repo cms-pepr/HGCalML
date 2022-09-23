@@ -406,6 +406,7 @@ class CondensateToIdxs(LayerWithMetrics):
         self.active = active
         self.keepnoise = keepnoise
         self.return_thresholds = return_thresholds
+        self.return_full_assignment = False
         super(CondensateToIdxs, self).__init__(**kwargs)
         
     def get_config(self):
@@ -464,13 +465,16 @@ class CondensateToIdxs(LayerWithMetrics):
         
         asso_idx = ridxs
         if self.active:
-            d = d * tf.stop_gradient(self.dyn_t_d[0])
+            t_d = tf.stop_gradient(self.dyn_t_d[0])
+            d = d * t_d
             t_b = tf.abs(self.dyn_t_b).numpy()[0] #abs is safety guard as the constraint does not seem to be inf
-            beta = tf.where(nocondmask>0, 0., beta[:,0])[:,tf.newaxis]
-            pred_sid, asso_idx, _, _ ,_ = ba_cond(ccoords, beta, row_splits=rs, 
+            
+            pred_sid, asso_idx, alpha, _ ,ncond = ba_cond(ccoords, beta, row_splits=rs, 
                                 beta_threshold=t_b ,
-                                 dist=d, assign_by_max_beta=False)
-            asso_idx = tf.where(nocondmask != 0., ridxs, asso_idx) #mask out
+                                 dist=d, 
+                                 no_condensation_mask=nocondmask,
+                                 assign_by_max_beta=False)
+
             if self.keepnoise:
                 asso_idx = tf.where(asso_idx<1, ridxs, asso_idx)
                 
@@ -506,11 +510,16 @@ class CondensateToIdxs(LayerWithMetrics):
         if self.return_thresholds:
             self.add_prompt_metric(self.dyn_t_d, self.name+'_dyn_t_d')
             self.add_prompt_metric(self.dyn_t_b, self.name+'_dyn_t_b')
-            return asso_idx, pred_sid, \
-                self.dyn_t_d, \
-                self.dyn_t_b
+            if self.return_full_assignment:
+                return pred_sid, asso_idx, alpha ,ncond,\
+                    self.dyn_t_d, \
+                    self.dyn_t_b
+            else:
+                return asso_idx, pred_sid, \
+                    self.dyn_t_d, \
+                    self.dyn_t_b
         
-        return asso_idx, pred_sid
+        return pred_sid, asso_idx, alpha ,ncond
 
 from pseudo_rs_op import create_prs_indices, revert_prs
 class CondensatesToPseudoRS(tf.keras.layers.Layer):            
