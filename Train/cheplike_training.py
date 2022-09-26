@@ -66,12 +66,12 @@ make this about coordinate shifts
 '''
 
 batchnorm_options={
-    'viscosity': 0.1,
+    'viscosity': .1,
     'fluidity_decay': 1e-4,
-    'max_viscosity': 0.95,
+    'max_viscosity': 1.,
     'soft_mean': False,
     'variance_only': False,
-    'record_metrics': True
+    'record_metrics': True,
     }
 
 #loss options:
@@ -94,7 +94,7 @@ dense_activation='elu'
 record_frequency=20
 plotfrequency=50 #plots every 1k batches
 
-learningrate = 4e-5
+learningrate = 1e-6
 nbatch = 100000
 if globals.acc_ops_use_tf_gradients: #for tf gradients the memory is limited
     nbatch = 60000

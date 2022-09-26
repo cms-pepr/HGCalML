@@ -848,9 +848,9 @@ class ElementScaling(tf.keras.layers.Layer):
     
 class GooeyBatchNorm(LayerWithMetrics):
     def __init__(self,
-                 viscosity=0.01,
-                 fluidity_decay=1e-5,
-                 max_viscosity=0.999,
+                 viscosity=0.2,
+                 fluidity_decay=1e-4,
+                 max_viscosity=0.99,
                  epsilon=1e-4,
                  print_viscosity=False,
                  variance_only=False,
