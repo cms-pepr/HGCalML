@@ -41,7 +41,7 @@ from Layers import GausActivation,GooeyBatchNorm, ScaledGooeyBatchNorm #make a n
 from model_blocks import create_outputs
 from Regularizers import AverageDistanceRegularizer
 
-from model_blocks import pre_selection_model
+from model_blocks import pre_selection_model, intermediate_condensation
 from model_blocks import extent_coords_if_needed, re_integrate_to_full_hits
 
 from LossLayers import LLNeighbourhoodClassifier, LLNotNoiseClassifier
@@ -140,6 +140,7 @@ def gravnet_model(Inputs,
     energy = pre_selection['rechit_energy']
     c_coords = pre_selection['coords']#pre-clustered coordinates
     t_idx = pre_selection['t_idx']
+    t_spectator_weight = pre_selection['t_spectator_weight']
     
     ####################################################################################
     ##################### now the actual model goes below ##############################
@@ -190,15 +191,26 @@ def gravnet_model(Inputs,
                                                                     rs]) 
         x = Concatenate()([gncoords,x])           
         
-        x = DistanceWeightedMessagePassing([64,64,32,32,16,16],
+        x = DistanceWeightedMessagePassing([64,64],#,32,32,16,16],
                                            activation=dense_activation
                                            )([x,gnnidx,gndist])
             
         x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
         
+        
         x = Dense(64,name='dense_past_mp_'+str(i),activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
+        
+        if True:
+            x_i = intermediate_condensation(
+                x, rs, energy, t_spectator_weight, t_idx,
+                trainable=True,
+                record_metrics=True,
+                cluster_dims=3,
+                name='intermediate_condensation_'+str(i),
+            )
+            x = Concatenate()([x_i,x])
         
         x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
         
@@ -208,6 +220,8 @@ def gravnet_model(Inputs,
         
     
     x = Concatenate()([c_coords]+allfeat)
+    
+    
     #do one more exchange with all
     x = Dense(64,activation=dense_activation)(x)
     x = Dense(64,activation=dense_activation)(x)
@@ -233,6 +247,7 @@ def gravnet_model(Inputs,
                                          use_energy_weights=True,
                                          record_metrics=True,
                                          print_loss=True,
+                                         print_batch_time=True,
                                          name="FullOCLoss",
                                          **loss_options
                                          )(  # oc output and payload
@@ -374,6 +389,14 @@ cb += [
         record_frequency= record_frequency,
         plot_frequency = plotfrequency,
         select_metrics='*_non_amb_truth_fraction',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/rest.html',
+        record_frequency= record_frequency,
+        plot_frequency = plotfrequency,
+        select_metrics=['*purity*','*dyn*'],
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     

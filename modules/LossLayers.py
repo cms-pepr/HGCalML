@@ -102,6 +102,45 @@ class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
         
         return sw, tidx
         
+
+class NormaliseTruthIdxs(tf.keras.layers.Layer):
+    
+    def __init__(self,**kwargs):
+        '''
+        changes arbitrary truth indices to well defined indices such that
+        sort(unique(t_idx)) = -1, 0, 1, 3, 4, 5, ... for each row split
+        
+        Inputs: truth indices, row splits
+        Output: new truth indices
+        
+        '''
+        if 'dynamic' in kwargs:
+            super(NormaliseTruthIdxs, self).__init__(**kwargs)
+        else:
+            super(NormaliseTruthIdxs, self).__init__(dynamic=True,**kwargs)
+        
+    def call(self, inputs):
+        assert len(inputs) == 2
+        t_idx, rs = inputs
+        
+        #double unique
+        if rs.shape[0] == None:
+            return t_idx
+        
+        out = []
+        t_idx = t_idx[:,0] 
+        for i in tf.range(rs.shape[0] - 1):
+            #double unique?
+            r_t_idx = t_idx[rs[i]:rs[i+1]]
+            
+            r_idxm = tf.reduce_min(r_t_idx, keepdims=True)#this could be noise or not
+            
+            r_t_idx = tf.concat([r_idxm, r_t_idx], axis=0) #make sure the smallest is first
+            _, uidx = tf.unique(r_t_idx) # unique idx will five the smallest first as "0"
+            r_t_idx = uidx[1:] + r_idxm # add-back smallest 0 -> -1 for noise, and remove first again
+            out.append(r_t_idx)
+        
+        return tf.concat(out, axis=0)[:,tf.newaxis]
         
 
 class LossLayerBase(LayerWithMetrics):
@@ -252,6 +291,171 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
         #notnoise = inputs[1] >= 0
         #noise can never be spectator
         return tf.where(abovethresh, tf.ones_like(inputs[0])-self.minimum, 0.)
+
+
+#helper for OC theshold losses
+def _thresh(x, d, t, invert=False):
+    '''
+    x: something to be multiplied by a threshold modifier
+    d: distance to threshold
+    t: threshold
+    invert: False: threshold is an upper bound
+            True: threshold is a lower bound
+    '''
+    a = 10. / (t + 1e-2)
+    
+    dmt = a * (d-t)
+    if hasattr(dmt, 'row_splits'):
+        dmt = tf.ragged.map_flat_values(tf.tanh,dmt)
+    else:
+        dmt = tf.tanh(dmt)
+        
+    if invert:
+        return (0.5 * (1. + dmt)) * x
+    return (0.5 * (1. - dmt)) * x
+     
+class LLFullOCThresholds(LossLayerBase):
+    def __init__(self, 
+                 purity_weight = 0.5,
+                 object_energy_weight = 'modlog',
+                 **kwargs):
+        '''
+        creates gradients for t_d and t_b
+        Inputs: a lot
+        
+        # betas: V x 1
+        # coords: V x C
+        # d: V x 1
+        # c_idx: ragged to select condensation points
+        # ch_idx: ragged to select condensation points and their hits
+        # energy: hit energy, V x 1
+        # t_idx: V x 1
+        # t_depe: true deposited energy
+        # rs: rs
+        # t_d: ()
+        # t_b: ()
+        
+        Output: pass-through of betas
+        '''
+        
+        assert 0. < purity_weight < 1.
+        self.purity_weight = purity_weight
+        
+        assert object_energy_weight == 'log' or object_energy_weight == 'lin'\
+          or object_energy_weight == 'modlog' or object_energy_weight == 'none'
+        if object_energy_weight == 'log':
+            self.oweight = self._e_log
+        if object_energy_weight == 'lin':
+            self.oweight = self._e_lin
+        if object_energy_weight == 'none':
+            self.oweight = self._e_none
+        if object_energy_weight == 'modlog':
+            self.oweight = self._e_modlog
+        self.object_energy_weight = object_energy_weight # to save it
+        
+        super(LLFullOCThresholds, self).__init__(**kwargs)
+        
+    def get_config(self):
+        config={'purity_weight': self.purity_weight,
+                'object_energy_weight': self.object_energy_weight}
+        base_config = super(LLFullOCThresholds, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    
+    def _e_log(self, e):
+        return tf.math.log1p(e + 1e-6)
+    def _e_modlog(self, e):
+        return tf.math.log1p(e + 1e-6)**2
+    def _e_lin(self, e):
+        return e
+    def _e_none(self, e):
+        return tf.ones_like(e)
+    
+    def loss(self, inputs):
+        assert len(inputs) == 10
+        # betas: V x 1
+        # coords: V x C
+        # d: V x 1
+        # c_idx: ragged to select condensation points
+        # ch_idx: ragged to select condensation points and their hits
+        # energy: hit energy, V x 1
+        # t_idx: V x 1
+        # t_d: ()
+        # t_b: ()
+        betas, coords, d, c_idx, ch_idx, energy, t_idx, t_depe, t_d, t_b = inputs
+        
+        t_d, t_b = t_d[0], t_b[0] #remove extra dim
+        
+        print(f't_d {t_d}, t_b {t_b}')
+        
+        # distance from cp to hits:
+        ch_coords = tf.gather_nd(coords, ch_idx) # [e, r, r, C]
+        c_coords = tf.gather_nd(coords, c_idx)
+        ch_dsq = (tf.expand_dims(c_coords,axis=2) - ch_coords)**2
+        ch_dsq = tf.reduce_sum(ch_dsq, axis=-1, keepdims=True) # [e, r, r, 1]
+        ch_d_n = tf.sqrt(ch_dsq + 1e-4)
+        ch_d_n /= tf.expand_dims(tf.gather_nd(d, c_idx),axis=2) # [e, r, r, 1], normalised to distance scaler
+        
+        ch_energy = tf.gather_nd(energy, ch_idx)
+        
+        #create same tidx map for purity
+        ch_t_idx = tf.gather_nd(t_idx, ch_idx)
+        c_t_idx = tf.gather_nd(t_idx, c_idx)
+        
+        ch_noitnoise = tf.cast(ch_t_idx >= 0, 'float32')
+        
+        #this is still int
+
+        ch_pure = tf.where(tf.expand_dims(c_t_idx,axis=2) == ch_t_idx, 
+                           tf.ones_like(ch_t_idx), tf.zeros_like(ch_t_idx) )
+        ch_pure = ch_noitnoise * tf.cast(ch_pure, 'float32') # noise never pure
+        
+        
+        #now weight by distance w.r.t. threshold and energy
+        #maybe also threshold the denominator..?
+        t_h_p = ch_energy*ch_pure
+        t_h_p = _thresh(t_h_p, ch_d_n, t_d)
+        c_purity = tf.reduce_sum(t_h_p, axis=2)\
+         / (tf.reduce_sum(ch_energy, axis=2) + 1e-3)
+        
+        ch_depe = tf.gather_nd(t_depe, ch_idx)
+        c_mean_t_depe = tf.reduce_sum(ch_noitnoise * ch_energy * ch_depe, axis=2)# [e, r, 1]
+        c_mean_t_depe /= tf.reduce_sum(ch_noitnoise * ch_energy, axis=2) + 1e-3
+        
+        # expected collected energy
+        c_depe = c_mean_t_depe # [e, r, 1]
+        c_eff = tf.reduce_sum(_thresh(ch_energy, ch_d_n, t_d), axis=2) /\
+           tf.reduce_mean(_thresh(tf.ones_like(ch_energy), ch_d_n, t_d), axis=2)
+        
+        c_eff /= (c_depe + 1e-3)
+        
+        #weight both by betas
+        c_betas = tf.gather_nd(betas, c_idx) # [e, r, 1]
+        
+        #object weights, will be automatically small for noise
+        c_oweight = self.oweight(c_mean_t_depe)
+        c_ones = tf.ones_like(c_purity)
+        ow_sum = tf.reduce_sum(c_oweight * _thresh(c_ones, c_betas, t_b,True), axis=1) + 1e-6
+        
+        #make sure noise does not get included
+        
+        purity = tf.reduce_sum(c_oweight * _thresh(c_purity, c_betas, t_b,True), axis=1)
+        purity /= ow_sum
+        purity = tf.reduce_mean(purity)
+        efficiency = tf.reduce_mean(c_oweight * _thresh(c_eff, c_betas, t_b,True), axis=1)
+        efficiency /= ow_sum
+        efficiency = tf.reduce_mean(efficiency)
+        
+        self.add_prompt_metric(purity, self.name+'_purity')
+        self.add_prompt_metric(efficiency, self.name+'_efficiency')
+        
+        
+        loss = self.purity_weight * (1. - purity) + (1.-self.purity_weight)* tf.abs(1. - efficiency)
+        
+        print(f'purity {purity} efficiency {efficiency} loss {loss}')
+        
+        return loss
+
     
 class LLOCThresholds(LossLayerBase):
     def __init__(self, 
@@ -285,13 +489,8 @@ class LLOCThresholds(LossLayerBase):
 
     def loss(self, inputs):
         
-        def thresh(x, d, t, invert=False):
-            a = 10. / (t + 1e-2)
-            if invert:
-                return x * (0.5 * (1. + tf.tanh(a * (d-t))))
-            return x * (0.5 * (1. - tf.tanh(a * (d-t))))
         
-        asso_idx, beta, d, x , tidx, t_d, t_b = inputs
+        beta, asso_idx, d, x , tidx, t_d, t_b = inputs
         
         t_d, t_b =  t_d[0], t_b[0]
          
@@ -311,7 +510,7 @@ class LLOCThresholds(LossLayerBase):
         #print('t_d',t_d, 't_b',t_b)
         #return tf.reduce_mean((1-t_d)**2  + (0.9-t_b)**2)
     
-        if tf.shape(Msel)[0] == None:
+        if Msel is None or tf.shape(Msel)[0] == None:
             return 0.
         
         #OOM safe
@@ -356,8 +555,8 @@ class LLOCThresholds(LossLayerBase):
         # get truth
         
         
-        den_k = tf.reduce_sum(thresh(mask_k_m, dsq_k_m, t_d), axis=1) # K x 1
-        p_k = tf.reduce_sum(thresh(mask_k_m*same_k_m, dsq_k_m, t_d), axis=1) # K x 1
+        den_k = tf.reduce_sum(_thresh(mask_k_m, dsq_k_m, t_d), axis=1) # K x 1
+        p_k = tf.reduce_sum(_thresh(mask_k_m*same_k_m, dsq_k_m, t_d), axis=1) # K x 1
         
         p_k = tf.math.divide_no_nan(p_k, den_k) # K x 1
         
@@ -365,8 +564,8 @@ class LLOCThresholds(LossLayerBase):
         
         any_non_singular = tf.reduce_sum(non_singular) > 0.
         #now the same with beta
-        p_w = tf.reduce_sum(non_singular * thresh(p_k, b_k, t_b, True))
-        den_w = tf.reduce_sum(non_singular * thresh(tf.ones_like(p_k), b_k, t_b, True))
+        p_w = tf.reduce_sum(non_singular * _thresh(p_k, b_k, t_b, True))
+        den_w = tf.reduce_sum(non_singular * _thresh(tf.ones_like(p_k), b_k, t_b, True))
         p_w = tf.math.divide_no_nan(p_w, den_w + 1e-2) # ()
         
         p_w = tf.where(any_non_singular, p_w, 1.)

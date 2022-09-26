@@ -80,6 +80,7 @@ def create_outputs(x, n_ccoords=3,
 
 
 
+from GravNetLayersRagged import MultiBackScatterOrGather
 def re_integrate_to_full_hits(
         pre_selection,
         pred_ccoords,
@@ -113,7 +114,6 @@ def re_integrate_to_full_hits(
     ('pred_dist', pred_dist),
     ('row_splits', row_splits)
     '''
-    from GravNetLayersRagged import MultiBackScatterOrGather
     from globals import cluster_space as  cs
     
     #this is only true if the preselection is run in situ - no preselected data set
@@ -171,7 +171,7 @@ from tensorflow.keras.layers import Flatten, Reshape
 from GravNetLayersRagged import NeighbourGroups,GroupScoreFromEdgeScores,ElementScaling, EdgeSelector, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
 from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
     
-from GravNetLayersRagged import CondensatesToPseudoRS, ReversePseudoRS, AssertEqual, CleanCondensations, CreateMask
+from GravNetLayersRagged import XYZtoXYZPrime, CondensatesToPseudoRS, ReversePseudoRS, AssertEqual, CleanCondensations, CreateMask
 from LossLayers import LLGoodNeighbourHood, LLOCThresholds, LLKnnPushPullObjectCondensation, LLKnnSimpleObjectCondensation
 
 #also move this to the standard pre-selection  model
@@ -196,6 +196,10 @@ def condition_input(orig_inputs):
         processed_features = ProcessFeatures(name='precondition_process_features')(orig_inputs['features'])
         orig_inputs['coords'] = SelectFeatures(5, 8)(processed_features)
         orig_inputs['features'] = processed_features
+        
+        #create starting point for cluster coords
+        orig_inputs['prime_coords'] = XYZtoXYZPrime()(SelectFeatures(5, 8)(orig_inputs['orig_features']))
+    
     
     #get some things to work with    
     orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
@@ -213,8 +217,55 @@ def expand_coords_if_needed(coords, x, ndims, name, trainable):
                                          kernel_initializer='zeros',
                                          name=name,
                                          trainable=trainable)(x) ])
+
+
+
+def mini_gravnet_block(K, x, coords, rs, trainable, record_metrics, name):
     
-def pre_condensation_model(inputs,
+    x_in = x
+    knncoords = ElementScaling(name=name+'gn_es1',trainable=trainable)(coords)                                    
+    nidx,dist = KNN(K=K,record_metrics=record_metrics,name=name+'_knn',
+                    min_bins=20)([knncoords,rs])#hard code it here, this is optimised given our datasets
+    
+    x = Dense(64,activation='elu',name=name+'dense0',trainable=trainable)(x)
+    x = DistanceWeightedMessagePassing([32,32],name=name+'dmp1',
+                                       trainable=trainable,
+                                       activation='elu')([x,nidx,dist])# hops are rather light
+    
+    return Concatenate()([x, x_in])
+
+def mini_noise_block(sel, noise_threshold, trainable, record_metrics, name):
+    
+    isnotnoise = Dense(1, activation='sigmoid',trainable=trainable,
+                           name=name+'_noisescore_d1',
+                               )(sel['x'])
+        
+    
+    
+    isnotnoise = LLNotNoiseClassifier(active=trainable,record_metrics=record_metrics,
+        scale=1.,
+        purity_metrics_threshold = noise_threshold,
+        record_efficiency=True
+        )([isnotnoise, sel['t_idx']])
+    
+    isnotnoise = Where(outputval=1.,condition='!=0')([sel['is_track'], isnotnoise])
+    sel['isnotnoise_score'] = isnotnoise
+       
+                                    
+    no_noise_sel, no_noise_rs, noise_backscatter = NoiseFilter(
+        threshold = noise_threshold,
+        record_metrics=record_metrics
+        )([sel['isnotnoise_score'],sel['row_splits']])
+        
+    for k in sel.keys():
+        sel[k] = SelectFromIndices()([no_noise_sel,sel[k]]) #also  good check, will fail if dimensions don't match
+    
+    sel['row_splits'] = no_noise_rs
+    sel['noise_backscatter'] = noise_backscatter
+    return sel
+    
+    
+def mini_pre_condensation_model(inputs,
                            record_metrics=False,
                            trainable=False,
                            t_d=0.05,
@@ -223,7 +274,7 @@ def pre_condensation_model(inputs,
                            purity_target=0.95,
                            print_batch_time=False,
                            name='pre_condensation',
-                           condensation_mode = 'precond',
+                           condensation_mode = 'std',
                            noise_threshold=0.15,
                            cleaning_threshold=0.1,
                            cluster_dims=3,
@@ -233,13 +284,154 @@ def pre_condensation_model(inputs,
                            publishpath=None
                            ):    
     
+    K = 12
+    
+    orig_inputs = condition_input(inputs)
+    
+    #return {'coords': orig_inputs['prime_coords']}
+
+    sel = orig_inputs.copy()
+    sel['x'] = mini_gravnet_block(K, orig_inputs['features'], 
+                                  orig_inputs['prime_coords'], 
+                                  orig_inputs['row_splits'], 
+                                  trainable, record_metrics, name)
+    
+    ## REMOVE NOISE ##
+    if noise_threshold > 0:
+        sel = mini_noise_block(sel, noise_threshold, trainable, record_metrics, name)
+    
+    sel['x'] = Dense(64, activation='elu', name = name+'seld1')(sel['x'])
+    ### object condensation part
+    beta = Dense(1, activation='sigmoid',name=name+'dense_beta')(sel['x'])
+    d = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name=name+'dense_d')(sel['x'])) 
+    
+    ccoords = Dense(cluster_dims,name=name+'dense_ccoords',trainable=trainable)(sel['x'])
+    ccoords = ScalarMultiply(0.01)(ccoords)
+    
+    prime_coords = ElementScaling(name=name+'es2',trainable=trainable)(sel['prime_coords'])
+    prime_coords = expand_coords_if_needed(prime_coords, sel['x'],
+                                             cluster_dims, name+'ccoords_exp',
+                                             trainable=trainable)
+    
+    ccoords = Add()([prime_coords, ccoords])
+    
+    beta = LLBasicObjectCondensation(
+           q_min=q_min,
+           implementation = condensation_mode,
+           print_batch_time = print_batch_time,
+           record_batch_time = record_metrics,
+           active=trainable,
+           record_metrics = record_metrics,
+           use_average_cc_pos=0.5
+        )([beta, ccoords, d,sel['t_spectator_weight'], 
+                          sel['t_idx'], sel['row_splits']])
+    
+    out = sel
+    out['orig_rowsplits'] = orig_inputs['row_splits']
+    out['beta'] = beta
+    out['features'] = Concatenate()([sel['features'],sel['x']])
+    
+    
+    #track or masked
+    #no_condensation_mask = tf.keras.layers.Maximum()([no_condensation_mask, sel['is_track']])
+    no_condensation_mask = sel['is_track']
+    
+    ch_idx, c_idx, _, revflat, asso_idx, dyn_t_d, dyn_t_b = RaggedCreateCondensatesIdxs(t_d=t_d,t_b=t_b, 
+                                       active = condensate, 
+                                       keepnoise = True,
+                                       return_thresholds = True,
+                                       trainable = trainable,
+                                       record_metrics = record_metrics,
+                                       name = name+'_r_condensation')([beta, ccoords, d, 
+                                                                     no_condensation_mask, 
+                                                                     sel['row_splits']])
+    
+    out['cond_idx'] = OCReductionMetrics(name = name+'_metric',        
+        record_metrics=record_metrics
+        )([asso_idx,  sel['t_idx']])
+    
+    if False:    
+        out['beta'] = LLOCThresholds(
+                   name=name+'_ll_oc_thresholds',
+                   active=trainable,
+                   highest_t_d = 1.,
+                   print_batch_time = print_batch_time,
+                   record_batch_time = record_metrics,
+                   lowest_t_b = 0.7,
+                   purity_target = purity_target,
+                   record_metrics=record_metrics)([beta, out['cond_idx'], d, 
+                                                   ccoords , sel['t_idx'], dyn_t_d, dyn_t_b])
+    
+    else:
+        # betas, coords, d, c_idx, ch_idx, energy, t_idx, t_depe, t_d, t_b
+        out['beta'] = LLFullOCThresholds(
+            name=name+'_ll_full_oc_thresholds',
+            active=trainable,
+            purity_weight = 0.9,
+            record_metrics=record_metrics,
+             )([beta, ccoords, d, c_idx, ch_idx, 
+                sel['rechit_energy'], sel['t_idx'], 
+                sel['t_rec_energy'], dyn_t_d, dyn_t_b])
+    
+                                       
+    if debugplots_after>0:
+        out['ccoords'] = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_ccoords',
+                                        publish=publishpath)(
+                                            [ccoords,
+                                             beta, 
+                                             d,#additional features to add as hover data
+                                             sel['t_idx'],sel['row_splits']])
+        
+                                        
+        out['dummy'] = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_ccoords_cleaning',
+                                        publish=publishpath)(
+                                            [sel['coords'],
+                                             sel['rechit_energy'], 
+                                             sel['t_idx'],#additional features to add as hover data
+                                             asso_idx,sel['row_splits']])
+    
+    
+
+    return out
+        
+def pre_condensation_model(inputs,
+                           record_metrics=False,
+                           trainable=False,
+                           t_d=0.05,
+                           t_b=0.9,
+                           q_min=0.2,
+                           purity_target=0.95,
+                           print_batch_time=False,
+                           name='pre_condensation',
+                           condensation_mode = 'std',
+                           noise_threshold=0.15,
+                           cleaning_threshold=0.1,
+                           cluster_dims=3,
+                           condensate=True,
+                           debug_outdir='',
+                           debugplots_after=-1,
+                           publishpath=None
+                           ):    
     
     K = 12
     
     orig_inputs = condition_input(inputs)
     
-    coords = orig_inputs['coords']
+    coords = orig_inputs['prime_coords']
     energy = orig_inputs['rechit_energy']
+    
+    if debugplots_after>0:
+        coords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_prime_coords',
+                                        publish=publishpath)(
+                                            [coords,
+                                             energy, 
+                                             orig_inputs['t_idx'],orig_inputs['row_splits']])
+    
+    
+    
     is_track = orig_inputs['is_track']
     x = orig_inputs['features']
     
@@ -382,14 +574,14 @@ def pre_condensation_model(inputs,
     
     else:
         beta = LLBasicObjectCondensation(
-        q_min=q_min,
-        implementation = condensation_mode,
-        print_batch_time = print_batch_time,
-        record_batch_time = record_metrics,
-        #scale = 0.1,
-        active=trainable,
-        record_metrics = record_metrics,
-        use_average_cc_pos=0.5
+           q_min=q_min,
+           implementation = condensation_mode,
+           print_batch_time = print_batch_time,
+           record_batch_time = record_metrics,
+           #scale = 0.1,
+           active=trainable,
+           record_metrics = record_metrics,
+           use_average_cc_pos=0.5
         )([beta, ccoords, d,sel['t_spectator_weight'], 
                                         sel['t_idx'], sel['row_splits']])
     
@@ -414,30 +606,44 @@ def pre_condensation_model(inputs,
     #no_condensation_mask = tf.keras.layers.Maximum()([no_condensation_mask, sel['is_track']])
     no_condensation_mask = sel['is_track']
     
-    out['cond_idx'], out['pred_sid'], dyn_td, dyn_tb  = CondensateToIdxs(t_d=t_d,t_b=t_b, 
+    ch_idx, c_idx, _, revflat, asso_idx, dyn_t_d, dyn_t_b = RaggedCreateCondensatesIdxs(t_d=t_d,t_b=t_b, 
                                        active = condensate, 
                                        keepnoise = True,
                                        return_thresholds = True,
                                        trainable = trainable,
                                        record_metrics = record_metrics,
-                                       name = name+'_condensation')([beta, ccoords, d, 
+                                       name = name+'_r_condensation')([beta, ccoords, d, 
                                                                      no_condensation_mask, 
                                                                      sel['row_splits']])
     
     
+    
     out['cond_idx'] = OCReductionMetrics(name = name+'_metric',        
         record_metrics=record_metrics
-        )([out['cond_idx'],  sel['t_idx']])
-        
-    out['cond_idx'] = LLOCThresholds(
+        )([asso_idx,  sel['t_idx']])
+    
+    if False:    
+        beta = LLOCThresholds(
                    name=name+'_ll_oc_thresholds',
                    active=trainable,
                    highest_t_d = 1.,
                    print_batch_time = print_batch_time,
-        record_batch_time = record_metrics,
-        lowest_t_b = 0.7,
+                   record_batch_time = record_metrics,
+                   lowest_t_b = 0.7,
                    purity_target = purity_target,
-                   record_metrics=record_metrics)([out['cond_idx'], beta, d, ccoords , sel['t_idx'], dyn_td, dyn_tb])
+                   record_metrics=record_metrics)([beta, out['cond_idx'], d, 
+                                                   ccoords , sel['t_idx'], dyn_t_d, dyn_t_b])
+    
+    else:
+        # betas, coords, d, c_idx, ch_idx, energy, t_idx, t_depe, t_d, t_b
+        beta = LLFullOCThresholds(
+            name=name+'_ll_full_oc_thresholds',
+            active=trainable,
+            purity_weight = 0.9,
+            record_metrics=record_metrics,
+             )([beta, ccoords, d, c_idx, ch_idx, 
+                sel['rechit_energy'], sel['t_idx'], 
+                sel['t_rec_energy'], dyn_t_d, dyn_t_b])
     
                                        
     if debugplots_after>0:
@@ -456,7 +662,7 @@ def pre_condensation_model(inputs,
                                             [sel['coords'],
                                              sel['rechit_energy'], 
                                              sel['t_idx'],#additional features to add as hover data
-                                             out['pred_sid'],sel['row_splits']])
+                                             asso_idx,sel['row_splits']])
     
     out['ccoords'] = ccoords
 
@@ -734,6 +940,107 @@ def pre_selection_model(
     out['features'] = Concatenate()([out['features'],d,beta])
     
     return out
+    
+    
+from RaggedLayers import RaggedCreateCondensatesIdxs, RaggedSelectFromIndices, RaggedMixHitAndCondInfo 
+from RaggedLayers import RaggedCollapseHitInfo, RaggedDense, RaggedToFlatRS, FlatRSToRagged, ForceExec
+    
+from GravNetLayersRagged import RaggedGravNet   
+from LossLayers import LLFullOCThresholds 
+    
+def intermediate_condensation(
+        x, rs, energy, t_specweight, t_idx,
+        trainable=True,
+        record_metrics=True,
+        cluster_dims=3,
+        name='intermediate_condensation'
+        ):
+    
+    beta = Dense(1,activation='sigmoid',trainable=trainable,name=name+'_proto_beta')(x)
+    d = ScalarMultiply(2.)(Dense(1, activation='sigmoid',name=name+'dense_d')(x))
+    ccoords = Dense(cluster_dims,name=name+'dense_ccoords',trainable=trainable)(x)
+    
+    beta = LLBasicObjectCondensation(
+        q_min=1.,#high qmin here
+        implementation = 'std',
+        record_batch_time = record_metrics,
+        #scale = 0.1,
+        active=trainable,
+        print_batch_time = True,
+        record_metrics = record_metrics,
+        use_average_cc_pos=0.1 #small
+        )([beta, ccoords, d,t_specweight,t_idx, rs])
+    
+    #low thresholds
+    ch_idx, c_idx, _, revflat,\
+     asso_idx,t_d, t_b = RaggedCreateCondensatesIdxs(t_d = 0.2, t_b = 0.7,
+                                                     return_thresholds=True)([beta,x,d,rs])
+
+    if False:
+        beta = LLOCThresholds(
+                   name=name+'_ll_oc_thresholds',
+                   active=trainable,
+                   highest_t_d = 1.,
+                   record_batch_time = record_metrics,
+                   lowest_t_b = 0.5,
+                   purity_target = 0.8,
+                   record_metrics=record_metrics)([beta, asso_idx, d, 
+                                                   ccoords , t_idx, t_d, t_b])
+    
+    
+    else:
+        beta = LLFullOCThresholds(
+            name=name+'_ll_full_oc_thresholds',
+            active=trainable,
+            purity_weight = 0.9,
+             )([beta, ccoords, d, c_idx, ch_idx, 
+                energy, t_idx, t_depe, rs, t_d, t_b])
+    
+    beta = StopGradient()(beta)
+    
+    c_x = RaggedSelectFromIndices()([x, c_idx])
+    ch_x = RaggedSelectFromIndices()([x, ch_idx])
+    
+    #print('c_x, ch_x',c_x.shape, ch_x.shape)
+    c_x_skip_flat,_ = RaggedToFlatRS()(c_x)
+    for c in ['mean','max']:
+        ch_x = RaggedMixHitAndCondInfo('concat')([ch_x, c_x])
+        ch_x = RaggedDense(64, activation='elu')(ch_x)
+        c_x = RaggedCollapseHitInfo(c)(ch_x)
+    
+    #exchange through condensation points
+    xf, xfrs = RaggedToFlatRS()(c_x)
+    xf = Concatenate()([xf, c_x_skip_flat, beta])
+
+    if True:
+        xf, _, gnnidx, gndist = RaggedGravNet(n_neighbours=32,
+                                                     n_dimensions=3,
+                                                     n_filters=64,
+                                                     n_propagate=64,
+                                                     record_metrics=True,
+                                                     feature_activation='elu',
+                                                     name=name+'_cpgn1'
+                                                     )([xf, xfrs])
+        
+        xf = DistanceWeightedMessagePassing([32,32],name=name+'dmp1',
+                                           trainable=trainable,
+                                           activation='elu')([xf,gnnidx,gndist])
+
+    xf = Dense(64, activation='elu',name=name+'_d1',trainable=trainable)(xf)
+    # don't make it ragged again. no reason
+    c_x = FlatRSToRagged()([xf, xfrs])
+    
+    for c in ['mean','max']:
+        ch_x = RaggedMixHitAndCondInfo('concat')([ch_x, c_x])
+        ch_x = RaggedDense(64, activation='elu')(ch_x)
+        c_x = RaggedCollapseHitInfo(c)(ch_x)
+    
+    c_x,_ = RaggedToFlatRS()(c_x)
+    xf = Concatenate()([c_x, c_x_skip_flat])
+    #backgather to all hits, x is flat again
+    x = RaggedSelectFromIndices()([xf, revflat])
+    #print('x out',x.shape, 'revflat',revflat.shape)
+    return x
     
     
     

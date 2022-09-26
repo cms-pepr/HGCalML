@@ -89,6 +89,9 @@ class OCReductionMetrics(MLBase):
             asso_idx, tidx, energy = inputs
             
         energy = energy[:,0]
+        
+        asso_idx = tf.where(asso_idx<0, tf.range(tf.shape(asso_idx)[0]), asso_idx)
+        
         nafter = tf.cast(tf.shape(tf.unique(asso_idx)[0])[0], dtype='float32')
         nbefore = tf.cast(tf.shape(asso_idx)[0], dtype='float32')
         
@@ -96,7 +99,6 @@ class OCReductionMetrics(MLBase):
         
         self.add_prompt_metric(reduction, self.name + '_reduction')
         
-        asso_idx = tf.where(asso_idx<0, tf.range(tf.shape(asso_idx)[0]), asso_idx)
         #use asso index
         asso_tidx = tf.gather(tidx[:,0], asso_idx)
         sames = tf.cast(asso_tidx == tidx[:,0], 'float32')

@@ -109,8 +109,11 @@ namespace functor {
                 }
             }
         }
+        //clean up
+        delete [] min_;
+        delete [] max_;
+        delete [] my_ccoords;
     }
-
 
 
 template<typename dummy>

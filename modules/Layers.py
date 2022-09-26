@@ -205,6 +205,10 @@ global_layers_list['ApproxPCA']=ApproxPCA
 from GravNetLayersRagged import EdgeConvStatic
 global_layers_list['EdgeConvStatic']=EdgeConvStatic
 
+from GravNetLayersRagged import XYZtoXYZPrime
+global_layers_list['XYZtoXYZPrime']=XYZtoXYZPrime
+
+
 ### odd debug layers
 from DebugLayers import PlotCoordinates
 global_layers_list['PlotCoordinates']=PlotCoordinates
@@ -217,12 +221,16 @@ from DebugLayers import PlotNoiseDiscriminator
 global_layers_list['PlotNoiseDiscriminator']=PlotNoiseDiscriminator
 
 
+#ragged layers module
+from RaggedLayers import ragged_layers
+global_layers_list.update(ragged_layers)
 
-from LossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
+
+from LossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights, NormaliseTruthIdxs
 from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace, LLOCThresholds
 from LossLayers import LossLayerBase, LLBasicObjectCondensation, LLFullObjectCondensation,LLNeighbourhoodClassifier
 from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator, LLGoodNeighbourHood, LLKnnPushPullObjectCondensation
-from LossLayers import LLKnnSimpleObjectCondensation
+from LossLayers import LLKnnSimpleObjectCondensation, LLFullOCThresholds
 import traceback
 import os
 
@@ -232,12 +240,14 @@ import os
 
 
 global_layers_list['AmbiguousTruthToNoiseSpectator']=AmbiguousTruthToNoiseSpectator
+global_layers_list['NormaliseTruthIdxs']=NormaliseTruthIdxs
 
 global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
 
 global_layers_list['LossLayerBase']=LossLayerBase
 global_layers_list['LLNotNoiseClassifier']=LLNotNoiseClassifier
 global_layers_list['LLOCThresholds']=LLOCThresholds
+global_layers_list['LLFullOCThresholds']=LLFullOCThresholds
 global_layers_list['LLFillSpace']=LLFillSpace
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates

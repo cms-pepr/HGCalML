@@ -450,18 +450,26 @@ class CondensateToIdxs(LayerWithMetrics):
         assert len(inputs) == 4 or len(inputs) == 5
         if len(inputs) == 4:
             beta, ccoords, d, rs = inputs
-            nocondmask = tf.zeros_like(beta)[:,0]
+            nocondmask = tf.zeros_like(beta)
         else:
             beta, ccoords, d, nocondmask, rs = inputs
-            nocondmask = nocondmask[:,0]
         
         ridxs = tf.range(tf.shape(beta)[0])
         pred_sid = ridxs
         
         if rs.shape[0] == None:
+            pred_sid = ridxs[...,tf.newaxis]
+            asso = ridxs
+            alpha ,ncond = ridxs, ridxs
+            
             if self.return_thresholds:
-                return ridxs, ridxs[...,tf.newaxis], tf.reduce_sum(beta)*0., tf.reduce_sum(beta)*0.
-            return ridxs, ridxs[...,tf.newaxis]
+                if self.return_full_assignment:
+                    return pred_sid, asso, alpha, ncond,\
+                         self.dyn_t_d,self.dyn_t_b
+                return pred_sid, asso, alpha, self.dyn_t_d,self.dyn_t_b
+            if self.return_full_assignment:
+                return pred_sid, asso, alpha, ncond
+            return pred_sid, asso, alpha
         
         asso_idx = ridxs
         if self.active:
@@ -475,8 +483,9 @@ class CondensateToIdxs(LayerWithMetrics):
                                  no_condensation_mask=nocondmask,
                                  assign_by_max_beta=False)
 
-            if self.keepnoise:
-                asso_idx = tf.where(asso_idx<1, ridxs, asso_idx)
+            # doesn't work (anymore)
+            # if self.keepnoise:
+            #     asso_idx = tf.where(asso_idx<1, ridxs, asso_idx)
                 
             # check pred_sid
             if False:
@@ -506,7 +515,7 @@ class CondensateToIdxs(LayerWithMetrics):
             pred_sid = tf.ragged.row_splits_to_segment_ids(rs, out_type=tf.int32)
             pred_sid = tf.gather(rs, pred_sid)
             pred_sid = (ridxs - pred_sid)[:, tf.newaxis]
-            
+           
         if self.return_thresholds:
             self.add_prompt_metric(self.dyn_t_d, self.name+'_dyn_t_d')
             self.add_prompt_metric(self.dyn_t_b, self.name+'_dyn_t_b')
@@ -515,11 +524,13 @@ class CondensateToIdxs(LayerWithMetrics):
                     self.dyn_t_d, \
                     self.dyn_t_b
             else:
-                return asso_idx, pred_sid, \
+                return pred_sid, asso_idx, alpha, \
                     self.dyn_t_d, \
                     self.dyn_t_b
         
-        return pred_sid, asso_idx, alpha ,ncond
+        if self.return_full_assignment:
+            return pred_sid, asso_idx, alpha ,ncond
+        return pred_sid, asso_idx, alpha
 
 from pseudo_rs_op import create_prs_indices, revert_prs
 class CondensatesToPseudoRS(tf.keras.layers.Layer):            
@@ -2674,7 +2685,7 @@ class RaggedGravNet(LayerWithMetrics):
                  return_self=True,
                  sumwnorm=False,
                  feature_activation='relu',
-                 use_approximate_knn=True,
+                 use_approximate_knn=False,
                  coord_initialiser_noise=1e-2,
                  use_dynamic_knn=True,
                  **kwargs):
@@ -3243,6 +3254,22 @@ class EdgeConvStatic(tf.keras.layers.Layer):
         if self.add_mean:
             out = tf.concat([out, tf.reduce_mean(neighfeat,axis=1) ],axis=-1)
         return out
+        
+        
+class XYZtoXYZPrime(tf.keras.layers.Layer):
+    
+    def call(self, inputs):
+        x = inputs[...,0:1] 
+        y = inputs[...,1:2] 
+        z = inputs[...,2:3] 
+        r = tf.sqrt(tf.reduce_sum(inputs**2, axis=-1, keepdims=True) + 1e-6)
+        
+        #also adjust scale a bit
+        xprime = x / z *10.
+        yprime = y / z *10.
+        zprime = r / 100.
+        
+        return tf.concat([xprime,yprime,zprime], axis=-1)
         
         
         

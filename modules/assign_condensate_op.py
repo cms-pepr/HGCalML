@@ -60,9 +60,8 @@ def calc_ragged_shower_indices(assignment, row_splits,
     return sorting_indices_showers_ragged
     
     
-def calc_ragged_cond_indices(assignment, alpha_idx, row_splits, 
-                           gather_noise=True, return_reverse=True, 
-                           return_flat_reverse=True):
+def calc_ragged_cond_indices(assignment, alpha_idx, n_condensates, row_splits, 
+                           gather_noise=True, return_reverse=True):
     '''
     :param assignment: assignment indices from BuildAndAssignCondensatesBinned
     :param alpha_idx: indices of condensation points (output of BuildAndAssignCondensatesBinned)
@@ -70,6 +69,8 @@ def calc_ragged_cond_indices(assignment, alpha_idx, row_splits,
            [0,1,2,3,4...., (row split), 0,1,2,3,4...]
     :param n_condensates: number of condensates per row split (output of BuildAndAssignCondensatesBinned)
                           noise is not counted here
+    
+    :param row_splits: full row_splits
     
     :param return_reverse: returns the reverse operation to gather back. Example (x is some point feature vector [V x F]):
                            cidx, revidx = calc_ragged_cond_indices...
@@ -96,12 +97,18 @@ def calc_ragged_cond_indices(assignment, alpha_idx, row_splits,
     alpha_exp = alpha_idx[...,tf.newaxis]
     
     adapted_assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
-    n_nonoise_condensates = tf.reduce_max(adapted_assignment, axis=1)[:,0] + 1
-    n_nonoise_condensates = tf.concat([n_nonoise_condensates[0:1]*0, 
-                                       tf.cumsum(n_nonoise_condensates, axis=0)],axis=0)
+    n_nonoise_condensates = n_condensates #tf.reduce_max(adapted_assignment, axis=1)[:,0] + 1
+    #n_nonoise_condensates = tf.concat([n_nonoise_condensates[0:1]*0, 
+    #                                   tf.cumsum(n_nonoise_condensates, axis=0)],axis=0)
     
+    #print(f'{n_nonoise_condensates}, \n {alpha_exp}, {alpha_exp.shape},\n{assignment}, {row_splits}')
     rc_ass = tf.RaggedTensor.from_row_splits(alpha_exp, n_nonoise_condensates)
     
+    if row_splits.shape[0] is None: #no point to look for noise in nothing
+        if return_reverse:
+            return rc_ass, adapted_assignment.values,\
+                 tf.reduce_sum(adapted_assignment, axis=-1, keepdims=True).values
+        return rc_ass
     
     if gather_noise:
         
@@ -112,17 +119,11 @@ def calc_ragged_cond_indices(assignment, alpha_idx, row_splits,
         selidx = tf.where(noise_idx < 0, selidx, -2)
         noise_idx = tf.reduce_max(selidx, axis=1)
         noise_idx = tf.RaggedTensor.from_row_splits(noise_idx, tf.range(tf.shape(noise_idx)[0]+1))#one per rs
-        #print('noise_idx',noise_idx.shape,noise_idx)
         sel = noise_idx[...,0] >= 0
-        #print('sel',sel)
         noise_idx = tf.ragged.boolean_mask(noise_idx, sel)[...,0]
-        #print('noise_idx2',noise_idx.shape,noise_idx)
-        
         #end workaround
         noise_idx = tf.expand_dims(noise_idx, axis=-1)
         rc_ass = tf.concat([noise_idx, rc_ass],axis=1)
-        #print('rc_ass',rc_ass)
-        #exit()
         
     if return_reverse:
         
@@ -136,9 +137,6 @@ def calc_ragged_cond_indices(assignment, alpha_idx, row_splits,
         addrs = tf.range(nrs)[...,tf.newaxis][...,tf.newaxis]
         revidx = tf.concat([0 * revidx + addrs,revidx],axis=-1)
         
-        if not return_flat_reverse:
-            return rc_ass, revidx.values
-        
         add = n_condensates[:-1]
         add = add[...,tf.newaxis][...,tf.newaxis]
         mul = tf.concat([0*add, 0*add + 1],axis=-1)
@@ -150,6 +148,25 @@ def calc_ragged_cond_indices(assignment, alpha_idx, row_splits,
         
     return rc_ass
     
+
+def collapse_ragged_noise(ch_input, c_assignement_index):
+    '''
+    Requires that, if there is noise, it is the first entry in axis 1 
+    (guaranteed by all other ops here)
+    
+    :param ch_input: ragged input in format [e, ragged condensation points, ragged hits, F]
+    :param c_assignement_index: condensation point assignment index (-1 for noise)
+                                [e, ragged condensation points, 1]
+                                
+    :return: same as input, but noise reduced to one hit in hit dimension, and that hit is zeroed out
+    '''
+    
+    sel = c_assignement_index < 0
+    noisepart = tf.ragged.boolean_mask(ch_input, sel)[:,:,:1]
+    nonoisepart = tf.ragged.boolean_mask(ch_input, tf.logical_not(sel))
+    return tf.concat([noisepart, nonoisepart], axis=1)
+    
+
 
 def BuildAndAssignCondensatesBinned(ccoords,
                         betas,
