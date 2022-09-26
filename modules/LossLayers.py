@@ -108,7 +108,7 @@ class NormaliseTruthIdxs(tf.keras.layers.Layer):
     def __init__(self, active=True, **kwargs):
         '''
         changes arbitrary truth indices to well defined indices such that
-        sort(unique(t_idx)) = -1, 0, 1, 3, 4, 5, ... for each row split
+        sort(unique(t_idx)) = -1, 0, 1, 2, 3, 4, 5, ... for each row split
         
         This should be called after every layer that could have modified
         the truth indices or removed hits, if the output needs to be regular.
