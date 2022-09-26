@@ -960,7 +960,6 @@ class GooeyBatchNorm(LayerWithMetrics):
         
         self.add_prompt_metric(tf.reduce_mean(self.variance), self.name+'_variance')
         self.add_prompt_metric(tf.reduce_mean(self.mean), self.name+'_mean')
-        self.add_prompt_metric(tf.reduce_mean(self.viscosity), self.name+'_viscosity')
         
         #apply
         x -= self.mean

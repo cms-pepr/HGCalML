@@ -105,10 +105,18 @@ class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
 
 class NormaliseTruthIdxs(tf.keras.layers.Layer):
     
-    def __init__(self,**kwargs):
+    def __init__(self, active=True, **kwargs):
         '''
         changes arbitrary truth indices to well defined indices such that
         sort(unique(t_idx)) = -1, 0, 1, 3, 4, 5, ... for each row split
+        
+        This should be called after every layer that could have modified
+        the truth indices or removed hits, if the output needs to be regular.
+        
+        This Layer takes < 10ms usually so can be used generously.
+        
+        :param active: determines if it should be active. 
+                       In pure inference mode that might not be needed
         
         Inputs: truth indices, row splits
         Output: new truth indices
@@ -118,13 +126,23 @@ class NormaliseTruthIdxs(tf.keras.layers.Layer):
             super(NormaliseTruthIdxs, self).__init__(**kwargs)
         else:
             super(NormaliseTruthIdxs, self).__init__(dynamic=True,**kwargs)
+            
+        self.active = active
+    
+    def get_config(self):
+        config = {'active': self.active}
+        base_config = super(NormaliseTruthIdxs, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0]
         
     def call(self, inputs):
         assert len(inputs) == 2
         t_idx, rs = inputs
         
         #double unique
-        if rs.shape[0] == None:
+        if not self.active or rs.shape[0] == None:
             return t_idx
         
         out = []

@@ -173,9 +173,10 @@ from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscrim
     
 from GravNetLayersRagged import XYZtoXYZPrime, CondensatesToPseudoRS, ReversePseudoRS, AssertEqual, CleanCondensations, CreateMask
 from LossLayers import LLGoodNeighbourHood, LLOCThresholds, LLKnnPushPullObjectCondensation, LLKnnSimpleObjectCondensation
-
+from LossLayers import NormaliseTruthIdxs
 #also move this to the standard pre-selection  model
 def condition_input(orig_inputs):
+    
     if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
         orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,minimum=1e-1,active=True
                                                          )([orig_inputs['t_spectator'], 
@@ -191,7 +192,12 @@ def condition_input(orig_inputs):
     
     processed_features =  orig_inputs['features']  
     orig_inputs['orig_features'] = orig_inputs['features']  
-    #coords have not been built so features not processed
+    
+    #get some things to work with    
+    orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
+    orig_inputs['orig_row_splits'] = orig_inputs['row_splits'] 
+    
+    #coords have not been built so features not processed, so this is the first time this is called
     if not 'coords' in orig_inputs.keys():
         processed_features = ProcessFeatures(name='precondition_process_features')(orig_inputs['features'])
         orig_inputs['coords'] = SelectFeatures(5, 8)(processed_features)
@@ -200,11 +206,6 @@ def condition_input(orig_inputs):
         #create starting point for cluster coords
         orig_inputs['prime_coords'] = XYZtoXYZPrime()(SelectFeatures(5, 8)(orig_inputs['orig_features']))
     
-    
-    #get some things to work with    
-    orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
-    
-    orig_inputs['orig_row_splits'] = orig_inputs['row_splits'] 
     return orig_inputs
     
 
@@ -262,6 +263,10 @@ def mini_noise_block(sel, noise_threshold, trainable, record_metrics, name):
     
     sel['row_splits'] = no_noise_rs
     sel['noise_backscatter'] = noise_backscatter
+    
+    #this has removed hits, rebuild regular truth indices
+    sel['t_idx'] = NormaliseTruthIdxs()([sel['t_idx'], sel['row_splits'] ])
+    
     return sel
     
     
