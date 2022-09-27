@@ -450,7 +450,7 @@ class CondensateToIdxs(LayerWithMetrics):
         assert len(inputs) == 4 or len(inputs) == 5
         if len(inputs) == 4:
             beta, ccoords, d, rs = inputs
-            nocondmask = tf.zeros_like(beta)
+            nocondmask = None
         else:
             beta, ccoords, d, nocondmask, rs = inputs
         

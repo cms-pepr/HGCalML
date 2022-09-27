@@ -10,15 +10,17 @@ def apply_weights_from_path(path_to_weight_model, existing_model):
         weightmodel = tf.keras.models.load_model(path_to_weight_model, custom_objects=get_custom_objects())
         existing_model = apply_weights_where_possible(existing_model, weightmodel)
         
-        for le,lw in zip(existing_model.layers, weightmodel.layers):
-            if hasattr(le, 'get_config'):
-                if le.get_config() != lw.get_config():
-                    ce = le.get_config()
-                    cw = lw.get_config()
-                    for cek in ce.keys():
-                        if ce[cek] != cw[cek]:
-                            print('warning: different configuration',le.name, ':', cek, ce[cek], cw[cek])
-        
+        try:
+            for le,lw in zip(existing_model.layers, weightmodel.layers):
+                if hasattr(le, 'get_config'):
+                    if le.get_config() != lw.get_config():
+                        ce = le.get_config()
+                        cw = lw.get_config()
+                        for cek in ce.keys():
+                            if ce[cek] != cw[cek]:
+                                print('warning: different configuration',le.name, ':', cek, ce[cek], cw[cek])
+        except:
+            pass    
         return existing_model
     
     print('INFO: apply_weights_from_path: RobustModel deprecated ')

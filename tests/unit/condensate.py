@@ -3,14 +3,15 @@ from assign_condensate_op import calc_ragged_shower_indices, BuildAndAssignConde
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from RaggedLayers import RaggedDense, RaggedMixCPAndHitInfo
+from RaggedLayers import RaggedDense, RaggedMixHitAndCondInfo
+import time
 
-def make_data(nx, ny, nrs):
+def make_data(nx, ny, nrs,span=6):
     
     nx, ny = (nx, ny)
     def oners():
-        x = np.linspace(0, 6, nx)
-        y = np.linspace(0, 6, ny)
+        x = np.linspace(0, span, nx)
+        y = np.linspace(0, span, ny)
         xv, yv = np.meshgrid(x, y)
         
         x = np.concatenate([xv[...,np.newaxis], yv[...,np.newaxis]],axis=-1)
@@ -35,29 +36,34 @@ def make_data(nx, ny, nrs):
     return tf.constant(xs, dtype='float32'), tf.constant(betas, dtype='float32'), tf.constant(rs, dtype='int32')
 
 
-def test_indices(betathresh):
-    x,b,rs = make_data(690,30,5)
+def test_indices(betathresh, keep_noise):
+    x,b,rs = make_data(4,3,2,span=2)
     
-    nocond = tf.where( b <0.1, 1, tf.zeros_like(b))
+    nocond = None #tf.where( b <0.1, 1, tf.zeros_like(b))
     
     
-    assignment, asso, alphaidx, _, ncond = BuildAndAssignCondensatesBinned(x,
+    assignment, asso, alphaidx, is_cond, ncond = BuildAndAssignCondensatesBinned(x,
                             b,
                             tf.ones_like(b),
                             rs,
-                            0.21,
+                            betathresh,
                             no_condensation_mask = nocond,
+                            keep_noise=keep_noise,
                             assign_by_max_beta=False)
     
-    
-    
+    print(' >>>>>>>> next <<<<<<<<< ')
+    print('assignment',assignment[:,0])
+    print('asso',asso)
+    print('alphaidx',alphaidx)
+    print('is_cond',is_cond[:,0])
+    print('ncond',ncond)
     #exit()
     # ncondensates does not include noise, but then it is used as if it would
     # FIXME recalc on the fly using max and min assignment index per row split FIXME!
     irdxs = calc_ragged_shower_indices(assignment, rs)
     
     #print('indices A done>>>', ncond, assignment)
-    rcidx, retrev, flatrev = calc_ragged_cond_indices(assignment, alphaidx, rs)
+    rcidx, retrev, flatrev = calc_ragged_cond_indices(assignment, alphaidx, ncond, rs)
     
     #sanity check
     rassignment = tf.gather_nd(assignment, irdxs)
@@ -68,22 +74,31 @@ def test_indices(betathresh):
     cprassignement = tf.gather_nd(assignment, rcidx)
     #first check
     #print('>>first', rassignment, '\n',cprassignement)
-    tf.assert_equal((rassignment-cprassignement).values, 0) # == for ragged sometimes creates issues
+    tf.assert_equal((rassignment-cprassignement).values, 0, "first re-assign failed keep_noise: "+str(keep_noise)+
+                    '\nrassignment' + str(rassignment) + '\ncprassignement' + str(cprassignement)
+                    ) # == for ragged sometimes creates issues
     
     #back from ragged
     retass = tf.gather_nd(cprassignement, retrev)
     #print('second >> ',retass, '\n',assignment)
-    tf.assert_equal(retass, assignment)
+    tf.assert_equal(retass, assignment, "second re-assign failed keep_noise: "+str(keep_noise))
     
     #back from flat
     #print('third a >> ',cprassignement, assignment, '\n',retrev, flatrev, ncond)
     retass = tf.gather_nd(cprassignement.values, flatrev)
     #print('third >> ',retass, '\n',assignment)
-    tf.assert_equal(retass, assignment)
+    tf.assert_equal(retass, assignment, "flat re-assign failed keep_noise: "+str(keep_noise))
 
-for bt in 10*[0.001, 0.1, 0.2, 0.4]:
+for i,bt in enumerate(100*[0.01, 0.01, 0.1, 0.2, 0.4, 0.99]):
+    np.random.seed(i+1)
     print(bt)
-    test_indices(bt)
+    st = time.time()
+    test_indices(bt,False)
+    print('not keep noise',time.time()-st)
+    st=time.time()
+    np.random.seed(i+1)
+    test_indices(bt,True)
+    print('keep noise',time.time()-st)
 
 exit()
 #print('rcidx', rcidx)

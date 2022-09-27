@@ -12,8 +12,34 @@ def cumsum_ragged(tensor, exclusive=False):
     v = v - w
     return v
 
+
+def merge_noise_as_indiv_cp(assignment, asso_idx, alpha_idx, is_cond, n_condensates, row_splits):
+    #assignment first
+    assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
+    noise_mask = assignment < 0
+    x = cumsum_ragged(tf.cast(noise_mask, tf.int32))
+    x = tf.where(noise_mask, x, 0)
+    assignment = tf.where(noise_mask, x-1, assignment+tf.reduce_max(x, axis=1, keepdims=True))
+    
+    
+    assignment = assignment.values #back to flat
+    
+    allrange = tf.range(tf.shape(asso_idx)[0])
+    
+    #print('>>>',asso_idx,allrange, is_cond)
+    is_cond = tf.where(asso_idx<0, True, is_cond[:,0])
+    asso_idx = tf.where(asso_idx<0, allrange, asso_idx)
+    
+    alpha_idx = tf.boolean_mask(allrange, is_cond)
+    
+    r_is_cond = tf.RaggedTensor.from_row_splits(is_cond, row_splits)
+    n_condensates = tf.concat([n_condensates[0:1], tf.cumsum(tf.reduce_sum(tf.cast(r_is_cond, dtype='int32'), axis=1),axis=0)],axis=0)
+    
+    return assignment, asso_idx, alpha_idx, is_cond[...,tf.newaxis], n_condensates
+    
+
 def calc_ragged_shower_indices(assignment, row_splits,
-                               gather_noise=True, merge_noise=False):
+                               gather_noise=True):
     """
 
     :param assignment: [nvert, 1] Values should be consecutive i.e. -1,0,1,2,3,...N. Same is true for the every segment
@@ -22,8 +48,6 @@ def calc_ragged_shower_indices(assignment, row_splits,
     :param row_splits: [nvert+1], row splits
     :param gather_noise: boolean, whether to gather noise or not. If set to True, the first element in the shower
                          dimension will always correspond to the noise even if there is no noise vertex present.
-    :param merge_noise: If True, noise showers will be merged as one; and that would be the first shower in every endcap.
-                        If False, all the noise hits will get their own shower.
 
     :return: a double ragged tensor of indices, first ragged dimension iterates endcaps/samples and the second, showers
              in that endcap. This can be used in gather_nd as follows:
@@ -35,14 +59,7 @@ def calc_ragged_shower_indices(assignment, row_splits,
     if gather_noise:
         # move up one if there is any noise a row split
         assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
-
-        if not merge_noise:
-            noise_mask = assignment<0
-            x = cumsum_ragged(tf.cast(noise_mask, tf.int32))
-            x = tf.where(noise_mask, x, 0)
-            assignment = tf.where(noise_mask, x-1, assignment+tf.reduce_max(x, axis=1, keepdims=True))
-        else:
-            assignment = assignment - tf.reduce_min(assignment, axis=1, keepdims=True)
+        assignment = assignment - tf.reduce_min(assignment, axis=1, keepdims=True)
 
         assignment = assignment.values
         assignment = assignment[:, 0]
@@ -189,7 +206,9 @@ def BuildAndAssignCondensatesBinned(ccoords,
                         no_condensation_mask = None,
                         distance_threshold = 1.,
                         assign_by_max_beta=False,
-                        nbin_dims=3):
+                        nbin_dims=3,
+                        keep_noise=False,
+                        ):
     """
     :param ccoords: [nvert,ndim] Clustering coordinates of shape
     :param betas: [nvert, 1] Betas of shape
@@ -202,6 +221,9 @@ def BuildAndAssignCondensatesBinned(ccoords,
     :param assign_by_max_beta: Boolean. If set to True, the higher beta vertex eats up all the vertices in its radius. If set to
              False, the assignment for a vertex is done to the condensate it is the closest to. True behaves like
              anti-kt jet clustering algorighm while False behaves like XCone.
+    :param keep_noise: If True, "noise" hits that remain after clustering will become one condensation point each. If False,
+                       they will be merged into the first 'shower' entry in each ragged index tensor
+                        
     :return: 5 elements: (in order)
     1. assignment: [nvert,1] Assignment in ascending order from 0,1,2,3...N. Resets at every ragged segment.
                    tf.gather_nd(assignment, alpha_idx[...,tf.newaxis]) is guaranteed to be [0,1,2,3,4...., (row split), 0,1,2,3,4...]
@@ -285,8 +307,18 @@ def BuildAndAssignCondensatesBinned(ccoords,
 
     pred_shower_alpha_idx = alpha_indices[alpha_indices!=-1]
     is_cond = tf.cast(tf.scatter_nd(pred_shower_alpha_idx[:, tf.newaxis], tf.ones(pred_shower_alpha_idx.shape[0]), [betas.shape[0]]), tf.bool)
+    
+    #re-order
+    pred_shower_alpha_idx = tf.boolean_mask(tf.range(tf.shape(is_cond)[0]), is_cond)
+    
+    #switch to standard format
+    assignment, asso_idx, alpha_idx, is_cond, n_condensates = assignment[:, tf.newaxis], asso, pred_shower_alpha_idx, is_cond[:, np.newaxis], n_condensates
+    
+    if keep_noise:
+        o = merge_noise_as_indiv_cp(assignment, asso_idx, alpha_idx, is_cond, n_condensates, row_splits)
+        assignment, asso_idx, alpha_idx, is_cond, n_condensates = o
 
-    return assignment[:, tf.newaxis], asso, pred_shower_alpha_idx, is_cond[:, np.newaxis], n_condensates
+    return assignment, asso_idx, alpha_idx, is_cond, n_condensates
 
 
 
