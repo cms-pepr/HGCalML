@@ -15,22 +15,28 @@ def cumsum_ragged(tensor, exclusive=False):
 
 def merge_noise_as_indiv_cp(assignment, asso_idx, alpha_idx, is_cond, n_condensates, row_splits):
     #assignment first
-    assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
+    r_orig_assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
+    assignment = r_orig_assignment
     noise_mask = assignment < 0
     x = cumsum_ragged(tf.cast(noise_mask, tf.int32))
     x = tf.where(noise_mask, x, 0)
     assignment = tf.where(noise_mask, x-1, assignment+tf.reduce_max(x, axis=1, keepdims=True))
     
-    
     assignment = assignment.values #back to flat
     
+    #-1 has been added in the front of every row split
+    
     allrange = tf.range(tf.shape(asso_idx)[0])
+    
+    rallrange = tf.RaggedTensor.from_row_splits(allrange, row_splits)
+    rallrange = tf.ragged.boolean_mask(rallrange, r_orig_assignment[:,:,0]<0)
+    
+    alpha_idx = tf.concat([rallrange, tf.RaggedTensor.from_row_splits(alpha_idx, n_condensates)],axis=1)
+    alpha_idx = alpha_idx.values
     
     #print('>>>',asso_idx,allrange, is_cond)
     is_cond = tf.where(asso_idx<0, True, is_cond[:,0])
     asso_idx = tf.where(asso_idx<0, allrange, asso_idx)
-    
-    alpha_idx = tf.boolean_mask(allrange, is_cond)
     
     r_is_cond = tf.RaggedTensor.from_row_splits(is_cond, row_splits)
     n_condensates = tf.concat([n_condensates[0:1], tf.cumsum(tf.reduce_sum(tf.cast(r_is_cond, dtype='int32'), axis=1),axis=0)],axis=0)
@@ -307,9 +313,6 @@ def BuildAndAssignCondensatesBinned(ccoords,
 
     pred_shower_alpha_idx = alpha_indices[alpha_indices!=-1]
     is_cond = tf.cast(tf.scatter_nd(pred_shower_alpha_idx[:, tf.newaxis], tf.ones(pred_shower_alpha_idx.shape[0]), [betas.shape[0]]), tf.bool)
-    
-    #re-order
-    pred_shower_alpha_idx = tf.boolean_mask(tf.range(tf.shape(is_cond)[0]), is_cond)
     
     #switch to standard format
     assignment, asso_idx, alpha_idx, is_cond, n_condensates = assignment[:, tf.newaxis], asso, pred_shower_alpha_idx, is_cond[:, np.newaxis], n_condensates

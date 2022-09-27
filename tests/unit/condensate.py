@@ -37,7 +37,7 @@ def make_data(nx, ny, nrs,span=6):
 
 
 def test_indices(betathresh, keep_noise):
-    x,b,rs = make_data(4,3,2,span=2)
+    x,b,rs = make_data(300,300,2,span=10)
     
     nocond = None #tf.where( b <0.1, 1, tf.zeros_like(b))
     
@@ -51,13 +51,14 @@ def test_indices(betathresh, keep_noise):
                             keep_noise=keep_noise,
                             assign_by_max_beta=False)
     
-    print(' >>>>>>>> next <<<<<<<<< ')
-    print('assignment',assignment[:,0])
-    print('asso',asso)
-    print('alphaidx',alphaidx)
-    print('is_cond',is_cond[:,0])
-    print('ncond',ncond)
-    #exit()
+    if False:
+        print(' >>>>>>>> next <<<<<<<<< ')
+        print('assignment',assignment[:,0])
+        print('asso',asso)
+        print('alphaidx',alphaidx)
+        print('is_cond',is_cond[:,0])
+        print('ncond',ncond)
+        #exit()
     # ncondensates does not include noise, but then it is used as if it would
     # FIXME recalc on the fly using max and min assignment index per row split FIXME!
     irdxs = calc_ragged_shower_indices(assignment, rs)
@@ -89,7 +90,7 @@ def test_indices(betathresh, keep_noise):
     #print('third >> ',retass, '\n',assignment)
     tf.assert_equal(retass, assignment, "flat re-assign failed keep_noise: "+str(keep_noise))
 
-for i,bt in enumerate(100*[0.01, 0.01, 0.1, 0.2, 0.4, 0.99]):
+for i,bt in enumerate(10*[0.00001, 0.01, 0.1, 0.2, 0.4, 0.9999]):
     np.random.seed(i+1)
     print(bt)
     st = time.time()
@@ -99,7 +100,7 @@ for i,bt in enumerate(100*[0.01, 0.01, 0.1, 0.2, 0.4, 0.99]):
     np.random.seed(i+1)
     test_indices(bt,True)
     print('keep noise',time.time()-st)
-
+    #exit()
 exit()
 #print('rcidx', rcidx)
 #exit()
