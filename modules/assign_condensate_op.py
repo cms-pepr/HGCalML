@@ -6,9 +6,14 @@ from bin_by_coordinates_op import BinByCoordinates
 
 _bc_op_binned = tf.load_op_library('binned_assign_to_condensates.so')
 
+def cumsum_ragged(tensor, exclusive=False):
+    v = tf.RaggedTensor.from_row_splits(tf.cumsum(tensor.values, exclusive=exclusive), tensor.row_splits)
+    w = tf.concat(([[0]], tf.reduce_max(v, axis=1)[0:-1]), axis=0)[:, tf.newaxis]
+    v = v - w
+    return v
 
-def calc_ragged_shower_indices(assignment, row_splits, 
-                               gather_noise=True):
+def calc_ragged_shower_indices(assignment, row_splits,
+                               gather_noise=True, merge_noise=False):
     """
 
     :param assignment: [nvert, 1] Values should be consecutive i.e. -1,0,1,2,3,...N. Same is true for the every segment
@@ -17,20 +22,28 @@ def calc_ragged_shower_indices(assignment, row_splits,
     :param row_splits: [nvert+1], row splits
     :param gather_noise: boolean, whether to gather noise or not. If set to True, the first element in the shower
                          dimension will always correspond to the noise even if there is no noise vertex present.
-    
-    
-                                                  
+    :param merge_noise: If True, noise showers will be merged as one; and that would be the first shower in every endcap.
+                        If False, all the noise hits will get their own shower.
+
     :return: a double ragged tensor of indices, first ragged dimension iterates endcaps/samples and the second, showers
              in that endcap. This can be used in gather_nd as follows:
                 ragged_indices = calc_ragged_shower_indices(assignment, row_splits, gather_noise=False)
                 x = tf.gather_nd(assignment, ragged_indices)
 
     """
-    
+
     if gather_noise:
-        #move up one if there is any noise a row split
+        # move up one if there is any noise a row split
         assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
-        assignment = assignment - tf.reduce_min(assignment, axis=1, keepdims=True)
+
+        if not merge_noise:
+            noise_mask = assignment<0
+            x = cumsum_ragged(tf.cast(noise_mask, tf.int32))
+            x = tf.where(noise_mask, x, 0)
+            assignment = tf.where(noise_mask, x-1, assignment+tf.reduce_max(x, axis=1, keepdims=True))
+        else:
+            assignment = assignment - tf.reduce_min(assignment, axis=1, keepdims=True)
+
         assignment = assignment.values
         assignment = assignment[:, 0]
     else:
@@ -56,7 +69,7 @@ def calc_ragged_shower_indices(assignment, row_splits,
     sorting_indices_showers_ragged = tf.RaggedTensor.from_row_lengths(sorting_indices_showers_ragged[..., tf.newaxis], rsx)
     sorting_indices_showers_ragged = tf.RaggedTensor.from_row_splits(sorting_indices_showers_ragged, n_condensates_n)
 
-    
+
     return sorting_indices_showers_ragged
     
     
