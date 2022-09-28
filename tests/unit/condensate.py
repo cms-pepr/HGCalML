@@ -3,7 +3,8 @@ from assign_condensate_op import calc_ragged_shower_indices, BuildAndAssignConde
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from RaggedLayers import RaggedDense, RaggedMixHitAndCondInfo
+from RaggedLayers import RaggedDense, RaggedMixHitAndCondInfo, RaggedSelectFromIndices, RaggedToFlatRS
+from GravNetLayersRagged import RaggedGravNet
 import time
 
 def make_data(nx, ny, nrs,span=6):
@@ -37,7 +38,7 @@ def make_data(nx, ny, nrs,span=6):
 
 
 def test_indices(betathresh, keep_noise):
-    x,b,rs = make_data(300,300,2,span=10)
+    x,b,rs = make_data(4,3,2,span=10)
     
     nocond = None #tf.where( b <0.1, 1, tf.zeros_like(b))
     
@@ -65,6 +66,24 @@ def test_indices(betathresh, keep_noise):
     
     #print('indices A done>>>', ncond, assignment)
     rcidx, retrev, flatrev = calc_ragged_cond_indices(assignment, alphaidx, ncond, rs)
+    
+    
+    print('row_lengths',irdxs.row_lengths())
+    
+    c_x = RaggedSelectFromIndices()([x, rcidx])
+    ch_x = RaggedSelectFromIndices()([x, irdxs])
+    ch_x = RaggedMixHitAndCondInfo('add')([ch_x, c_x])
+    
+    xf, xfrs = RaggedToFlatRS()(c_x)
+    
+    print('>>>>>',xf.shape, xfrs[-1])
+    xf,  *_ = RaggedGravNet(
+        n_neighbours=5, n_dimensions=3, n_filters=12, n_propagate=12
+        )([xf, xfrs])
+    
+    #print(alphaidx)
+    #print(xf.shape, xfrs, ncond, rcidx, irdxs.row_splits)
+    tf.assert_equal(xfrs, irdxs.row_splits)
     
     #sanity check
     rassignment = tf.gather_nd(assignment, irdxs)

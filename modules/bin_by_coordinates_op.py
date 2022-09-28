@@ -47,7 +47,8 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
     if not pre_normalized:
         min_coords = tf.reduce_min(coordinates,axis=0,keepdims=True)
         coordinates -= min_coords
-    dmax_coords = tf.reduce_max(coordinates,axis=0)
+    dmax_coords = tf.reduce_max(coordinates,axis=0) + 1e-3 #add tiny offset to guarantee at least one bin
+    dmax_coords = tf.where(tf.reduce_min(coordinates,axis=0) == dmax_coords, dmax_coords+1., dmax_coords)
     
     if bin_width is None:
         assert n_bins is not None
@@ -60,8 +61,6 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
         n_bins = (dmax_coords) / bin_width  
         n_bins += 1.
         n_bins = tf.cast(n_bins, dtype='int32')
-        
-    
         
     binass,flatbinass,nperbin = _bin_by_coordinates.BinByCoordinates(coordinates=coordinates, 
                                                 row_splits=row_splits, 

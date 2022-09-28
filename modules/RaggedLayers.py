@@ -100,7 +100,7 @@ class RaggedCreateCondensatesIdxs(CondensateToIdxs):
                         },f)
             raise e
     
-        
+        print('::: ',ch_idx.row_lengths() ,c_idx.row_lengths())
         if self.return_thresholds:
             return ch_idx, c_idx, rev, revflat, asso_idx, self.dyn_t_d, self.dyn_t_b
         else:
@@ -214,11 +214,30 @@ class RaggedMixHitAndCondInfo(tf.keras.layers.Layer):
         
         tf.assert_equal(hitsrt.shape[-1], cprt.shape[-1], self.name+" last shape must match.")
         tf.assert_equal(hitsrt.shape[0], cprt.shape[0], self.name+" first shape must match.")
-        #tf.assert_equal(hitsrt.shape.shape, 4, self.name+" shape issue.")
+        tf.assert_equal(hitsrt.shape.ndims, cprt.shape.ndims + 1, self.name+" shape issue.")
+        tf.assert_equal(hitsrt.shape.ndims, 4, self.name+" shape issue.")
         #tf.assert_equal(tf.reduce_sum(hitsrt.shape * 0 +1), tf.reduce_sum(cprt.shape * 0 +1) + 1, self.name+" shape issue.")
         #print('hitsrt, cprt 1',hitsrt.shape, cprt.shape)
         cprt = tf.expand_dims(cprt, axis=2)
-        return self.operation(hitsrt,cprt)
+        rt=cprt
+        rrt=hitsrt
+        
+        
+        # breaks at
+        # :  tf.Tensor([1 1 1 1], shape=(4,), dtype=int32) tf.Tensor([3 1 1 1], shape=(4,), dtype=int32) tf.Tensor([1392 1377 1352 1187], shape=(4,), dtype=int32)
+        # so rt has wrong row splits
+        try:
+            return self.operation(hitsrt,cprt)
+        except Exception as e:
+            print('>>>')
+            while hasattr(rt ,'values'):
+                print(': ',rrt.row_lengths() ,rt.row_lengths(), rrt.values.row_lengths())
+                #print(':: ',rt,rrt)
+                rt = rt.values
+                rrt = rrt.values
+            print('<<<')
+            raise e
+        
     
 
 #register

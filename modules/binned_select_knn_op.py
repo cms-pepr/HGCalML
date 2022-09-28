@@ -34,6 +34,8 @@ def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf
     elems_per_rs = 1
     if row_splits.shape[0] is not None:
         elems_per_rs = row_splits[1]
+        #do checks
+        tf.assert_equal(row_splits[-1],coords.shape[0])
     
     if n_bins is None:
         n_bins = tf.math.pow(tf.cast(elems_per_rs,dtype='float32')/(K/32),1/max_bin_dims)

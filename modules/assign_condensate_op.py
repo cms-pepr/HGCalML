@@ -95,7 +95,7 @@ def calc_ragged_shower_indices(assignment, row_splits,
 
     return sorting_indices_showers_ragged
     
-    
+# FIXME, there seems to be some sort of squeeze happening for '1' ragged dimensions?    
 def calc_ragged_cond_indices(assignment, alpha_idx, n_condensates, row_splits, 
                            gather_noise=True, return_reverse=True):
     '''
@@ -133,18 +133,21 @@ def calc_ragged_cond_indices(assignment, alpha_idx, n_condensates, row_splits,
     alpha_exp = alpha_idx[...,tf.newaxis]
     
     adapted_assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
-    n_nonoise_condensates = n_condensates #tf.reduce_max(adapted_assignment, axis=1)[:,0] + 1
-    #n_nonoise_condensates = tf.concat([n_nonoise_condensates[0:1]*0, 
-    #                                   tf.cumsum(n_nonoise_condensates, axis=0)],axis=0)
+    n_nonoise_condensates =  tf.reduce_max(adapted_assignment, axis=1)[:,0] + 1
+    n_nonoise_condensates = tf.concat([n_nonoise_condensates[0:1]*0, 
+                                       tf.cumsum(n_nonoise_condensates, axis=0)],axis=0)
     
+    # fails with 
+    # tf.Tensor([   0 1437 2453 3846 4948], shape=(5,), dtype=int32) tf.Tensor([0 2 2 2 2], shape=(5,), dtype=int32)
+    #print(n_condensates, n_nonoise_condensates)
     #print(f'{n_nonoise_condensates}, \n {alpha_exp}, {alpha_exp.shape},\n{assignment}, {row_splits}')
     rc_ass = tf.RaggedTensor.from_row_splits(alpha_exp, n_nonoise_condensates)
     
-    if row_splits.shape[0] is None: #no point to look for noise in nothing
-        if return_reverse:
-            return rc_ass, adapted_assignment.values,\
-                 tf.reduce_sum(adapted_assignment, axis=-1, keepdims=True).values
-        return rc_ass
+    #if row_splits.shape[0] is None: #no point to look for noise in nothing
+    #    if return_reverse:
+    #        return rc_ass, adapted_assignment.values,\
+    #             tf.reduce_sum(adapted_assignment, axis=-1, keepdims=True).values
+    #    return rc_ass
     
     if gather_noise:
         
@@ -320,6 +323,42 @@ def BuildAndAssignCondensatesBinned(ccoords,
     if keep_noise:
         o = merge_noise_as_indiv_cp(assignment, asso_idx, alpha_idx, is_cond, n_condensates, row_splits)
         assignment, asso_idx, alpha_idx, is_cond, n_condensates = o
+
+
+    #sanity check
+    try:
+        adapted_assignment = tf.RaggedTensor.from_row_splits(assignment, row_splits)
+        n_nonoise_condensates =  tf.reduce_max(adapted_assignment, axis=1)[:,0] + 1
+        n_nonoise_condensates = tf.concat([n_nonoise_condensates[0:1]*0, 
+                                           tf.cumsum(n_nonoise_condensates, axis=0)],axis=0)
+    
+        # fails with 
+        # tf.Tensor([   0 1437 2453 3846 4948], shape=(5,), dtype=int32) tf.Tensor([0 2 2 2 2], shape=(5,), dtype=int32)
+        tf.assert_equal(n_condensates, n_nonoise_condensates)
+    
+    except Exception as e:
+        import pickle
+        with open('BuildAndAssignCondensatesBinned_error.pkl','wb') as f:
+            pickle.dump(
+                {'assignment': assignment.numpy(),
+                 'asso_idx': asso_idx.numpy(),
+                 'alpha_idx': alpha_idx.numpy(),
+                 'is_cond': is_cond.numpy(),
+                 'n_condensates': n_condensates.numpy(),
+                 'from_assignment_n_condensates': n_nonoise_condensates.numpy(),
+                 'row_splits': row_splits.numpy(),
+                 #input
+                 'ccoords' : ccoords.numpy(),
+                 'betas' : betas.numpy(),
+                 'dist':dist.numpy(),
+                 'beta_threshold':beta_threshold,
+                 
+                 'assign_by_max_beta':assign_by_max_beta,
+                 'no_condensation_mask':no_condensation_mask,
+                 'keep_noise': keep_noise             
+                    },f)
+        raise e
+
 
     return assignment, asso_idx, alpha_idx, is_cond, n_condensates
 

@@ -2687,6 +2687,7 @@ class RaggedGravNet(LayerWithMetrics):
                  use_approximate_knn=False,
                  coord_initialiser_noise=1e-2,
                  use_dynamic_knn=True,
+                 debug = False,
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -2705,11 +2706,12 @@ class RaggedGravNet(LayerWithMetrics):
         :param feature_activation: activation to be applied to feature creation (F_LR) (default relu)
         :param use_approximate_knn: use approximate kNN method (SlicingKnn) instead of exact method (SelectKnn)
         :param use_dynamic_knn: uses dynamic adjustment of kNN binning derived from previous batches (only in effect together with use_approximate_knn)
+        :param debug: switches on debug output, is not persistent when saving
         :param kwargs:
         """
         super(RaggedGravNet, self).__init__(**kwargs)
 
-        n_neighbours += 1  # includes the 'self' vertex
+        #n_neighbours += 1  # includes the 'self' vertex
         assert n_neighbours > 1
 
         self.n_neighbours = n_neighbours
@@ -2720,6 +2722,7 @@ class RaggedGravNet(LayerWithMetrics):
         self.feature_activation = feature_activation
         self.use_approximate_knn = use_approximate_knn
         self.use_dynamic_knn = use_dynamic_knn
+        self.debug = debug
         
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
@@ -2785,11 +2788,16 @@ class RaggedGravNet(LayerWithMetrics):
     def priv_call(self, inputs, training=None):
         x = inputs[0]
         row_splits = inputs[1]
+        tf.assert_equal(x.shape.ndims, 2)
+        tf.assert_equal(row_splits.shape.ndims, 1)
+        if row_splits.shape[0] is not None:
+            tf.assert_equal(row_splits[-1], x.shape[0])
+        
         
         coordinates = self.input_spatial_transform(x)
         neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits, training)
-        neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours-1]) #for proper output shape for keras
-        distancesq = tf.reshape(distancesq, [-1, self.n_neighbours-1])
+        neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours]) #for proper output shape for keras
+        distancesq = tf.reshape(distancesq, [-1, self.n_neighbours])
 
         outfeats = self.create_output_features(x, neighbour_indices, distancesq)
         if self.return_self:
@@ -2803,30 +2811,30 @@ class RaggedGravNet(LayerWithMetrics):
         if self.return_self:
             return (input_shapes[0][0], 2*self.n_filters),\
                (input_shapes[0][0], self.n_dimensions),\
-               (input_shapes[0][0], self.n_neighbours),\
-               (input_shapes[0][0], self.n_neighbours)
+               (input_shapes[0][0], self.n_neighbours+1),\
+               (input_shapes[0][0], self.n_neighbours+1)
         else:
             return (input_shapes[0][0], 2*self.n_filters),\
                (input_shapes[0][0], self.n_dimensions),\
-               (input_shapes[0][0], self.n_neighbours-1),\
-               (input_shapes[0][0], self.n_neighbours-1)
+               (input_shapes[0][0], self.n_neighbours),\
+               (input_shapes[0][0], self.n_neighbours)
               
     
 
     def compute_neighbours_and_distancesq(self, coordinates, row_splits, training):
         if self.use_approximate_knn:
             bin_width = self.dynamic_radius # default value for SlicingKnn kernel
-            idx,dist,nbins = SlicingKnn(self.n_neighbours, coordinates,  row_splits,
+            idx,dist,nbins = SlicingKnn(self.n_neighbours+1, coordinates,  row_splits,
                                   features_to_bin_on = (0,1),
                                   bin_width=(bin_width,bin_width),
                                   return_n_bins=True)
             self.add_prompt_metric(nbins, self.name+'_slicing_knn_bins')
         else:
             #BinnedSelectKnn(K, coords, row_splits, n_bins, max_bin_dims, tf_compatible, max_radius)
-            idx,dist = BinnedSelectKnn(self.n_neighbours, coordinates,  row_splits,
+            idx,dist = BinnedSelectKnn(self.n_neighbours+1, coordinates,  row_splits,
                                  max_radius= -1.0, tf_compatible=False)
-        idx = tf.reshape(idx, [-1, self.n_neighbours])
-        dist = tf.reshape(dist, [-1, self.n_neighbours])
+        idx = tf.reshape(idx, [-1, self.n_neighbours+1])
+        dist = tf.reshape(dist, [-1, self.n_neighbours+1])
         
         dist = tf.where(idx<0,0.,dist)
         

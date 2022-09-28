@@ -38,6 +38,7 @@ class LayerWithMetrics(tf.keras.layers.Layer):
                 self.prompt_metrics[name]=PromptMetric(name=name)
         self.add_metric(self.prompt_metrics[name](x))
 
+
 #class LayerWithMetrics(tf.keras.layers.Layer):
 #    def __init__(self, _promptnames=None, **kwargs):
 #        super(LayerWithMetrics, self).__init__(**kwargs)
