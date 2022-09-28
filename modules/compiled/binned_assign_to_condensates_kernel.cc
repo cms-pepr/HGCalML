@@ -80,7 +80,7 @@ namespace functor {
                         float dist = 0;
                         for(int id=0;id<dimensions;id++)
                             dist += (my_ccoords[id] - ccoords[iv*dimensions+id]) * (my_ccoords[id] - ccoords[iv*dimensions+id]);
-                        if(dist < radius_sq) {
+                        if(dist <= radius_sq) {
                             assignment[iv] = shower_idx;
                             association[iv] = original_indices_h[row_offset_h+alpha_idx_h];
                             if(indices_to_filtered[iv]!=-1) {
@@ -94,7 +94,7 @@ namespace functor {
                     float dist = 0;
                     for(int id=0;id<dimensions;id++)
                         dist += (my_ccoords[id] - ccoords[iv*dimensions+id]) * (my_ccoords[id] - ccoords[iv*dimensions+id]);
-                    if(dist < radius_sq) {
+                    if(dist <= radius_sq) {
                         float dist_by_radiussq = dist/radius_sq;
                         if (assignment_min_distance[iv] > dist_by_radiussq) {
 
@@ -109,6 +109,7 @@ namespace functor {
                 }
             }
         }
+
         //clean up
         delete [] min_;
         delete [] max_;

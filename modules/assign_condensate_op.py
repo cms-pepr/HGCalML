@@ -355,7 +355,11 @@ def BuildAndAssignCondensatesBinned(ccoords,
                  
                  'assign_by_max_beta':assign_by_max_beta,
                  'no_condensation_mask':no_condensation_mask,
-                 'keep_noise': keep_noise             
+                 'keep_noise': keep_noise,
+                 
+                 'bins_flat':bins_flat, 
+                 'n_bins':n_bins,
+                 'bin_width':bin_width         
                     },f)
         raise e
 
