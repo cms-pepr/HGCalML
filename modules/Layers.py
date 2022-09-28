@@ -29,6 +29,9 @@ global_layers_list['SimpleReductionMetrics'] = SimpleReductionMetrics
 from MetricsLayers import MLReductionMetrics
 global_layers_list['MLReductionMetrics'] = MLReductionMetrics
 
+from MetricsLayers import OCReductionMetrics
+global_layers_list['OCReductionMetrics'] = OCReductionMetrics
+
 #older layers
 
 from LayersRagged import RaggedSumAndScatter
@@ -51,6 +54,9 @@ global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 from GravNetLayersRagged import CastRowSplits
 global_layers_list['CastRowSplits']=CastRowSplits
 
+from GravNetLayersRagged import CreateMask
+global_layers_list['CreateMask']=CreateMask
+
 from GravNetLayersRagged import Where
 global_layers_list['Where']=Where
 
@@ -59,6 +65,15 @@ global_layers_list['MaskTracksAsNoise']=MaskTracksAsNoise
 
 from GravNetLayersRagged import CondensateToIdxs
 global_layers_list['CondensateToIdxs']=CondensateToIdxs
+
+from GravNetLayersRagged import CondensatesToPseudoRS
+global_layers_list['CondensatesToPseudoRS']=CondensatesToPseudoRS
+
+from GravNetLayersRagged import ReversePseudoRS
+global_layers_list['ReversePseudoRS']=ReversePseudoRS
+
+from GravNetLayersRagged import CleanCondensations
+global_layers_list['CleanCondensations']=CleanCondensations
 
 from GravNetLayersRagged import ScaleBackpropGradient
 global_layers_list['ScaleBackpropGradient']=ScaleBackpropGradient
@@ -204,9 +219,10 @@ global_layers_list['PlotNoiseDiscriminator']=PlotNoiseDiscriminator
 
 
 from LossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights
-from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace
+from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace, LLOCThresholds
 from LossLayers import LossLayerBase, LLBasicObjectCondensation, LLFullObjectCondensation,LLNeighbourhoodClassifier
-from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator
+from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator, LLGoodNeighbourHood, LLKnnPushPullObjectCondensation
+from LossLayers import LLKnnSimpleObjectCondensation
 import traceback
 import os
 
@@ -221,13 +237,19 @@ global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
 
 global_layers_list['LossLayerBase']=LossLayerBase
 global_layers_list['LLNotNoiseClassifier']=LLNotNoiseClassifier
+global_layers_list['LLOCThresholds']=LLOCThresholds
 global_layers_list['LLFillSpace']=LLFillSpace
 global_layers_list['LLClusterCoordinates']=LLClusterCoordinates
 global_layers_list['LLLocalClusterCoordinates']=LLLocalClusterCoordinates
+global_layers_list['LLKnnSimpleObjectCondensation']=LLKnnSimpleObjectCondensation
+global_layers_list['LLKnnPushPullObjectCondensation']=LLKnnPushPullObjectCondensation
 global_layers_list['LLBasicObjectCondensation']=LLBasicObjectCondensation
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
 global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier
 global_layers_list['LLEdgeClassifier']=LLEdgeClassifier
+global_layers_list['LLGoodNeighbourHood']=LLGoodNeighbourHood
+
+
 
 ####### other stuff goes here
 from Regularizers import OffDiagonalRegularizer,WarpRegularizer,AverageDistanceRegularizer,MeanMaxDistanceRegularizer

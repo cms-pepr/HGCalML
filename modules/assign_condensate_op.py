@@ -1,17 +1,13 @@
 import math
-import time
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.framework import ops
-
 from bin_by_coordinates_op import BinByCoordinates
-import numpy as np_
 
 _bc_op_binned = tf.load_op_library('binned_assign_to_condensates.so')
 
 
-def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True):
+def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True, return_reverse=False):
     """
 
     :param assignment: [nvert, 1] Values should be consecutive i.e. -1,0,1,2,3,...N. Same is true for the every segment
@@ -20,21 +16,31 @@ def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True):
     :param row_splits: [nvert+1], row splits
     :param gather_noise: boolean, whether to gather noise or not. If set to True, the first element in the shower
                          dimension will always correspond to the noise even if there is no noise vertex present.
+    :param return_reverse: returns the reverse operation to gather back. Example (x is some point feature vector [V x F]):
+                           idx, revidx = calc_ragged_shower_indices(assignement, row_splits, return_reverse=True)
+                           xc = tf.gather_nd(x, idx)
+                           xc = tf.reduce_mean(xc, axis=2) #mean of all associated hits
+                           xg = tf.gather_nd(xc, revidx) #non-ragged representation [V x F], with the original row splits
     :return: a double ragged tensor of indices, first ragged dimension iterates endcaps/samples and the second, showers
              in that endcap. This can be used in gather_nd as follows:
                 ragged_indices = calc_ragged_shower_indices(assignment, row_splits, gather_noise=False)
                 x = tf.gather_nd(assignment, ragged_indices)
+    :return: (opt) an index tensor to reverse the operation (TBI)
 
     """
+    if return_reverse:
+        assert  gather_noise #reverse cannot work when noise is discarded
+    
+    orig_assignement = assignment
     if gather_noise:
         assignment = assignment[:, 0] + 1
     else:
         assignment = assignment[:, 0]
         old_segment_ids = tf.ragged.row_splits_to_segment_ids(row_splits)
-        filter = assignment >= 0
-        new_segment_ids = old_segment_ids[filter]
-        back_indices = tf.range(len(assignment))[filter]
-        assignment = assignment[filter]
+        sel = assignment >= 0
+        new_segment_ids = old_segment_ids[sel]
+        back_indices = tf.range(len(assignment))[sel]
+        assignment = assignment[sel]
 
         row_splits = tf.ragged.segment_ids_to_row_splits(new_segment_ids, num_segments=len(row_splits)-1)
 
@@ -51,13 +57,21 @@ def calc_ragged_shower_indices(assignment, row_splits, gather_noise=True):
     sorting_indices_showers_ragged = tf.RaggedTensor.from_row_lengths(sorting_indices_showers_ragged[..., tf.newaxis], rsx)
     sorting_indices_showers_ragged = tf.RaggedTensor.from_row_splits(sorting_indices_showers_ragged, n_condensates_n)
 
-    return sorting_indices_showers_ragged
+    if return_reverse:
+        revidx = tf.RaggedTensor.from_row_splits(orig_assignement+1, row_splits)
+        nrs = tf.shape(sorting_indices_showers_ragged.row_splits)[0]-1
+        addrs = tf.range(nrs)[...,tf.newaxis][...,tf.newaxis]
+        revidx = tf.concat([0 * revidx + addrs,revidx],axis=-1)
+        return sorting_indices_showers_ragged, revidx.values
+    else:
+        return sorting_indices_showers_ragged
 
 def BuildAndAssignCondensatesBinned(ccoords,
                         betas,
                         dist,
                         row_splits,
                         beta_threshold,
+                        distance_threshold = 1.,
                         assign_by_max_beta=True,
                         nbin_dims=3):
     """
@@ -80,9 +94,12 @@ def BuildAndAssignCondensatesBinned(ccoords,
     """
 
     assert 1 <= nbin_dims <= 6
-    row_splits = tf.constant(row_splits)
+    assert 0. <= beta_threshold <= 1.
+    assert distance_threshold > 0.
+    #row_splits = tf.constant(row_splits)
     num_rows = row_splits.shape[0]-1
 
+    dist =  dist / distance_threshold
 
     nvertmax = int(tf.reduce_sum(row_splits[1:] - row_splits[0:-1]))
     n_bins_sc = max(4,min(int(math.ceil(math.pow((nvertmax)/5, 1/3))), 25))
@@ -91,8 +108,8 @@ def BuildAndAssignCondensatesBinned(ccoords,
     ccoords -= min_coords
 
     ccoords_2 = ccoords[:, 0:min(ccoords.shape[1], nbin_dims)]
-    with tf.device('/cpu'):
-        _, bins_flat, n_bins, bin_width = BinByCoordinates(ccoords_2, row_splits, n_bins=n_bins_sc, calc_n_per_bin=False, pre_normalized=True)
+    #with tf.device('/cpu'):
+    _, bins_flat, n_bins, bin_width = BinByCoordinates(ccoords_2, row_splits, n_bins=n_bins_sc, calc_n_per_bin=False, pre_normalized=True)
 
     sorting_indices = tf.argsort(bins_flat)
     sorting_indices_back = tf.argsort(sorting_indices)
