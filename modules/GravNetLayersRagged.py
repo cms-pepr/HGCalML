@@ -825,12 +825,11 @@ class ElementScaling(tf.keras.layers.Layer):
         
         return inputs * self.scales
         
-    
 class GooeyBatchNorm(LayerWithMetrics):
     def __init__(self,
-                 viscosity=0.01,
-                 fluidity_decay=1e-5,
-                 max_viscosity=0.999,
+                 viscosity=0.2,
+                 fluidity_decay=1e-4,
+                 max_viscosity=0.99,
                  epsilon=1e-4,
                  print_viscosity=False,
                  variance_only=False,
@@ -838,6 +837,7 @@ class GooeyBatchNorm(LayerWithMetrics):
                  soften_update: float = 0.,
                  soft_mean_hardness=3.,
                  soft_mean_turn_on=6.,
+                 learn = False, #this is set to false for compatibility reasons, however USE TRUE AS DEFAULT!
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
         
@@ -856,6 +856,7 @@ class GooeyBatchNorm(LayerWithMetrics):
         self.soft_mean = soft_mean
         self.soft_mean_hardness = soft_mean_hardness
         self.soft_mean_turn_on = soft_mean_turn_on
+        self.learn = learn
 
         if soften_update > 0:
             print(self.name,'has been configured for soften_update. Function not implemented yet. Will have no effect.')
@@ -871,6 +872,7 @@ class GooeyBatchNorm(LayerWithMetrics):
                   'soften_update': self.soften_update,
                   'soft_mean_hardness': self.soft_mean_hardness,
                   'soft_mean_turn_on': self.soft_mean_turn_on,
+                  'learn': self.learn
                   }
         base_config = super(GooeyBatchNorm, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -886,10 +888,10 @@ class GooeyBatchNorm(LayerWithMetrics):
         shape = (1,)+input_shapes[1:]
         
         self.mean = self.add_weight(name = 'mean',shape = shape, 
-                                    initializer = 'zeros', trainable = False) 
+                                    initializer = 'zeros', trainable =  self.learn) 
         
         self.variance = self.add_weight(name = 'variance',shape = shape, 
-                                    initializer = 'ones', trainable = False) 
+                                    initializer = 'ones', trainable =  self.learn) 
         
         self.viscosity = tf.Variable(initial_value=self.viscosity_init, 
                                          name='viscosity',
@@ -909,13 +911,21 @@ class GooeyBatchNorm(LayerWithMetrics):
         negsig = tf.nn.sigmoid(-hardness*(x+turnon))
         mod = tf.where(x>0,possig,negsig)
         return x*mod
+    
+    def _update_viscosity(self, training):
+        if self.fluidity_decay > 0:
+            newvisc = self.viscosity + (self.max_viscosity - self.viscosity)*self.fluidity_decay
+            newvisc = tf.keras.backend.in_train_phase(newvisc,self.viscosity,training=training)
+            tf.keras.backend.update(self.viscosity,newvisc)
+            if self.print_viscosity:
+                tf.print(self.name, 'viscosity',newvisc)
 
     def call(self, inputs, training=None):
         #x, _ = inputs
         x = inputs
         
         #update only if trainable flag is set, AND in training mode
-        if self.trainable:
+        if self.trainable and not self.learn:
             
             currentmean = tf.reduce_mean(x,axis=0,keepdims=True) #FIXME
             newmean = currentmean
@@ -930,17 +940,27 @@ class GooeyBatchNorm(LayerWithMetrics):
             tf.keras.backend.update(self.variance,update)
             
             #increase viscosity
-            if self.fluidity_decay > 0:
-                newvisc = self.viscosity + (self.max_viscosity - self.viscosity)*self.fluidity_decay
-                newvisc = tf.keras.backend.in_train_phase(newvisc,self.viscosity,training=training)
-                tf.keras.backend.update(self.viscosity,newvisc)
-                if self.print_viscosity:
-                    tf.print(self.name, 'viscosity',newvisc)
+            self._update_viscosity(training)
                     
-        
-        self.add_prompt_metric(tf.reduce_mean(self.variance), self.name+'_variance')
-        self.add_prompt_metric(tf.reduce_mean(self.mean), self.name+'_mean')
-        self.add_prompt_metric(tf.reduce_mean(self.viscosity), self.name+'_viscosity')
+        elif self.trainable and self.learn: #trainable is anyway given by applying the loss or not
+            currentmean = tf.reduce_mean(x,axis=0,keepdims=True)
+            currentmean = tf.stop_gradient(currentmean)
+            
+            self.add_loss(10.*(1.01-self.viscosity) * tf.reduce_mean(tf.abs(self.mean-currentmean)))
+            
+            newvar = tf.math.reduce_std(x-currentmean,axis=0,keepdims=True)
+            newvar = tf.stop_gradient(newvar)
+            
+            self.add_loss(10.*(1.01-self.viscosity) * tf.reduce_mean(tf.abs(self.variance-newvar)))
+            
+            self._update_viscosity(training)
+            
+        else:
+            currentmean = self.mean
+            newvar = self.variance
+                        
+        self.add_prompt_metric(tf.reduce_mean(newvar), self.name+'_variance')
+        self.add_prompt_metric(tf.reduce_mean(currentmean), self.name+'_mean')
         
         #apply
         x -= self.mean
