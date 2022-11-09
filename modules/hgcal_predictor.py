@@ -1,4 +1,5 @@
-
+import gzip
+import pickle
 
 from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
@@ -110,17 +111,21 @@ class HGCalPredictor():
             generator = gen.feedNumpyData()
 
             dumping_data = []
+            extra_data = []
 
             thistime = time.time()
             for _ in range(num_steps):
                 data_in = next(generator)
-                predictions_dict = model(data_in[0])
+                predictions_dict = model(data_in[0][:-4])
+                # predictions_dict = model(data_in[0])
+                truth_info = data_in[0][-4:]
                 for k in predictions_dict.keys():
                     predictions_dict[k] = predictions_dict[k].numpy()
                 features_dict = td.createFeatureDict(data_in[0])
                 truth_dict = td.createTruthDict(data_in[0])
                 
                 dumping_data.append([features_dict, truth_dict, predictions_dict])
+                extra_data.append([truth_info])
                 
             totaltime = time.time() - thistime
             print('took approx',totaltime/num_steps,'s per endcap (also includes dict building)')
@@ -128,8 +133,11 @@ class HGCalPredictor():
             td.clear()
             gen.clear()
             outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
+            extrafile = os.path.splitext(outfilename)[0] + '_extra_' + '.pkl'
             if output_to_file:
                 td.writeOutPredictionDict(dumping_data, self.predict_dir + "/" + outfilename)
+                with open(os.path.join(self.predict_dir, extrafile), 'wb') as f:
+                    pickle.dump(extra_data, f)
             outputs.append(outfilename)
             if not output_to_file:
                 all_data.append(dumping_data)
