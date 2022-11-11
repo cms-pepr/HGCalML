@@ -267,7 +267,7 @@ class HGCalAnalysisPlotter:
         true_energy = self.showers_dataframe['truthHitAssignedEnergies'][filter_has_truth].to_numpy()
         phi = self.showers_dataframe['truthHitAssignedPhi'][filter_has_truth].to_numpy()
         eta = self.showers_dataframe['truthHitAssignedEta'][filter_has_truth].to_numpy()
-        pT = true_energy / eta
+        pT = true_energy / np.cosh(eta)
         # found = self.showers_dataframe['pred_sid'][filter_has_truth].notnull().to_numpy()
 
         _pT = np.zeros(filter_has_truth.shape, np.float)*np.NAN
