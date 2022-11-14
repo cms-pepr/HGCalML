@@ -12,12 +12,22 @@ from datastructures import TrainData_TrackML
 import time
 
 class HGCalPredictor():
-    def __init__(self, input_source_files_list, training_data_collection, predict_dir, unbuffered=False, model_path=None, max_files=4, inputdir=None):
+    def __init__(self, 
+            input_source_files_list, 
+            training_data_collection, 
+            predict_dir, 
+            unbuffered=False, 
+            model_path=None, 
+            max_files=4, 
+            inputdir=None,
+            toydata=False
+            ):
         self.input_data_files = []
         self.inputdir = None
         self.predict_dir = predict_dir
         self.unbuffered=unbuffered
         self.max_files = max_files
+        self.toydata = toydata
         print("Using HGCal predictor class")
 
         ## prepare input lists for different file formats
@@ -111,21 +121,29 @@ class HGCalPredictor():
             generator = gen.feedNumpyData()
 
             dumping_data = []
-            extra_data = []
+            extra_data = [] # Only used for toy data test sets
 
             thistime = time.time()
             for _ in range(num_steps):
                 data_in = next(generator)
-                predictions_dict = model(data_in[0][:-4])
-                # predictions_dict = model(data_in[0])
-                truth_info = data_in[0][-4:]
+                if self.toydata:
+                    # The toy data set has a different input shape
+                    # this is only true for the testing part of the 
+                    # toy data set. If predicting the training set
+                    # initialize the hgcal_predictor toydata set to False
+                    # The last four entries contain PU and PID
+                    # we store them separately
+                    predictions_dict = model(data_in[0][:-4])
+                    truth_info = data_in[0][-4:]
+                    extra_data.append([truth_info])
+                else:
+                    predictions_dict = model(data_in[0])
                 for k in predictions_dict.keys():
                     predictions_dict[k] = predictions_dict[k].numpy()
                 features_dict = td.createFeatureDict(data_in[0])
                 truth_dict = td.createTruthDict(data_in[0])
                 
                 dumping_data.append([features_dict, truth_dict, predictions_dict])
-                extra_data.append([truth_info])
                 
             totaltime = time.time() - thistime
             print('took approx',totaltime/num_steps,'s per endcap (also includes dict building)')
@@ -136,8 +154,9 @@ class HGCalPredictor():
             extrafile = os.path.splitext(outfilename)[0] + '_extra_' + '.pkl'
             if output_to_file:
                 td.writeOutPredictionDict(dumping_data, self.predict_dir + "/" + outfilename)
-                with open(os.path.join(self.predict_dir, extrafile), 'wb') as f:
-                    pickle.dump(extra_data, f)
+                if self.toydata:
+                    with open(os.path.join(self.predict_dir, extrafile), 'wb') as f:
+                        pickle.dump(extra_data, f)
             outputs.append(outfilename)
             if not output_to_file:
                 all_data.append(dumping_data)
