@@ -157,13 +157,12 @@ class Basic_OC_per_sample(object):
         '''
         '''
         x_k_e = tf.expand_dims(self.x_k,axis=1)
-        d_k_e = tf.expand_dims(self.d_k,axis=1)
         
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
         
         dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
         
-        sigma = 0.95 * d_k_e**2 + 0.05 * self.d_k_m**2 #create gradients for all
+        sigma = self.weighted_d_k_m(dsq_k_m) #create gradients for all
         
         dsq_k_m = tf.math.divide_no_nan(dsq_k_m, sigma + 1e-4)
             
@@ -178,11 +177,12 @@ class Basic_OC_per_sample(object):
     
     def rep_func(self,dsq_k_v):
         return tf.math.exp(-dsq_k_v/2.)
+    
+    def weighted_d_k_m(self, dsq): # dsq K x V x 1
+        return tf.expand_dims(self.d_k, axis=1) # K x 1 x 1
         
     def V_rep_k(self):
         
-        d_k_e = tf.expand_dims(self.d_k, axis=1) # K x 1 x 1
-        d_v_e = tf.expand_dims(self.d_v, axis=0) # K x V x 1
         
         N_k = tf.reduce_sum(self.Mnot, axis=1)
         #future remark: if this gets too large, one could use a kNN here
@@ -190,7 +190,9 @@ class Basic_OC_per_sample(object):
         dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
         
-        sigma = 0.95 * d_k_e**2 + 0.05 * d_v_e**2 #create gradients for all, but prefer k vertex
+        # nogradbeta = tf.stop_gradient(self.beta_k_m)
+        #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
+        sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
         
         dsq = tf.math.divide_no_nan(dsq, sigma + 1e-4) #K x V x 1
         

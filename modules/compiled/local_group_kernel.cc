@@ -111,8 +111,8 @@ struct LocalGroupOpFunctor<CPUDevice, dummy> {
 
                         int nidx = d_neigh_idxs[I2D(i_v,i_n,n_neigh)];
 
-                        if(nidx<0)//not a neighbour
-                            continue;
+                        if(nidx<0)//not a neighbour, -1s defined to be at the end so break here
+                            break;
 
                         if(mask[nidx])//already used, self is already added to d_out_dir_neighbours
                             continue;

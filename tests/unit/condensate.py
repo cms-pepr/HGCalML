@@ -37,11 +37,13 @@ def make_data(nx, ny, nrs,span=6):
     return tf.constant(xs, dtype='float32'), tf.constant(betas, dtype='float32'), tf.constant(rs, dtype='int32')
 
 
-def test_indices(betathresh, keep_noise):
+def test_indices(betathresh, keep_noise, weird_coordinates):
     x,b,rs = make_data(4,3,2,span=10)
     
     nocond = None #tf.where( b <0.1, 1, tf.zeros_like(b))
     
+    if weird_coordinates:
+        x = 0.* x
     
     assignment, asso, alphaidx, is_cond, ncond = BuildAndAssignCondensatesBinned(x,
                             b,
@@ -109,64 +111,69 @@ def test_indices(betathresh, keep_noise):
     #print('third >> ',retass, '\n',assignment)
     tf.assert_equal(retass, assignment, "flat re-assign failed keep_noise: "+str(keep_noise))
 
-for i,bt in enumerate(10*[0.00001, 0.01, 0.1, 0.2, 0.4, 0.9999]):
-    np.random.seed(i+1)
-    print(bt)
-    st = time.time()
-    test_indices(bt,False)
-    print('not keep noise',time.time()-st)
-    st=time.time()
-    np.random.seed(i+1)
-    test_indices(bt,True)
-    print('keep noise',time.time()-st)
+
+def run_test():
+
+    for i,bt in enumerate(10*[0.00001, 0.01, 0.1, 0.2, 0.4, 0.9999]):
+        np.random.seed(i+1)
+        print(bt)
+        st = time.time()
+        test_indices(bt,False,False)
+        test_indices(bt,False,True)
+        print('not keep noise',(time.time()-st)/2.)
+        st=time.time()
+        np.random.seed(i+1)
+        test_indices(bt,True,False)
+        test_indices(bt,True,True)
+        print('keep noise',(time.time()-st)/2.)
+        #exit()
+    
+    
+
+
+def test_plot():
+    x,b,rs = make_data(80,60,2,span=10)  
+    
+    assignment, asso, alphaidx, is_cond, ncond = BuildAndAssignCondensatesBinned(x,
+                                b,
+                                tf.ones_like(b),
+                                rs,
+                                0.99,
+                                no_condensation_mask = None,
+                                keep_noise=True,
+                                assign_by_max_beta=False)
+    
+    
+    irdxs = calc_ragged_shower_indices(assignment, rs)
+    
+    #print('indices A done>>>', ncond, assignment)
+    rcidx, retrev, flatrev = calc_ragged_cond_indices(assignment, alphaidx, ncond, rs)  
+    
     #exit()
-exit()
-#print('rcidx', rcidx)
-#exit()
-xcp = tf.gather_nd(x, rcidx)
-xcpass = tf.gather_nd(assignment, rcidx)
-
-#print('xcpass',xcpass)
-exit()
-
-xr = tf.gather_nd(x, irdxs)
-
-print('xr',xr)
-print('xcp',xcp)
-
-xmixed = RaggedMixCPAndHitInfo(operation='add')([xr,xcp])
-print('xmixed',xmixed)
-#exit()
-
-xr = tf.expand_dims(xr, axis=2)
-print('xr',xr.shape)
-#exit()
-xr = RaggedDense(2,activation='elu')(xr)
-print(xr, xr.shape)
-#exit()
-
-xr = tf.gather_nd(x, irdxs)
-xmr = tf.reduce_mean(xr, axis=2)
-
-'''
-
-make ragged condensation point select indices:
-event x CPs
-
-
-
-
-'''
-
-mrs = xmr.row_splits
-#print(xr, xmr, mrs)
-
-for i in range(len(rs) - 1):
+    xcp = tf.gather_nd(x, rcidx)
+    xcpass = tf.gather_nd(assignment, rcidx)
     
-    print('..',xmr[i])
     
-    plt.scatter(x[rs[i]:rs[i+1]][:,0],x[rs[i]:rs[i+1]][:,1], c = assignment[rs[i]:rs[i+1]])
+    xr = tf.gather_nd(x, irdxs)
+    xmr = tf.reduce_mean(xr, axis=2)
     
-    plt.scatter(xmr[i,:,0] , xmr[i,:,1] , marker='x')
-    plt.show()
-    plt.close()
+    '''
+    
+    make ragged condensation point select indices:
+    event x CPs
+    
+    
+    '''
+    
+    mrs = xmr.row_splits
+    #print(xr, xmr, mrs)
+    
+    for i in range(len(rs) - 1):
+        
+        plt.scatter(x[rs[i]:rs[i+1]][:,0],x[rs[i]:rs[i+1]][:,1], c = assignment[rs[i]:rs[i+1]] , cmap='jet')
+        
+        plt.scatter(xmr[i,:,0] , xmr[i,:,1] , marker='x')
+        plt.show()
+        plt.close()
+        
+test_plot()

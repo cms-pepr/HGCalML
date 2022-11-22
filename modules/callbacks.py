@@ -389,12 +389,13 @@ class plotClusterSummary(PredictCallback):
             fig = plt.figure()
             plt.hist(svdtom,bins=51,color='tab:blue',alpha = 0.5,label='same')
             plt.hist(sdid,bins=51,color='tab:orange',alpha = 0.5,label='other')
-            plt.yscale('log')
             plt.xlabel('normalised distance')
             plt.ylabel('A.U.')
             plt.legend()
             ccfile=self.outputfile+str(p)+'_cluster.pdf'
             plt.savefig(ccfile)
+            plt.yscale('log')
+            ccfile=self.outputfile+str(p)+'_cluster_log.pdf'
             plt.cla()
             plt.clf()
             plt.close(fig)

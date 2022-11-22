@@ -8,17 +8,17 @@ import os
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from DeepJetCore.dataPipeline import TrainDataGenerator
+from DebugLayers import switch_off_debug_plots
 
 
-modelfile = os.getenv("HGCALML")+'/models/pre_selection_june22/KERAS_model.h5'
-
-
-def _getkeys():
-    file = modelfile
+def _getkeys(file):
     tmp_model = load_model(file)
     output_keys = list(tmp_model.output_shape.keys())
     output_keys.remove('row_splits')
     output_keys.remove('orig_row_splits')
+    if 'no_noise_row_splits' in output_keys:
+        output_keys.remove('no_noise_row_splits')
+    del tmp_model #close tf
     return output_keys
 
 
@@ -31,29 +31,35 @@ def calc_phi(x, y, z):
     return np.arctan2(y,x)#cms like
     
 #just load once at import
-TrainData_PreselectionNanoML_keys=None
 
 class TrainData_PreselectionNanoML(TrainData):
+    
+    model_keys = None
+    
+    def set_model(self):
+        self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_june22/KERAS_model.h5'
+    
     def __init__(self):
         TrainData.__init__(self)
         
-        global TrainData_PreselectionNanoML_keys
-        if TrainData_PreselectionNanoML_keys is None:
-            TrainData_PreselectionNanoML_keys=_getkeys()#load only once
+        self.set_model()
+        
+        if TrainData_PreselectionNanoML.model_keys is None:
+            TrainData_PreselectionNanoML.model_keys=_getkeys(self.path_to_pretrained)#load only once
         
         self.no_fork=True #make sure conversion can use gpu
         
         self.include_tracks = False
         self.cp_plus_pu_mode = False
         #preselection model used
-        self.path_to_pretrained = modelfile
         
-        self.output_keys = TrainData_PreselectionNanoML_keys
+        self.output_keys = TrainData_PreselectionNanoML.model_keys
 
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename=""):
 
         #this needs GPU
         model = load_model(self.path_to_pretrained)
+        model = switch_off_debug_plots(model)
         print("Loaded preselection model : ", self.path_to_pretrained)
 
 
@@ -70,24 +76,28 @@ class TrainData_PreselectionNanoML(TrainData):
 
         nevents = gen.getNBatches()
         #print("Nevents : ", nevents)
-
+        tot_in = 0
         rs = [[0]]#row splits need one extra dimension 
         newout = {}
         feeder = gen.feedNumpyData()
         for i in range(nevents):
             feat,_ = next(feeder)
+            tot_in += len(feat[0])
             out = model(feat)
             rs_tmp = out['row_splits'].numpy()
+            
+            print('reduction', len(feat[0]), '->', rs_tmp[-1])
             rs.append([rs_tmp[1]])
             if i == 0:
                 for k in self.output_keys:
-                    newout[k] = out[k].numpy()
+                    newout[k] = [out[k].numpy()]
             else:
                 for k in self.output_keys:
-                    newout[k] = np.concatenate((newout[k], out[k].numpy()), axis=0)
+                    newout[k].append(out[k].numpy())
                     
 
-
+        for k in self.output_keys:
+            newout[k] = np.concatenate(newout[k],axis=0)
         #td.clear()
         #gen.clear()
 
@@ -97,6 +107,7 @@ class TrainData_PreselectionNanoML(TrainData):
         rs = np.cumsum(rs,axis=0)
         print(rs)
         print([(k,newout[k].shape) for k in newout.keys()])
+        print('reduction',tot_in, '->', rs[-1])
         
         outSA = []
         for k2 in self.output_keys:
@@ -207,3 +218,14 @@ class TrainData_PreselectionNanoML(TrainData):
         if 't_hit_unique' in data.keys():
             out['t_is_unique']=data['t_hit_unique']
         return out
+
+
+class TrainData_PreselectionNanoMLPF2(TrainData_PreselectionNanoML):
+    
+    def set_model(self):
+        self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre_selection_pf2/KERAS_model.h5'
+    
+
+
+
+

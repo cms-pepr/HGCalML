@@ -3,14 +3,17 @@ import tensorflow as tf
 from Layers import RobustModel,ExtendedMetricsModel
 from DeepJetCore.customObjects import get_custom_objects
 from DeepJetCore.modeltools import apply_weights_where_possible
+from DeepJetCore import DataCollection, TrainData
 import numpy as np
 
-def apply_weights_from_path(path_to_weight_model, existing_model, return_weight_model=False):
+def apply_weights_from_path(path_to_weight_model, existing_model, 
+                            return_weight_model=False, apply_optimizer=False):
     if isinstance(existing_model, (RobustModel,ExtendedMetricsModel)):
         raise ValueError('INFO: apply_weights_from_path: RobustModel deprecated ')
     
     weightmodel = tf.keras.models.load_model(path_to_weight_model, custom_objects=get_custom_objects())
     existing_model = apply_weights_where_possible(existing_model, weightmodel)
+    
     
     try:
         for le,lw in zip(existing_model.layers, weightmodel.layers):
@@ -22,12 +25,15 @@ def apply_weights_from_path(path_to_weight_model, existing_model, return_weight_
                         if ce[cek] != cw[cek]:
                             print('warning: different configuration',le.name, ':', cek, ce[cek], cw[cek])
     except:
-        pass    
+        pass   
+    if apply_optimizer:
+        existing_model.optimizer = weightmodel.optimizer
     if return_weight_model:
         return existing_model, weightmodel
     return existing_model
     
-  
+
+
 def _issame(a,b):
     if type(a) != type(b):
         return False
@@ -63,3 +69,8 @@ def apply_and_freeze_common_weights(path_to_weight_model, existing_model, keep_o
 
                 
     return existing_model
+
+
+
+
+

@@ -25,7 +25,7 @@ from Layers import DictModel
 
 from model_blocks import  pre_selection_model, pre_selection_model2
 
-K=12 #12 #12
+#K=12 #12 #12
 
 plot_frequency= 100 #600#every 20 minutes approx
 record_frequency = 10
@@ -52,7 +52,7 @@ def pretrain_model(Inputs,
                              trainable=True,
                              debugplots_after=debugplots_after,
                              record_metrics=True,
-                             K=K,
+                             #K=K,
                              pf_mode = True,
                              pre_train_mode = False,
                              ext_pf=1 , #large

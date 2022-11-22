@@ -9,12 +9,14 @@ import time
 from GravNetLayersRagged import CondensateToIdxs
 from assign_condensate_op import calc_ragged_shower_indices, calc_ragged_cond_indices, collapse_ragged_noise
 
+from ragged_tools import print_ragged_shape
+
 ragged_layers = {}
 
 class RaggedCreateCondensatesIdxs(CondensateToIdxs):
     
     def __init__(self, 
-                 collapse_noise = False,
+                 collapse_noise = True,
                  **kwargs):
         '''
         Quite complex layer with a lot going on, and a lot of output...
@@ -70,14 +72,14 @@ class RaggedCreateCondensatesIdxs(CondensateToIdxs):
         st = time.time()
         pred_sid, asso_idx, alpha ,ncond, *_ = super(RaggedCreateCondensatesIdxs, self).call(inputs)
         
-        print('idxs time a', time.time()-st, 's')
+        #print('idxs time a', time.time()-st, 's')
         st = time.time()
         
         try:
             ch_idx = calc_ragged_shower_indices(pred_sid, rs)
             c_idx, rev, revflat = calc_ragged_cond_indices(pred_sid, alpha, ncond, rs)
             
-            print('idxs time b', time.time()-st, 's')
+            #print('idxs time b', time.time()-st, 's')
             #print('c_idx, rev, revflat',c_idx, rev, revflat)
             
             if self.collapse_noise:
@@ -100,11 +102,10 @@ class RaggedCreateCondensatesIdxs(CondensateToIdxs):
                         },f)
             raise e
     
-        print('::: ',ch_idx.row_lengths() ,c_idx.row_lengths())
         if self.return_thresholds:
-            return ch_idx, c_idx, rev, revflat, asso_idx, self.dyn_t_d, self.dyn_t_b
+            return ch_idx, c_idx, rev, revflat, pred_sid, asso_idx, self.dyn_t_d, self.dyn_t_b
         else:
-            return ch_idx, c_idx, rev, revflat, asso_idx
+            return ch_idx, c_idx, rev, revflat, pred_sid, asso_idx
 
 #register
 ragged_layers['RaggedCreateCondensatesIdxs'] = RaggedCreateCondensatesIdxs        
@@ -154,7 +155,7 @@ class RaggedDense(tf.keras.layers.Dense):
     def pack_ragged(self, vals, rsl):
         rt = vals
         for i in reversed(range(len(rsl))):
-            rt = tf.RaggedTensor.from_row_splits(rt, rsl[i])
+            rt = tf.RaggedTensor.from_row_splits(rt, rsl[i], validate=False)
         return rt
 
     def call(self, inputs):
@@ -248,7 +249,8 @@ class RaggedCollapseHitInfo(tf.keras.layers.Layer):
     
     def __init__(self, operation='mean', **kwargs):
         '''
-        Just a wrapper around tf.reduce_xxx(..., axis=2)
+        Just a wrapper around tf.reduce_xxx(..., axis=2).
+        operation can be either mean, max, sum, or any other callable (tf) function that takes an axis argument.
         
         Input:
         - data in [batch, ragged condensation point, ragged hit, F]
@@ -258,16 +260,18 @@ class RaggedCollapseHitInfo(tf.keras.layers.Layer):
         
         '''
         
-        assert operation == 'mean' or operation == 'max' or operation == 'sum'
+        #assert operation == 'mean' or operation == 'max' or operation == 'sum' or callable(operation)
 
         super(RaggedCollapseHitInfo, self).__init__(**kwargs)
         
-        if operation == 'mean':
+        if operation == 'mean' or 'reduce_mean' in operation:
             self.operation = tf.reduce_mean
-        if operation == 'max':
+        elif operation == 'max' or 'reduce_max' in operation:
             self.operation = tf.reduce_max
-        if operation == 'sum':
+        elif operation == 'sum' or 'reduce_sum' in operation:
             self.operation = tf.reduce_sum
+        else:
+            self.operation = operation
         
     def get_config(self):
         config = {'operation': self.operation}
@@ -280,6 +284,47 @@ class RaggedCollapseHitInfo(tf.keras.layers.Layer):
 
 ragged_layers['RaggedCollapseHitInfo'] = RaggedCollapseHitInfo
 
+
+
+
+class RaggedPFCMomentum(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        '''
+        Inputs:
+        - mom correction 
+        - energy sum
+        - track mom
+        - istrack
+        '''
+        super(RaggedPFCMomentum, self).__init__(**kwargs)
+        
+    def call(self, inputs):
+        assert len(inputs) == 4
+        c, esum, tmom, ist = inputs
+        mom = c * esum
+        return tf.where(ist > 0, c * tmom, mom)
+
+ragged_layers['RaggedPFCMomentum'] = RaggedPFCMomentum
+
+class RaggedPFCIsNoise(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        '''
+        Inputs:
+        - asso index ragged
+        
+        Outputs:
+        - is noise tensor as float
+        
+        '''
+        super(RaggedPFCIsNoise, self).__init__(**kwargs)
+        
+    def call(self, inputs):
+        asso = inputs[...,tf.newaxis]
+        return tf.where(asso >= 0, 0. , tf.ones_like(asso, dtype='float32'))
+
+ragged_layers['RaggedPFCIsNoise'] = RaggedPFCIsNoise
+
+
 class RaggedToFlatRS(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         '''
@@ -290,24 +335,28 @@ class RaggedToFlatRS(tf.keras.layers.Layer):
         super(RaggedToFlatRS, self).__init__(**kwargs)
         
     def call(self, inputs):
-        print(self.name, 'inputs',inputs.row_splits, inputs.values.shape)
         return inputs.values, inputs.row_splits
             
     
 ragged_layers['RaggedToFlatRS'] = RaggedToFlatRS 
 
 class FlatRSToRagged(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self, validate=True, **kwargs):
         '''
         simply takes [X, F] + row splits and returns
         [events, ragged-something, F]
         Only one ragged dimension here
         '''
         super(FlatRSToRagged, self).__init__(**kwargs)
+        self.validate = validate
         
+    def get_config(self):
+        config = {'validate': self.validate}
+        base_config = super(FlatRSToRagged, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
     def call(self, inputs):
-        print('inputs[0],inputs[1]',inputs[0].shape,inputs[1].shape)
-        return tf.RaggedTensor.from_row_splits(inputs[0],inputs[1])
+        return tf.RaggedTensor.from_row_splits(inputs[0],inputs[1], validate=self.validate)
             
     
 ragged_layers['FlatRSToRagged'] = FlatRSToRagged      
