@@ -74,6 +74,7 @@ static void select_knn_kernel(
 
         const float * d_coord,
         const int * d_bin_idx,
+        const int * d_direction,
         const int * d_dim_bin_idx,
 
         const int * d_bin_boundaries,
@@ -89,7 +90,8 @@ static void select_knn_kernel(
         const int n_coords,
         const int n_bin_dim,
 
-        const int n_bboundaries) {
+        const int n_bboundaries,
+        bool use_direction) {
 
     //bin boundaries [i] [i+1] describe the scan ranges
 
@@ -100,8 +102,10 @@ static void select_knn_kernel(
         if(i_v>=n_vert)
             return;//safe guard
 
-        //continue;//do nothing
-
+        // 0: can only be neighbour, 1: can only have neighbour, 2: neither
+        if(use_direction &&
+                (d_direction[i_v] == 0 || d_direction[i_v] == 2))
+            continue;
 
         size_t nfilled=1;//self-reference from defaults
         size_t maxidx_local=0;
@@ -151,6 +155,12 @@ static void select_knn_kernel(
                     if(i_v == j_v)
                         continue;
 
+                    // 0: can only be neighbour, 1: can only have neighbour, 2: neither
+                    if(use_direction &&
+                            (d_direction[j_v] == 1 || d_direction[j_v] == 2))
+                        continue;
+
+
                     //fill up
                     float distsq = calculateDistance(i_v,j_v,d_coord,n_coords);
                     if(nfilled< n_neigh){
@@ -189,25 +199,25 @@ static void select_knn_kernel(
 
 //specify  dimensions
 template __global__ void select_knn_kernel<2>(
-        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const float * d_coord,const int * d_bin_idx,const int * d_direction,const int * d_dim_bin_idx,const int * d_bin_boundaries,
         const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
         const int n_neigh,const int n_coords, const int n_bin_dim,
-        const int n_bboundaries);
+        const int n_bboundaries, bool use_direction);
 template __global__ void select_knn_kernel<3>(
-        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const float * d_coord,const int * d_bin_idx,const int * d_direction,const int * d_dim_bin_idx,const int * d_bin_boundaries,
         const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
         const int n_neigh,const int n_coords, const int n_bin_dim,
-        const int n_bboundaries);
+        const int n_bboundaries, bool use_direction);
 template __global__ void select_knn_kernel<4>(
-        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const float * d_coord,const int * d_bin_idx,const int * d_direction,const int * d_dim_bin_idx,const int * d_bin_boundaries,
         const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
         const int n_neigh,const int n_coords, const int n_bin_dim,
-        const int n_bboundaries);
+        const int n_bboundaries, bool use_direction);
 template __global__ void select_knn_kernel<5>(
-        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const float * d_coord,const int * d_bin_idx,const int * d_direction,const int * d_dim_bin_idx,const int * d_bin_boundaries,
         const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
         const int n_neigh,const int n_coords, const int n_bin_dim,
-        const int n_bboundaries);
+        const int n_bboundaries, bool use_direction);
 
 
 template<typename dummy>
@@ -217,6 +227,7 @@ struct BinnedSelectKnnOpFunctor<CPUDevice, dummy> { //just because access needs 
 
             const float * d_coord,
             const int * d_bin_idx,
+            const int * d_direction,
             const int * d_dim_bin_idx,
 
             const int * d_bin_boundaries,
@@ -233,7 +244,8 @@ struct BinnedSelectKnnOpFunctor<CPUDevice, dummy> { //just because access needs 
             const int n_bin_dim,
 
             const int n_bboundaries,
-            bool tf_compat
+            bool tf_compat,
+            bool use_direction
     ){
         set_defaults(d_indices,
                 d_dist,
@@ -243,28 +255,28 @@ struct BinnedSelectKnnOpFunctor<CPUDevice, dummy> { //just because access needs 
         //really no buffering at all here
 
         if(n_bin_dim==2)
-            select_knn_kernel<2>(d_coord,d_bin_idx,d_dim_bin_idx,
+            select_knn_kernel<2>(d_coord,d_bin_idx,d_direction,d_dim_bin_idx,
                 d_bin_boundaries,d_n_bins,d_bin_width,
                 d_indices,d_dist,
-                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
+                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
 
         if(n_bin_dim==3)
-            select_knn_kernel<3>(d_coord,d_bin_idx,d_dim_bin_idx,
+            select_knn_kernel<3>(d_coord,d_bin_idx,d_direction,d_dim_bin_idx,
                 d_bin_boundaries,d_n_bins,d_bin_width,
                 d_indices,d_dist,
-                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
+                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
 
         if(n_bin_dim==4)
-            select_knn_kernel<4>(d_coord,d_bin_idx,d_dim_bin_idx,
+            select_knn_kernel<4>(d_coord,d_bin_idx,d_direction,d_dim_bin_idx,
                 d_bin_boundaries,d_n_bins,d_bin_width,
                 d_indices,d_dist,
-                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
+                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
 
         if(n_bin_dim==4)
-            select_knn_kernel<5>(d_coord,d_bin_idx,d_dim_bin_idx,
+            select_knn_kernel<5>(d_coord,d_bin_idx,d_direction,d_dim_bin_idx,
                 d_bin_boundaries,d_n_bins,d_bin_width,
                 d_indices,d_dist,
-                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
+                n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
 
     }
 };
@@ -284,6 +296,10 @@ public:
                 context->GetAttr("n_neighbours", &K_));
         OP_REQUIRES_OK(context,
                         context->GetAttr("tf_compatible", &tf_compat_));
+        OP_REQUIRES_OK(context,
+                        context->GetAttr("use_direction", &use_direction_));
+
+
     }
 
 
@@ -307,6 +323,7 @@ public:
         const Tensor &t_bin_boundaries = context->input(3);
         const Tensor &t_n_bins = context->input(4);
         const Tensor &t_bin_width = context->input(5);
+        const Tensor &t_direction = context->input(6);
 
         const int n_vert = t_coords.dim_size(0);
         const int n_coords = t_coords.dim_size(1);
@@ -329,6 +346,11 @@ public:
         OP_REQUIRES(context, 1 == t_bin_width.dim_size(0),
                     errors::InvalidArgument("BinnedSelectKnnOp expects singleton (dim(1)) for bin width."));
 
+        if(use_direction_){
+            OP_REQUIRES(context, t_direction.dim_size(0) == n_vert,
+                        errors::InvalidArgument("BinnedSelectKnnOp needs a direction tensor (0,1,2,other) with lendth nvert is use_direction=True."));
+        }
+
 
         TensorShape outputShape;
         outputShape.AddDim(n_vert);
@@ -346,6 +368,7 @@ public:
 
                 t_coords.flat<float>().data(),
                 t_bin_idx.flat<int>().data(),
+                t_direction.flat<int>().data(),
                 t_dim_bin_idx.flat<int>().data(),
 
                 t_bin_boundaries.flat<int>().data(),
@@ -362,7 +385,8 @@ public:
                 n_bin_dims,
 
                 n_bboundaries,
-                tf_compat_
+                tf_compat_,
+                use_direction_
 
         );
 
@@ -372,6 +396,7 @@ public:
 private:
     int K_;
     bool tf_compat_;
+    bool use_direction_;
 
 };
 
