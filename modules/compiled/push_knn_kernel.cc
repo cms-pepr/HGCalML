@@ -47,6 +47,8 @@ struct PushKnnOpFunctor<CPUDevice, dummy> {
             int n_neigh,
             int n_feat) {
 
+        printf("calling push knn cpu kernel for %d vertices.\n", n_vert);
+
         set_zero(d_out_feat,n_vert, n_feat);
 
         //simple loop here, no need to use atomics

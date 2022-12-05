@@ -874,7 +874,7 @@ class GooeyBatchNorm(LayerWithMetrics):
                  viscosity=0.2,
                  fluidity_decay=1e-4,
                  max_viscosity=0.99,
-                 epsilon=1e-4,
+                 epsilon=1e-2,
                  print_viscosity=False,
                  variance_only=False,
                  soft_mean=False,
@@ -989,15 +989,21 @@ class GooeyBatchNorm(LayerWithMetrics):
         elif self.trainable and self.learn: #trainable is anyway given by applying the loss or not
             currentmean = tf.reduce_mean(x,axis=0,keepdims=True)
             currentmean = tf.stop_gradient(currentmean)
+            currentmean = tf.where(tf.math.is_finite(currentmean),currentmean, self.mean)#protect against empty batches
             
             self.add_loss(10.*(1.01-self.viscosity) * tf.reduce_mean(tf.abs(self.mean-currentmean)))
             
             newvar = tf.math.reduce_std(x-currentmean,axis=0,keepdims=True)
             newvar = tf.stop_gradient(newvar)
+            newvar = tf.where(tf.math.is_finite(newvar),newvar, self.variance)#protect against empty batches
             
             self.add_loss(10.*(1.01-self.viscosity) * tf.reduce_mean(tf.abs(self.variance-newvar)))
             
             self._update_viscosity(training)
+            
+            #print(self.mean)
+            #print(self.variance)
+            #print(' ')
             
         else:
             currentmean = self.mean
@@ -1008,7 +1014,7 @@ class GooeyBatchNorm(LayerWithMetrics):
         
         #apply
         x -= self.mean
-        x = tf.math.divide_no_nan(x, self.variance + self.epsilon)
+        x = tf.math.divide_no_nan(x, tf.abs(self.variance) + self.epsilon)
         if self.variance_only:
             x += self.mean
         
@@ -2546,7 +2552,7 @@ class NeighbourGroups(LayerWithMetrics):
             if self.print_reduction:
                 print(self.name,'reduced from', preN ,'to',postN)
             
-            self.add_prompt_metric(postN/preN,self.name+'_reduction')
+            self.add_prompt_metric(postN/(preN+1e-3),self.name+'_reduction')
         
         back = ggather
         if self.return_backscatter:
@@ -3177,7 +3183,7 @@ class MessagePassing(tf.keras.layers.Layer):
 
     def collect_neighbours(self, features, neighbour_indices):
         neighbour_indices = tf.stop_gradient(neighbour_indices)
-        f,_ = AccumulateKnn(tf.cast(neighbour_indices*0, tf.float32),  features, neighbour_indices)
+        f,_ = AccumulateLinKnn(tf.cast(neighbour_indices*0, tf.float32)+1.,  features, neighbour_indices)
         return f
 
     def call(self, inputs):
@@ -3450,8 +3456,8 @@ class XYZtoXYZPrime(tf.keras.layers.Layer):
         r = tf.sqrt(tf.reduce_sum(inputs**2, axis=-1, keepdims=True) + 1e-6)
         
         #also adjust scale a bit
-        xprime = x / z *10.
-        yprime = y / z *10.
+        xprime = x / tf.where(z == 0., 1e-3, z *10.)
+        yprime = y / tf.where(z == 0., 1e-3, z *10.)
         zprime = r / 100.
         
         return tf.concat([xprime,yprime,zprime], axis=-1)

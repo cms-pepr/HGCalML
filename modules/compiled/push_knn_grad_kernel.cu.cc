@@ -37,10 +37,13 @@ void push_knn_grad_weight_kernel(
     if(i_v >= n_vert || i_n >= n_neigh)
         return;
 
-    float wgrad = 0;
     int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
-    if(nidx < 0)
+    if(nidx < 0){
+        d_w_grad[I2D(i_v,i_n,n_neigh)] = 0;
         return;
+    }
+
+    float wgrad = 0;
 
     for (size_t i_f = 0; i_f < n_feat; i_f++) {
 
@@ -51,8 +54,6 @@ void push_knn_grad_weight_kernel(
     d_w_grad[I2D(i_v,i_n,n_neigh)] = wgrad;
 
 }
-
-
 
 __global__
 void push_knn_grad_feat_kernel(
@@ -111,15 +112,17 @@ struct PushKnnGradOpFunctor<GPUDevice, dummy> {
             int n_neigh,
             int n_feat) {
 
-
-        grid_and_block par1(n_vert, 128, n_feat, 4);
+        grid_and_block par1(n_vert, 64, n_feat, 8);
         push_knn_grad_feat_kernel<<<par1.grid(), par1.block(), 0, d.stream()>>>(
                 d_grad,d_weights,d_feat,d_idxs,d_feat_grad,d_w_grad,n_vert,n_neigh,n_feat);
 
-        grid_and_block par2(n_vert, 128, n_neigh, 4);
+        cudaDeviceSynchronize();
+
+        grid_and_block par2(n_vert, 64, n_neigh, 8);
         push_knn_grad_weight_kernel<<<par2.grid(), par2.block(), 0, d.stream()>>>(
                 d_grad,d_weights,d_feat,d_idxs,d_feat_grad,d_w_grad,n_vert,n_neigh,n_feat);
 
+        cudaDeviceSynchronize();
 
     }
 

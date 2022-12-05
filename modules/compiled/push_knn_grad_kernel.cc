@@ -36,7 +36,7 @@ struct PushKnnGradOpFunctor<CPUDevice, dummy> {
             int n_neigh,
             int n_feat) {
 
-
+        printf("calling push knn grad cpu kernel for %d vertices.\n", n_vert);
         //feature gradient
 
         for (size_t i_v = 0; i_v < n_vert; i_v++) {
@@ -47,12 +47,16 @@ struct PushKnnGradOpFunctor<CPUDevice, dummy> {
                 for (size_t i_n = 0; i_n < n_neigh; i_n++){
 
                     int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+                    if(nidx < 0)
+                        continue;
 
                     float w = d_weights[I2D(i_v, i_n, n_neigh)];
 
                     fgrad += d_grad[I2D(nidx, i_f, n_feat)] * w;
 
                 }
+                if(fgrad != fgrad)
+                    printf("feature gradient is non for vertex %d, feature %d \n", i_v, i_f);
                 d_feat_grad[I2D(i_v, i_f, n_feat)] = fgrad;
             }
         }
@@ -64,6 +68,10 @@ struct PushKnnGradOpFunctor<CPUDevice, dummy> {
 
                 float wgrad = 0;
                 int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
+                if(nidx < 0){
+                    d_w_grad[I2D(i_v,i_n,n_neigh)] = 0;
+                    continue;
+                }
 
                 for (size_t i_f = 0; i_f < n_feat; i_f++) {
 
@@ -72,6 +80,8 @@ struct PushKnnGradOpFunctor<CPUDevice, dummy> {
 
                 }
 
+                if(wgrad != wgrad)
+                    printf("weight gradient is non for vertex %d, neighbour %d \n", i_v, i_n);
                 d_w_grad[I2D(i_v,i_n,n_neigh)] = wgrad;
 
             }

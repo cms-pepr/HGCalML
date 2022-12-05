@@ -43,26 +43,37 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
     
     '''
     
+    tf.debugging.check_numerics(coordinates,"BinByCoordinates: input coordinates")
     #calculate
     if not pre_normalized:
         min_coords = tf.reduce_min(coordinates,axis=0,keepdims=True)
+        min_coords = tf.where(tf.math.is_finite(min_coords), min_coords, 0.)
         coordinates -= min_coords
-    dmax_coords = tf.reduce_max(coordinates,axis=0) + 1e-3 #add tiny offset to guarantee at least one bin
-    dmax_coords = tf.where(tf.reduce_min(coordinates,axis=0) == dmax_coords, dmax_coords+1., dmax_coords)
+    dmax_coords = tf.reduce_max(coordinates,axis=0) 
+    dmax_coords = tf.where(tf.reduce_min(coordinates,axis=0) == dmax_coords, dmax_coords+1., dmax_coords)  + 1e-3
     
-    if bin_width is None:
-        assert n_bins is not None
-        bin_width = (dmax_coords) / tf.cast(n_bins, dtype='float32')
-        n_bins = None #re-calc in dimensions
-        bin_width = tf.reduce_max(bin_width)[...,tf.newaxis]#just add a '1' dimension
+    dmax_coords = tf.where(tf.math.is_finite(dmax_coords), dmax_coords, 1.)
+    
+    with tf.control_dependencies([tf.assert_greater(dmax_coords,0.),
+                                  tf.debugging.check_numerics(coordinates,"BinByCoordinates: adjusted coordinates")]):
+    
+        if bin_width is None:
+            assert n_bins is not None
+            bin_width = (dmax_coords) / tf.cast(n_bins, dtype='float32')
+            n_bins = None #re-calc in dimensions
+            bin_width = tf.reduce_max(bin_width)[...,tf.newaxis]#just add a '1' dimension
+            
+        if n_bins is None:
+            assert bin_width is not None
+            n_bins = (dmax_coords) / bin_width  
+            n_bins += 1.
+            n_bins = tf.cast(n_bins, dtype='int32')
         
-    if n_bins is None:
-        assert bin_width is not None
-        n_bins = (dmax_coords) / bin_width  
-        n_bins += 1.
-        n_bins = tf.cast(n_bins, dtype='int32')
+    
+    with tf.control_dependencies([tf.assert_greater(n_bins,0), 
+                                  tf.assert_greater(bin_width,0.)]):
         
-    binass,flatbinass,nperbin = _bin_by_coordinates.BinByCoordinates(coordinates=coordinates, 
+        binass,flatbinass,nperbin = _bin_by_coordinates.BinByCoordinates(coordinates=coordinates, 
                                                 row_splits=row_splits, 
                                                 bin_width=bin_width, nbins=n_bins,
                                                 calc_n_per_bin=calc_n_per_bin)

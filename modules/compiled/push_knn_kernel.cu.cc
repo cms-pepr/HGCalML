@@ -48,7 +48,7 @@ void push_knn_kernel(
     size_t i_n =  blockIdx.x * blockDim.x + threadIdx.x;
     size_t i_f =  blockIdx.y * blockDim.y + threadIdx.y;
     size_t i_v =  blockIdx.z * blockDim.z + threadIdx.z;
-    if(i_n >= n_neigh || i_f >= n_feat || i_v > n_vert)
+    if(i_n >= n_neigh || i_f >= n_feat || i_v >= n_vert)
         return;
 
 
@@ -91,9 +91,9 @@ struct PushKnnOpFunctor<GPUDevice, dummy> {
 
         //this should keep the atomic reasonably ok
         grid_and_block par(
-                        n_neigh, 32,
-                        n_feat, 32,
-                        n_vert, 1);//explicit one in n_vert to avoid race conditions
+                        n_neigh, 8,
+                        n_feat, 16,
+                        n_vert, 4);//explicit one in n_vert to avoid race conditions
 
 
         push_knn_kernel<<<par.grid(), par.block(), 0, d.stream()>>>(
@@ -109,7 +109,6 @@ struct PushKnnOpFunctor<GPUDevice, dummy> {
 
         cudaDeviceSynchronize();
     }
-
 };
 
 

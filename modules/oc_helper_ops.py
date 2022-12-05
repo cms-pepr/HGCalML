@@ -80,11 +80,14 @@ def SelectWithDefault(indices, tensor, default=0):
     tfidxs = tf.where(expidxs<0,0,expidxs)
     gtens = tf.gather_nd(tensor,tfidxs)
     out = tf.where(expidxs<0, default, gtens)
+    
     #check if the size ends up as we might want
-    assert len(out.shape) == len(indices.shape) + 1
-    tf.assert_equal(out.shape[1], indices.shape[1])
-    tf.assert_equal(tensor.shape[1], out.shape[2])
-    return out
+    with tf.control_dependencies([
+        tf.assert_equal(tf.shape(tf.shape(out)), tf.shape(tf.shape(indices)) + 1),
+        tf.assert_equal(tf.shape(out)[1], tf.shape(indices)[1]),
+        tf.assert_equal(tf.shape(tensor)[1], tf.shape(out)[2])]):
+        
+        return out
 
 
 def per_rs_segids_to_unique(pred_sid, rs, return_nseg=False, strict_check=True):

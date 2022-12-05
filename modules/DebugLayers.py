@@ -139,8 +139,13 @@ class _DebugPlotBase(tf.keras.layers.Layer):
         self.counter=0
         
         os.system('mkdir -p '+self.outdir)
+        try:
+            print(self.name, 'plotting...')
+            self.plot(inputs,training)
+        except Exception as e:
+            print(e)
+            #do nothing, don't interrupt training because a debug plot failed
             
-        self.plot(inputs,training)
         return out
     
 
@@ -363,4 +368,61 @@ class PlotCoordinates(_DebugPlotBase):
             
             if self.publish is not None:
                 publish(self.create_base_output_path()+'_'+str(i)+"_no_noise.html", self.publish)
+        
+        
+class Plot2DCoordinatesPlusScore(_DebugPlotBase):
+    
+    def __init__(self, **kwargs):
+        '''
+        Takes as input
+         - coordinates 
+         - score
+         - truth indices 
+         - row splits
+         
+        Returns coordinates (unchanged)
+        '''
+        super(Plot2DCoordinatesPlusScore, self).__init__(**kwargs)
+        
+        
+    def plot(self, inputs, training=None):
+        assert len(inputs) == 4
+        coords, score, tidx, rs = inputs
+        
+        if coords.shape[1] != 2:
+            return
+        
+        #just select first
+        coords = coords[0:rs[1]]
+        tidx = tidx[0:rs[1]]
+        if len(tidx.shape) <2:
+            tidx = tidx[...,tf.newaxis]
+        score = score[0:rs[1]]
+        
+        
+        data={
+            'X':  coords[:,0:1].numpy(),
+            'Y':  coords[:,1:2].numpy(),
+            'Z':  score.numpy(),
+            'tIdx': tidx[:,0:1].numpy()
+            }
+        
+        df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
+        df['orig_tIdx']=df['tIdx']
+        rdst = np.random.RandomState(1234567890)#all the same
+        shuffle_truth_colors(df,'tIdx',rdst)
+        
+        hover_data=['orig_tIdx']
+
+        fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
+                            color="tIdx",
+                            hover_data=hover_data,
+                            template='plotly_dark',
+                color_continuous_scale=px.colors.sequential.Rainbow)
+        fig.update_traces(marker=dict(line=dict(width=0)))
+        fig.write_html(self.outdir+'/'+self.name+".html")
+        
+        
+        if self.publish is not None:
+            publish(self.outdir+'/'+self.name+".html", self.publish)
         

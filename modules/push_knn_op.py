@@ -25,12 +25,16 @@ def _PushKnnGrad(op, grad):
     f  = op.inputs[1]
     nidx = op.inputs[2]
     
+    grad = tf.debugging.check_numerics(grad,"_PushKnnGrad: input gradient")
+    f = tf.debugging.check_numerics(f,"_PushKnnGrad: input features")
+    w = tf.debugging.check_numerics(w,"_PushKnnGrad: input weights")
+    
     wgrad, fgrad = _push_knn_grad.PushKnnGrad(grad=grad,weights=w,features=f,indices=nidx)
     
+    fgrad = tf.debugging.check_numerics(fgrad,"_PushKnnGrad: fgrad gradient")
+    wgrad = tf.debugging.check_numerics(wgrad,"_PushKnnGrad: wgrad gradient")
+    
     return wgrad, fgrad, None #no gradient for indices
-
-
-
 
 def _tf_push_knn(w,f,nidx):
     '''
@@ -44,6 +48,8 @@ def _tf_push_knn(w,f,nidx):
     #go through the columns
     
     #add a zero column for the '-1's
+    if f.shape[0] == None:
+        return f
     
     f = tf.concat([ 0.* f[0:1], f ],axis=0)
     w = tf.concat([ 0.* w[0:1], w ],axis=0)
@@ -57,3 +63,5 @@ def _tf_push_knn(w,f,nidx):
             sel_f = f[i_v:i_v+1]
             out += tf.scatter_nd(sel_nidx, sel_w*sel_f, shape=f.shape)
     return out[1:] #remove 0 again
+
+#PushKnn = _tf_push_knn #DEBUG

@@ -7,6 +7,10 @@ but the layers themselves to other files
 # Define custom layers here and add them to the global_layers_list dict (important!)
 global_layers_list = {}
 
+from GraphCondensationLayers import graph_condensation_layers
+
+global_layers_list.update(graph_condensation_layers)
+
 # keras hacks
 
 from tensorflow.keras.layers import LeakyReLU
@@ -240,6 +244,9 @@ global_layers_list['LocalGravNetAttention']=LocalGravNetAttention
 from DebugLayers import PlotCoordinates
 global_layers_list['PlotCoordinates']=PlotCoordinates
 
+
+from DebugLayers import Plot2DCoordinatesPlusScore
+global_layers_list['Plot2DCoordinatesPlusScore']=Plot2DCoordinatesPlusScore
 
 from DebugLayers import PlotEdgeDiscriminator
 global_layers_list['PlotEdgeDiscriminator']=PlotEdgeDiscriminator
