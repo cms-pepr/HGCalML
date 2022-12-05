@@ -250,16 +250,18 @@ def BuildAndAssignCondensatesBinned(ccoords,
     num_rows = row_splits.shape[0]-1
 
     dist =  dist / distance_threshold
-    
-    if no_condensation_mask is not None:
-        assert len(no_condensation_mask.shape) == 2
-        
-        betas = tf.where(no_condensation_mask>0, 1., betas)
-        maxcoords = tf.reduce_max(ccoords, axis=0, keepdims=True) # 1 x C , just to know where to start
-        fidx = tf.cast(tf.range(tf.shape(ccoords)[0]) + 2, dtype='float32')
-        replcoords = ccoords + tf.expand_dims(fidx,axis=1) * maxcoords * 1.05 * tf.reduce_max(dist)
-        ccoords = tf.where( no_condensation_mask>0., replcoords, ccoords )
-        
+
+    if no_condensation_mask is None:
+        no_condensation_mask = tf.zeros_like(betas, tf.int32)
+
+    # if no_condensation_mask is not None:
+    #     assert len(no_condensation_mask.shape) == 2
+    #     betas = tf.where(no_condensation_mask>0, 1., betas)
+    #     maxcoords = tf.reduce_max(ccoords, axis=0, keepdims=True) # 1 x C , just to know where to start
+    #     fidx = tf.cast(tf.range(tf.shape(ccoords)[0]) + 2, dtype='float32')
+    #     replcoords = ccoords + tf.expand_dims(fidx,axis=1) * maxcoords * 1.05 * tf.reduce_max(dist)
+    #     ccoords = tf.where( no_condensation_mask>0, replcoords, ccoords )
+
 
     nvertmax = int(tf.reduce_sum(row_splits[1:] - row_splits[0:-1]))
     n_bins_sc = max(4,min(int(math.ceil(math.pow((nvertmax)/5, 1/3))), 25))
@@ -276,16 +278,18 @@ def BuildAndAssignCondensatesBinned(ccoords,
     ccoords = tf.gather(ccoords, sorting_indices)
     betas = tf.gather(betas, sorting_indices)
     dist = tf.gather(dist, sorting_indices)
+    no_condensation_mask = tf.gather(no_condensation_mask, sorting_indices)
     bins_flat = tf.gather(bins_flat, sorting_indices)
     orig_indices = tf.gather(tf.range(betas.shape[0]), sorting_indices)
     bin_splits = tf.ragged.segment_ids_to_row_splits(bins_flat,num_segments=tf.reduce_prod(n_bins)*num_rows)
 
     # _h is for high beta vertices, filtered ones for faster performance
-    high_beta_indices = (betas>beta_threshold)[..., 0]
+    high_beta_indices = (tf.logical_or(betas>beta_threshold, no_condensation_mask>0))[..., 0]
     row_splits_h = tf.ragged.segment_ids_to_row_splits(tf.ragged.row_splits_to_segment_ids(row_splits)[high_beta_indices], num_segments=num_rows)
     betas_h = betas[high_beta_indices]
     ccoords_h = ccoords[high_beta_indices]
     dist_h = dist[high_beta_indices]
+    no_condensation_mask_h = no_condensation_mask[high_beta_indices]
     orig_indices_h = orig_indices[high_beta_indices]
 
     # Would set default to -1 instead of 0 (where no scattering is done)
@@ -299,6 +303,7 @@ def BuildAndAssignCondensatesBinned(ccoords,
                 ccoords=ccoords,
                 dist=dist,
                 beta=betas,
+                no_condensation_mask=no_condensation_mask,
                 bins_flat=bins_flat,
                 bin_splits=bin_splits,
                 n_bins=n_bins,
@@ -308,6 +313,7 @@ def BuildAndAssignCondensatesBinned(ccoords,
                 ccoords_h=ccoords_h,
                 dist_h=dist_h,
                 beta_h=betas_h,
+                no_condensation_mask_h=no_condensation_mask_h,
                 row_splits=row_splits,
                 row_splits_h=row_splits_h)
 

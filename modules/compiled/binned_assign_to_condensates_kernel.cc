@@ -31,10 +31,12 @@ namespace functor {
             const float* ccoords_h,
             const float* dist_h,
             const float* beta_h,
+            const int* no_condensation_mask_h,
             int* high_assigned_status_h,
             const int* original_indices_h,
             const float* ccoords,
             const float* dist,
+            const int* no_condensation_mask,
             float*assignment_min_distance,
             int*assignment,
             int*association,
@@ -56,6 +58,12 @@ namespace functor {
 
         for(int id=0;id<dimensions;id++) {
             my_ccoords[id] = ccoords_h[row_offset_h*dimensions + alpha_idx_h*dimensions+id];
+        }
+
+        bool no_condensate=false;
+        if (no_condensation_mask_h[row_offset_h+alpha_idx_h]>0) {
+            radius=0;
+            no_condensate=true;
         }
 
         for(int id=0;id<dimensions_binning;id++) {
@@ -80,7 +88,8 @@ namespace functor {
                         float dist = 0;
                         for(int id=0;id<dimensions;id++)
                             dist += (my_ccoords[id] - ccoords[iv*dimensions+id]) * (my_ccoords[id] - ccoords[iv*dimensions+id]);
-                        if(dist <= radius_sq) {
+
+                        if((dist <= radius_sq && !no_condensate && no_condensation_mask[iv]==0) || (no_condensate && indices_to_filtered[iv]==(row_offset_h+alpha_idx_h))) {
                             assignment[iv] = shower_idx;
                             association[iv] = original_indices_h[row_offset_h+alpha_idx_h];
                             if(indices_to_filtered[iv]!=-1) {
@@ -95,7 +104,7 @@ namespace functor {
                     for(int id=0;id<dimensions;id++)
                         dist += (my_ccoords[id] - ccoords[iv*dimensions+id]) * (my_ccoords[id] - ccoords[iv*dimensions+id]);
 
-                    if(dist <= radius_sq) {
+                    if((dist <= radius_sq && !no_condensate && no_condensation_mask[iv]==0) || (no_condensate && indices_to_filtered[iv]==(row_offset_h+alpha_idx_h))) {
                         if (assignment_min_distance[iv]*radius_sq >= dist) {
                             assignment[iv] = shower_idx;
                             association[iv] = original_indices_h[row_offset_h+alpha_idx_h];
@@ -126,11 +135,13 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
             const float* ccoords_h,
             const float* dist_h,
             const float* beta_h,
+            const int* no_condensation_mask_h,
             int* high_assigned_status_h,
             const int* original_indices_h,
             const int*row_splits_h,
             const float* ccoords,
             const float* dist,
+            const int* no_condensation_mask,
             const int* indices_to_filtered,
             float* assignment_min_distance,
             int* assignment,
@@ -179,7 +190,12 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
                 // Find the biggest beta vertex
                 for(int iv_h=0;iv_h<n_vert_h;iv_h++) {
                     if (condensates_assigned_h[row_offset_h+iv_h]==0) {
-                        if(beta_h[row_offset_h+iv_h]>biggest_beta) {
+                        if (no_condensation_mask_h[row_offset_h+iv_h > 0]) {
+                            alpha_idx_h = iv_h;
+                            biggest_beta = 0.0;
+                            break;
+                        }
+                        else if(beta_h[row_offset_h+iv_h]>biggest_beta) {
                             biggest_beta = beta_h[row_offset_h+iv_h];
                             alpha_idx_h=iv_h;
                         }
@@ -201,10 +217,12 @@ struct BinnedCondensatesFinderOpFunctor<CPUDevice, dummy> {
                         ccoords_h,
                         dist_h,
                         beta_h,
+                        no_condensation_mask_h,
                         high_assigned_status_h,
                         original_indices_h,
                         ccoords,
                         dist,
+                        no_condensation_mask,
                         assignment_min_distance,
                         assignment,
                         association,
@@ -237,17 +255,19 @@ public:
         const Tensor & t_ccoords = context->input(0);
         const Tensor & t_dist = context->input(1);
         const Tensor & t_beta = context->input(2);
-        const Tensor & t_bins_flat = context->input(3);
-        const Tensor & t_bin_splits = context->input(4);
-        const Tensor & t_indices_to_filtered = context->input(5);
-        const Tensor & t_original_indices = context->input(6);
-        const Tensor & t_row_splits = context->input(7);
-        const Tensor & t_n_bins = context->input(8);
-        const Tensor & t_bin_widths = context->input(9);
-        const Tensor & t_ccoords_h = context->input(10);
-        const Tensor & t_dist_h = context->input(11);
-        const Tensor & t_beta_h = context->input(12);
-        const Tensor & t_row_splits_h = context->input(13);
+        const Tensor & t_no_condensation_mask = context->input(3);
+        const Tensor & t_bins_flat = context->input(4);
+        const Tensor & t_bin_splits = context->input(5);
+        const Tensor & t_indices_to_filtered = context->input(6);
+        const Tensor & t_original_indices = context->input(7);
+        const Tensor & t_row_splits = context->input(8);
+        const Tensor & t_n_bins = context->input(9);
+        const Tensor & t_bin_widths = context->input(10);
+        const Tensor & t_ccoords_h = context->input(11);
+        const Tensor & t_dist_h = context->input(12);
+        const Tensor & t_beta_h = context->input(13);
+        const Tensor & t_no_condensation_mask_h = context->input(14);
+        const Tensor & t_row_splits_h = context->input(15);
 
         int length = t_ccoords.dim_size(0);
         int length_h = t_beta_h.dim_size(0);
@@ -260,7 +280,6 @@ public:
 
         Tensor *t_assigned = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1,{length},&t_assigned));
-
 
         Tensor *t_alpha_indices = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(2,{length_h},&t_alpha_indices));
@@ -286,11 +305,13 @@ public:
                 t_ccoords_h.flat<float>().data(),
                 t_dist_h.flat<float>().data(),
                 t_beta_h.flat<float>().data(),
+                t_no_condensation_mask_h.flat<int>().data(),
                 t_high_assigned_status_h->flat<int>().data(),
                 t_original_indices.flat<int>().data(),
                 t_row_splits_h.flat<int>().data(),
                 t_ccoords.flat<float>().data(),
                 t_dist.flat<float>().data(),
+                t_no_condensation_mask.flat<int>().data(),
                 t_indices_to_filtered.flat<int>().data(),
                 assign_by_max_beta ? nullptr : t_max_distance.flat<float>().data(),
                 t_assigned->flat<int>().data(),

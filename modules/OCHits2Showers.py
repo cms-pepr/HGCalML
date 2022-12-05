@@ -52,7 +52,7 @@ class OCHits2ShowersLayer(tf.keras.layers.Layer):
                                                       }.items()))
 
 
-    def call(self, pred_ccoords, pred_beta, pred_dist, row_splits=None):
+    def call(self, pred_ccoords, pred_beta, pred_dist, no_condensation_mask=None, row_splits=None):
         if row_splits is None:
             row_splits = tf.constant([0,pred_dist.shape[0]], tf.int32)
 
@@ -65,6 +65,7 @@ class OCHits2ShowersLayer(tf.keras.layers.Layer):
         x = BuildAndAssignCondensatesBinned(
             pred_ccoords,
             pred_beta,
+            no_condensation_mask=no_condensation_mask,
             row_splits=row_splits,
             dist=pred_dist*self.distance_threshold,
             assign_by_max_beta=self.assign_by_max_beta,
