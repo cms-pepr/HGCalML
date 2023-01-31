@@ -18,11 +18,20 @@ parser.add_argument("--unbuffered",
                     default=False, action="store_true")
 
 parser.add_argument("--max_files", help="Limit number of files", default=-1)
+parser.add_argument("--toydata", help="Toy data has a different shape for now", default=False, action='store_true')
 
 args = parser.parse_args()
 
 
-HGCalPredictor(args.data_collection, args.data_collection, args.output_dir, inputdir=args.data_dir, unbuffered=False, max_files=int(args.max_files)).predict(model_path=args.inputModel)
+HGCalPredictor(
+        args.data_collection, 
+        args.data_collection, 
+        args.output_dir, 
+        inputdir=args.data_dir, 
+        unbuffered=False, 
+        max_files=int(args.max_files),
+        toydata=bool(args.toydata),
+        ).predict(model_path=args.inputModel)
 
 
 

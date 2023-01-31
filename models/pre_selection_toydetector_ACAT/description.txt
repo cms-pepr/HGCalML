@@ -1,0 +1,4 @@
+Preselection model trained with script in same directory on the data found on FI here: 
+/mnt/ceph/users/sqasim/Datasets/b4toys/run2/ready/pu200_plus_60_phase_cut_30/train/
+Full directory stored here on FI
+/mnt/home/pzehetner/ACAT/Preselection/batch_test_elu/KERAS_check_best_model.h5

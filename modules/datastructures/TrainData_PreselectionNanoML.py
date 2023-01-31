@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 #from IPython import embed
 import os
+import gzip
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from DeepJetCore.dataPipeline import TrainDataGenerator

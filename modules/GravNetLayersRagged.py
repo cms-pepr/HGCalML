@@ -868,13 +868,12 @@ class ElementScaling(tf.keras.layers.Layer):
         
         return inputs * self.scales
         
-    
 class GooeyBatchNorm(LayerWithMetrics):
     def __init__(self,
                  viscosity=0.2,
                  fluidity_decay=1e-4,
                  max_viscosity=0.99,
-                 epsilon=1e-2,
+                 epsilon=1e-4,
                  print_viscosity=False,
                  variance_only=False,
                  soft_mean=False,
@@ -990,20 +989,16 @@ class GooeyBatchNorm(LayerWithMetrics):
             currentmean = tf.reduce_mean(x,axis=0,keepdims=True)
             currentmean = tf.stop_gradient(currentmean)
             currentmean = tf.where(tf.math.is_finite(currentmean),currentmean, self.mean)#protect against empty batches
-            
+
             self.add_loss(10.*(1.01-self.viscosity) * tf.reduce_mean(tf.abs(self.mean-currentmean)))
             
             newvar = tf.math.reduce_std(x-currentmean,axis=0,keepdims=True)
             newvar = tf.stop_gradient(newvar)
             newvar = tf.where(tf.math.is_finite(newvar),newvar, self.variance)#protect against empty batches
-            
+
             self.add_loss(10.*(1.01-self.viscosity) * tf.reduce_mean(tf.abs(self.variance-newvar)))
             
             self._update_viscosity(training)
-            
-            #print(self.mean)
-            #print(self.variance)
-            #print(' ')
             
         else:
             currentmean = self.mean
