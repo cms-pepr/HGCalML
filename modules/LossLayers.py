@@ -234,22 +234,26 @@ class LossLayerBase(LayerWithMetrics):
         super(LossLayerBase, self).build(input_shape)
     
     def create_safe_zero_loss(self, a):
-        zero_loss = 0.*tf.reduce_mean(a)
+        zero_loss = tf.zeros_like(tf.reduce_mean(a))
         zero_loss = tf.where(tf.math.is_finite(zero_loss),zero_loss,0.)
         return zero_loss
     
     def call(self, inputs):
         lossval = tf.constant([0.],dtype='float32')
+        a = None
+        if not isinstance(inputs,list):
+            a = inputs
+        elif isinstance(inputs,list) and len(inputs) == 2:
+            a,_ = inputs
+        elif isinstance(inputs,list) and len(inputs) > 2:
+            a,*_ = inputs
+        else:
+            raise ValueError("LossLayerBase: input not understood")
+            
         if self.active:
             now = tf.timestamp() 
             
             #check for empty batches
-            if len(inputs) == 1:
-                a = inputs
-            if len(inputs) == 2:
-                a,_ = inputs
-            if len(inputs) > 2:
-                a,*_ = inputs
                 
             #generally protect against empty batches
             if a.shape[0] is None or a.shape[0] == 0:
@@ -269,9 +273,9 @@ class LossLayerBase(LayerWithMetrics):
                 
         self.add_prompt_metric(lossval, self.name+'_loss')
         if self.return_lossval:
-            return inputs[0], lossval
+            return a, lossval
         else:
-            return inputs[0]
+            return a
     
     def loss(self, inputs):
         '''
@@ -323,6 +327,29 @@ class LLDummy(LossLayerBase):
     
     def loss(self, inputs):
         return tf.reduce_mean(inputs)
+
+
+class LLValuePenalty(LossLayerBase):
+    
+    def __init__(self, 
+                 default : float = 0.,
+                 **kwargs):
+        '''
+        Simple value penalty loss, tries to keep values around default using simple
+        L2 regularisation; returns input
+        '''
+        
+        super(LLValuePenalty, self).__init__(**kwargs)
+        self.default = default
+        
+    def get_config(self):
+        config = {'default': self.default}
+        base_config = super(LLValuePenalty, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def loss(self, inputs):
+        return tf.reduce_mean((self.default - inputs)**2)
+
 
 
 
@@ -1015,19 +1042,37 @@ class LLClusterCoordinates(LossLayerBase):
     - truth index
     - row splits
     '''
-    def __init__(self, downsample:int = -1, **kwargs):
+    def __init__(self, downsample:int = -1, 
+                 ignore_noise=False, 
+                 hinge_mode = False, 
+                 **kwargs):
         if 'dynamic' in kwargs:
             super(LLClusterCoordinates, self).__init__(**kwargs)
         else:
             super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
             
         self.downsample = downsample
+        self.ignore_noise = ignore_noise
+        self.hinge_mode = hinge_mode
         
         #self.built = True #not necessary for loss layers
 
     def get_config(self):
         base_config = super(LLClusterCoordinates, self).get_config()
-        return dict(list(base_config.items()) + list({'downsample':self.downsample}.items()))
+        return dict(list(base_config.items()) + list({'downsample':self.downsample, 
+                                                      'ignore_noise': self.ignore_noise,
+                                                      'hinge_mode': self.hinge_mode}.items()))
+    
+    def _attfunc(self, dsq):
+        if self.hinge_mode:
+            return dsq
+        return tf.math.log(tf.math.exp(1.)*dsq+1.)
+    
+    def _rep_func(self,dsq):
+        if self.hinge_mode:
+            return tf.nn.relu( 1. - tf.sqrt(dsq + 1e-6) )
+        
+        return tf.exp(-tf.sqrt(dsq+1e-4)/(5.))
              
     #all this needs some cleaning up
     def _rs_loop(self,coords, tidx, specweight, energy):
@@ -1037,8 +1082,15 @@ class LLClusterCoordinates(LossLayerBase):
         
         Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
         
-        if N_per_obj is None:
-            return 3 * [0. * tf.reduce_mean(coords)] #no objects, discard
+        if Msel is None or N_per_obj is None:
+            return 3 * [self.create_safe_zero_loss(coords)]
+        
+        if self.ignore_noise:
+            e_tidx = tf.cast(tf.expand_dims(tidx,axis=0), 'float32')
+            e_tidx *= M_not
+            M_not = tf.where(e_tidx <0 , 0., M_not)
+            
+        
         
         N_per_obj = tf.cast(N_per_obj, dtype='float32')
         N_tot = tf.cast(tidx.shape[0], dtype='float32') 
@@ -1057,7 +1109,7 @@ class LLClusterCoordinates(LossLayerBase):
         av_coords_m = tf.expand_dims(av_coords_m,axis=1) ##K x 1 x C
         
         distloss = tf.reduce_sum((av_coords_m-coords_m)**2,axis=2)
-        distloss = q_m[:,:,0] * tf.math.log(tf.math.exp(1.)*distloss+1.) * padmask_m[:,:,0]
+        distloss = q_m[:,:,0] * self._attfunc(distloss) * padmask_m[:,:,0]
         distloss = tf.math.divide_no_nan(q_k[:,0] * tf.reduce_sum(distloss,axis=1),
                                          N_per_obj[:,0]+1e-3)#K
         distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss),tf.reduce_sum(q_k)+1e-3)
@@ -1067,7 +1119,7 @@ class LLClusterCoordinates(LossLayerBase):
         reploss = M_not * tf.exp(-repdist)#K x V x 1
         
         #add a long range part to it
-        reploss += 0.5 * M_not * tf.exp(-tf.sqrt(repdist+1e-4)/(5.))
+        reploss += 0.5 * M_not * self._rep_func(repdist)
         #downweight noise
         reploss = q_k * tf.reduce_sum(reploss,axis=1)/( N_tot-N_per_obj +1e-3)#K x 1
         reploss = tf.reduce_sum(reploss)/(tf.reduce_sum(q_k)+1e-3)
@@ -1107,10 +1159,15 @@ class LLClusterCoordinates(LossLayerBase):
     
         
     def loss(self, inputs):
-        assert len(inputs) == 5
-        coords, tidx, specw, energy, rs = inputs
+        if len(inputs) == 5:
+            coords, tidx, specw, energy, rs = inputs
+        elif len(inputs) == 4:
+            coords, tidx, energy, rs = inputs
+            specw = tf.zeros_like(energy)
+        else:
+            raise ValueError("LLClusterCoordinates: expects 4 or 5 inputs")
         
-        #maybe move this sort of protection to all loss layers
+        #maybe move this sort of protection to all loss layers: done!
         #moved, so not necessary here anymore
         #if rs.shape[0] is None or coords.shape[0] is None or coords.shape[0] == 0:
         #    zero_loss = 0.*tf.reduce_mean(coords)
@@ -1126,6 +1183,7 @@ class LLClusterCoordinates(LossLayerBase):
         
         return lossval
     
+
 
 
 class LLLocalClusterCoordinates(LossLayerBase):
@@ -1381,6 +1439,7 @@ class LLEdgeClassifier(LossLayerBase):
         assert 0. < fp_weight < 1.
         assert hifp_penalty >= 0.
         
+        
         super(LLEdgeClassifier, self).__init__(**kwargs)
         self.downweight_spectators = downweight_spectators
         self.fp_weight = fp_weight
@@ -1460,6 +1519,12 @@ class LLEdgeClassifier(LossLayerBase):
             score, nidx, tidx,specweight,energy = inputs
             t_energy = tf.ones_like(energy)
 
+        if len(score.shape) < 3:
+            score = tf.expand_dims(score, axis=2)# to fit the binary xentr
+         
+        if nidx.shape[1]  == score.shape[1]: #score should have one less, assume nidx does not contain 'self'
+            nidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx], axis=1)
+            
         lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight, energy, t_energy,
                                             self.downweight_spectators, 
                                             self.fp_weight, self.hifp_penalty, self.lin_e_weight)
@@ -2313,6 +2378,28 @@ class LLFullObjectCondensation(LossLayerBase):
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+class LLGraphCondOCLoss(LLFullObjectCondensation):
+    
+    def __init__(self, *args, **kwargs):
+        '''
+        Same as FullOCLoss but using GraphCond_OC_per_sample object condensation 
+        (mean beta per object instead of max beta per object)
+        '''
+        super(LLGraphCondOCLoss, self).__init__(*args, **kwargs)
+        
+        from object_condensation import GraphCond_OC_per_sample
+        
+        self.oc_loss_object = OC_loss(
+            loss_impl=GraphCond_OC_per_sample,
+            
+            q_min = self.oc_loss_object.loss_impl.q_min,
+                 s_b=self.oc_loss_object.loss_impl.s_b,
+                 use_mean_x=self.oc_loss_object.loss_impl.use_mean_x,
+                 spect_supp=1.
+            )
+    
 
 
 from ragged_tools import rwhere, add_ragged_offset_to_flat

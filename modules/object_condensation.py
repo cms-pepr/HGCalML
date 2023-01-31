@@ -105,7 +105,7 @@ class Basic_OC_per_sample(object):
                          truth_idx,
                          object_weight,
                          is_spectator_weight,
-                         
+                         calc_Ms=True,
                          ):
         self.valid=True
         #used for pll and q
@@ -124,8 +124,12 @@ class Basic_OC_per_sample(object):
         #spectators do not participate in the potential losses
         self.q_v = (self.tanhsqbeta + self.q_min)*tf.clip_by_value(1.-is_spectator_weight, 0., 1.)
         
-        self.create_Ms(truth_idx)
+        if calc_Ms:
+            self.create_Ms(truth_idx)
         if self.Msel is None:
+            self.valid=False
+            return
+        if self.Msel.shape[0] < 2:#less than two objects - can be dangerous
             self.valid=False
             return
         
@@ -224,10 +228,10 @@ class Basic_OC_per_sample(object):
         #use continuous max approximation through LSE
         eps = 1e-3
         beta_pen = 1. - eps * tf.reduce_logsumexp(self.beta_k_m/eps, axis=1)#sum over m
+        #for faster convergence  
+        beta_pen += 1. - tf.clip_by_value(tf.reduce_sum(self.beta_k_m, axis=1), 0., 1)
         beta_pen = tf.debugging.check_numerics(beta_pen, "OC: beta pen")
         return beta_pen
-        #trivial but to keep the structure
-        return (1. - self.beta_k)
         
     def Noise_pen(self):
         
@@ -261,10 +265,10 @@ class Basic_OC_per_sample(object):
                      high_B_pen
                      ):
         
-        zero_tensor = tf.reduce_mean(self.q_v,axis=0)*0.
+        zero_tensor = tf.zeros_like(tf.reduce_mean(self.q_v,axis=0))
         
         if not self.valid: # no objects
-            zero_payload = tf.reduce_mean(self.pll_v,axis=0)*0.
+            zero_payload = tf.zeros_like(tf.reduce_mean(self.pll_v,axis=0))
             print('WARNING: no objects in sample, continue to next')
             return zero_tensor, zero_tensor, zero_tensor, zero_tensor, zero_payload, zero_tensor
     
@@ -395,6 +399,35 @@ class PreCond_kNNOC_per_sample(PreCond_OC_per_sample):
         V_rep = tf.math.divide_no_nan(V_rep, N_k+1e-3)  #K x 1
         
         return V_rep
+    
+class GraphCond_OC_per_sample(Basic_OC_per_sample):
+    
+    def set_input(self, beta,
+                  x,
+                         d,
+                         pll,
+                         truth_idx,
+                         *args,**kwargs
+                         ):
+        
+        #replace beta with per-object normalised value
+        self.create_Ms(truth_idx)
+        beta_max = tf.reduce_max(self.Mnot * tf.expand_dims(beta,axis=0),axis=1, keepdims=True)  #K x 1 x 1
+        beta_max *= self.Mnot  #K x V x 1
+        
+        # this is the same reduced in K given the others are zero with exception of noise (filtered later)
+        beta_max = tf.reduce_max(beta_max, axis=0) # V x 1 
+        beta_normed = tf.math.divide_no_nan(beta, beta_max) # V x 1 
+        beta = tf.where(truth_idx<0, beta, beta_normed) #only for not noise
+        
+        super(GraphCond_OC_per_sample, self).set_input(beta, x, d, pll, truth_idx, *args,**kwargs, calc_Ms=False)
+    
+    def Beta_pen_k(self):
+        #simple mean beta per object
+        pen = tf.math.divide_no_nan(tf.reduce_sum(self.mask_k_m * self.beta_k_m, axis=1), 
+                                     tf.reduce_sum(self.mask_k_m, axis=1) + 1e-3)
+        return tf.debugging.check_numerics(pen,"GCOC: beta penalty")
+    
 
 class OC_loss(object):
     def __init__(self, 

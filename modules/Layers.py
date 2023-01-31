@@ -248,6 +248,10 @@ global_layers_list['PlotCoordinates']=PlotCoordinates
 from DebugLayers import Plot2DCoordinatesPlusScore
 global_layers_list['Plot2DCoordinatesPlusScore']=Plot2DCoordinatesPlusScore
 
+from DebugLayers import PlotGraphCondensation
+global_layers_list['PlotGraphCondensation']=PlotGraphCondensation
+
+
 from DebugLayers import PlotEdgeDiscriminator
 global_layers_list['PlotEdgeDiscriminator']=PlotEdgeDiscriminator
 
@@ -255,12 +259,16 @@ from DebugLayers import PlotNoiseDiscriminator
 global_layers_list['PlotNoiseDiscriminator']=PlotNoiseDiscriminator
 
 
+from DebugLayers import PlotGraphCondensationEfficiency
+global_layers_list['PlotGraphCondensationEfficiency']=PlotGraphCondensationEfficiency
+
+
 #ragged layers module
 from RaggedLayers import ragged_layers
 global_layers_list.update(ragged_layers)
 
 
-from LossLayers import LLNotNoiseClassifier,CreateTruthSpectatorWeights, NormaliseTruthIdxs
+from LossLayers import LLValuePenalty,LLNotNoiseClassifier,CreateTruthSpectatorWeights, NormaliseTruthIdxs, LLGraphCondOCLoss
 from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace, LLOCThresholds
 from LossLayers import LossLayerBase, LLBasicObjectCondensation, LLFullObjectCondensation,LLPFCondensates,LLNeighbourhoodClassifier
 from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator, LLGoodNeighbourHood, LLKnnPushPullObjectCondensation
@@ -280,6 +288,7 @@ global_layers_list['CreateTruthSpectatorWeights']=CreateTruthSpectatorWeights
 
 global_layers_list['LossLayerBase']=LossLayerBase
 global_layers_list['LLNotNoiseClassifier']=LLNotNoiseClassifier
+global_layers_list['LLValuePenalty']=LLValuePenalty
 
 global_layers_list['LLPushTracks']=LLPushTracks
 global_layers_list['LLEnergySums']=LLEnergySums
@@ -295,6 +304,7 @@ global_layers_list['LLKnnSimpleObjectCondensation']=LLKnnSimpleObjectCondensatio
 global_layers_list['LLKnnPushPullObjectCondensation']=LLKnnPushPullObjectCondensation
 global_layers_list['LLBasicObjectCondensation']=LLBasicObjectCondensation
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
+global_layers_list['LLGraphCondOCLoss']=LLGraphCondOCLoss
 global_layers_list['LLPFCondensates']=LLPFCondensates
 global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier
 global_layers_list['LLEdgeClassifier']=LLEdgeClassifier
@@ -325,6 +335,18 @@ from tensorflow.keras.layers import Layer
 import tensorflow.keras.backend as K
 import tensorflow as tf
 
+
+
+
+class SplitFeatures(Layer):
+    def __init__(self,**kwargs):
+        super(SplitFeatures, self).__init__(**kwargs)
+        
+    def call(self, inputs):
+        n_f = inputs.shape[-1]
+        return [inputs[...,i:i+1] for i in range(n_f)]
+
+global_layers_list['SplitFeatures']=SplitFeatures
 
 class GausActivation(Layer):
     def __init__(self,**kwargs):

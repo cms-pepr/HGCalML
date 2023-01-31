@@ -3372,12 +3372,12 @@ class EdgeConvStatic(tf.keras.layers.Layer):
     - new features
     
     :param n_feature_transformation: transformations on the edges (list)
-    :param select_neighbours: if False, input is expected to be features (V x K x F) only
+    :param select_neighbours: if False, input is expected to be features (V x K x F) only (default: True)
     '''
 
     def __init__(self, 
                  n_feature_transformation,
-                 select_neighbours=False,
+                 select_neighbours=True,
                  add_mean=False,
                  **kwargs):
         super(EdgeConvStatic, self).__init__(**kwargs)
@@ -3436,7 +3436,9 @@ class EdgeConvStatic(tf.keras.layers.Layer):
             neighfeat = tf.where(tf.expand_dims(nidx,axis=2)<0, 0., neighfeat)#zero pad
             neighfeat = tf.reshape(neighfeat, [-1, nN, nF])
             
-        neighfeat = neighfeat - neighfeat[:,:,0:1] 
+            neighfeat = neighfeat - feat[:, tf.newaxis, :]
+        else:
+            neighfeat = neighfeat - neighfeat[:,0:1,:]
         
         for t in self.feature_tranformation_dense:
             neighfeat = t(neighfeat)

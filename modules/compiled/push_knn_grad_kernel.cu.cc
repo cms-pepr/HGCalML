@@ -113,6 +113,9 @@ struct PushKnnGradOpFunctor<GPUDevice, dummy> {
             int n_feat) {
 
         grid_and_block par1(n_vert, 64, n_feat, 8);
+        if(n_feat<8)
+            par1 = grid_and_block(n_vert, 256, n_feat, 2);
+
         push_knn_grad_feat_kernel<<<par1.grid(), par1.block(), 0, d.stream()>>>(
                 d_grad,d_weights,d_feat,d_idxs,d_feat_grad,d_w_grad,n_vert,n_neigh,n_feat);
 

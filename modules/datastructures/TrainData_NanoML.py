@@ -253,6 +253,39 @@ class CollectionBase(object):
         
         #this is quick, no need for printouts
         
+    def checkConsistency(self):
+        t_idx = self.truth['t_idx']
+        for i,a in enumerate(t_idx):
+            ua = np.unique(a.to_numpy())
+            for ut in ua:
+                pass #TBI
+    
+    def cleanUp(self):
+        
+        return #doesn't do anything right now, logic below but does not work with awkward
+        '''
+        removes showers that might harm the training 
+        (scraping on either side or otherwise showers without tracks that have E_true >> E_deposited)
+        '''
+        for i_e in range(len(self.features)): #events
+            t_idx = self.truth['t_idx'][i_e]
+            feat = self.features[i_e]
+            u_t_idx = np.unique(t_idx)
+            for uut in u_t_idx:
+                sel = t_idx[:,0] == uut
+                u_t_energy = self.truth['t_energy'][i_e][sel][0] #at least one hit so this is safe
+                #print(feat.to_numpy().shape)
+                s_feat = feat[sel]
+                #print(s_feat.to_numpy().shape)
+                s_e = s_feat[:,0]
+                dep_e = np.sum(s_e)
+                
+                if dep_e / u_t_energy < 0.05: #automatically not fulfilled by PF with tracks
+                    print('found one', dep_e, ' ', u_t_energy)
+                    print('replacing true energy')
+                    self.truth['t_energy'][i_e][sel] = dep_e
+            
+                
     
     def addUniqueIndices(self):
         '''
@@ -488,6 +521,9 @@ class RecHitCollection(CollectionBase):
         # should not expand here to allow indexing as done below
         recHitSimClusIdx = self._splitJaggedArray(nonSplitRecHitSimClusIdx)
         
+        #mask stray hits from the other side
+        recHitSimClusIdx = ak1.where( recHitTruthZ[...,0] * recHitZ[...,0] < 0, -1, recHitSimClusIdx)
+        
         # set noise to rec features
         recHitTruthEnergy = ak1.where(recHitSimClusIdx<0, recHitEnergy, recHitTruthEnergy)
         recHitTruthX = ak1.where(recHitSimClusIdx<0, recHitX, recHitTruthX)
@@ -504,7 +540,7 @@ class RecHitCollection(CollectionBase):
         #ticlidx = self._readSplitAndExpand(tree,'RecHitHGC_TICLCandIdx')
         
         self.truth={}     #DEBUG!!!
-        self.truth['t_idx'] = self._expand(recHitSimClusIdx)# now expand to a trailing dimension
+        self.truth['t_idx'] = self._expand(recHitSimClusIdx)# now expand to one trailing dimension
         self.truth['t_energy'] = recHitTruthEnergy
         self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
         self.truth['t_time'] = recHitTruthTime
@@ -720,6 +756,9 @@ class TrainData_NanoML(TrainData):
         
         rechitcoll = RecHitCollection(tree=tree)
         
+        if istraining:
+            rechitcoll.cleanUp()
+        
         #in a similar manner, we can also add tracks from conversions etc here
         rechitcoll.shuffle()
         # adds t_is_unique
@@ -806,7 +845,7 @@ class TrainData_NanoML(TrainData):
         '''
         This is deprecated and should be replaced by a more transparent way.
         '''
-        print(__name__,'createTruthDict: should be deprecated soon and replaced by a more uniform interface')
+        #print(__name__,'createTruthDict: should be deprecated soon and replaced by a more uniform interface')
         data = self.interpretAllModelInputs(allfeat,returndict=True)
         
         out={

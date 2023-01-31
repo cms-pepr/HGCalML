@@ -92,6 +92,7 @@ def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, 
     idx = IndexReplacer(idx,sorting)
     dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, dist.shape)
     idx = tf.scatter_nd(sorting[...,tf.newaxis], idx, idx.shape)
+    dist = tf.where(idx<0, 0., dist)#safety
     
     if not gl.knn_ops_use_tf_gradients:
         return idx, dist

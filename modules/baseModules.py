@@ -6,7 +6,7 @@ import tensorflow as tf
 class PromptMetric(tf.keras.metrics.Mean):   
     def __init__(self, **kwargs):
         super(PromptMetric, self).__init__(**kwargs)
-    
+        
     def update_state(self,*args,**kwargs):
         self.reset_states()#reset and only take last state
         super(PromptMetric, self).update_state(*args,**kwargs)

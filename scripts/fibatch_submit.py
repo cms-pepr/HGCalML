@@ -16,6 +16,7 @@ if '-h' in sys.argv or '--help' in sys.argv:
     print('all commands are fully forwarded with one exception:')
     print('\n    ---d <workdir>    specifies a working directory can be specified that\n                      will contain the batch logs. It is created if \n                      it does not exist.\n')
     print('\n    ---n <name> (opt) specifies a name for the batch script\n')
+    print('\n    ---c <constraint> (opt) specifies a resource constraint, default a100\n')
     
     exit()
 
@@ -29,8 +30,11 @@ workdir=None
 filtered_clo=[]
 triggered=False
 triggeredname=False
+triggeredconstraint=False
 name="batchscript"
+constraint="a100"
 for clo in sys.argv:
+    
     if clo == '---n':
         triggeredname = True
         continue
@@ -47,12 +51,20 @@ for clo in sys.argv:
         triggered=False
         continue
     
+    if clo == '---c':
+        triggeredconstraint=True
+        continue
+    if triggeredconstraint:
+        constraint=clo
+        triggeredconstraint=False
+        continue
+    
     filtered_clo.append(clo)
 
 if workdir is None:
     print('please specify a batch working directory with ---d <workdir>')
     exit()
-
+    
 if os.path.isdir(workdir):
     var = input('Working directory exists, are you sure you want to continue, please type "yes/y"\n')
     var = var.lower()
@@ -71,14 +83,15 @@ CWD = os.getcwd()
 
 bscript_temp='''#!/bin/bash
 
-#SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint=a100-40gb
+#SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint={constraint}
 
 nvidia-smi
 singularity  run  -B /mnt --nv {djcloc} /bin/bash runscript_{uext}.sh
 
 '''.format(djcloc=djcloc,
            uext=uext,
-            workdir=workdir)
+            workdir=workdir,
+            constraint=constraint)
 
 runscript_temp='''
 ~/private/keytabd.sh >/dev/null & 

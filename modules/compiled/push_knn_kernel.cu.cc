@@ -45,12 +45,11 @@ void push_knn_kernel(
 
     //parallelise over neighbours and features - no race conditions
 
-    size_t i_n =  blockIdx.x * blockDim.x + threadIdx.x;
-    size_t i_f =  blockIdx.y * blockDim.y + threadIdx.y;
-    size_t i_v =  blockIdx.z * blockDim.z + threadIdx.z;
+    size_t i_f =  blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i_v =  blockIdx.y * blockDim.y + threadIdx.y;
+    size_t i_n =  blockIdx.z * blockDim.z + threadIdx.z;
     if(i_n >= n_neigh || i_f >= n_feat || i_v >= n_vert)
         return;
-
 
     int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
     if(nidx<0) return;
@@ -82,8 +81,7 @@ struct PushKnnOpFunctor<GPUDevice, dummy> {
 
         //parallelise over neighbours and features; would need to be atomic in nvert
 
-        grid_and_block par0(
-                n_vert, 256,n_feat, 2);//explicit one in n_vert to avoid race conditions
+        grid_and_block par0(n_vert, 256,n_feat, 2);
 
         set_zero<<<par0.grid(), par0.block(), 0, d.stream()>>>(d_out_feat, n_vert, n_feat);
 
@@ -91,10 +89,39 @@ struct PushKnnOpFunctor<GPUDevice, dummy> {
 
         //this should keep the atomic reasonably ok
         grid_and_block par(
-                        n_neigh, 8,
-                        n_feat, 16,
-                        n_vert, 4);//explicit one in n_vert to avoid race conditions
+                        n_feat, 32,
+                        n_vert, 2,
+                        n_neigh, 8);//explicit one in n_vert to avoid race conditions
 
+        if(n_neigh <= 6){//this is kind of a standard setting so worth covering
+            if(n_feat >= 128){ //32 and 64 are also rather standard
+                par = grid_and_block(n_feat, 128,
+                                     n_vert, 1,
+                                     n_neigh, 1);//no atomic *within* one block, still can be globally!
+            }
+            else if(n_feat >= 64){ //32 and 64 are also rather standard
+                par = grid_and_block(
+                        n_feat, 64,
+                        n_vert, 2,
+                        n_neigh, 2);
+            }
+            else if(n_feat >= 32){ //32 and 64 are also rather standard
+                par = grid_and_block(
+                        n_feat, 32,
+                        n_vert, 4,
+                        n_neigh, 2);
+            }
+            if(n_feat < 2){ //this is for energy push, also standard
+                par = grid_and_block(n_feat, 1,
+                                     n_vert, 128,
+                                     n_neigh, 2);
+            }
+            if(n_feat <32){ //this is for energy push, also standard
+                par = grid_and_block(n_feat, 8,
+                                     n_vert, 12,
+                                     n_neigh, 2);
+            }
+        }
 
         push_knn_kernel<<<par.grid(), par.block(), 0, d.stream()>>>(
                 d_weights,

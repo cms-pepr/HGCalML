@@ -173,6 +173,7 @@ for i in tqdm.tqdm(range(nevents)):
                     'truthHitAssignedT',
                     'truthHitAssignedX',
                     'truthHitAssignedY',
+                    'truthHitAssignedZ',
                     'truthHitAssignementIdx',
                     'orig_truthHitAssignementIdx',
                     'truthHitAssignedPIDs',

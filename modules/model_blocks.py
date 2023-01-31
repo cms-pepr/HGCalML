@@ -6,6 +6,7 @@ from tensorflow.keras.layers import Lambda
 import tensorflow as tf
 from Initializers import EyeInitializer
 from GravNetLayersRagged import CondensateToIdxs, EdgeCreator
+from Layers import SplitFeatures
 
 from datastructures.TrainData_NanoML import n_id_classes
 
@@ -1567,5 +1568,372 @@ def intermediate_condensation(
     #print('x out',x.shape, 'revflat',revflat.shape)
     return x #RaggedToFlatRS()(c_x)
     
+
+from GravNetLayersRagged import EdgeConvStatic
+from Layers import RaggedGlobalExchange
+from GraphCondensationLayers import CreateGraphCondensation, PushUp, SelectUp, PullDown, LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
+from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, LLGraphCondensationEdges
+from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
+from LossLayers import LLValuePenalty
+
+def pre_graph_condensation(
+        orig_inputs,
+        debug_outdir='',
+        trainable=False,
+        name='pre_graph_condensation',
+        debugplots_after=-1,
+        record_metrics=True,
+        K_loss = 48,
+        publish=None,
+        dynamic_spectators=True,
+        flatten=True):
+    
+    activation = 'elu'
+    K = 16
+    
+    
+    #orig_inputs = condition_input(orig_inputs, no_scaling = True)
+    
+    x = orig_inputs['features'] # coords
+    coords = orig_inputs['prime_coords']
+    rs = orig_inputs['row_splits']
+    energy = orig_inputs['rechit_energy']
+    is_track = orig_inputs['is_track']
+    
+    #set context
+    x = RaggedGlobalExchange()([x,rs])
+    
+    x = ValAndSign()(x)
+    
+    x = ScaledGooeyBatchNorm(
+            trainable=trainable,
+                viscosity=0.01,
+                fluidity_decay=1e-1,#gets to 1 very quickly
+                max_viscosity=1.)(x)
+                
+    x_full_skip = x
+    
+    #pre-processing
+    x_track = Dense(32, activation='elu', name=name+'emb_xtrack',trainable=trainable)(x)
+    x_hit = Dense(32, activation='elu', name=name+'emb_xhit',trainable=trainable)(x)
+    x = MixWhere()([is_track, x_track, x_hit]) #Concatenate()([coords,x,good_track_feat])
+
+    good_track_feat = ScalarMultiply(1./20.)(SelectFeatures(9,10)(orig_inputs['features']))
+    good_track_feat = Where(0.,'==0')([orig_inputs['is_track']  ,good_track_feat])
+    good_track_feat = Abs()(good_track_feat)
+    x = Concatenate()([good_track_feat, x])
+    x_skip = x
+
+    #gravnet block
+    coords = expand_coords_if_needed(coords, x, 6, name=name+'_exp_coords', trainable=trainable)
+    
+    #simple gravnet       
+    nidx,dist = KNN(K=K,record_metrics=record_metrics,name=name+'_np_knn',
+                    min_bins=20)([coords,orig_inputs['row_splits']])#hard code it here, this is optimised given our datasets
+    
+    if flatten:
+        dist,nidx = SortAndSelectNeighbours(K=-1)([dist,nidx])#sorting matters
+        xflat = Concatenate()([x,x_full_skip])
+        xflat = Dense(8, activation='elu',name = name+'_preflat_dense', trainable=trainable)(xflat)
+        xflat = SelectFromIndicesWithPad()([nidx, xflat])
+        xflat = Flatten()(xflat)
+        xflat = Dense(64, activation='elu',name = name+'_flat_dense1', trainable=trainable)(xflat)
+        xflat = Dense(32, activation='elu',name = name+'_flat_dense2', trainable=trainable)(xflat)
+        x = Concatenate()([x,xflat])
+                                         
+    x = DistanceWeightedMessagePassing([32,32,32,32],name=name+'np_dmp1',
+                                        activation=activation,
+                                        trainable=trainable)([x,nidx,dist])# hops are rather light  
+    
+    if flatten:
+        xflat = Concatenate()([x,x_full_skip])
+        xflat = Dense(8, activation='elu',name = name+'_2_preflat_dense', trainable=trainable)(xflat)
+        xflat = SelectFromIndicesWithPad()([nidx, xflat])
+        xflat = Flatten()(xflat)
+        xflat = Dense(64, activation='elu',name = name+'_2_flat_dense1', trainable=trainable)(xflat)
+        xflat = Dense(32, activation='elu',name = name+'_2_flat_dense2', trainable=trainable)(xflat)
+        x = Concatenate()([x,xflat])
+    # 
+    # ## some local edge conv (within reason)
+    # x = Dense(64,activation=activation,name=name+'dense_np_1a',trainable=trainable)(x)
+    x = Dense(64,activation=activation,name=name+'dense_np_1b',trainable=trainable)(x)  
+    x = Dense(32,activation=activation,name=name+'dense_np_2a',trainable=trainable)(x) 
+    x = RaggedGlobalExchange(skip_min=True)([x,rs]) #not a lot of information in minimum due to elu activation
+    x = ScaledGooeyBatchNorm(learn=True, trainable=trainable)(x)
+    x = Concatenate()([x, x_full_skip])
+    
+    if dynamic_spectators:
+        tmp_spec = Dense(1, activation = 'sigmoid', name = name+'_dyn_specw')(x)
+        orig_inputs['t_spectator_weight'] = LLValuePenalty(active = trainable, 
+                                                    record_metrics=record_metrics)(tmp_spec)
+    
+    #now go for it ############### main condensation part below
+    
+    score = Dense(1, activation='sigmoid',name=name+'_gc_score', trainable=trainable)(x)
+    coords = Dense(3, name=name+'_xyz_cond', use_bias = False, trainable=trainable)(x)
+        
+    coords = LLClusterCoordinates(
+                record_metrics = record_metrics,
+                active=trainable,
+                scale = 1.,
+                ignore_noise = True, #this is filtered by the graph condensation anyway
+                print_batch_time=True,
+                hinge_mode = True
+                )([coords, orig_inputs['t_idx'], orig_inputs['t_spectator_weight'], 
+                                            score, rs ])
+    
+    if debugplots_after > 0:
+        coords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_cond_coords',
+                                        publish=publish)(
+                                            [coords,
+                                             Where(0.1)([is_track,energy]), 
+                                             orig_inputs['t_idx'],orig_inputs['row_splits']])
+                                        
+    score = LLGraphCondensationScore(
+        record_metrics = record_metrics,
+        K=K_loss,
+                active=trainable,
+            penalty_fraction=0.5,
+            low_energy_cut = 1.,
+            print_loss = trainable
+            )([score, coords, orig_inputs['t_idx'], orig_inputs['t_energy'], rs])
+
+    trans_a = CreateGraphCondensation(
+            score_threshold = 0.5,
+            K=5
+            )(score,coords,rs,
+              always_promote = is_track)
+            
+    
+    trans_a = MLGraphCondensationMetrics(
+        name = name + '_graphcondensation_metrics',
+        record_metrics = record_metrics,
+        )(trans_a, orig_inputs['t_idx'], orig_inputs['t_energy'])
+    
+    #these also act as a fractional noise filter
+    x_e = CreateGraphCondensationEdges(
+                 edge_dense=[64,32,32],
+                 pre_nodes=12,
+                 K=5, 
+                                       trainable=trainable, 
+                                       name=name+'_gc_edges')(x, trans_a)
+    x_e = LLGraphCondensationEdges(
+        active=trainable,
+        record_metrics=record_metrics
+        )(x_e, trans_a, orig_inputs['t_idx'])
+        
+    trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
+    
+    
+    out = {}
+    
+    out['prime_coords'] = PushUp(add_self=True)(orig_inputs['prime_coords'], trans_a, weight = energy)
+    out['coords'] = PushUp(add_self=True)(orig_inputs['coords'], trans_a, weight = energy)
+    out['rechit_energy'] = PushUp(mode='sum', add_self=True)(energy, trans_a)
+    
+    # for plotting and understanding
+    if debugplots_after > 0:
+                     
+        coords = PlotGraphCondensation(
+                     plot_every = debugplots_after,
+                     outdir= debug_outdir ,
+                     publish = publish
+                     )([coords,
+                        Where(0.1)([is_track,energy]),#make tracks small in plot
+                        trans_a['weights_down'], trans_a['nidx_down'], rs])
+                     
+        orig_inputs['prime_coords'] = PlotGraphCondensation(
+                     plot_every = debugplots_after,
+                     outdir= debug_outdir ,
+                     publish = publish
+                     )([orig_inputs['prime_coords'],
+                        Where(0.1)([is_track,energy]),#make tracks small in plot
+                        trans_a['weights_down'], trans_a['nidx_down'], rs])
+                     
+        orig_inputs['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = debugplots_after,
+                     outdir= debug_outdir ,
+                     publish = publish)(orig_inputs['t_energy'], orig_inputs['t_idx'], trans_a)
+    
+    
+        out['prime_coords'] = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_after_coords',
+                                        publish=publish)(
+                                            [out['prime_coords'],
+                                             out['rechit_energy'], 
+                                             SelectUp()(orig_inputs['t_idx'], trans_a),
+                                             trans_a['rs_up']])
+    
+                    
+    out['down_features'] = Concatenate()([x,x_skip, x_full_skip]) # this is for further "bouncing"
+    out['is_track'] = SelectUp()(is_track, trans_a)
+    out['cond_coords'] = coords
+    out['row_splits'] = trans_a['rs_up']
+    
+    for k in orig_inputs.keys():
+        if 't_' == k[0:2]:
+            out[k] = SelectUp()(orig_inputs[k],trans_a)
+    
+    
+    print('pre condensation outputs:', out.keys())
+    
+    return out, trans_a
+
+
+'''
+
+Can define a 'cleaning' step:
+- use LLGraphCondOCLoss to define beta as the information content per hit
+- use beta as condensation score (threshold = ?)
+- determine the edges as object association
+- Push up, and thereby remove ambiguous hits
+- threshold can even be learnt/dynamically adjusted using efficiency metrics
+
+'''
+def intermediate_graph_cleaning(
+        orig_inputs, # x, coords, energy, is_track, score, t_idx, t_spectator_weight, t_energy, rs
+        edge_dense = [64,64,64],
+        edge_pre_nodes = 32,
+        K = 5,
+        score_threshold = 0.5,
+        trainable=False,
+        record_metrics = False,
+        name = 'graph_cleaning'
+        ):
+    
+    x = orig_inputs['x']
+    score = orig_inputs['score']
+    coords = orig_inputs['coords']
+    is_track = orig_inputs['is_track']
+    energy = orig_inputs['rechit_energy']
+    rs = orig_inputs['row_splits']
+    
+    trans_a = CreateGraphCondensation(
+            score_threshold = score_threshold,
+            K=K
+            )(score,coords,rs,
+              always_promote = is_track)
+    
+    sum_energy = None        
+    if len(edge_dense):
+        
+        x_e = CreateGraphCondensationEdges(
+                     edge_dense=edge_dense,
+                     pre_nodes=edge_pre_nodes,
+                     K=K, trainable=trainable, 
+                     name=name+'_gc_edges')(x, trans_a)
+                     
+        x_e = LLGraphCondensationEdges(
+            active=trainable,
+            record_metrics=record_metrics
+            )(x_e, trans_a, orig_inputs['t_idx'])
+            
+        trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
+        
+        sum_energy = PushUp(mode='sum', add_self=True)(energy, trans_a)
+        
+    return trans_a, sum_energy
+
+    
+def intermediate_graph_condensation(
+        orig_inputs, #features, is_track, rechit_energy, row_splits, t_idx, t_spectator_weight, t_energy
+        n_cond_coords :int = 3,
+        
+        edge_dense = [64,64,64],
+        edge_pre_nodes = 32,
+        K = 5,
+        K_loss = 32,
+        score_threshold=0.5,
+        
+        
+        debug_outdir='',
+        trainable=False,
+        name='int_gc',
+        debugplots_after=-1,
+        record_metrics=True,
+        publish=None,
+        dynamic_spectators=False):
+
+    x = orig_inputs['features']
+    rs = orig_inputs['row_splits']
+    is_track = orig_inputs['is_track']
+    energy = orig_inputs['rechit_energy']
+    
+    if dynamic_spectators:
+        tmp_spec = Dense(1, activation = 'sigmoid', name = name+'_dyn_specw')(x)
+        orig_inputs['t_spectator_weight'] = LLValuePenalty(active = trainable, 
+                                                    record_metrics=record_metrics)(tmp_spec)
+    
+    score = Dense(1, activation='sigmoid',name=name+'_gc_score', trainable=trainable)(x)
+    coords = Dense(n_cond_coords, name=name+'_cond_coords', use_bias = False, trainable=trainable)(x)
+    
+    score = LLGraphCondensationScore(
+        record_metrics = record_metrics,
+        K=K_loss,
+                active=trainable,
+            penalty_fraction=0.5,
+            low_energy_cut = 1. #allow everything below 1 GeV to be removed
+            )([score, coords, orig_inputs['t_idx'], orig_inputs['t_energy'], rs])
+        
+    coords = LLClusterCoordinates(
+                record_metrics = record_metrics,
+                active=trainable,
+                scale = 1.,
+                ignore_noise = True, #this is filtered by the graph condensation anyway
+                print_batch_time=True
+                )([coords, orig_inputs['t_idx'], orig_inputs['t_spectator_weight'], 
+                                            score, rs ])
+
+
+    trans_a = CreateGraphCondensation(
+            score_threshold = score_threshold,
+            K=K
+            )(score,coords,rs,
+              always_promote = is_track)
+    
+    
+    trans_a = MLGraphCondensationMetrics(
+        name = name + '_graphcondensation_metrics',
+        record_metrics = record_metrics,
+        )(trans_a, orig_inputs['t_idx'], orig_inputs['t_energy'])
+    
+    sum_energy = None
+    
+    if len(edge_dense):
+        
+        x_e = CreateGraphCondensationEdges(
+                     edge_dense=edge_dense,
+                     pre_nodes=edge_pre_nodes,
+                     K=K, trainable=trainable, 
+                     name=name+'_gc_edges')(x, trans_a)
+                     
+        x_e = LLGraphCondensationEdges(
+            active=trainable,
+            record_metrics=record_metrics
+            )(x_e, trans_a, orig_inputs['t_idx'])
+            
+        trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
+        
+        sum_energy = PushUp(mode='sum', add_self=True)(energy, trans_a)
+    
+    
+    if debugplots_after > 0:
+                     
+        orig_inputs['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = debugplots_after,
+                     outdir= debug_outdir ,
+                     publish = publish)(orig_inputs['t_energy'], orig_inputs['t_idx'], trans_a)
+    
+    #select truth
+    out_truth={}
+    for k in orig_inputs.keys():
+        if 't_' == k[0:2]:
+            out_truth[k] = SelectUp()(orig_inputs[k],trans_a)
+    
+    return trans_a, out_truth, sum_energy
+
+
+
     
     

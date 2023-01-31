@@ -166,7 +166,9 @@ class GridMaxPoolReduction(keras.layers.Layer):
 
 
 class RaggedGlobalExchange(keras.layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self, 
+                 skip_min = False,
+                 **kwargs):
         '''
         Inputs:
         - data
@@ -178,7 +180,13 @@ class RaggedGlobalExchange(keras.layers.Layer):
         '''
         super(RaggedGlobalExchange, self).__init__(**kwargs)
         self.num_features = -1
+        self.skip_min  = skip_min
 
+    def get_config(self):
+            config = {'skip_min': self.skip_min}
+            base_config = super(RaggedGlobalExchange, self).get_config()
+            return dict(list(base_config.items()) + list(config.items()))
+        
     def build(self, input_shape):
         data_shape = input_shape[0]
         # assert (data_shape[0]== row_splits_shape[0])
@@ -190,17 +198,23 @@ class RaggedGlobalExchange(keras.layers.Layer):
         x_data, x_row_splits = x[0], x[1]
         rt = tf.RaggedTensor.from_row_splits(values=x_data, row_splits=x_row_splits)  # [B, {V}, F]
         means = tf.reduce_mean(rt, axis=1)  # [B, F]
-        min = tf.reduce_min(rt, axis=1)  # [B, F]
-        max = tf.reduce_max(rt, axis=1)  # [B, F]
+        rmax = tf.reduce_max(rt, axis=1)  # [B, F]
         data_means = tf.gather_nd(means, tf.ragged.row_splits_to_segment_ids(rt.row_splits)[..., tf.newaxis])  # [SV, F]
-        data_min = tf.gather_nd(min, tf.ragged.row_splits_to_segment_ids(rt.row_splits)[..., tf.newaxis])  # [SV, F]
-        data_max = tf.gather_nd(max, tf.ragged.row_splits_to_segment_ids(rt.row_splits)[..., tf.newaxis])  # [SV, F]
+        data_max = tf.gather_nd(rmax, tf.ragged.row_splits_to_segment_ids(rt.row_splits)[..., tf.newaxis])  # [SV, F]
 
-        return tf.concat((data_means, data_min, data_max, x_data), axis=-1)
+        if not self.skip_min:
+            rmin = tf.reduce_min(rt, axis=1)  # [B, F]
+            data_min = tf.gather_nd(rmin, tf.ragged.row_splits_to_segment_ids(rt.row_splits)[..., tf.newaxis])  # [SV, F]
+            return tf.concat((data_means, data_min, data_max, x_data), axis=-1)
+        else:
+            return tf.concat((data_means, data_max, x_data), axis=-1)
 
     def compute_output_shape(self, input_shape):
         data_input_shape = input_shape[0]
-        return (data_input_shape[0], data_input_shape[1]*4)
+        if self.skip_min:
+            return (data_input_shape[0], data_input_shape[1]*4)
+        else:
+            return (data_input_shape[0], data_input_shape[1]*3)
 
 
 

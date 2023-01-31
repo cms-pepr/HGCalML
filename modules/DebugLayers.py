@@ -16,6 +16,23 @@ import queue
 import os
 
 
+class AveragedArray(object):
+    def __init__(self, update = 0.2, default=0.):
+        
+        assert 0. <= update <= 1.
+        self.update = update
+        self.arr = None
+        self.default = default
+        
+    def put(self, arr):
+        if self.arr is None:
+            arr = np.where(arr == np.nan, self.default, arr)
+            self.arr = arr
+        else:
+            arr = np.where(arr == np.nan, self.arr, arr)
+            self.arr = np.where(self.arr == np.nan, arr, self.arr)
+            self.arr =  self.update * arr + (1. - self.update) * self.arr
+        return self.arr
 
 
 def quick_roc(fpr,tpr,thresholds):
@@ -112,38 +129,47 @@ class _DebugPlotBase(tf.keras.layers.Layer):
     def create_base_output_path(self):
         return self.outdir+'/'+self.name
     
-    def call(self, inputs, training=None):
+    def check_make_plot(self, inputs, training = None):
         out=inputs
         if isinstance(inputs,list):
             out=inputs[0]
         if (training is None or training == False) and self.plot_only_training:#only run in training mode
-            return out
+            return False
         
-        if inputs[0].shape[0] is None or inputs[0].shape[0] == 0:
-            return out
+        if len(inputs[0].shape) < 1 or inputs[0].shape[0] is None or inputs[0].shape[0] == 0:
+            return False
         
         if self.plot_every <=0:
-            return out
+            return False
         if not hasattr(out, 'numpy'): #only in eager
-            return out
+            return False
         
         #plot initial state
         if self.counter>=0 and self.counter < self.plot_every:
             self.counter+=1
-            return out
+            return False
         
         if len(self.outdir)<1:
-            return out
+            return False
         
         #only now plot
         self.counter=0
+        return True
+    
+    def call(self, inputs, training=None):
+        out=inputs
+        if isinstance(inputs,list):
+            out=inputs[0]
+            
+        if not self.check_make_plot(inputs, training):
+            return out
         
         os.system('mkdir -p '+self.outdir)
         try:
             print(self.name, 'plotting...')
             self.plot(inputs,training)
         except Exception as e:
-            print(e)
+            raise e
             #do nothing, don't interrupt training because a debug plot failed
             
         return out
@@ -426,3 +452,193 @@ class Plot2DCoordinatesPlusScore(_DebugPlotBase):
         if self.publish is not None:
             publish(self.outdir+'/'+self.name+".html", self.publish)
         
+        
+class PlotGraphCondensation(_DebugPlotBase):
+    
+    def __init__(self, **kwargs):
+        '''
+        Takes as input (not list)
+         - coordinates (in down)
+         - (size_features (in down), opt)
+         - graph_nweight (in down)
+         - graph_nidx (in down)
+         - row splits
+         
+        Returns coordinates (unchanged)
+        '''
+        super(PlotGraphCondensation, self).__init__(**kwargs)
+        
+        
+    def plot(self, inputs, training=None):
+        
+        assert len(inputs) == 5 or len(inputs) == 4
+        features = None
+        if len(inputs) == 5:
+            coords, features, nweight, nidx, rs = inputs
+        else:
+            coords, nweight, nidx, rs = inputs
+            features = tf.ones_like(coords[:,0:1])
+        
+        #just select first
+        coords = coords[0:rs[1]]
+        nidx = nidx[0:rs[1]]
+        nweight = nweight[0:rs[1]]
+        features = features[0:rs[1]]
+        
+        nweight = tf.where( nidx<0, 0., nweight )
+        max_n = tf.argmax(nweight, axis=1)[...,tf.newaxis]
+        tidx = tf.gather_nd(nidx, max_n, batch_dims=1)
+        
+        
+        if coords.shape[1] < 3: #add a zero
+            coords = tf.concat([coords, tf.zeros_like(coords)[:,0:1]], axis=-1)
+        
+        for i in range(coords.shape[1]-2):
+            data={
+                'X':  coords[:,0+i:1+i].numpy(),
+                'Y':  coords[:,1+i:2+i].numpy(),
+                'Z':  coords[:,2+i:3+i].numpy(),
+                'hyper_idx': tidx[:,tf.newaxis].numpy(),
+                'features': features[:,0:1].numpy()
+                }
+            hoverdict={}
+                
+            df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
+            #df['orig_tIdx']=df['tIdx']
+            rdst = np.random.RandomState(1234567890)#all the same
+            shuffle_truth_colors(df,'hyper_idx',rdst)
+            
+            hover_data=[k for k in hoverdict.keys()]
+
+            fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
+                                color="hyper_idx",
+                                size='features',
+                                hover_data=hover_data,
+                                template='plotly_dark',
+                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            fig.write_html(self.outdir+'/'+self.name+'_'+str(i)+".html")
+            
+            
+            if self.publish is not None:
+                publish(self.outdir+'/'+self.name+'_'+str(i)+".html", self.publish)
+                
+                
+class PlotGraphCondensationEfficiency(_DebugPlotBase):
+    def __init__(self, update = 0.1, **kwargs):
+        '''
+        Inputs:
+         - t_energy
+         - t_idx
+         - graph condensation
+         
+        Output:
+         - t_energy 
+        '''
+        self.eff = AveragedArray(update, default=0.)
+        super(PlotGraphCondensationEfficiency, self).__init__(**kwargs)
+    
+    #overwrite here
+    def call(self, t_energy, t_idx, graph_trans , training=None):
+        
+        if not self.check_make_plot([t_energy], training):
+            return t_energy
+        
+        os.system('mkdir -p '+self.outdir)
+        try:
+            print(self.name, 'plotting...')
+            self.plot(t_energy, t_idx, graph_trans,training)
+        except Exception as e:
+            raise e
+            #do nothing, don't interrupt training because a debug plot failed
+            
+        return t_energy
+        
+    def plot(self, t_energy, t_idx, graph_trans, training=None):
+        
+        '''
+        'rs_down',
+            'rs_up',
+            'nidx_down',
+            'distsq_down', #in case it's needed
+            'sel_idx_up',
+        '''
+        rs = graph_trans['rs_down']
+        rsup = graph_trans['rs_up']
+        
+        up_t_idx = tf.gather_nd(t_idx, graph_trans['sel_idx_up'])
+        up_t_energy = tf.gather_nd(t_energy, graph_trans['sel_idx_up'])
+        
+        orig_energies = []
+        energies = []
+        
+        for i in tf.range(rs.shape[0]-1):
+            
+            rs_t_idx = t_idx[rs[i]:rs[i+1]][:,0]
+            rs_t_energy = t_energy[rs[i]:rs[i+1]][:,0]
+            
+            u, _ = tf.unique(rs_t_energy[rs_t_idx >= 0])
+            
+            orig_energies.append(u.numpy())
+            
+            rs_sel_t_idx = up_t_idx[ rsup[i]:rsup[i+1] ]
+            rs_sel_t_energy = up_t_energy[ rsup[i]:rsup[i+1] ]
+            
+            #same for selected
+            u, _ = tf.unique(rs_sel_t_energy[rs_sel_t_idx >= 0])
+            
+            energies.append(u.numpy())
+            
+        orig_energies = np.concatenate(orig_energies, axis=0)
+        energies = np.concatenate(energies, axis=0)
+        
+        bins = np.logspace(-1, 2., num=10)
+        
+        h, bins = np.histogram(energies, bins = bins)
+        h = np.array(h, dtype='float32')
+
+        h_orig, _ = np.histogram(orig_energies, bins = bins)
+        h_orig = np.array(h_orig, dtype='float32')
+        
+        h /= h_orig + 1e-6
+        
+        h = np.where( h_orig==0, np.nan, h )
+        
+        #make bins points
+        bins = bins[:-1] + (bins[1:]-bins[:-1])/2.
+        
+        h = self.eff.put(h)
+        
+        fig = px.line(x=bins, y=h, template='plotly_dark', log_x = True)
+        
+        fig.update_layout(
+            xaxis_title="Truth shower energy [GeV]",
+            yaxis_title="Efficiency",
+        )
+        
+        
+        fig.write_html(self.outdir+'/'+self.name+'.html')
+        if self.publish is not None:
+                publish(self.outdir+'/'+self.name+'.html', self.publish)
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+    
+        
+        
+                

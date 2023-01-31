@@ -1,6 +1,5 @@
 from DeepJetCore.TrainData import TrainData
 from DeepJetCore import SimpleArray
-from DeepJetCore.modeltools import load_model
 import pickle
 import numpy as np
 #from IPython import embed
@@ -12,6 +11,7 @@ from DebugLayers import switch_off_debug_plots
 
 
 def _getkeys(file):
+    from DeepJetCore.modeltools import load_model
     tmp_model = load_model(file)
     output_keys = list(tmp_model.output_shape.keys())
     output_keys.remove('row_splits')
@@ -58,6 +58,7 @@ class TrainData_PreselectionNanoML(TrainData):
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename=""):
 
         #this needs GPU
+        from DeepJetCore.modeltools import load_model
         model = load_model(self.path_to_pretrained)
         model = switch_off_debug_plots(model)
         print("Loaded preselection model : ", self.path_to_pretrained)
