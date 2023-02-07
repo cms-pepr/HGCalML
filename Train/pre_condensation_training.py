@@ -24,7 +24,7 @@ from model_blocks import  pre_condensation_model, mini_pre_condensation_model
 K=12 #12
 
 plot_frequency= 20  # 150 #150 # 1000 #every 20 minutes approx
-record_frequency = 20
+record_frequency = 3
 
 def pretrain_model(Inputs,
                    td, 

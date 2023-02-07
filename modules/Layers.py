@@ -74,8 +74,14 @@ global_layers_list['MixWhere']=MixWhere
 from GravNetLayersRagged import ValAndSign
 global_layers_list['ValAndSign']=ValAndSign
 
+from GravNetLayersRagged import SplitOffTracks
+global_layers_list['SplitOffTracks']=SplitOffTracks
+
 from GravNetLayersRagged import MaskTracksAsNoise
 global_layers_list['MaskTracksAsNoise']=MaskTracksAsNoise
+
+from GravNetLayersRagged import ConcatRaggedTensors
+global_layers_list['ConcatRaggedTensors']=ConcatRaggedTensors
 
 from GravNetLayersRagged import CondensateToIdxs
 global_layers_list['CondensateToIdxs']=CondensateToIdxs
@@ -115,6 +121,12 @@ global_layers_list['ScaledGooeyBatchNorm']=ScaledGooeyBatchNorm
 
 from GravNetLayersRagged import SignedScaledGooeyBatchNorm
 global_layers_list['SignedScaledGooeyBatchNorm']=SignedScaledGooeyBatchNorm
+
+from GravNetLayersRagged import ConditionalScaledGooeyBatchNorm
+global_layers_list['ConditionalScaledGooeyBatchNorm']=ConditionalScaledGooeyBatchNorm
+
+from GravNetLayersRagged import ScaledGooeyBatchNorm2
+global_layers_list['ScaledGooeyBatchNorm2']=ScaledGooeyBatchNorm2
 
 from GravNetLayersRagged import ProcessFeatures
 global_layers_list['ProcessFeatures']=ProcessFeatures

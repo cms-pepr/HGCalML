@@ -1035,6 +1035,7 @@ class ScaledGooeyBatchNorm(GooeyBatchNorm):
     def call(self, inputs, training=None):
         out = super(ScaledGooeyBatchNorm, self).call(inputs, training)
         return out*self.gamma + self.bias
+    
 
 
 class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
@@ -1042,6 +1043,175 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
         s,v = tf.sign(inputs), tf.abs(inputs)
         out = super(SignedScaledGooeyBatchNorm, self).call(v, training)
         return s*out
+
+
+class ScaledGooeyBatchNorm2(LayerWithMetrics):
+    def __init__(self, 
+                 viscosity=0.01,
+                 fluidity_decay=1e-4,
+                 max_viscosity=0.99,
+                 loss_active = True, #can be turned off for performance in val mode
+                 learn = True,
+                 epsilon=1e-4,
+                 **kwargs):
+        
+        super(ScaledGooeyBatchNorm2, self).__init__(**kwargs)
+        
+        assert viscosity >= 0 and viscosity <= 1.
+        assert fluidity_decay >= 0 and fluidity_decay <= 1.
+        assert max_viscosity >= viscosity
+        assert epsilon > 0.
+        
+        self.fluidity_decay = fluidity_decay
+        self.max_viscosity = max_viscosity
+        self.viscosity_init = viscosity
+        self.epsilon = epsilon
+        self.loss_active = loss_active
+        self.learn = learn
+        
+    def compute_output_shape(self, input_shapes):
+        #return input_shapes[0]
+        if isinstance(input_shapes,list):
+            return input_shapes[0]
+        return input_shapes
+              
+    def get_config(self):
+        config = {'viscosity': self.viscosity_init,
+                  'fluidity_decay': self.fluidity_decay,
+                  'max_viscosity': self.max_viscosity,
+                  'epsilon': self.epsilon,
+                  'loss_active': self.loss_active,
+                  'learn': self.learn
+                  }
+        base_config = super(ScaledGooeyBatchNorm2, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def _update_viscosity(self, training):
+        if self.fluidity_decay > 0:
+            newvisc = self.viscosity + (self.max_viscosity - self.viscosity)*self.fluidity_decay
+            newvisc = tf.keras.backend.in_train_phase(newvisc,self.viscosity,training=training)
+            tf.keras.backend.update(self.viscosity,newvisc)
+    
+    
+    def build(self, input_shapes):
+        
+        #shape = (1,)+input_shapes[0][1:]
+        if isinstance(input_shapes,list):
+            shape = (1,)+input_shapes[0][1:]
+        else:
+            shape = (1,)+input_shapes[1:]
+        
+        self.mean = self.add_weight(name = 'mean',shape = shape, 
+                                    initializer = 'zeros', trainable =  self.trainable) 
+        self.variance = self.add_weight(name = 'variance',shape = shape, 
+                                    initializer = 'ones', trainable =  self.trainable)
+        self.viscosity = tf.Variable(initial_value=self.viscosity_init, 
+                                         name='viscosity',
+                                         trainable=False,dtype='float32')
+        
+        self.bias = self.add_weight(name = 'bias',shape = shape, 
+                                    initializer = 'zeros', trainable = self.trainable) 
+        
+        self.gamma = self.add_weight(name = 'gamma',shape = shape, 
+                                    initializer = 'ones', trainable = self.trainable) 
+            
+        super(ScaledGooeyBatchNorm2, self).build(input_shapes)
+        
+    def _m_mean(self, x, mask):
+        x = tf.reduce_sum(x,axis=0,keepdims=True)
+        norm = tf.reduce_sum(mask,axis=0,keepdims=True) + self.epsilon
+        return tf.math.divide_no_nan(x, norm)
+                    
+    def _calc_mean_and_protect(self, x, mask, default):
+        x = self._m_mean(x, mask)
+        x = tf.where(tf.math.is_finite(x), x, default)#protect against empty batches
+        return x
+    
+    def _calc_update(self, old, new, training):
+        delta = new-old
+        update = old + (1. - self.viscosity)*delta
+        return tf.keras.backend.in_train_phase(update,old,training=training)
+    
+    def call(self, inputs, training=None):
+        if isinstance(inputs,list):
+            x_in, cond = inputs
+            cond = tf.where(cond==0., 0., tf.ones_like(cond)) #make sure it's ones and zeros
+        else:
+            x_in = inputs
+            cond = tf.ones_like(x_in[...,0:1])
+        
+        out = tf.where(cond>0.,  (x_in - self.mean) / (self.variance + self.epsilon), x_in) # F
+        
+        if (not self.loss_active) or (not self.trainable):
+            return out*self.gamma + self.bias
+        
+        x = tf.stop_gradient(x_in) #stop feat gradient
+        x_m = self._calc_mean_and_protect(x, cond, self.mean)
+        x_v = self._calc_mean_and_protect((x - tf.stop_gradient(x_m))**2, cond, self.variance)
+        
+        if self.learn:
+            
+            self.add_loss((1. - self.viscosity) * tf.reduce_mean((x_m - self.mean)**4)) # should be zero
+            self.add_loss((1. - self.viscosity) * tf.reduce_mean(1. - x_v / self.variance)**4) # should be one
+            
+        else:
+            update = self._calc_update(self.mean,x_m,training)
+            tf.keras.backend.update(self.mean, update)
+            
+            update = self._calc_update(self.variance,x_v,training)
+            tf.keras.backend.update(self.variance, update)
+        
+        self.add_prompt_metric(tf.reduce_mean(x_m - self.mean), self.name+'_mean')
+        self.add_prompt_metric(tf.reduce_mean(x_v / self.variance), self.name+'_var')
+        self.add_prompt_metric(tf.reduce_mean(self.mean), self.name+'_mean_correction')
+        self.add_prompt_metric(tf.reduce_mean(self.variance), self.name+'_var_correction')
+            
+        return out*self.gamma + self.bias
+        
+    
+class ConditionalScaledGooeyBatchNorm(LayerWithMetrics):
+    def __init__(self,
+                 viscosity=0.1,
+                 fluidity_decay=1e-4,
+                 max_viscosity=0.99,
+                 loss_active = True, #can be turned off for performance in val mode
+                 learn = True,
+                 epsilon=1e-4,
+                 **kwargs):
+        
+        super(ConditionalScaledGooeyBatchNorm, self).__init__(**kwargs)
+        if 'name' in kwargs.keys():
+            kwargs.pop('name')
+        
+        with tf.name_scope(self.name + "/1/"):
+            self.bn_a = ScaledGooeyBatchNorm2(viscosity,fluidity_decay,max_viscosity,
+                                              loss_active,learn,epsilon,name=self.name+'_bn_a',**kwargs)
+        with tf.name_scope(self.name + "/2/"):
+            self.bn_b = ScaledGooeyBatchNorm2(viscosity,fluidity_decay,max_viscosity,
+                                              loss_active,learn,epsilon,name=self.name+'_bn_b',**kwargs)
+        
+    def compute_output_shape(self, input_shapes):
+        #return input_shapes[0]
+        return input_shapes
+              
+    def build(self, input_shapes):
+        
+        with tf.name_scope(self.name + "/1/"):
+            self.bn_a.build(input_shapes)
+        with tf.name_scope(self.name + "/2/"):
+            self.bn_b.build(input_shapes)
+            
+        super(ConditionalScaledGooeyBatchNorm, self).build(input_shapes)
+        
+    def call(self, inputs, training=None):
+        x, cond = inputs
+        cond = tf.where(cond==0., 0., tf.ones_like(cond)) #make sure it's ones and zeros
+        
+        x_a = self.bn_a([x, cond],training = training)
+        x_b = self.bn_b([x, 1.-cond], training = training)
+        
+        return tf.where(cond>0., x_a, x_b)
+            
 
 class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
