@@ -1169,9 +1169,9 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         myloss = None
         if self.learn:
             
-            delta_mean = tf.abs(x_m - self.mean)**2
+            delta_mean = tf.abs(x_m - self.mean)
             delta_mean = tf.where(tf.math.is_finite(delta_mean),delta_mean,0.)
-            delta_var = tf.abs(x_v - self.variance)**2
+            delta_var = tf.abs(x_v - self.variance)
             delta_var = tf.where(tf.math.is_finite(delta_var),delta_var,0.)
             
             mloss = (1. - self.viscosity) * tf.reduce_mean(delta_mean)
