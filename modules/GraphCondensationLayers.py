@@ -68,6 +68,7 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
                  K=5,
                  score_threshold=0.5,
                  n_knn_bins = 21,
+                 safeguard = True, #makes sure there are never no points selected per row split
                  **kwargs):
         
         super(CreateGraphCondensation, self).__init__(**kwargs)
@@ -75,13 +76,14 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         self.K = K
         self.score_threshold = score_threshold
         self.n_knn_bins = n_knn_bins
+        self.safeguard = safeguard
         
     def get_config(self):
-        config = {'K': self.K, 'score_threshold': self.score_threshold, 'n_knn_bins': self.n_knn_bins}
+        config = {'K': self.K, 'score_threshold': self.score_threshold, 'n_knn_bins': self.n_knn_bins, 'safeguard': self.safeguard}
         base_config = super(CreateGraphCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
         
-    def call(self, score, coords, rs, always_promote=None):
+    def call(self, score, coords, rs, always_promote=None, training = None):
         
         trans = GraphCondensation()
         trans['rs_down'] = rs
@@ -107,10 +109,22 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         
 
         rsel = tf.RaggedTensor.from_row_splits(sel,rs)
-        rscore = tf.RaggedTensor.from_row_splits((score  > self.score_threshold),rs)
-        rsel = tf.ragged.boolean_mask(rsel, rscore[...,0])
+        rscore = tf.RaggedTensor.from_row_splits(score,rs)
+        
+        threshold = self.score_threshold
+        
+        #make sure there is something left, bad with very inhomogenous batches, but good for training
+        if self.safeguard: 
+            mrss = tf.reduce_max(rscore,axis=1, keepdims=True)
+            threshold = tf.reduce_min( tf.concat( [ tf.reduce_min(mrss)[tf.newaxis]*0.98, 
+                                                tf.constant(self.score_threshold)[tf.newaxis] ], axis=0))
+        
+        rsel = tf.ragged.boolean_mask(rsel, rscore[...,0]  >= threshold)
         #use ragged to select
         trans['rs_up'] = tf.cast(rsel.row_splits,'int32')#for whatever reason
+        
+        print(self.name, 'rs down',trans['rs_down'])
+        print(self.name, 'rs up',trans['rs_up'])
         #undo ragged
         trans['sel_idx_up'] = rsel.values
         

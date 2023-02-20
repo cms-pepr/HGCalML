@@ -1048,11 +1048,12 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
 class ScaledGooeyBatchNorm2(LayerWithMetrics):
     def __init__(self, 
                  viscosity=0.01,
-                 fluidity_decay=1e-4,
+                 fluidity_decay=1e-3,
                  max_viscosity=0.99,
                  loss_active = True, #can be turned off for performance in val mode
                  learn = True,
                  epsilon=1e-4,
+                 first_calls = 1024,
                  **kwargs):
         
         super(ScaledGooeyBatchNorm2, self).__init__(**kwargs)
@@ -1068,6 +1069,7 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         self.epsilon = epsilon
         self.loss_active = loss_active
         self.learn = learn
+        self.first_calls = first_calls
         
     def compute_output_shape(self, input_shapes):
         #return input_shapes[0]
@@ -1081,16 +1083,11 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
                   'max_viscosity': self.max_viscosity,
                   'epsilon': self.epsilon,
                   'loss_active': self.loss_active,
-                  'learn': self.learn
+                  'learn': self.learn,
+                  'first_calls': self.first_calls
                   }
         base_config = super(ScaledGooeyBatchNorm2, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-    
-    def _update_viscosity(self, training):
-        if self.fluidity_decay > 0:
-            newvisc = self.viscosity + (self.max_viscosity - self.viscosity)*self.fluidity_decay
-            newvisc = tf.keras.backend.in_train_phase(newvisc,self.viscosity,training=training)
-            tf.keras.backend.update(self.viscosity,newvisc)
     
     
     def build(self, input_shapes):
@@ -1114,9 +1111,13 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         
         self.gamma = self.add_weight(name = 'gamma',shape = shape, 
                                     initializer = 'ones', trainable = self.trainable) 
+        
+        self._first_calls = tf.Variable(initial_value=self.first_calls, 
+                                         name='_first_calls',
+                                         trainable=False,dtype='int32')
             
         super(ScaledGooeyBatchNorm2, self).build(input_shapes)
-        
+    
     def _m_mean(self, x, mask):
         x = tf.reduce_sum(x,axis=0,keepdims=True)
         norm = tf.reduce_sum(mask,axis=0,keepdims=True) + self.epsilon
@@ -1127,10 +1128,24 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         x = tf.where(tf.math.is_finite(x), x, default)#protect against empty batches
         return x
     
-    def _calc_update(self, old, new, training):
+    def _calc_update(self, old, new, training, visc=None):
+        if visc is None:
+            visc = self.viscosity
         delta = new-old
-        update = old + (1. - self.viscosity)*delta
+        update = old + (1. - visc)*delta
         return tf.keras.backend.in_train_phase(update,old,training=training)
+    
+    def _update_viscosity(self, training):
+        if self.fluidity_decay > 0:
+            newvisc = self.viscosity + (self.max_viscosity - self.viscosity)*self.fluidity_decay
+            newvisc = tf.keras.backend.in_train_phase(newvisc,self.viscosity,training=training)
+            tf.keras.backend.update(self.viscosity,newvisc)
+    
+    def _update_calls(self, training):
+        now = self._first_calls - 1
+        now = tf.where(now >= 0, now, 0)
+        now = tf.keras.backend.in_train_phase(now,self._first_calls,training=training)
+        tf.keras.backend.update(self._first_calls, now)
     
     def call(self, inputs, training=None):
         if isinstance(inputs,list):
@@ -1140,19 +1155,44 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
             x_in = inputs
             cond = tf.ones_like(x_in[...,0:1])
         
-        out = tf.where(cond>0.,  (x_in - self.mean) / (self.variance + self.epsilon), x_in) # F
+        
         
         if (not self.loss_active) or (not self.trainable):
+            out = tf.where(cond>0.,  (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon), x_in)
             return out*self.gamma + self.bias
         
-        x = tf.stop_gradient(x_in) #stop feat gradient
-        x_m = self._calc_mean_and_protect(x, cond, self.mean)
-        x_v = self._calc_mean_and_protect((x - tf.stop_gradient(x_m))**2, cond, self.variance)
         
+        #x = tf.stop_gradient(x_in) #stop feat gradient
+        x = x_in #maybe don't stop the gradient?
+        x_m = self._calc_mean_and_protect(x, cond, self.mean)
+        x_v = self._calc_mean_and_protect((x - x_m)**2, cond, self.variance)
+        myloss = None
         if self.learn:
             
-            self.add_loss((1. - self.viscosity) * tf.reduce_mean((x_m - self.mean)**4)) # should be zero
-            self.add_loss((1. - self.viscosity) * tf.reduce_mean(1. - x_v / self.variance)**4) # should be one
+            delta_mean = tf.abs(x_m - self.mean)**2
+            delta_mean = tf.where(tf.math.is_finite(delta_mean),delta_mean,0.)
+            delta_var = tf.abs(x_v - self.variance)**2
+            delta_var = tf.where(tf.math.is_finite(delta_var),delta_var,0.)
+            
+            mloss = (1. - self.viscosity) * tf.reduce_mean(delta_mean)
+            vloss = (1. - self.viscosity) * tf.reduce_mean(delta_var)
+            myloss = mloss + vloss
+            self.add_loss(myloss) # should be zero
+            self.add_prompt_metric(myloss, self.name+'_loss')
+            
+            if self._first_calls > 0:
+                #fast decay to get the starting point right
+                visc = 1. - tf.cast(self._first_calls,'float32') / float(self.first_calls)
+                
+                update = self._calc_update(self.mean,x_m,training, visc)
+                update = tf.where(self._first_calls > 0, update, self.mean)
+                update = tf.keras.backend.in_train_phase(update,self.mean,training=training)
+                tf.keras.backend.update(self.mean, update)
+                
+                update = self._calc_update(self.variance,x_v,training, visc)
+                update = tf.where(self._first_calls > 0, update, self.variance)
+                update = tf.keras.backend.in_train_phase(update,self.variance,training=training)
+                tf.keras.backend.update(self.variance, update)
             
         else:
             update = self._calc_update(self.mean,x_m,training)
@@ -1160,12 +1200,16 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
             
             update = self._calc_update(self.variance,x_v,training)
             tf.keras.backend.update(self.variance, update)
+            
+        self._update_calls(training)
         
         self.add_prompt_metric(tf.reduce_mean(x_m - self.mean), self.name+'_mean')
         self.add_prompt_metric(tf.reduce_mean(x_v / self.variance), self.name+'_var')
-        self.add_prompt_metric(tf.reduce_mean(self.mean), self.name+'_mean_correction')
-        self.add_prompt_metric(tf.reduce_mean(self.variance), self.name+'_var_correction')
-            
+        #self.add_prompt_metric(tf.reduce_mean(self.mean), self.name+'_mean_correction')
+        #self.add_prompt_metric(tf.reduce_mean(self.variance), self.name+'_var_correction')
+        
+        # apply after updates
+        out = tf.where(cond>0.,  (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon), x_in)
         return out*self.gamma + self.bias
         
     
@@ -2134,7 +2178,7 @@ class KNN(LayerWithMetrics):
         return (None, self.K+1),(None, self.K+1)
 
     @staticmethod 
-    def raw_call(coordinates, row_splits, K, radius, use_approximate_knn, min_bins, tfdist):
+    def raw_call(coordinates, row_splits, K, radius, use_approximate_knn, min_bins, tfdist, myself):
         nbins=None
         if use_approximate_knn:
             bin_width = radius # default value for SlicingKnn kernel
@@ -2146,7 +2190,8 @@ class KNN(LayerWithMetrics):
         else:
             idx,dist = BinnedSelectKnn(K+1, coordinates,  row_splits,
                                        n_bins=min_bins,
-                                 max_radius= radius, tf_compatible=False)
+                                 max_radius= radius, tf_compatible=False,
+                                 name = myself.name)
 
         
         if tfdist:
@@ -2177,11 +2222,11 @@ class KNN(LayerWithMetrics):
         if self.dynamic_radius is None:
             idx,dist,nbins = KNN.raw_call(coordinates, row_splits, self.K, 
                                           self.radius, self.use_approximate_knn,
-                                          self.min_bins, self.tf_distance)
+                                          self.min_bins, self.tf_distance,self)
         else:
             idx,dist,nbins = KNN.raw_call(coordinates, row_splits, self.K, 
                                           self.dynamic_radius, self.use_approximate_knn,
-                                          self.min_bins, self.tf_distance)
+                                          self.min_bins, self.tf_distance,self)
             self.update_dynamic_radius(dist,training)
             
         if self.use_approximate_knn:
@@ -3367,7 +3412,6 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
     Inputs: x, neighbor_indices, distancesq
 
     '''
-
     def __init__(self, 
                  n_feature_transformation, #=[32, 32, 32, 32, 4, 4],
                  sumwnorm=False,

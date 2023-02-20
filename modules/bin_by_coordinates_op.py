@@ -12,7 +12,7 @@ _bin_by_coordinates = tf.load_op_library('bin_by_coordinates.so')
     .Output("output: int32"); 
 '''
 
-def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_n_per_bin=True, pre_normalized=False):
+def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_n_per_bin=True, pre_normalized=False, name=""):
     '''
     
     Assign bins to coordinates
@@ -43,11 +43,12 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
     
     '''
     
-    tf.debugging.check_numerics(coordinates,"BinByCoordinates: input coordinates")
+    tf.debugging.check_numerics(coordinates,"BinByCoordinates: input coordinates "+name)
     #calculate
+    #orig_coordinates = coordinates
     if not pre_normalized:
         min_coords = tf.reduce_min(coordinates,axis=0,keepdims=True)
-        min_coords = tf.where(tf.math.is_finite(min_coords), min_coords, 0.)
+        #min_coords = tf.where(tf.math.is_finite(min_coords), min_coords, 0.)
         coordinates -= min_coords
     dmax_coords = tf.reduce_max(coordinates,axis=0) 
     dmax_coords = tf.where(tf.reduce_min(coordinates,axis=0) == dmax_coords, dmax_coords+1., dmax_coords)  + 1e-3
@@ -55,7 +56,7 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
     dmax_coords = tf.where(tf.math.is_finite(dmax_coords), dmax_coords, 1.)
     
     with tf.control_dependencies([tf.assert_greater(dmax_coords,0.),
-                                  tf.debugging.check_numerics(coordinates,"BinByCoordinates: adjusted coordinates")]):
+                                  tf.debugging.check_numerics(coordinates,"BinByCoordinates: adjusted coordinates "+name)]):
     
         if bin_width is None:
             assert n_bins is not None
@@ -69,7 +70,6 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
             n_bins += 1.
             n_bins = tf.cast(n_bins, dtype='int32')
         
-    
     with tf.control_dependencies([tf.assert_greater(n_bins,0), 
                                   tf.assert_greater(bin_width,0.)]):
         

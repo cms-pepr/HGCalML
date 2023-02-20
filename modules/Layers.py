@@ -119,14 +119,14 @@ global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
 from GravNetLayersRagged import ScaledGooeyBatchNorm
 global_layers_list['ScaledGooeyBatchNorm']=ScaledGooeyBatchNorm
 
+from GravNetLayersRagged import ScaledGooeyBatchNorm2
+global_layers_list['ScaledGooeyBatchNorm2']=ScaledGooeyBatchNorm2
+
 from GravNetLayersRagged import SignedScaledGooeyBatchNorm
 global_layers_list['SignedScaledGooeyBatchNorm']=SignedScaledGooeyBatchNorm
 
 from GravNetLayersRagged import ConditionalScaledGooeyBatchNorm
 global_layers_list['ConditionalScaledGooeyBatchNorm']=ConditionalScaledGooeyBatchNorm
-
-from GravNetLayersRagged import ScaledGooeyBatchNorm2
-global_layers_list['ScaledGooeyBatchNorm2']=ScaledGooeyBatchNorm2
 
 from GravNetLayersRagged import ProcessFeatures
 global_layers_list['ProcessFeatures']=ProcessFeatures
@@ -346,6 +346,8 @@ global_layers_list['EyeInitializer']=EyeInitializer
 from tensorflow.keras.layers import Layer
 import tensorflow.keras.backend as K
 import tensorflow as tf
+
+
 
 
 

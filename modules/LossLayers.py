@@ -348,7 +348,8 @@ class LLValuePenalty(LossLayerBase):
         return dict(list(base_config.items()) + list(config.items()))
     
     def loss(self, inputs):
-        return tf.reduce_mean((self.default - inputs)**2)
+        lossval = tf.reduce_mean((self.default - inputs)**2)
+        return tf.where(tf.math.is_finite(lossval), lossval, 0.)#DEBUG
 
 
 
@@ -1078,11 +1079,19 @@ class LLClusterCoordinates(LossLayerBase):
     def _rs_loop(self,coords, tidx, specweight, energy):
         
         if tidx.shape[0] == 0:
+            print(self.name, 'batch empty')
             return 3 * [self.create_safe_zero_loss(coords)]
         
         Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
         
         if Msel is None or N_per_obj is None:
+            print(self.name, 'no objects in batch')
+            return 3 * [self.create_safe_zero_loss(coords)]
+        
+        
+        #almost empty
+        if Msel.shape[0] == 0 or (Msel.shape[0] == 1 and Msel.shape[1] == 1):
+            print(self.name, 'just one point left')
             return 3 * [self.create_safe_zero_loss(coords)]
         
         if self.ignore_noise:
@@ -1099,13 +1108,14 @@ class LLClusterCoordinates(LossLayerBase):
         padmask_m = SelectWithDefault(Msel, tf.ones_like(coords[:,0:1]), 0.)# K x V' x 1
         coords_m = SelectWithDefault(Msel, coords, 0.)# K x V' x C
         
-        q = (1.-specweight)*(1.+tf.math.log(tf.abs(energy)+1.))+1e-2
+        q = (1.-specweight) #*(1.+tf.math.log(tf.abs(energy)+1.))+1e-2
         q_m = SelectWithDefault(Msel, q, 0.)# K x V' x C
         q_k = tf.reduce_sum(q_m,axis=1)#K x 1
         
         #create average
-        av_coords_m = tf.reduce_sum(coords_m * padmask_m,axis=1) # K x C
-        av_coords_m = tf.math.divide_no_nan(av_coords_m, N_per_obj+1e-3) #K x C
+        av_coords_m = tf.reduce_sum(coords_m * padmask_m * q_m,axis=1) # K x C
+        av_coords_m = tf.math.divide_no_nan(av_coords_m, 
+                                            tf.reduce_sum(padmask_m * q_m,axis=1) + 1e-3) #K x C
         av_coords_m = tf.expand_dims(av_coords_m,axis=1) ##K x 1 x C
         
         distloss = tf.reduce_sum((av_coords_m-coords_m)**2,axis=2)
@@ -1114,12 +1124,16 @@ class LLClusterCoordinates(LossLayerBase):
                                          N_per_obj[:,0]+1e-3)#K
         distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss),tf.reduce_sum(q_k)+1e-3)
         
+        #check if Mnot is empty
+        if M_not.shape[0] == 0 or tf.reduce_sum(M_not) == 0.:
+            print(self.name, 'no repulsive loss')
+            return distloss, distloss, self.create_safe_zero_loss(coords)
+        
         repdist = tf.expand_dims(coords, axis=0) - av_coords_m #K x V x C
         repdist = tf.expand_dims(q,axis=0) * tf.reduce_sum(repdist**2,axis=-1,keepdims=True) #K x V x 1
-        reploss = M_not * tf.exp(-repdist)#K x V x 1
         
         #add a long range part to it
-        reploss += 0.5 * M_not * self._rep_func(repdist)
+        reploss = M_not * self._rep_func(repdist) #K x V x 1
         #downweight noise
         reploss = q_k * tf.reduce_sum(reploss,axis=1)/( N_tot-N_per_obj +1e-3)#K x 1
         reploss = tf.reduce_sum(reploss)/(tf.reduce_sum(q_k)+1e-3)
@@ -1150,6 +1164,9 @@ class LLClusterCoordinates(LossLayerBase):
                 tidx = tf.gather_nd(tidx, sel)
             
             tlv, tdl, trl = self._rs_loop(coords,tidx,specw,energy)
+            tlv = tf.where(tf.math.is_finite(tlv), tlv, 0.)
+            tdl = tf.where(tf.math.is_finite(tdl), tdl, 0.)
+            trl = tf.where(tf.math.is_finite(trl), trl, 0.)
             lossval += tlv
             distloss += tdl
             reploss += trl
@@ -1177,6 +1194,8 @@ class LLClusterCoordinates(LossLayerBase):
             
         lossval,distloss, reploss = self.raw_loss(
             coords, tidx, specw, energy, rs, self.downsample)
+        
+        lossval = tf.where(tf.math.is_finite(lossval), lossval, 0.)#DEBUG
         
         self.add_prompt_metric(self.scale * distloss, self.name+'_att_loss')
         self.add_prompt_metric(self.scale * reploss, self.name+'_rep_loss')

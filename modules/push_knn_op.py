@@ -25,14 +25,14 @@ def _PushKnnGrad(op, grad):
     f  = op.inputs[1]
     nidx = op.inputs[2]
     
-    grad = tf.debugging.check_numerics(grad,"_PushKnnGrad: input gradient")
-    f = tf.debugging.check_numerics(f,"_PushKnnGrad: input features")
-    w = tf.debugging.check_numerics(w,"_PushKnnGrad: input weights")
+    #grad = tf.debugging.check_numerics(grad,"_PushKnnGrad: input gradient")
+    #f = tf.debugging.check_numerics(f,"_PushKnnGrad: input features")
+    #w = tf.debugging.check_numerics(w,"_PushKnnGrad: input weights")
     
     wgrad, fgrad = _push_knn_grad.PushKnnGrad(grad=grad,weights=w,features=f,indices=nidx)
     
-    fgrad = tf.debugging.check_numerics(fgrad,"_PushKnnGrad: fgrad gradient")
-    wgrad = tf.debugging.check_numerics(wgrad,"_PushKnnGrad: wgrad gradient")
+    #fgrad = tf.debugging.check_numerics(fgrad,"_PushKnnGrad: fgrad gradient")
+    #wgrad = tf.debugging.check_numerics(wgrad,"_PushKnnGrad: wgrad gradient")
     
     return wgrad, fgrad, None #no gradient for indices
 

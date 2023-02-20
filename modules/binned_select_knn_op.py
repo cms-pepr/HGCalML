@@ -30,7 +30,7 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_b
                                               )
 
 
-def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, max_bin_dims=3, tf_compatible=False, max_radius=None):
+def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, max_bin_dims=3, tf_compatible=False, max_radius=None, name=""):
     '''
     max_radius is a dummy for now to make it a drop-in replacement
     
@@ -66,7 +66,7 @@ def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, 
     if bin_coords.shape[-1]>max_bin_dims:
         bin_coords = bin_coords[:,:max_bin_dims]
     
-    dbinning,binning, nb, bin_width, nper = BinByCoordinates(bin_coords, row_splits, n_bins=n_bins)
+    dbinning,binning, nb, bin_width, nper = BinByCoordinates(bin_coords, row_splits, n_bins=n_bins, name=name)
     
     #if this becomes a bottleneck one could play tricks since nper and bin numbers are predefined
     sorting = tf.argsort(binning)
