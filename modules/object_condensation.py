@@ -129,9 +129,9 @@ class Basic_OC_per_sample(object):
         if self.Msel is None:
             self.valid=False
             return
-        if self.Msel.shape[0] < 2:#less than two objects - can be dangerous
-            self.valid=False
-            return
+        #if self.Msel.shape[0] < 2:#less than two objects - can be dangerous
+        #    self.valid=False
+        #    return
         
         self.mask_k_m = SelectWithDefault(self.Msel, tf.zeros_like(beta)+1., 0.) #K x V-obj x 1
         self.beta_k_m = SelectWithDefault(self.Msel, self.beta_v, 0.) #K x V-obj x 1
