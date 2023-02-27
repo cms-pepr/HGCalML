@@ -1048,7 +1048,7 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
 class ScaledGooeyBatchNorm2(LayerWithMetrics):
     def __init__(self, 
                  viscosity=0.01,
-                 fluidity_decay=1e-3,
+                 fluidity_decay=1e-4,
                  max_viscosity=0.99,
                  loss_active = True, #can be turned off for performance in val mode
                  learn = True,
@@ -1147,6 +1147,12 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         now = tf.keras.backend.in_train_phase(now,self._first_calls,training=training)
         tf.keras.backend.update(self._first_calls, now)
     
+    def _loss(self, delta):
+        delta_abs = tf.abs(delta)
+        delta_log = 2. * tf.math.log(delta_abs) + 1.
+        delta = tf.where(delta_abs < 1., delta_abs**2, delta_log)
+        return tf.where(tf.math.is_finite(delta),delta,0.)
+    
     def call(self, inputs, training=None):
         if isinstance(inputs,list):
             x_in, cond = inputs
@@ -1155,33 +1161,26 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
             x_in = inputs
             cond = tf.ones_like(x_in[...,0:1])
         
-        
-        
         if (not self.loss_active) or (not self.trainable):
             out = tf.where(cond>0.,  (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon), x_in)
             return out*self.gamma + self.bias
         
         
-        #x = tf.stop_gradient(x_in) #stop feat gradient
-        x = x_in #maybe don't stop the gradient?
+        x = tf.stop_gradient(x_in) #stop feat gradient
+        #x = x_in #maybe don't stop the gradient?
         x_m = self._calc_mean_and_protect(x, cond, self.mean)
         x_v = self._calc_mean_and_protect((x - x_m)**2, cond, self.variance)
-        myloss = None
+        myloss = 0.
         if self.learn:
             
             #huber like losses
-            delta_mean = tf.abs(x_m - self.mean)
-            delta_mean = tf.where(delta_mean < 1., delta_mean**2, 2.*delta_mean - 1.)
-            delta_mean = tf.where(tf.math.is_finite(delta_mean),delta_mean,0.)
-            delta_var = tf.abs(x_v - self.variance)
-            delta_var = tf.where(delta_var < 1., delta_var**2, 2.*delta_var - 1.)
-            delta_var = tf.where(tf.math.is_finite(delta_var),delta_var,0.)
+            mloss = self._loss(x_m - self.mean)
+            vloss = self._loss(x_v - self.variance)
             
-            mloss = (1. - self.viscosity) * tf.reduce_mean(delta_mean)
-            vloss = (1. - self.viscosity) * tf.reduce_mean(delta_var)
+            mloss = (1. - self.viscosity) * tf.reduce_mean(mloss)
+            vloss = (1. - self.viscosity) * tf.reduce_mean(vloss)
             myloss = mloss + vloss
             self.add_loss(myloss) # should be zero
-            self.add_prompt_metric(myloss, self.name+'_loss')
             
             if self._first_calls > 0:
                 #fast decay to get the starting point right
@@ -1205,11 +1204,11 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
             tf.keras.backend.update(self.variance, update)
             
         self._update_calls(training)
+        self._update_viscosity(training)
         
         self.add_prompt_metric(tf.reduce_mean(x_m - self.mean), self.name+'_mean')
         self.add_prompt_metric(tf.reduce_mean(x_v / self.variance), self.name+'_var')
-        #self.add_prompt_metric(tf.reduce_mean(self.mean), self.name+'_mean_correction')
-        #self.add_prompt_metric(tf.reduce_mean(self.variance), self.name+'_var_correction')
+        # self.add_prompt_metric(myloss, self.name+'_loss')
         
         # apply after updates
         out = tf.where(cond>0.,  (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon), x_in)
