@@ -1699,7 +1699,7 @@ def pre_graph_condensation(
                 scale = 1.,
                 ignore_noise = True, #this is filtered by the graph condensation anyway
                 print_batch_time=True,
-                hinge_mode = True
+                hinge_mode = False
                 )([coords, orig_inputs['t_idx'], orig_inputs['t_spectator_weight'], 
                                             score, rs ])
     
