@@ -76,7 +76,8 @@ static void calc(
         int cidx = d_coords[I2D(iv,ic,n_coords)] / d_binswidth[0];
 
         if(cidx >= n_bins[ic]){
-            printf("index %d of coordinate %d exceeds n bins %d\n",cidx,ic,n_bins[ic]);
+            printf("Fatal error: index %d of coordinate %d exceeds n bins %d\n",cidx,ic,n_bins[ic]);
+            cidx = 0;
         }
         d_assigned_bin[I2D(iv,ic+1,n_coords+1)]=cidx;
 

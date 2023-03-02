@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import math
 from multiprocessing import Process
 import random
-from datastructures import TrainData_NanoML
+from datastructures import TrainData_NanoML, TrainData_NanoMLPF
 import plotly.express as px
 import pandas as pd
 import tqdm
@@ -20,11 +20,17 @@ parser.add_argument('inputFile')
 parser.add_argument('outputDir')
 parser.add_argument('--hipsearch',action='store_true')
 parser.add_argument('--plots',action='store_true')
+parser.add_argument('--pf',action='store_true')
 args = parser.parse_args()
 
 outdir = args.outputDir+'/'
 ### rewrite!
 os.system('mkdir -p '+outdir)
+
+td_class = TrainData_NanoML
+if args.pf:
+    td_class = TrainData_NanoMLPF
+
 #read a file
 def invokeGen(infile):
     if infile[-6:] == '.djcdc':
@@ -34,19 +40,20 @@ def invokeGen(infile):
         dc.setBatchSize(1)
         gen = dc.invokeGenerator()
     elif infile[-6:] == '.djctd':
-        td = TrainData_NanoML()
-        tdclass = TrainData_NanoML
+        td = td_class()
+        tdclass = td_class
         td.readFromFile(infile)
         gen = TrainDataGenerator()
         gen.setBatchSize(1)
         gen.setBuffer(td)
     elif infile[-5:] == '.root':
-        print('reading from root file')
-        td = TrainData_NanoML()
-        tdclass = TrainData_NanoML
+        print('reading from root file, converting...')
+        td = td_class()
+        tdclass = td_class
         td.readFromSourceFile(infile,{},True)
         td.writeToFile(infile+'.djctd')
         td.readFromFile(infile+'.djctd')
+        print('conversion done')
         gen = TrainDataGenerator()
         gen.setBatchSize(1)
         gen.setBuffer(td)
@@ -166,6 +173,7 @@ for i in tqdm.tqdm(range(nevents)):
                     'truthHitAssignedT',
                     'truthHitAssignedX',
                     'truthHitAssignedY',
+                    'truthHitAssignedZ',
                     'truthHitAssignementIdx',
                     'orig_truthHitAssignementIdx',
                     'truthHitAssignedPIDs',

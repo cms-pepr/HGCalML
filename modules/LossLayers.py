@@ -5,6 +5,13 @@ from oc_helper_ops import CreateMidx
 import time
 from baseModules import LayerWithMetrics
 from binned_select_knn_op import BinnedSelectKnn
+import time
+from datastructures.TrainData_NanoML import id_str_to_idx
+
+from ragged_tools import print_ragged_shape
+
+def smooth_max(var, eps = 1e-3, **kwargs):
+    return eps * tf.reduce_logsumexp(var/eps, **kwargs)
 
 def one_hot_encode_id(t_pid, n_classes):
     valued_pids = tf.zeros_like(t_pid)+4 #defaults to 4 as unkown
@@ -40,6 +47,16 @@ def huber(x, d):
 def quantile(x,tau):
     return tf.maximum(tau*x, (tau-1)*x)
     
+def _calc_energy_weights(t_energy, t_pid=None, upmouns = True, alt_energy_weight=True):
+    
+        lower_cut = 0.5
+        w = tf.where(t_energy > 10., 1., ((t_energy-lower_cut) / 10.)*10./(10.-lower_cut))
+        w = tf.nn.relu(w)
+        if alt_energy_weight:
+            extra = t_energy/50. + 0.01
+            #extra = tf.math.divide_no_nan(extra, tf.reduce_sum(extra,axis=0,keepdims=True)+1e-3)
+            w *= extra
+        return w
     
 class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
     '''
@@ -57,19 +74,24 @@ class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
      - adapted spectator weights
      - adapted truth indices
     '''
-    def __init__(self, threshold=0.5, **kwargs):
+    def __init__(self, threshold=0.68, return_score=False, active=True, **kwargs):
         super(AmbiguousTruthToNoiseSpectator, self).__init__(**kwargs)
         #self.record_metrics=True #DEBUG
         self.threshold  = threshold
+        self.return_score = return_score
+        self.active = active
         
     def get_config(self):
-        config = {'threshold': self.threshold}
+        config = {'threshold': self.threshold,
+                  'return_score':self.return_score,
+                  'active': self.active}
         base_config = super(AmbiguousTruthToNoiseSpectator, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
     def call(self, inputs):
         
         nidx, sw, tidx, energy = None, None, None, None
+        
         if len(inputs)==3:
             nidx, sw, tidx = inputs
             energy = tf.cast(tf.ones_like(sw),dtype='float32')
@@ -78,30 +100,88 @@ class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
         else:
             raise ValueError("# inputs must be 3 or 4")
         
+        if not self.active:
+            if self.return_score:
+                return sw, tidx, tf.ones_like(sw)
+            else:
+                return sw, tidx
+        
         padding_default = -10000
+        
+        in_tidx = tidx
         
         n_tidx = SelectWithDefault(nidx, tidx, padding_default)
         n_energy = SelectWithDefault(nidx, energy, 0.)
+        n_mask = SelectWithDefault(nidx, tf.ones_like(energy), 0.)
         group_energy = tf.reduce_sum(n_energy,axis=1)
         
-        
-        is_same = tf.logical_or(n_tidx[:,0:1]==n_tidx, n_tidx==padding_default)
-        is_same = tf.cast(is_same,dtype='float32')
+        is_same = n_tidx[:,0:1]==n_tidx
+        is_same = n_mask * tf.cast(is_same,dtype='float32')
         
         same_energy = tf.reduce_sum(n_energy*is_same,axis=1)
-        is_same = tf.math.divide_no_nan(same_energy, group_energy) > self.threshold
+        sscore = tf.math.divide_no_nan(same_energy, group_energy)
+        is_same =  sscore > self.threshold
         
         sw = tf.where(is_same, sw, 1.)#set ambiguous to spectator
         tidx = tf.where(is_same, tidx, -1)#set ambiguous to noise
+        tidx = tf.where(in_tidx<0, in_tidx, tidx) # leave noise
         
-        is_same_f = tf.cast(is_same, dtype='float32')
-        same_f = tf.reduce_sum(is_same_f)/tf.reduce_sum(tf.ones_like(is_same_f))
+        is_same = tf.cast(is_same,dtype='float32')
+        same_f = tf.reduce_sum(is_same)/tf.reduce_sum(tf.ones_like(is_same))
         #metrics
         self.add_prompt_metric(same_f, 
                                self.name+'_non_amb_truth_fraction')
+        if self.return_score:
+            return sw, tidx, sscore
+        else:
+            return sw, tidx
         
-        return sw, tidx
+from ragged_tools import normalise_index
+class NormaliseTruthIdxs(tf.keras.layers.Layer):
+    
+    def __init__(self, active=True, add_rs_offset=True, **kwargs):
+        '''
+        changes arbitrary truth indices to well defined indices such that
+        sort(unique(t_idx)) = -1, 0, 1, 2, 3, 4, 5, ... for each row split
         
+        This should be called after every layer that could have modified
+        the truth indices or removed hits, if the output needs to be regular.
+        
+        This Layer takes < 10ms usually so can be used generously.
+        
+        :param active: determines if it should be active. 
+                       In pure inference mode that might not be needed
+        
+        Inputs: truth indices, row splits
+        Output: new truth indices
+        
+        '''
+        if 'dynamic' in kwargs:
+            super(NormaliseTruthIdxs, self).__init__(**kwargs)
+        else:
+            super(NormaliseTruthIdxs, self).__init__(dynamic=True,**kwargs)
+            
+        self.active = active
+        self.add_rs_offset = add_rs_offset
+    
+    def get_config(self):
+        config = {'active': self.active,
+                  'add_rs_offset': self.add_rs_offset}
+        base_config = super(NormaliseTruthIdxs, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0]
+        
+    def call(self, inputs):
+        assert len(inputs) == 2
+        t_idx, rs = inputs
+        
+        #double unique
+        if not self.active or rs.shape[0] == None:
+            return t_idx
+        
+        return normalise_index(t_idx, rs, self.add_rs_offset)
         
 
 class LossLayerBase(LayerWithMetrics):
@@ -153,20 +233,49 @@ class LossLayerBase(LayerWithMetrics):
     def build(self, input_shape):
         super(LossLayerBase, self).build(input_shape)
     
+    def create_safe_zero_loss(self, a):
+        zero_loss = tf.zeros_like(tf.reduce_mean(a))
+        zero_loss = tf.where(tf.math.is_finite(zero_loss),zero_loss,0.)
+        return zero_loss
+    
     def call(self, inputs):
         lossval = tf.constant([0.],dtype='float32')
+        a = None
+        if not isinstance(inputs,list):
+            a = inputs
+        elif isinstance(inputs,list) and len(inputs) == 2:
+            a,_ = inputs
+        elif isinstance(inputs,list) and len(inputs) > 2:
+            a,*_ = inputs
+        else:
+            raise ValueError("LossLayerBase: input not understood")
+            
         if self.active:
             now = tf.timestamp() 
-            lossval = self.scale * self.loss(inputs)
+            
+            #check for empty batches
+                
+            #generally protect against empty batches
+            if a.shape[0] is None or a.shape[0] == 0:
+                zero_loss = self.create_safe_zero_loss(a)
+                print(self.name,'returning zero loss',zero_loss)
+                lossval = zero_loss
+            else:
+                lossval = self.scale * self.loss(inputs)
+                
             self.maybe_print_loss(lossval,now)
+            
+            lossval = tf.debugging.check_numerics(lossval, self.name+" produced inf or nan.")
+            #this can happen for empty batches. If there are deeper problems, check in the losses themselves
+            #lossval = tf.where(tf.math.is_finite(lossval), lossval ,0.)
             if not self.return_lossval:
                 self.add_loss(lossval)
                 
         self.add_prompt_metric(lossval, self.name+'_loss')
         if self.return_lossval:
-            return inputs[0], lossval
+            return a, lossval
         else:
-            return inputs[0]
+            return a
     
     def loss(self, inputs):
         '''
@@ -214,6 +323,37 @@ class LossLayerBase(LayerWithMetrics):
 
 
 
+class LLDummy(LossLayerBase):
+    
+    def loss(self, inputs):
+        return tf.reduce_mean(inputs)
+
+
+class LLValuePenalty(LossLayerBase):
+    
+    def __init__(self, 
+                 default : float = 0.,
+                 **kwargs):
+        '''
+        Simple value penalty loss, tries to keep values around default using simple
+        L2 regularisation; returns input
+        '''
+        
+        super(LLValuePenalty, self).__init__(**kwargs)
+        self.default = default
+        
+    def get_config(self):
+        config = {'default': self.default}
+        base_config = super(LLValuePenalty, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def loss(self, inputs):
+        lossval = tf.reduce_mean((self.default - inputs)**2)
+        return tf.where(tf.math.is_finite(lossval), lossval, 0.)#DEBUG
+
+
+
+
 class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
     def __init__(self, 
                  threshold, 
@@ -252,6 +392,376 @@ class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
         #notnoise = inputs[1] >= 0
         #noise can never be spectator
         return tf.where(abovethresh, tf.ones_like(inputs[0])-self.minimum, 0.)
+
+
+#helper for OC theshold losses
+def _thresh(x, d, t, invert=False):
+    '''
+    x: something to be multiplied by a threshold modifier
+    d: distance to threshold
+    t: threshold
+    invert: False: threshold is an upper bound
+            True: threshold is a lower bound
+    '''
+    a = 10. / (t + 1e-2)
+    
+    dmt = a * (d-t)
+    if hasattr(dmt, 'row_splits'):
+        dmt = tf.ragged.map_flat_values(tf.tanh,dmt)
+    else:
+        dmt = tf.tanh(dmt)
+        
+    if invert:
+        return (0.5 * (1. + dmt)) * x
+    return (0.5 * (1. - dmt)) * x
+
+
+class LLPushTracks(LossLayerBase):
+    
+    def loss(self, inputs):
+        x = None
+        if len(inputs) == 4:
+            beta, is_track, t_idx, x = inputs
+        else:
+            beta, is_track, t_idx = inputs
+        
+        
+        beta = beta[is_track[:,0]>0.]
+        t_idx = t_idx[is_track[:,0]>0.]
+        
+        if x is not None:
+            print(self.name, beta, t_idx, x[is_track[:,0]>0.])
+        
+        
+        tclass = tf.where(t_idx<0, 0., tf.ones_like(beta))
+        
+        return tf.reduce_mean(tf.keras.losses.binary_crossentropy(tclass, beta))
+
+from ragged_tools import  rconcat
+class LLLocalEnergyConservation(LossLayerBase):
+    
+    def __init__(self, 
+                 grad_rel_threshold=0.1, 
+                 K = 64, 
+                 dist_scale = 1.,
+                 **kwargs):
+        '''
+        Inputs:
+        weight, coords, pred_sid, pfc_energy, pfc_idx, t_idx, t_energy,  rs
+        
+        rs are for the non-ragged inputs:
+        weight, coords, pred_sid, t_idx and t_energy
+        
+        ragged are only:
+        pfc_energy, pfc_idx
+        
+        '''
+        super(LLLocalEnergyConservation, self).__init__(**kwargs)
+        self.grad_rel_threshold = grad_rel_threshold
+        self.dist_scale = dist_scale
+        self.K = K
+        
+    def get_config(self):
+        config = {'grad_rel_threshold': self.grad_rel_threshold,
+                  'dist_scale': self.dist_scale,
+                  'K': self.K,
+                  }
+        base_config = super(LLLocalEnergyConservation, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    
+    def w_ax1(self, x, w, epsilon=1e-4, **kwargs):
+        x = tf.reduce_sum(x * w, axis=1, **kwargs)
+        w = tf.reduce_sum(w, axis=1, **kwargs)
+        return tf.math.divide_no_nan(x, w + epsilon)
+
+    def max_arg_w(self,sel, w):
+        sw_k_m = SelectWithDefault(sel, w, 0.)
+        srange_k_m = SelectWithDefault(sel, tf.range(tf.shape(w)[0])[...,tf.newaxis], -1)
+        maxarg_k = tf.argmax(sw_k_m,axis=1)
+        return tf.gather_nd(srange_k_m, maxarg_k, batch_dims=1)
+        
+    
+    #this is just to scale the gradient here
+    def scale_gradient(self,energy_kp, t_energy_kp, grad_rel_threshold):
+        rs = tf.cast(energy_kp.row_splits, 'int32')
+        energy_kp = energy_kp.values
+        t_energy_kp = t_energy_kp.values #not ragged
+        reldiff = 1. - energy_kp/t_energy_kp # [kp, 1], use to define gradient reduction for well predicted showers
+        reldiff = tf.clip_by_value(reldiff, -grad_rel_threshold, grad_rel_threshold)
+        gradscaler = tf.abs(reldiff)/grad_rel_threshold
+        gradscaler = tf.stop_gradient(gradscaler) #stop gradient for scaler itself
+        energy_kp = gradscaler * energy_kp + (1. - gradscaler) * tf.stop_gradient(energy_kp)
+        return tf.RaggedTensor.from_row_splits(energy_kp, rs, validate=False)
+
+    
+    
+    def loss(self, inputs):
+        weight, coords, pred_sid, pfc_energy, pfc_idx, t_idx, t_energy,  rs = inputs
+
+        if rs.shape[0] is None:
+            return 0.* tf.reduce_sum(weight)
+
+        coords = tf.stop_gradient(coords)
+        weight = tf.stop_gradient(weight)
+        
+        grad_rel_threshold = self.grad_rel_threshold
+        K = self.K
+        
+        
+        t_idx, t_nper_k = normalise_index(t_idx, rs, True, return_n_per=True)#now it's normalised and spanning row splits
+        
+        #get truth coords defined at max weight = beta (for local energy conservation)
+        t_sel, _, _ = CreateMidx(t_idx, False)
+        t_maxarg_k = self.max_arg_w(t_sel, weight)
+        
+        t_coords_k = tf.gather_nd(coords, t_maxarg_k)
+        
+        #t_sw_k_m = SelectWithDefault(t_sel, weight, 0.)
+        #t_sumw_k = tf.reduce_sum(t_sw_k_m, axis=1)#sum weights = beta
+        
+        t_energy_k = tf.gather_nd(t_energy, t_maxarg_k)
+        
+        ### truth part done
+        
+        pred_sid, _ = normalise_index(pred_sid, rs, True, return_n_per=True)#now it's normalised and spanning row splits
+        #print('>>>>>',pred_sid, nper, pfc_idx.row_splits)
+        #print(pfc_idx)
+        #print(tf.gather_nd( pfc_idx))
+        
+        #build the kp - predicted parts, these are ragged
+        
+        not_isnoise_kp = tf.gather_nd(pred_sid, pfc_idx) >= 0
+        
+        t_energy_kp = tf.gather_nd(t_energy, pfc_idx)
+        t_energy_kp = tf.ragged.boolean_mask(t_energy_kp, not_isnoise_kp[...,0])
+        
+        energy_kp = tf.ragged.boolean_mask(pfc_energy, not_isnoise_kp[...,0])#pfc_energy laready ragged
+        energy_kp = self.scale_gradient(energy_kp, t_energy_kp, grad_rel_threshold) #scale grad here
+        
+        coords_kp = tf.gather_nd(coords, pfc_idx)
+        coords_kp = tf.ragged.boolean_mask(coords_kp, not_isnoise_kp[...,0])
+        
+        
+        #print('>>>>>>>',coords_kp.row_splits, t_energy_kp.row_splits, energy_kp.row_splits, energy_kp, t_energy_kp)
+        #exit()
+        #create gradient scaler in non-ragged
+        
+        #p_rs = tf.cast(energy_kp.row_splits, 'int32')
+        t_rs = tf.cast(t_nper_k, 'int32')
+        
+        #concat per rs
+        t_energy_k = tf.RaggedTensor.from_row_splits(t_energy_k, t_rs, validate=False)#we know this works
+        t_coords_k = tf.RaggedTensor.from_row_splits(t_coords_k, t_rs, validate=False)
+        
+        
+        #create row splits for kNN from concat of nper and t_nper
+        energy_kp  = rconcat([energy_kp, 0.*energy_kp ], axis=-1) # rec, truthzero
+        t_energy_k = rconcat([0.*t_energy_k, t_energy_k ], axis=-1) # zerorec, truth
+        
+        allenergies = rconcat([energy_kp, t_energy_k],axis=1)
+        allcoords = rconcat([coords_kp, t_coords_k],axis=1)
+        
+        totrs = tf.cast(allcoords.row_splits, 'int32')
+        
+        
+        allenergies = allenergies.values
+        allcoords = allcoords.values
+        
+        #now we have:
+        # mixed coordinates [ V x C ]
+        # mixed enegies [V x 2]
+        # mixed row splits
+        
+        idx, distsq = BinnedSelectKnn(K, allcoords, totrs)
+        
+        #scale distance so that the Gaussian weighting makes sense
+        distsq /= tf.reduce_mean(tf.reduce_max(distsq, axis=1)) #max for each vertex, min over all
+        
+        m_energy = SelectWithDefault(idx, allenergies, 0.)
+        
+        w_m_energy = tf.expand_dims(tf.exp(-6. * distsq / 2.),axis=2) * m_energy
+        
+        diff = tf.reduce_sum(w_m_energy, axis=1)
+        diff = diff[...,0] - diff[...,1]
+        reldiff = tf.math.divide_no_nan(diff , diff[...,1] + 1e-2)
+        
+        abs_mean_diff = tf.abs(tf.reduce_mean(reldiff))
+        
+        self.add_prompt_metric(abs_mean_diff, self.name + '_loss')
+        
+        return abs_mean_diff
+        #print(reldiff, '\n', tf.reduce_mean(reldiff))
+
+
+class LLDynOCThresholds(LossLayerBase):
+    def __init__(self, 
+                 purity_weight = 0.5,
+                 object_energy_weight = 'modlog',
+                 **kwargs):
+        '''
+        beta-weighted here
+        '''
+        self.object_energy_weight = object_energy_weight
+        self.purity_weight = purity_weight
+        
+        super(LLDynOCThresholds, self).__init__(**kwargs)
+
+    def get_config(self):
+        config={'purity_weight': self.purity_weight,
+                'object_energy_weight': self.object_energy_weight}
+        base_config = super(LLFullOCThresholds, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def loss(self, inputs):
+        assert len(inputs) == 9
+        beta, ccoords, d, c_idx, ch_idx, t_idx, rs, t_d, t_b = inputs
+        
+        
+
+     
+class LLFullOCThresholds(LossLayerBase):
+    def __init__(self, 
+                 purity_weight = 0.5,
+                 object_energy_weight = 'modlog',
+                 **kwargs):
+        '''
+        creates gradients for t_d and t_b
+        Inputs: a lot
+        
+        # betas: V x 1
+        # coords: V x C
+        # d: V x 1
+        # c_idx: ragged to select condensation points
+        # ch_idx: ragged to select condensation points and their hits
+        # energy: hit energy, V x 1
+        # t_idx: V x 1
+        # t_depe: true deposited energy
+        # rs: rs
+        # t_d: ()
+        # t_b: ()
+        
+        Output: pass-through of betas
+        '''
+        
+        assert 0. < purity_weight < 1.
+        self.purity_weight = purity_weight
+        
+        assert object_energy_weight == 'log' or object_energy_weight == 'lin'\
+          or object_energy_weight == 'modlog' or object_energy_weight == 'none'
+        if object_energy_weight == 'log':
+            self.oweight = self._e_log
+        if object_energy_weight == 'lin':
+            self.oweight = self._e_lin
+        if object_energy_weight == 'none':
+            self.oweight = self._e_none
+        if object_energy_weight == 'modlog':
+            self.oweight = self._e_modlog
+        self.object_energy_weight = object_energy_weight # to save it
+        
+        super(LLFullOCThresholds, self).__init__(**kwargs)
+        
+    def get_config(self):
+        config={'purity_weight': self.purity_weight,
+                'object_energy_weight': self.object_energy_weight}
+        base_config = super(LLFullOCThresholds, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    
+    def _e_log(self, e):
+        return tf.math.log1p(e + 1e-6)
+    def _e_modlog(self, e):
+        return tf.math.log1p(e + 1e-6)**2
+    def _e_lin(self, e):
+        return e
+    def _e_none(self, e):
+        return tf.ones_like(e)
+    
+    def loss(self, inputs):
+        assert len(inputs) == 10
+        # betas: V x 1
+        # coords: V x C
+        # d: V x 1
+        # c_idx: ragged to select condensation points
+        # ch_idx: ragged to select condensation points and their hits
+        # energy: hit energy, V x 1
+        # t_idx: V x 1
+        # t_d: ()
+        # t_b: ()
+        betas, coords, d, c_idx, ch_idx, energy, t_idx, t_depe, t_d, t_b = inputs
+        
+        t_d, t_b = t_d[0], t_b[0] #remove extra dim
+        
+        print(f't_d {t_d}, t_b {t_b}')
+        
+        # distance from cp to hits:
+        ch_coords = tf.gather_nd(coords, ch_idx) # [e, r, r, C]
+        c_coords = tf.gather_nd(coords, c_idx)
+        ch_dsq = (tf.expand_dims(c_coords,axis=2) - ch_coords)**2
+        ch_dsq = tf.reduce_sum(ch_dsq, axis=-1, keepdims=True) # [e, r, r, 1]
+        ch_d_n = tf.sqrt(ch_dsq + 1e-4)
+        ch_d_n /= tf.expand_dims(tf.gather_nd(d, c_idx),axis=2) # [e, r, r, 1], normalised to distance scaler
+        
+        ch_energy = tf.gather_nd(energy, ch_idx)
+        
+        #create same tidx map for purity
+        ch_t_idx = tf.gather_nd(t_idx, ch_idx)
+        c_t_idx = tf.gather_nd(t_idx, c_idx)
+        
+        ch_noitnoise = tf.cast(ch_t_idx >= 0, 'float32')
+        
+        #this is still int
+
+        ch_pure = tf.where(tf.expand_dims(c_t_idx,axis=2) == ch_t_idx, 
+                           tf.ones_like(ch_t_idx), tf.zeros_like(ch_t_idx) )
+        ch_pure = ch_noitnoise * tf.cast(ch_pure, 'float32') # noise never pure
+        
+        
+        #now weight by distance w.r.t. threshold and energy
+        #maybe also threshold the denominator..?
+        t_h_p = ch_energy*ch_pure
+        t_h_p = _thresh(t_h_p, ch_d_n, t_d)
+        c_purity = tf.reduce_sum(t_h_p, axis=2)\
+         / (tf.reduce_sum(ch_energy, axis=2) + 1e-3)
+        
+        ch_depe = tf.gather_nd(t_depe, ch_idx)
+        c_mean_t_depe = tf.reduce_sum(ch_noitnoise * ch_energy * ch_depe, axis=2)# [e, r, 1]
+        c_mean_t_depe /= tf.reduce_sum(ch_noitnoise * ch_energy, axis=2) + 1e-3
+        
+        # expected collected energy
+        c_depe = c_mean_t_depe # [e, r, 1]
+        c_eff = tf.reduce_sum(_thresh(ch_energy, ch_d_n, t_d), axis=2) /\
+           tf.reduce_mean(_thresh(tf.ones_like(ch_energy), ch_d_n, t_d), axis=2)
+        
+        c_eff /= (c_depe + 1e-3)
+        
+        #weight both by betas
+        c_betas = tf.gather_nd(betas, c_idx) # [e, r, 1]
+        
+        #object weights, will be automatically small for noise
+        c_oweight = self.oweight(c_mean_t_depe)
+        c_ones = tf.ones_like(c_purity)
+        ow_sum = tf.reduce_sum(c_oweight * _thresh(c_ones, c_betas, t_b,True), axis=1) + 1e-6
+        
+        #make sure noise does not get included
+        
+        purity = tf.reduce_sum(c_oweight * _thresh(c_purity, c_betas, t_b,True), axis=1)
+        purity /= ow_sum
+        purity = tf.reduce_mean(purity)
+        efficiency = tf.reduce_mean(c_oweight * _thresh(c_eff, c_betas, t_b,True), axis=1)
+        efficiency /= ow_sum
+        efficiency = tf.reduce_mean(efficiency)
+        
+        self.add_prompt_metric(purity, self.name+'_purity')
+        self.add_prompt_metric(efficiency, self.name+'_efficiency')
+        
+        
+        loss = self.purity_weight * (1. - purity) + (1.-self.purity_weight)* tf.abs(1. - efficiency)
+        
+        print(f'purity {purity} efficiency {efficiency} loss {loss}')
+        
+        return loss
+
     
 class LLOCThresholds(LossLayerBase):
     def __init__(self, 
@@ -285,13 +795,8 @@ class LLOCThresholds(LossLayerBase):
 
     def loss(self, inputs):
         
-        def thresh(x, d, t, invert=False):
-            a = 10. / (t + 1e-2)
-            if invert:
-                return x * (0.5 * (1. + tf.tanh(a * (d-t))))
-            return x * (0.5 * (1. - tf.tanh(a * (d-t))))
         
-        asso_idx, beta, d, x , tidx, t_d, t_b = inputs
+        beta, asso_idx, d, x , tidx, t_d, t_b = inputs
         
         t_d, t_b =  t_d[0], t_b[0]
          
@@ -311,7 +816,7 @@ class LLOCThresholds(LossLayerBase):
         #print('t_d',t_d, 't_b',t_b)
         #return tf.reduce_mean((1-t_d)**2  + (0.9-t_b)**2)
     
-        if tf.shape(Msel)[0] == None:
+        if Msel is None or tf.shape(Msel)[0] == None:
             return 0.
         
         #OOM safe
@@ -356,8 +861,8 @@ class LLOCThresholds(LossLayerBase):
         # get truth
         
         
-        den_k = tf.reduce_sum(thresh(mask_k_m, dsq_k_m, t_d), axis=1) # K x 1
-        p_k = tf.reduce_sum(thresh(mask_k_m*same_k_m, dsq_k_m, t_d), axis=1) # K x 1
+        den_k = tf.reduce_sum(_thresh(mask_k_m, dsq_k_m, t_d), axis=1) # K x 1
+        p_k = tf.reduce_sum(_thresh(mask_k_m*same_k_m, dsq_k_m, t_d), axis=1) # K x 1
         
         p_k = tf.math.divide_no_nan(p_k, den_k) # K x 1
         
@@ -365,8 +870,8 @@ class LLOCThresholds(LossLayerBase):
         
         any_non_singular = tf.reduce_sum(non_singular) > 0.
         #now the same with beta
-        p_w = tf.reduce_sum(non_singular * thresh(p_k, b_k, t_b, True))
-        den_w = tf.reduce_sum(non_singular * thresh(tf.ones_like(p_k), b_k, t_b, True))
+        p_w = tf.reduce_sum(non_singular * _thresh(p_k, b_k, t_b, True))
+        den_w = tf.reduce_sum(non_singular * _thresh(tf.ones_like(p_k), b_k, t_b, True))
         p_w = tf.math.divide_no_nan(p_w, den_w + 1e-2) # ()
         
         p_w = tf.where(any_non_singular, p_w, 1.)
@@ -499,6 +1004,35 @@ class LLFillSpace(LossLayerBase):
             self.counter+=1
         return lossval
     
+
+class LLEnergySums(LossLayerBase):
+    
+    def _per_rs(self, energy, t_energy, t_isunique):
+        t_energy = t_energy[t_isunique>0]
+        sum_t = tf.reduce_sum(t_energy)
+        sum_r = tf.reduce_sum(energy)
+        return (sum_t-sum_r)**2/(tf.abs(sum_t)+1e-6)**2
+    
+    def loss(self, inputs):
+        energy, is_track, t_idx, t_energy, t_isunique, t_pid, rs = inputs
+        
+        tot = tf.constant(0.,dtype='float32')
+        if rs.shape[0] is None:
+            return tot
+        
+        t_energy = tf.where(t_pid[:,id_str_to_idx['muon']:id_str_to_idx['muon']+1]>0,
+                            0.,t_energy)#remove MIPS
+
+        energy = tf.where(t_idx<0,0.,energy) #mask noise
+        energy = tf.where(is_track>0,0.,energy) #mask tracks
+        
+        
+        for i in range(len(rs)-1):
+            tot += self._per_rs(energy[rs[i]:rs[i+1]], 
+                                t_energy[rs[i]:rs[i+1]], 
+                                t_isunique[rs[i]:rs[i+1]])
+        tot /= tf.cast(rs.shape[0],'float32')
+        return tot
     
 #naming scheme: LL<what the layer is supposed to do>
 class LLClusterCoordinates(LossLayerBase):
@@ -509,25 +1043,64 @@ class LLClusterCoordinates(LossLayerBase):
     - truth index
     - row splits
     '''
-    def __init__(self, downsample:int = -1, **kwargs):
+    def __init__(self, downsample:int = -1, 
+                 ignore_noise=False, 
+                 hinge_mode = False, 
+                 **kwargs):
         if 'dynamic' in kwargs:
             super(LLClusterCoordinates, self).__init__(**kwargs)
         else:
             super(LLClusterCoordinates, self).__init__(dynamic=True,**kwargs)
             
         self.downsample = downsample
+        self.ignore_noise = ignore_noise
+        self.hinge_mode = hinge_mode
         
         #self.built = True #not necessary for loss layers
 
     def get_config(self):
         base_config = super(LLClusterCoordinates, self).get_config()
-        return dict(list(base_config.items()) + list({'downsample':self.downsample}.items()))
+        return dict(list(base_config.items()) + list({'downsample':self.downsample, 
+                                                      'ignore_noise': self.ignore_noise,
+                                                      'hinge_mode': self.hinge_mode}.items()))
+    
+    def _attfunc(self, dsq):
+        if self.hinge_mode:
+            return dsq
+        return tf.math.log(tf.math.exp(1.)*dsq+1.)
+    
+    def _rep_func(self,dsq):
+        if self.hinge_mode:
+            return tf.nn.relu( 1. - tf.sqrt(dsq + 1e-6) )
+        
+        return tf.exp(-tf.sqrt(dsq+1e-4)/(5.))
              
-    @staticmethod
-    def _rs_loop(coords, tidx, specweight, energy):
+    #all this needs some cleaning up
+    def _rs_loop(self,coords, tidx, specweight, energy):
+        
+        if tidx.shape[0] == 0:
+            print(self.name, 'batch empty')
+            return 3 * [self.create_safe_zero_loss(coords)]
+        
         Msel, M_not, N_per_obj = CreateMidx(tidx, calc_m_not=True) #N_per_obj: K x 1
-        if N_per_obj is None:
-            return 0.,0.,0. #no objects, discard
+        
+        if Msel is None or N_per_obj is None:
+            print(self.name, 'no objects in batch')
+            return 3 * [self.create_safe_zero_loss(coords)]
+        
+        
+        #almost empty
+        if Msel.shape[0] == 0 or (Msel.shape[0] == 1 and Msel.shape[1] == 1):
+            print(self.name, 'just one point left')
+            return 3 * [self.create_safe_zero_loss(coords)]
+        
+        if self.ignore_noise:
+            e_tidx = tf.cast(tf.expand_dims(tidx,axis=0), 'float32')
+            e_tidx *= M_not
+            M_not = tf.where(e_tidx <0 , 0., M_not)
+            
+        
+        
         N_per_obj = tf.cast(N_per_obj, dtype='float32')
         N_tot = tf.cast(tidx.shape[0], dtype='float32') 
         K = tf.cast(Msel.shape[0], dtype='float32') 
@@ -535,35 +1108,40 @@ class LLClusterCoordinates(LossLayerBase):
         padmask_m = SelectWithDefault(Msel, tf.ones_like(coords[:,0:1]), 0.)# K x V' x 1
         coords_m = SelectWithDefault(Msel, coords, 0.)# K x V' x C
         
-        q = (1.-specweight)*(1.+tf.math.log(energy+1.))+1e-2
+        q = (1.-specweight) #*(1.+tf.math.log(tf.abs(energy)+1.))+1e-2
         q_m = SelectWithDefault(Msel, q, 0.)# K x V' x C
         q_k = tf.reduce_sum(q_m,axis=1)#K x 1
         
         #create average
-        av_coords_m = tf.reduce_sum(coords_m * padmask_m,axis=1) # K x C
-        av_coords_m = tf.math.divide_no_nan(av_coords_m, N_per_obj) #K x C
+        av_coords_m = tf.reduce_sum(coords_m * padmask_m * q_m,axis=1) # K x C
+        av_coords_m = tf.math.divide_no_nan(av_coords_m, 
+                                            tf.reduce_sum(padmask_m * q_m,axis=1) + 1e-3) #K x C
         av_coords_m = tf.expand_dims(av_coords_m,axis=1) ##K x 1 x C
         
         distloss = tf.reduce_sum((av_coords_m-coords_m)**2,axis=2)
-        distloss = q_m[:,:,0] * tf.math.log(tf.math.exp(1.)*distloss+1.) * padmask_m[:,:,0]
+        distloss = q_m[:,:,0] * self._attfunc(distloss) * padmask_m[:,:,0]
         distloss = tf.math.divide_no_nan(q_k[:,0] * tf.reduce_sum(distloss,axis=1),
-                                         N_per_obj[:,0])#K
-        distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss),tf.reduce_sum(q_k))
+                                         N_per_obj[:,0]+1e-3)#K
+        distloss = tf.math.divide_no_nan(tf.reduce_sum(distloss),tf.reduce_sum(q_k)+1e-3)
+        
+        #check if Mnot is empty
+        if M_not.shape[0] == 0 or tf.reduce_sum(M_not) == 0.:
+            print(self.name, 'no repulsive loss')
+            return distloss, distloss, self.create_safe_zero_loss(coords)
         
         repdist = tf.expand_dims(coords, axis=0) - av_coords_m #K x V x C
         repdist = tf.expand_dims(q,axis=0) * tf.reduce_sum(repdist**2,axis=-1,keepdims=True) #K x V x 1
-        reploss = M_not * tf.exp(-repdist)#K x V x 1
         
         #add a long range part to it
-        reploss += 0.05 * M_not * tf.exp(-repdist/(20.**2))
+        reploss = M_not * self._rep_func(repdist) #K x V x 1
         #downweight noise
-        reploss = q_k * tf.reduce_sum(reploss,axis=1)/( N_tot-N_per_obj )#K x 1
+        reploss = q_k * tf.reduce_sum(reploss,axis=1)/( N_tot-N_per_obj +1e-3)#K x 1
         reploss = tf.reduce_sum(reploss)/(tf.reduce_sum(q_k)+1e-3)
         
         return distloss+reploss, distloss, reploss
     
-    @staticmethod
-    def raw_loss(acoords, atidx, aspecw, aenergy, rs, downsample):
+    
+    def raw_loss(self,acoords, atidx, aspecw, aenergy, rs, downsample):
         
         lossval = tf.zeros_like(acoords[0,0])
         reploss = tf.zeros_like(acoords[0,0])
@@ -585,28 +1163,46 @@ class LLClusterCoordinates(LossLayerBase):
                 coords = tf.gather_nd(coords, sel)
                 tidx = tf.gather_nd(tidx, sel)
             
-            if tidx.shape[0]<20:
-                continue #does not make sense
-            tlv, tdl, trl = LLClusterCoordinates._rs_loop(coords,tidx,specw,energy)
+            tlv, tdl, trl = self._rs_loop(coords,tidx,specw,energy)
+            tlv = tf.where(tf.math.is_finite(tlv), tlv, 0.)
+            tdl = tf.where(tf.math.is_finite(tdl), tdl, 0.)
+            trl = tf.where(tf.math.is_finite(trl), trl, 0.)
             lossval += tlv
             distloss += tdl
             reploss += trl
-        nbatches = tf.cast(nbatches,dtype='float32')
+        nbatches = tf.cast(nbatches,dtype='float32') + 1e-3
         return lossval/nbatches, distloss/nbatches, reploss/nbatches
 
     
         
     def loss(self, inputs):
-        assert len(inputs) == 5 
-        coords, tidx, specw, energy, rs = inputs
-        lossval,distloss, reploss = LLClusterCoordinates.raw_loss(
+        if len(inputs) == 5:
+            coords, tidx, specw, energy, rs = inputs
+        elif len(inputs) == 4:
+            coords, tidx, energy, rs = inputs
+            specw = tf.zeros_like(energy)
+        else:
+            raise ValueError("LLClusterCoordinates: expects 4 or 5 inputs")
+        
+        #maybe move this sort of protection to all loss layers: done!
+        #moved, so not necessary here anymore
+        #if rs.shape[0] is None or coords.shape[0] is None or coords.shape[0] == 0:
+        #    zero_loss = 0.*tf.reduce_mean(coords)
+        #    zero_loss = tf.where(tf.math.is_finite(zero_loss),zero_loss,0.)
+        #    print(self.name,'returning zero loss',zero_loss)
+        #    return zero_loss
+            
+        lossval,distloss, reploss = self.raw_loss(
             coords, tidx, specw, energy, rs, self.downsample)
+        
+        lossval = tf.where(tf.math.is_finite(lossval), lossval, 0.)#DEBUG
         
         self.add_prompt_metric(self.scale * distloss, self.name+'_att_loss')
         self.add_prompt_metric(self.scale * reploss, self.name+'_rep_loss')
         
         return lossval
     
+
 
 
 class LLLocalClusterCoordinates(LossLayerBase):
@@ -637,7 +1233,7 @@ class LLLocalClusterCoordinates(LossLayerBase):
         self.time = time.time()
 
     @staticmethod
-    def raw_loss(dist, nidxs, tidxs, specweight, print_loss, name):
+    def raw_loss(dist, nidxs, tidxs, specweight, print_loss, name, scaler = None):
         
         sel_tidxs = SelectWithDefault(nidxs, tidxs, -1)[:,:,0]
         sel_spec = SelectWithDefault(nidxs, specweight, 1.)[:,:,0]
@@ -667,6 +1263,10 @@ class LLLocalClusterCoordinates(LossLayerBase):
         reploss = tf.math.divide_no_nan(reploss, nrepneigh)
         #noise does not actively contribute
         lossval = attloss+reploss
+        
+        if scaler is not None:
+            lossval *= scaler
+        
         lossval = tf.math.divide_no_nan(tf.reduce_sum(probe_is_notnoise * lossval),tf.reduce_sum(probe_is_notnoise))
         
         if print_loss:
@@ -697,10 +1297,14 @@ class LLLocalClusterCoordinates(LossLayerBase):
         pass #overwritten here
          
     def loss(self, inputs):
-        dist, nidxs, tidxs, specweight = inputs
+        scaler = None
+        if len(inputs) == 4:
+            dist, nidxs, tidxs, specweight = inputs
+        if len(inputs) == 5:
+            dist, nidxs, tidxs, specweight, scaler = inputs
         return LLLocalClusterCoordinates.raw_loss(dist, nidxs, tidxs, specweight,
                                                   self.print_loss, 
-                                                  self.name)
+                                                  self.name,scaler = scaler)
 
 
 
@@ -730,10 +1334,12 @@ class LLNotNoiseClassifier(LossLayerBase):
                                                       'record_efficiency': self.record_efficiency}.items()))
         
     @staticmethod
-    def raw_loss(score, tidx, specweight):
+    def raw_loss(score, tidx, specweight, name=""):
         truth = tf.cast(tidx >= 0,dtype='float32')
         classloss = (1.-specweight[:,0]) * tf.keras.losses.binary_crossentropy(truth, score)
-        return tf.reduce_mean(classloss)
+        lossval =  tf.reduce_mean(classloss)
+        lossval = tf.debugging.check_numerics(lossval, name+" produced inf or nan.")
+        return lossval
         
     def loss(self, inputs):
         assert len(inputs) > 1 and len(inputs) < 4
@@ -743,7 +1349,7 @@ class LLNotNoiseClassifier(LossLayerBase):
             specweight = tf.zeros_like(score)
         else:
             score, tidx, specweight = inputs
-        lossval = LLNotNoiseClassifier.raw_loss(score, tidx, specweight)
+        lossval = LLNotNoiseClassifier.raw_loss(score, tidx, specweight, self.name)
         
         isnotnoise = tf.cast(tidx>=0,dtype='float32')
         accuracy = tf.reduce_sum(isnotnoise * tf.cast(score>0.5,dtype='float32'))/tf.reduce_sum(isnotnoise)
@@ -778,7 +1384,8 @@ class LLNeighbourhoodClassifier(LossLayerBase):
         
         '''
         super(LLNeighbourhoodClassifier, self).__init__(**kwargs)
-        
+    
+    
     @staticmethod
     def raw_loss(score, nidx, tidxs, specweights):
         # score: V x 1
@@ -829,7 +1436,11 @@ class LLNeighbourhoodClassifier(LossLayerBase):
                 
 class LLEdgeClassifier(LossLayerBase):
     
-    def __init__(self, downweight_spectators=False, **kwargs):
+    def __init__(self, downweight_spectators=False, 
+                 fp_weight = 0.5, 
+                 hifp_penalty= 0.,
+                 lin_e_weight = False,
+                 **kwargs):
         '''
         Noise hits (truth index < 0) are never classified as belonging together
         
@@ -843,11 +1454,29 @@ class LLEdgeClassifier(LossLayerBase):
         Returns:
         - score (unchanged)
         '''
+        
+        assert 0. < fp_weight < 1.
+        assert hifp_penalty >= 0.
+        
+        
         super(LLEdgeClassifier, self).__init__(**kwargs)
         self.downweight_spectators = downweight_spectators
-        
+        self.fp_weight = fp_weight
+        self.hifp_penalty = hifp_penalty
+        self.lin_e_weight = lin_e_weight
+     
+    
+    def get_config(self):
+        base_config = super(LLEdgeClassifier, self).get_config()
+        return dict(list(base_config.items()) + list({'downweight_spectators':self.downweight_spectators,
+                                                      'fp_weight': self.fp_weight,
+                                                      'hifp_penalty': self.hifp_penalty,
+                                                      'lin_e_weight': self.lin_e_weight}.items()))
+            
     @staticmethod
-    def raw_loss(score, nidx, tidx, specweight, energy, downweight_spectators=False):
+    def raw_loss(score, nidx, tidx, specweight, energy, t_energy, 
+                 downweight_spectators=False, fp_weight = .5, hifp_penalty=0.,
+                 lin_e_weight=False):
         # nidx = V x K,
         # tidx = V x 1
         # specweight: V x 1
@@ -862,10 +1491,13 @@ class LLEdgeClassifier(LossLayerBase):
         specweight = tf.clip_by_value(specweight,0.,1.)
         energy = tf.clip_by_value(energy,0.,100000.)
         n_specw = SelectWithDefault(nidx, specweight, 1.)[:,1:,0]# V x K-1
-        n_energy = SelectWithDefault(nidx, energy, 0.)[:,1:,0]# V x K-1
+        n_energy = energy + SelectWithDefault(nidx, energy, 0.)[:,1:,0]# V x K-1, energy sum of edge
         
         n_weight = (1.+tf.math.log(n_energy+1.))+1e-2
         weight = (1.+tf.math.log(energy+1.))+1e-2
+        
+        if lin_e_weight:
+            weight = _calc_energy_weights(t_energy)
         
         if downweight_spectators:
             n_weight = (1.-n_specw)*n_weight+1e-2
@@ -874,24 +1506,47 @@ class LLEdgeClassifier(LossLayerBase):
         #now this will be false for all noise
         n_sameasprobe = tf.cast(tf.expand_dims(tidx, axis=2) == n_tidxs[:,1:,:], dtype='float32') # V x K-1 x 1
         
+        n_mask_same = n_sameasprobe[...,0] * n_active
+        n_mask_diff = (1. - n_sameasprobe[...,0] ) * n_active# V x K-1
+        #get class weights from here n_sameasprobe is already a mask
+        all_sum = tf.reduce_sum(n_active)
+        w_all_same =  1. - tf.reduce_sum(n_sameasprobe[...,0] * n_active) / all_sum
+        w_all_diff =  1. - w_all_same
+        
+        n_cl_weight =  2.*(1. - fp_weight) * n_sameasprobe[...,0] * n_active * w_all_same
+        n_cl_weight += 2.*fp_weight * (1. - n_sameasprobe[...,0])  * n_active * w_all_diff
+        
+        #weight high scores more strongly
+        score_w = 1. + hifp_penalty * tf.stop_gradient(score)[...,0]**2 
+        score_w /= 1. + hifp_penalty
+        
         lossval =  tf.keras.losses.binary_crossentropy(n_sameasprobe, score)# V x K-1
+        lossval *= score_w
         lossval *= n_active
-        lossval *= n_weight#reduce spectators, but don't remove them
+        lossval *= n_weight #reduce spectators, but don't remove them
+        lossval *= 2. * n_cl_weight #class balance
         
         lossval = tf.math.divide_no_nan( tf.reduce_sum(lossval,axis=1), tf.reduce_sum(n_active,axis=1) ) # V 
         lossval *= weight[:,0]#V
         return tf.math.divide_no_nan(tf.reduce_sum(lossval), tf.reduce_sum(weight))
         
     def loss(self, inputs):
-        assert len(inputs) > 2 and len(inputs) < 6
-        score, nidx, tidx = inputs[0],inputs[1],inputs[2]
-        specweight = tf.zeros_like(score[:,0])
-        energy = tf.zeros_like(score[:,0])
-        if len(inputs) > 3:
-            specweight = inputs[3]
-        if len(inputs) > 4:
-            energy = inputs[4]
-        lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight, energy, self.downweight_spectators)
+        assert len(inputs) == 6 or len(inputs) == 5
+        if len(inputs) == 6:
+            score, nidx, tidx,specweight,t_energy,energy = inputs
+        else:
+            score, nidx, tidx,specweight,energy = inputs
+            t_energy = tf.ones_like(energy)
+
+        if len(score.shape) < 3:
+            score = tf.expand_dims(score, axis=2)# to fit the binary xentr
+         
+        if nidx.shape[1]  == score.shape[1]: #score should have one less, assume nidx does not contain 'self'
+            nidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx], axis=1)
+            
+        lossval = LLEdgeClassifier.raw_loss(score, nidx, tidx, specweight, energy, t_energy,
+                                            self.downweight_spectators, 
+                                            self.fp_weight, self.hifp_penalty, self.lin_e_weight)
         self.maybe_print_loss(lossval)
         return lossval
 
@@ -1376,18 +2031,9 @@ class LLFullObjectCondensation(LossLayerBase):
             raise NotImplemented('Not implemented yet')
         
         
-    def calc_energy_weights(self, t_energy, t_pid):
-        if self.alt_energy_weight:
-            p0=1.49224
-            p1=0.000581188
-            p2=2.31003
-            w = 1./tf.exp( - (p0* tf.math.log(p1*t_energy+1e-6) + p2))/0.161885;#average weight is one
-            w = tf.where(tf.abs(t_pid)==13, w+0.05, w)#otherwise muons (with assigned dep weight) are too low
-            return w
-        lower_cut = 0.5
-        w = tf.where(t_energy > 10., 1., ((t_energy-lower_cut) / 10.)*10./(10.-lower_cut))
-        return tf.nn.relu(w)
-        #flatten energy weights
+    def calc_energy_weights(self, t_energy, t_pid=None, upmouns = True):
+        return _calc_energy_weights(t_energy, t_pid, upmouns, self.alt_energy_weight)
+        
         
     
     def softclip(self, toclip, startclipat,softness=0.1):
@@ -1398,9 +2044,13 @@ class LLFullObjectCondensation(LossLayerBase):
         toclip *= startclipat
         return toclip
         
-    def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, pred_energy,pred_energy_low_quantile,pred_energy_high_quantile): 
+    def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, 
+                                           pred_energy,pred_energy_low_quantile,pred_energy_high_quantile,
+                                           return_concat=False): 
         
-        ediff = (t_energy - pred_energy*t_dep_energies)/tf.sqrt(t_energy+1e-3)
+        ediff = (t_energy - pred_energy*t_dep_energies)/tf.sqrt(tf.abs(t_energy)+1e-3)
+        
+        ediff = tf.debugging.check_numerics(ediff, "eloss ediff")
         
         eloss = None
         if self.huber_energy_scale>0:
@@ -1408,7 +2058,7 @@ class LLFullObjectCondensation(LossLayerBase):
         else:
             eloss = tf.math.log(ediff**2 + 1. + 1e-5)
             
-        eloss = self.softclip(eloss, 0.4) 
+        #eloss = self.softclip(eloss, 0.4) 
         t_energy = tf.clip_by_value(t_energy,0.,1e12)
         t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
 
@@ -1418,6 +2068,8 @@ class LLFullObjectCondensation(LossLayerBase):
         pred_energy = tf.stop_gradient(pred_energy)
         
         corrtruth = tf.math.divide_no_nan(t_energy, t_dep_energies+1e-3)
+        
+        print('corrtruth',tf.reduce_mean(corrtruth))
         corrtruth = tf.where(corrtruth>5.,5.,corrtruth)#remove outliers
         corrtruth = tf.where(corrtruth<.2,.2,corrtruth)
         resolution =(1-pred_energy/corrtruth) 
@@ -1427,8 +2079,11 @@ class LLFullObjectCondensation(LossLayerBase):
         high_energy_tau = 0.84
         euncloss = quantile(l_low,low_energy_tau) + quantile(l_high,high_energy_tau)
 
-        eloss = tf.debugging.check_numerics(eloss, "tloss loss")
-        euncloss = tf.debugging.check_numerics(euncloss, "tloss loss")
+        euncloss = tf.debugging.check_numerics(euncloss, "euncloss loss")
+        eloss = tf.debugging.check_numerics(eloss, "eloss loss")
+        
+        if return_concat:
+            return tf.concat([eloss, euncloss], axis=-1) # for ragged map flat values
         
         return eloss, euncloss
     
@@ -1454,7 +2109,7 @@ class LLFullObjectCondensation(LossLayerBase):
             eloss = tf.math.divide_no_nan((t_energy-pred_energy)**2,(t_energy + 1e-3))
         
         eloss = self.softclip(eloss, 0.2) 
-        eloss = tf.debugging.check_numerics(eloss, "tloss loss")
+        eloss = tf.debugging.check_numerics(eloss, "eloss loss")
         return eloss
 
     def calc_qmin_weight(self, hitenergy):
@@ -1463,27 +2118,29 @@ class LLFullObjectCondensation(LossLayerBase):
         
     
     def calc_position_loss(self, t_pos, pred_pos):
-        if not self.position_loss_weight:
-            t_pos = 0.
-        if tf.shape(t_pos)[-1] == 3:#also has z component, but don't use it here
+        if tf.shape(pred_pos)[-1] == 2:#also has z component, but don't use it here
             t_pos = t_pos[:,0:2]
+        if not self.position_loss_weight:
+            return 0.*tf.reduce_sum((pred_pos-t_pos)**2,axis=-1, keepdims=True)
         #reduce risk of NaNs
         ploss = huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True)/(10**2) + 1e-2), 10.) #is in cm
-        ploss = tf.debugging.check_numerics(ploss, "tloss loss")
-        return self.softclip(ploss, 3.) 
+        ploss = tf.debugging.check_numerics(ploss, "ploss loss")
+        return ploss #self.softclip(ploss, 3.) 
     
-    def calc_timing_loss(self, t_time, pred_time, pred_time_unc):
-        if  self.timing_loss_weight<1e-6:
+    def calc_timing_loss(self, t_time, pred_time, pred_time_unc, t_dep_energy=None):
+        if  self.timing_loss_weight==0.:
             return pred_time**2 + pred_time_unc**2
         
         pred_time_unc = tf.nn.relu(pred_time_unc)#safety
         
-        tloss = tf.math.divide_no_nan((t_time - pred_time)**2 , (pred_time_unc**2+1e-2)) + pred_time_unc**2
+        tloss = tf.math.divide_no_nan((t_time - pred_time)**2 , (pred_time_unc**2 + 1e-1)) + pred_time_unc**2
         tloss = tf.debugging.check_numerics(tloss, "tloss loss")
-        
+        if t_dep_energy is not None:
+            tloss = tf.where( t_dep_energy < 1., 0.,  tloss)
+            
         return tloss
     
-    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique, hasunique):
+    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique=None, hasunique=None):
         
         if self.classification_loss_weight <= 0:
             return tf.reduce_mean(pred_id,axis=1, keepdims=True)
@@ -1565,7 +2222,7 @@ class LLFullObjectCondensation(LossLayerBase):
         energy_quantiles_loss *= self.energy_loss_weight/2. 
 
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
-        timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time, pred_time_unc)
+        timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time, pred_time_unc,t_rec_energy)
         classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id, t_is_unique, hasunique)
         
         ##just for time metrics
@@ -1740,4 +2397,310 @@ class LLFullObjectCondensation(LossLayerBase):
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+class LLGraphCondOCLoss(LLFullObjectCondensation):
+    
+    def __init__(self, *args, **kwargs):
+        '''
+        Same as FullOCLoss but using GraphCond_OC_per_sample object condensation 
+        (mean beta per object instead of max beta per object)
+        '''
+        super(LLGraphCondOCLoss, self).__init__(*args, **kwargs)
+        
+        from object_condensation import GraphCond_OC_per_sample
+        
+        self.oc_loss_object = OC_loss(
+            loss_impl=GraphCond_OC_per_sample,
+            
+            q_min = self.oc_loss_object.loss_impl.q_min,
+                 s_b=self.oc_loss_object.loss_impl.s_b,
+                 use_mean_x=self.oc_loss_object.loss_impl.use_mean_x,
+                 spect_supp=1.
+            )
+    
+
+
+from ragged_tools import rwhere, add_ragged_offset_to_flat
+class PFTruthCondensateBuilder(object):
+    
+    def _hit_en_mean(self, x, pfc_h_energy, pfc_hitensum, pf_h_idx=None, pf_idx=None, pfc_is_track=None): #x is [e, p, h, f]
+        x_orig = x
+        if pf_h_idx is not None:
+            x = tf.gather_nd(x, pf_h_idx)
+        x = x * pfc_h_energy
+        x = tf.reduce_sum(x, axis=2)
+        x = tf.math.divide_no_nan(x, pfc_hitensum + 1e-3)
+        if pfc_is_track is not None:
+            assert pf_idx is not None
+            x = tf.where(pfc_is_track > 0., tf.gather_nd(x_orig, pf_idx), x)
+        return x
+    
+    
+    def _truth_purity(self,
+                     pf_h_idx,
+                     pf_idx,
+                     t_idx,
+                     pfc_h_energy, 
+                     pfc_hitensum
+                     ):
+        '''
+        inputs: pf_h_idx, pf_idx (ragged), rest per hit
+        
+        output: ragged (in pfc) purity measure, corrected truth energy #[e, pf,  1]
+        '''
+        pf_h_t_idx = tf.gather_nd(t_idx, pf_h_idx)
+        pf_h_t_idx = rwhere(pf_h_t_idx < 0, -2, pf_h_t_idx)#mask noise -2
+        
+        pfc_t_idx = tf.gather_nd(t_idx, pf_idx)
+        pfc_h_same = tf.expand_dims(pfc_t_idx, axis=2) == pf_h_t_idx
+        pfc_h_same = tf.cast(pfc_h_same, 'float32') #[e, pf, h, 1]
+        
+        purity = self._hit_en_mean(pfc_h_same, pfc_h_energy, pfc_hitensum)
+        
+        return purity
+    
+        
+    
+    def build_pf_truth(self, 
+                       pf_h_idx, pf_idx,
+                       pfc_istrack, #ragged already
+                       
+                       #these are all per hit
+                       hit_energy,
+                       is_track,
+                       
+                       t_idx,
+                       t_energy,
+                       t_pos,
+                       t_time,
+                       t_pid,
+                       t_fully_contained,
+                       t_rec_energy
+                       ):
+        
+        '''
+        The output will be flattened in 
+        [npf, x]  with row splits!
+        '''
+        
+        #globally useful inputs
+        pfc_h_energy = tf.gather_nd(hit_energy, pf_h_idx) #[e, p, h, 1]
+        pfc_h_istrack = tf.gather_nd(is_track, pf_h_idx)
+        pfc_h_energy *= (1. - pfc_h_istrack) #tf.where(pfc_h_istrack  > 0., 0., pfc_h_energy)#mask track energies
+        pfc_hitensum = tf.reduce_sum(pfc_h_energy, axis=2)
+        
+        encorr = tf.math.divide_no_nan(t_energy, t_rec_energy)
+
+        out = {}
+        #basically all get passed through
+        pfc_t_idx = tf.gather_nd(t_idx, pf_idx)
+        out['pfc_t_idx'] = pfc_t_idx.values
+        out['rs'] = pfc_t_idx.row_splits
+        
+        #use hit energy weighted mean correction for neutrals otherwise exact track correction for charged
+        out['pfc_t_encorr'] = self._hit_en_mean(
+            encorr, pfc_h_energy, pfc_hitensum, pf_h_idx, pf_idx, pfc_istrack).values
+        
+        out['pfc_t_energy'] = self._hit_en_mean(
+            t_energy, pfc_h_energy, pfc_hitensum, pf_h_idx, pf_idx, pfc_istrack).values
+        
+        out['pfc_t_rec_energy'] = self._hit_en_mean(
+            t_rec_energy, pfc_h_energy, pfc_hitensum, pf_h_idx, pf_idx, pfc_istrack).values
+        
+        out['pfc_t_pos'] = self._hit_en_mean(
+            t_pos, pfc_h_energy, pfc_hitensum, pf_h_idx, pf_idx, pfc_istrack).values
+        
+        out['pfc_t_time'] = tf.gather_nd(t_time, pf_idx).values#direct
+        
+        out['pfc_t_id'] =  tf.gather_nd(t_pid, pf_idx).values#direct
+        
+        out['pfc_t_fully_contained'] = tf.gather_nd(t_fully_contained, pf_idx).values#direct
+        
+        out['pfc_t_purity'] = self._truth_purity(pf_h_idx, pf_idx, t_idx,
+                     pfc_h_energy, pfc_hitensum).values
+        
+        return out
+
+class LLPFCondensates(LLFullObjectCondensation):
+    
+    
+    def __init__(self, purity_threshold = 0.9, **kwargs):
+        super(LLPFCondensates, self).__init__(**kwargs)
+        self.truthbuilder = PFTruthCondensateBuilder()
+    
+        self.purity_threshold = purity_threshold
+    
+    def energy_conservation_loss(self, pfc_ccoords, t_idx, t_energy, rs):
+        ## select unique truth indices
+        # create both truth and pred collection
+        # assign truth_e = 0 to pred and pred_e = 0 to truth
+        # concat both and run kNN. 
+        # evaluate for both truth and pred e
+        # weight by gaussian and force same
+        # take into account how good the prediction on single particle
+        # level already is. Force only badly predicted ones to change a lot
+        # keep good ones
+        pass
+    
+    
+    def loss(self, inputs):
+        '''
+        inputs:
+        
+        
+        #this is all ragged  [e, pfc-ragged, X]
+        
+        - pfc_mom_corr
+        - pfc_ensum
+        - pfc_energy_low_quantile
+        - pfc_energy_high_quantile
+        - pfc_pos
+        - pfc_time
+        - pfc_time_unc
+        - pfc_id
+        - pfc_ccoords
+        - pfc_istrack
+        - pfc_isnoise
+        
+        - rechit_energy #for weighting
+        
+        - pf_h_idx
+        - pf_idx
+        # - pf_rs #that's part of the ragged tensors, no need
+        
+        #this is not ragged, yet (that's why the indices above
+        
+        - is_track
+        
+        - t_idx
+        - t_energy
+        - t_pos
+        - t_time
+        - t_pid
+        - t_fully_contained
+        - t_rec_energy
+        
+        #- rs not really needed
+        
+        
+        this should be factorise. Maybe we can build a PF truth first?
+        
+        '''
+        
+        pfc_mom_corr, pfc_ensum, pfc_energy_low_quantile, pfc_energy_high_quantile,\
+        pfc_pos, pfc_time, pfc_time_unc, pfc_id,\
+        pfc_ccoords, pfc_istrack, pfc_isnoise,\
+        \
+        rechit_energy, \
+        pf_h_idx, pf_idx, is_track, t_idx, t_energy, t_pos, t_time,\
+        t_pid, t_fully_contained, t_rec_energy = inputs
+        
+        
+        
+        #the last paragraph is only used by PF truth builder
+        st = time.time()
+        
+        pftruth = self.truthbuilder.build_pf_truth(pf_h_idx, pf_idx, pfc_istrack, 
+                                                   rechit_energy, is_track, t_idx, t_energy, t_pos, 
+                                                   t_time, t_pid, t_fully_contained, t_rec_energy)
+        print('pftruth', time.time()-st)
+        #flatten all pfc
+        pfc_mom_corr = pfc_mom_corr.values
+        pfc_ensum = pfc_ensum.values
+        pfc_energy_low_quantile = pfc_energy_low_quantile.values
+        pfc_energy_high_quantile = pfc_energy_high_quantile.values
+        pfc_pos = pfc_pos.values
+        pfc_time = pfc_time.values
+        pfc_time_unc = pfc_time_unc.values
+        pfc_id = pfc_id.values
+        
+        #for metrics?
+        pfc_istrack = pfc_istrack.values
+        pfc_isnoise = pfc_isnoise.values
+        
+        pfc_t_rec_energy = tf.gather_nd(t_rec_energy, pf_idx).values
+        
+        #safety
+        pfc_ccoords = None
+        
+        #now it's all the same dimensionality
+        notnoise = 1. - pfc_isnoise
+        ispure = tf.where(pftruth['pfc_t_purity'] < self.purity_threshold, 0., tf.ones_like(pftruth['pfc_t_purity']))
+        
+        eweight = self.calc_energy_weights(pftruth['pfc_t_energy'], pftruth['pfc_t_id'], False)
+        
+        #only to pure
+        closs = ispure * notnoise * self.classification_loss_weight * self.calc_classification_loss(
+            pftruth['pfc_t_id'], pfc_id)
+        
+        #don't require timing for MIPS (yet)
+        #time loss only for pure
+        tloss = ispure * notnoise * self.timing_loss_weight * \
+            self.calc_timing_loss(pftruth['pfc_t_time'], pfc_time, pfc_time_unc, pfc_t_rec_energy)
+        
+        ploss = notnoise * self.position_loss_weight * \
+            self.calc_position_loss(pftruth['pfc_t_pos'], pfc_pos)
+        
+        e_andunc_loss = notnoise * self.energy_loss_weight * \
+            self.calc_energy_correction_factor_loss(
+            pftruth['pfc_t_energy'], pftruth['pfc_t_rec_energy'], 
+            pfc_mom_corr, pfc_energy_low_quantile, pfc_energy_high_quantile, return_concat=True)
+        
+        eloss, euncloss = e_andunc_loss[...,0:1], e_andunc_loss[...,1:2]
+        euncloss /= 2. #same as above
+        
+        self.add_prompt_metric(tf.reduce_mean(eweight * closs), self.name + '_class_loss')
+        self.add_prompt_metric(tf.reduce_mean(eweight * tloss), self.name + '_time_loss')
+        self.add_prompt_metric(tf.reduce_mean(eweight * ploss), self.name + '_pos_loss')
+        self.add_prompt_metric(tf.reduce_mean(eweight * eloss), self.name + '_momentum_loss')
+        self.add_prompt_metric(tf.reduce_mean(eweight * euncloss), self.name + '_momentum_unc_loss')
+        
+        #this is as if there weren't any modifications
+        pfc_t_energy = tf.gather_nd(t_energy, pf_idx).values
+        
+        ## a bunch of metrics that could be nice
+        resranges = [2., 10., 20, 50, 100., 200.]
+        for i in range(len(resranges)-1):
+            sel = tf.logical_and( pftruth['pfc_t_energy'] >= resranges[i], pftruth['pfc_t_energy']< resranges[i+1])
+            sel = sel[...,0]
+            namestr = str(resranges[i]) + '_to_' + str(resranges[i+1])
+            
+            s_pfc_mom_corr = tf.ragged.boolean_mask(pfc_mom_corr, sel)
+            s_pfc_t_encorr = tf.ragged.boolean_mask(pftruth['pfc_t_encorr'], sel)
+            
+            offset = tf.reduce_mean( s_pfc_mom_corr - s_pfc_t_encorr )
+            var = tf.math.reduce_std(s_pfc_mom_corr - s_pfc_t_encorr - offset)
+            
+            self.add_prompt_metric(offset, self.name + '_binned_en_offset_'+namestr)
+            self.add_prompt_metric(var, self.name + '_binned_en_std_'+namestr)
+            
+            s_pfc_energy = s_pfc_mom_corr * tf.ragged.boolean_mask(pfc_ensum, sel)
+            s_pfc_t_energy = tf.ragged.boolean_mask(pfc_t_energy, sel)
+            
+            offset = tf.reduce_mean( (s_pfc_energy - s_pfc_t_energy)/s_pfc_t_energy )
+            var = tf.math.reduce_std((s_pfc_energy - s_pfc_t_energy)/s_pfc_t_energy - offset)
+            
+            self.add_prompt_metric(offset, self.name + '_binned_t_en_offset_'+namestr)
+            self.add_prompt_metric(var, self.name + '_binned_t_en_std_'+namestr)
+            
+        
+        allloss = eweight * (closs + tloss + ploss + eloss + euncloss)
+        
+        return tf.reduce_mean(allloss)
+        
+        
+        
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -83,6 +83,7 @@ static void select_knn_kernel(
 
         const float * d_coord,
         const int * d_bin_idx,
+        const int * d_direction,
         const int * d_dim_bin_idx,
 
         const int * d_bin_boundaries,
@@ -98,7 +99,8 @@ static void select_knn_kernel(
         const int n_coords,
         const int n_bin_dim,
 
-        const int n_bboundaries) {
+        const int n_bboundaries,
+        bool use_direction) {
 
     //bin boundaries [i] [i+1] describe the scan ranges
 
@@ -109,6 +111,11 @@ static void select_knn_kernel(
     int i_v =  blockIdx.x * blockDim.x + threadIdx.x;
     if(i_v>=n_vert)
         return;//safe guard
+
+    // 0: can only be neighbour, 1: can only have neighbour, 2: neither
+    if(use_direction &&
+            (d_direction[i_v] == 0 || d_direction[i_v] == 2))
+        return;
 
     //continue;//do nothing
 
@@ -162,6 +169,11 @@ static void select_knn_kernel(
                 if(i_v == j_v)
                     continue;
 
+                // 0: can only be neighbour, 1: can only have neighbour, 2: neither
+                if(use_direction &&
+                        (d_direction[j_v] == 1 || d_direction[j_v] == 2))
+                    continue;
+
                 //fill up
                 float distsq = calculateDistance(i_v,j_v,d_coord,n_coords);
                 if(nfilled< n_neigh){
@@ -197,32 +209,34 @@ static void select_knn_kernel(
 
 //specify  dimensions
 template __global__ void select_knn_kernel<2>(
-        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const float * d_coord,const int * d_bin_idx,const int * d_direction,const int * d_dim_bin_idx,const int * d_bin_boundaries,
         const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
         const int n_neigh,const int n_coords, const int n_bin_dim,
-        const int n_bboundaries);
+        const int n_bboundaries,bool use_direction);
 template __global__ void select_knn_kernel<3>(
-        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const float * d_coord,const int * d_bin_idx,const int * d_direction,const int * d_dim_bin_idx,const int * d_bin_boundaries,
         const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
         const int n_neigh,const int n_coords, const int n_bin_dim,
-        const int n_bboundaries);
+        const int n_bboundaries,bool use_direction);
 template __global__ void select_knn_kernel<4>(
-        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const float * d_coord,const int * d_bin_idx,const int * d_direction,const int * d_dim_bin_idx,const int * d_bin_boundaries,
         const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
         const int n_neigh,const int n_coords, const int n_bin_dim,
-        const int n_bboundaries);
+        const int n_bboundaries,bool use_direction);
 template __global__ void select_knn_kernel<5>(
-        const float * d_coord,const int * d_bin_idx,const int * d_dim_bin_idx,const int * d_bin_boundaries,
+        const float * d_coord,const int * d_bin_idx,const int * d_direction,const int * d_dim_bin_idx,const int * d_bin_boundaries,
         const int * d_n_bins,const float* d_bin_width,int *d_indices,float *d_dist,const int n_vert,
         const int n_neigh,const int n_coords, const int n_bin_dim,
-        const int n_bboundaries);
+        const int n_bboundaries,bool use_direction);
 
 template<typename dummy>
 struct BinnedSelectKnnOpFunctor<GPUDevice, dummy> { //just because access needs to be different for GPU and CPU
     void operator()(
             const GPUDevice &d,
+
             const float * d_coord,
             const int * d_bin_idx,
+            const int * d_direction,
             const int * d_dim_bin_idx,
 
             const int * d_bin_boundaries,
@@ -239,7 +253,8 @@ struct BinnedSelectKnnOpFunctor<GPUDevice, dummy> { //just because access needs 
             const int n_bin_dim,
 
             const int n_bboundaries,
-            bool tf_compat
+            bool tf_compat,
+            bool use_direction
             ){
         //GPU implementation
         grid_and_block gbdef(n_vert,256,n_neigh,4);
@@ -255,20 +270,19 @@ struct BinnedSelectKnnOpFunctor<GPUDevice, dummy> { //just because access needs 
             throw std::out_of_range("BinnedSelectKnnOpFunctor: GPU implementation is restricted to 2-8 dimensions (inclusive).");
         }
 
-
         grid_and_block gb(n_vert,512);
         if(n_bin_dim==2)
-            select_knn_kernel<3><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
-                    d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
+            select_knn_kernel<2><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_direction,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
+                    d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
         if(n_bin_dim==3)
-            select_knn_kernel<3><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
-                    d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
+            select_knn_kernel<3><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_direction,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
+                    d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
         if(n_bin_dim==4)
-            select_knn_kernel<3><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
-                    d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
+            select_knn_kernel<4><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_direction,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
+                    d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
         if(n_bin_dim==5)
-            select_knn_kernel<3><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
-                    d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries);
+            select_knn_kernel<5><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_direction,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
+                    d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
 
     }
 };

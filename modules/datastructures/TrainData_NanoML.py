@@ -232,6 +232,61 @@ class CollectionBase(object):
             newtruth[k] = ak1.concatenate([self.truth[k], rhs.truth[k]],axis=1)
         self.truth = newtruth
         
+    
+    def shuffle(self, seed=42):
+        
+        def _shuffle_array(awkarr, sorting):
+            newa = awkarr[sorting]
+            assert len(newa) == len(awkarr)
+            return newa
+        
+        sorting = None
+        for k in self.truth.keys():
+            if sorting is None:
+                sorting = np.arange(len(self.truth[k]))
+                np.random.seed(seed)
+                np.random.shuffle(sorting)
+                
+            self.truth[k] = _shuffle_array(self.truth[k],sorting)
+            
+        self.features = _shuffle_array(self.features, sorting)
+        
+        #this is quick, no need for printouts
+        
+    def checkConsistency(self):
+        t_idx = self.truth['t_idx']
+        for i,a in enumerate(t_idx):
+            ua = np.unique(a.to_numpy())
+            for ut in ua:
+                pass #TBI
+    
+    def cleanUp(self):
+        
+        return #doesn't do anything right now, logic below but does not work with awkward
+        '''
+        removes showers that might harm the training 
+        (scraping on either side or otherwise showers without tracks that have E_true >> E_deposited)
+        '''
+        for i_e in range(len(self.features)): #events
+            t_idx = self.truth['t_idx'][i_e]
+            feat = self.features[i_e]
+            u_t_idx = np.unique(t_idx)
+            for uut in u_t_idx:
+                sel = t_idx[:,0] == uut
+                u_t_energy = self.truth['t_energy'][i_e][sel][0] #at least one hit so this is safe
+                #print(feat.to_numpy().shape)
+                s_feat = feat[sel]
+                #print(s_feat.to_numpy().shape)
+                s_e = s_feat[:,0]
+                dep_e = np.sum(s_e)
+                
+                if dep_e / u_t_energy < 0.05: #automatically not fulfilled by PF with tracks
+                    print('found one', dep_e, ' ', u_t_energy)
+                    print('replacing true energy')
+                    self.truth['t_energy'][i_e][sel] = dep_e
+            
+                
+    
     def addUniqueIndices(self):
         '''
         Adds a '1' to exactly one hit representing
@@ -466,6 +521,9 @@ class RecHitCollection(CollectionBase):
         # should not expand here to allow indexing as done below
         recHitSimClusIdx = self._splitJaggedArray(nonSplitRecHitSimClusIdx)
         
+        #mask stray hits from the other side
+        recHitSimClusIdx = ak1.where( recHitTruthZ[...,0] * recHitZ[...,0] < 0, -1, recHitSimClusIdx)
+        
         # set noise to rec features
         recHitTruthEnergy = ak1.where(recHitSimClusIdx<0, recHitEnergy, recHitTruthEnergy)
         recHitTruthX = ak1.where(recHitSimClusIdx<0, recHitX, recHitTruthX)
@@ -482,7 +540,7 @@ class RecHitCollection(CollectionBase):
         #ticlidx = self._readSplitAndExpand(tree,'RecHitHGC_TICLCandIdx')
         
         self.truth={}     #DEBUG!!!
-        self.truth['t_idx'] = self._expand(recHitSimClusIdx)# now expand to a trailing dimension
+        self.truth['t_idx'] = self._expand(recHitSimClusIdx)# now expand to one trailing dimension
         self.truth['t_energy'] = recHitTruthEnergy
         self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
         self.truth['t_time'] = recHitTruthTime
@@ -518,32 +576,24 @@ class RecHitPFCollection(RecHitCollection):
         '''
         This one is (obviously) different for PF
         '''
-        
         assert self.splitIdx is not None
         
         nonSplitRecHitSimClusIdx = self._createTruthAssociation(tree)
         
-        # read some raw inputs
-        
         recHitTruthPID    = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_pdgId",nonSplitRecHitSimClusIdx)
-        recHitTruthPt  = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_pt",nonSplitRecHitSimClusIdx)
-        recHitTruthEta = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_eta",nonSplitRecHitSimClusIdx)
-        
-        #recHitTruthPhi = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_phi",nonSplitRecHitSimClusIdx)
-        
         recHitTruthCharge = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_charge",nonSplitRecHitSimClusIdx)
-
         recHitTruthOneHotID = pdgIDToOneHot(recHitTruthPID, recHitTruthCharge)
         
-        zeros = ak1.zeros_like(recHitTruthPt)
-        
-        recHitTruthMomentum = recHitTruthPt * np.cosh(recHitTruthEta)
+        recHitTruthMomentum = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_p",nonSplitRecHitSimClusIdx)
         
         #this is tricky, would need to be boundary info
-        recHitTruthX      = zeros
-        recHitTruthY      = zeros
-        recHitTruthZ      = zeros
-        recHitTruthTime   = zeros
+        recHitTruthX      = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_x",nonSplitRecHitSimClusIdx)
+        recHitTruthY      = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_y",nonSplitRecHitSimClusIdx)
+        recHitTruthZ      = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_z",nonSplitRecHitSimClusIdx)
+        recHitTruthTime   = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_t",nonSplitRecHitSimClusIdx)
+        
+        recHitDepEnergy = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_rec_energy",nonSplitRecHitSimClusIdx)
+        
         
         fullyContained = ak1.where(np.abs(recHitTruthZ)[:,:,0]<323.,#somehow that seems necessary
                                    ak1.ones_like(recHitTruthZ),
@@ -565,19 +615,11 @@ class RecHitPFCollection(RecHitCollection):
         recHitTruthZ = ak1.where(recHitSimClusIdx<0, recHitZ, recHitTruthZ)
         recHitTruthTime = ak1.where(recHitSimClusIdx<0, recHitTime, recHitTruthTime)
         
-        #be careful here! this is truth momentum
-        recHitDepEnergy = zeros + 1.
-        print('FIXME recHitDepEnergy is currently set to 1 -> constant. Needs ntuple input')
-        
-
         recHitSpectatorFlag = self._createSpectators(tree)
         #remove spectator flag for noise
         recHitSpectatorFlag = ak1.where(recHitSimClusIdx<0 , ak1.zeros_like(recHitSpectatorFlag), recHitSpectatorFlag)#this doesn't work for some reason!
         
-        #DEBUG!!!
-        #ticlidx = self._readSplitAndExpand(tree,'RecHitHGC_TICLCandIdx')
-        
-        self.truth={}     #DEBUG!!!
+        self.truth={}    
         self.truth['t_idx'] = self._expand(recHitSimClusIdx)# now expand to a trailing dimension
         self.truth['t_energy'] = recHitTruthMomentum
         self.truth['t_pos'] = ak1.concatenate([recHitTruthX, recHitTruthY,recHitTruthZ],axis=-1)
@@ -604,14 +646,13 @@ class TrackCollection(RecHitPFCollection):
         
         self._readSplits(tree, splitlabel='Track_HGCFront_z')
         
-        trackPt = self._readSplitAndExpand(tree,"Track_pt")
         trackEta = self._readSplitAndExpand(tree,"Track_HGCFront_eta")
-        trackVertEta = self._readSplitAndExpand(tree,"Track_eta")
-        trackMom = trackPt * np.cosh(trackVertEta)
+        trackMom = self._readSplitAndExpand(tree,"Track_p")
+        trackCharge = self._readSplitAndExpand(tree,"Track_charge")
         impactX = self._readSplitAndExpand(tree,"Track_HGCFront_x")
         impactY = self._readSplitAndExpand(tree,"Track_HGCFront_y")
         impactZ = self._readSplitAndExpand(tree,"Track_HGCFront_z")
-        chi2 = self._readSplitAndExpand(tree,"Track_normChiSq")
+        dec_z = self._readSplitAndExpand(tree,"Track_DecayVtx_z") / 100. #norm only this one
         
         impactR = np.sqrt(impactX**2+impactY**2+impactZ**2)+1e-3
         impactTheta = np.arccos(impactZ/impactR)
@@ -619,14 +660,14 @@ class TrackCollection(RecHitPFCollection):
         self.features = ak1.concatenate([
             trackMom,
             trackEta,
-            ak1.ones_like(trackMom), #indicator if it is track or not
+            trackCharge, #also indicator if it is track or not
             impactTheta,
             impactR,
             impactX,
             impactY,
             impactZ,
             ak1.zeros_like(trackMom),#no time info (yet,could be from MTD here)
-            chi2 #this is radius for hits, here chi2 for tracks, since it's kinda realted to the impact points resolution...
+            dec_z # decay z, basically distinguished good from bad tracks given PF truth
             ], axis=-1)
         
         #this is just for bookkeeping, keep them the same as for hits
@@ -652,34 +693,23 @@ class TrackCollection(RecHitPFCollection):
         
         nonSplitTrackSimClusIdx = self._readArray(tree, "Track_PFTruthPartIdx")#no 'best' this is 1:1
         
-        # read some raw inputs
-        
         trackTruthPID    = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_pdgId",nonSplitTrackSimClusIdx)
-        trackTruthPt  = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_pt",nonSplitTrackSimClusIdx)
-        trackTruthEta = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_eta",nonSplitTrackSimClusIdx)
-        
-        #trackTruthPhi = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_phi",nonSplitTrackSimClusIdx)
-        
         trackTruthCharge = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_charge",nonSplitTrackSimClusIdx)
-
         trackTruthOneHotID = pdgIDToOneHot(trackTruthPID, trackTruthCharge)
         
-        zeros = ak1.zeros_like(trackTruthPt)
-        
-        recHitTruthMomentum = trackTruthPt * np.cosh(trackTruthEta)
+        recHitTruthMomentum = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_p",nonSplitTrackSimClusIdx)
         
         #this is tricky, would need to be boundary info
-        trackTruthX      = zeros
-        trackTruthY      = zeros
-        trackTruthZ      = zeros
-        trackTruthTime   = zeros
+        trackTruthX      = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_x",nonSplitTrackSimClusIdx)
+        trackTruthY      = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_y",nonSplitTrackSimClusIdx)
+        trackTruthZ      = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_z",nonSplitTrackSimClusIdx)
+        trackTruthTime   = self._assignTruthByIndexAndSplit(tree,"PFTruthPart_calo_t",nonSplitTrackSimClusIdx)
         
-        trackPt = self._readSplitAndExpand(tree,"Track_pt")
-        trackVertEta = self._readSplitAndExpand(tree,"Track_eta")
-        trackMom = trackPt * np.cosh(trackVertEta)
+        trackMom = self._readSplitAndExpand(tree,"Track_p")
         
-        #be careful here! this is truth momentum
         trackDepEnergy = trackMom
+        
+        zeros = ak1.zeros_like(trackDepEnergy)
         
         trackSimClusIdx = self._splitJaggedArray(nonSplitTrackSimClusIdx)
         
@@ -689,7 +719,7 @@ class TrackCollection(RecHitPFCollection):
         self.truth['t_pos'] = ak1.concatenate([trackTruthX, trackTruthY,trackTruthZ],axis=-1)
         self.truth['t_time'] = trackTruthTime
         self.truth['t_pid'] = trackTruthOneHotID
-        self.truth['t_spectator'] = zeros
+        self.truth['t_spectator'] = zeros #never spect
         self.truth['t_fully_contained'] = zeros+1.
         self.truth['t_rec_energy'] = trackDepEnergy
         
@@ -726,8 +756,11 @@ class TrainData_NanoML(TrainData):
         
         rechitcoll = RecHitCollection(tree=tree)
         
-        #in a similar manner, we can also add tracks from conversions etc here
+        if istraining:
+            rechitcoll.cleanUp()
         
+        #in a similar manner, we can also add tracks from conversions etc here
+        rechitcoll.shuffle()
         # adds t_is_unique
         rechitcoll.addUniqueIndices()
         
@@ -812,7 +845,7 @@ class TrainData_NanoML(TrainData):
         '''
         This is deprecated and should be replaced by a more transparent way.
         '''
-        print(__name__,'createTruthDict: should be deprecated soon and replaced by a more uniform interface')
+        #print(__name__,'createTruthDict: should be deprecated soon and replaced by a more uniform interface')
         data = self.interpretAllModelInputs(allfeat,returndict=True)
         
         out={
@@ -924,6 +957,7 @@ class TrainData_NanoMLPF(TrainData_NanoML):
         
         rechitcoll.append(trackcoll)
         
+        rechitcoll.shuffle()
         # adds t_is_unique
         rechitcoll.addUniqueIndices()
         

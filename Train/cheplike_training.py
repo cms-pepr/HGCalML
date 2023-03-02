@@ -66,12 +66,12 @@ make this about coordinate shifts
 '''
 
 batchnorm_options={
-    'viscosity': 0.1,
+    'viscosity': .1,
     'fluidity_decay': 1e-4,
-    'max_viscosity': 0.95,
+    'max_viscosity': 1.,
     'soft_mean': False,
     'variance_only': False,
-    'record_metrics': True
+    'record_metrics': True,
     }
 
 #loss options:
@@ -79,7 +79,7 @@ loss_options={
     'energy_loss_weight': .25,
     'q_min': 1.5,
     'use_average_cc_pos': 0.1,
-    'classification_loss_weight':0.1,
+    'classification_loss_weight':0.0,
     'too_much_beta_scale': 1e-5 ,
     'position_loss_weight':1e-5,
     'timing_loss_weight':0.1,
@@ -94,7 +94,7 @@ dense_activation='elu'
 record_frequency=20
 plotfrequency=50 #plots every 1k batches
 
-learningrate = 4e-5
+learningrate = 1e-6
 nbatch = 100000
 if globals.acc_ops_use_tf_gradients: #for tf gradients the memory is limited
     nbatch = 60000
@@ -305,7 +305,8 @@ samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
 # publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
 
 
-publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/July2022_jk/"
+# publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/July2022_jk/"
+publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/July2022_pz/"
 publishpath += [d  for d in train.outputDir.split('/') if len(d)][-1] 
 
 cb = []

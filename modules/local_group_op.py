@@ -7,6 +7,10 @@ _op = tf.load_op_library('local_group.so')
 def LocalGroup(neighbour_idxs, hierarchy_idxs, hierarchy_score, row_splits,
                score_threshold):
     '''
+    
+    !!!! indices must have the -1s at the end!
+    
+    
     .Input("neighbour_idxs: int32") // V x K
     .Input("hierarchy_idxs: int32") // V x 1  per group
     .Input("hierarchy_score: float") // V x 1 score per group

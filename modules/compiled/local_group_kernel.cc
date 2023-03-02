@@ -49,6 +49,8 @@ struct LocalGroupOpFunctor<CPUDevice, dummy> {
             int *d_out_backgather //which global index each vertex is associated to V x 1
     ){
 
+        bool big_first = true;
+
         *n_sel_vtx=0;
         for(int i_v=0;i_v<n_in_vert; i_v++){
             mask[i_v]=0;
@@ -63,57 +65,74 @@ struct LocalGroupOpFunctor<CPUDevice, dummy> {
 
 
         d_out_row_splits[0]=0;
+
+        std::vector<bool> touched(n_in_vert,false);
+
         for(int i_rs=0; i_rs<n_row_splits-1;i_rs++){
             //row splits only relevant for future CPU parallelisation since they don't interact
 
-            for(int _i_v=d_row_splits[i_rs];_i_v<d_row_splits[i_rs+1]; _i_v++){
+            for(int iteration=0;iteration<2;iteration++){
+                if(!big_first)
+                    iteration++; //skip first iteration
 
-                int i_v = d_hierarchy_idxs[_i_v];
-                if(i_v >= n_in_vert){
-                    printf("local_group_kernel: invalid i_v\n");
-                    continue;
-                }
+                for(int _i_v=d_row_splits[i_rs];_i_v<d_row_splits[i_rs+1]; _i_v++){
 
+                    int i_v = d_hierarchy_idxs[_i_v];
+                    if(i_v >= n_in_vert){
+                        printf("local_group_kernel: invalid i_v\n");
+                        continue;
+                    }
 
-                //below threshold is not allowed to merge its neighbours
-                bool can_accumulate_neighbours = d_hierarchy_score[i_v] >= score_threshold;
-
-                //int v_gl_idx = d_global_idxs[i_v];
-                //d_out_backgather[v_gl_idx] = nseltotal; //global self-associate
-
-                //if not masked -> select and mask, increment nseltotal
-                //if selected add to backgather with nseltotal-1
-
-                if(!mask[i_v]){
-                    d_out_selection_idxs[nseltotal] = i_v;
-                    nseltotal++;
-                }
-                else{//already masked can never accumulate more neighbours
-                    can_accumulate_neighbours=false;
-                }
-
-                int curr_neigh=0;
-                for(int i_n=0;i_n<n_neigh;i_n++){
-
-                    if(i_n && !can_accumulate_neighbours)
-                        break;
-
-                    int nidx = d_neigh_idxs[I2D(i_v,i_n,n_neigh)];
-
-                    if(nidx<0)//not a neighbour
+                    if(!iteration && touched.at(i_v))
                         continue;
 
-                    if(mask[nidx])//already used, self is already added to d_out_dir_neighbours
-                        continue;
+                    //below threshold is not allowed to merge its neighbours
+                    bool can_accumulate_neighbours = d_hierarchy_score[i_v] >= score_threshold;
 
-                    d_out_dir_neighbours[I2D(i_v,curr_neigh,n_neigh)] = nidx;
-                    d_out_backgather[nidx] = nseltotal-1;
-                    mask[nidx] = 1;
+                    //int v_gl_idx = d_global_idxs[i_v];
+                    //d_out_backgather[v_gl_idx] = nseltotal; //global self-associate
 
-                    curr_neigh++;
+                    //if not masked -> select and mask, increment nseltotal
+                    //if selected add to backgather with nseltotal-1
+
+                    if(!mask[i_v]){
+                        d_out_selection_idxs[nseltotal] = i_v;
+                        nseltotal++;
+                    }
+                    else{//already masked can never accumulate more neighbours
+                        can_accumulate_neighbours=false;
+                    }
+
+                    int curr_neigh=0;
+                    for(int i_n=0;i_n<n_neigh;i_n++){
+
+                        if(i_n && !can_accumulate_neighbours)
+                            break;
+
+                        int nidx = d_neigh_idxs[I2D(i_v,i_n,n_neigh)];
+
+                        if(nidx<0)//not a neighbour, -1s defined to be at the end so break here
+                            break;
+
+                        if(mask[nidx])//already used, self is already added to d_out_dir_neighbours
+                            continue;
+                        //all the neighbours are also going to be touched
+                        if(!iteration)
+                            for(int i_nn=0;i_nn<n_neigh;i_nn++){
+                                int nnidx = d_neigh_idxs[I2D(nidx,i_nn,n_neigh)];
+                                if(nnidx<0)
+                                    continue;
+                                touched.at(nnidx) = true;
+                            }
+
+                        d_out_dir_neighbours[I2D(i_v,curr_neigh,n_neigh)] = nidx;
+                        d_out_backgather[nidx] = nseltotal-1;
+                        mask[nidx] = 1;
+
+                        curr_neigh++;
+                    }
                 }
             }
-
             d_out_row_splits[i_rs+1] = nseltotal;
         }
 

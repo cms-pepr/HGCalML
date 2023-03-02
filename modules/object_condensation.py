@@ -105,7 +105,7 @@ class Basic_OC_per_sample(object):
                          truth_idx,
                          object_weight,
                          is_spectator_weight,
-                         
+                         calc_Ms=True,
                          ):
         self.valid=True
         #used for pll and q
@@ -124,10 +124,14 @@ class Basic_OC_per_sample(object):
         #spectators do not participate in the potential losses
         self.q_v = (self.tanhsqbeta + self.q_min)*tf.clip_by_value(1.-is_spectator_weight, 0., 1.)
         
-        self.create_Ms(truth_idx)
+        if calc_Ms:
+            self.create_Ms(truth_idx)
         if self.Msel is None:
             self.valid=False
             return
+        #if self.Msel.shape[0] < 2:#less than two objects - can be dangerous
+        #    self.valid=False
+        #    return
         
         self.mask_k_m = SelectWithDefault(self.Msel, tf.zeros_like(beta)+1., 0.) #K x V-obj x 1
         self.beta_k_m = SelectWithDefault(self.Msel, self.beta_v, 0.) #K x V-obj x 1
@@ -157,13 +161,12 @@ class Basic_OC_per_sample(object):
         '''
         '''
         x_k_e = tf.expand_dims(self.x_k,axis=1)
-        d_k_e = tf.expand_dims(self.d_k,axis=1)
         
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
         
         dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
         
-        sigma = 0.95 * d_k_e**2 + 0.05 * self.d_k_m**2 #create gradients for all
+        sigma = self.weighted_d_k_m(dsq_k_m) #create gradients for all
         
         dsq_k_m = tf.math.divide_no_nan(dsq_k_m, sigma + 1e-4)
             
@@ -178,11 +181,12 @@ class Basic_OC_per_sample(object):
     
     def rep_func(self,dsq_k_v):
         return tf.math.exp(-dsq_k_v/2.)
+    
+    def weighted_d_k_m(self, dsq): # dsq K x V x 1
+        return tf.expand_dims(self.d_k, axis=1) # K x 1 x 1
         
     def V_rep_k(self):
         
-        d_k_e = tf.expand_dims(self.d_k, axis=1) # K x 1 x 1
-        d_v_e = tf.expand_dims(self.d_v, axis=0) # K x V x 1
         
         N_k = tf.reduce_sum(self.Mnot, axis=1)
         #future remark: if this gets too large, one could use a kNN here
@@ -190,7 +194,9 @@ class Basic_OC_per_sample(object):
         dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
         
-        sigma = 0.95 * d_k_e**2 + 0.05 * d_v_e**2 #create gradients for all, but prefer k vertex
+        # nogradbeta = tf.stop_gradient(self.beta_k_m)
+        #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
+        sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
         
         dsq = tf.math.divide_no_nan(dsq, sigma + 1e-4) #K x V x 1
         
@@ -222,10 +228,10 @@ class Basic_OC_per_sample(object):
         #use continuous max approximation through LSE
         eps = 1e-3
         beta_pen = 1. - eps * tf.reduce_logsumexp(self.beta_k_m/eps, axis=1)#sum over m
+        #for faster convergence  
+        beta_pen += 1. - tf.clip_by_value(tf.reduce_sum(self.beta_k_m, axis=1), 0., 1)
         beta_pen = tf.debugging.check_numerics(beta_pen, "OC: beta pen")
         return beta_pen
-        #trivial but to keep the structure
-        return (1. - self.beta_k)
         
     def Noise_pen(self):
         
@@ -259,10 +265,10 @@ class Basic_OC_per_sample(object):
                      high_B_pen
                      ):
         
-        zero_tensor = tf.reduce_mean(self.q_v,axis=0)*0.
+        zero_tensor = tf.zeros_like(tf.reduce_mean(self.q_v,axis=0))
         
         if not self.valid: # no objects
-            zero_payload = tf.reduce_mean(self.pll_v,axis=0)*0.
+            zero_payload = tf.zeros_like(tf.reduce_mean(self.pll_v,axis=0))
             print('WARNING: no objects in sample, continue to next')
             return zero_tensor, zero_tensor, zero_tensor, zero_tensor, zero_payload, zero_tensor
     
@@ -393,6 +399,35 @@ class PreCond_kNNOC_per_sample(PreCond_OC_per_sample):
         V_rep = tf.math.divide_no_nan(V_rep, N_k+1e-3)  #K x 1
         
         return V_rep
+    
+class GraphCond_OC_per_sample(Basic_OC_per_sample):
+    
+    def set_input(self, beta,
+                  x,
+                         d,
+                         pll,
+                         truth_idx,
+                         *args,**kwargs
+                         ):
+        
+        #replace beta with per-object normalised value
+        self.create_Ms(truth_idx)
+        beta_max = tf.reduce_max(self.Mnot * tf.expand_dims(beta,axis=0),axis=1, keepdims=True)  #K x 1 x 1
+        beta_max *= self.Mnot  #K x V x 1
+        
+        # this is the same reduced in K given the others are zero with exception of noise (filtered later)
+        beta_max = tf.reduce_max(beta_max, axis=0) # V x 1 
+        beta_normed = tf.math.divide_no_nan(beta, beta_max) # V x 1 
+        beta = tf.where(truth_idx<0, beta, beta_normed) #only for not noise
+        
+        super(GraphCond_OC_per_sample, self).set_input(beta, x, d, pll, truth_idx, *args,**kwargs, calc_Ms=False)
+    
+    def Beta_pen_k(self):
+        #simple mean beta per object
+        pen = tf.math.divide_no_nan(tf.reduce_sum(self.mask_k_m * self.beta_k_m, axis=1), 
+                                     tf.reduce_sum(self.mask_k_m, axis=1) + 1e-3)
+        return tf.debugging.check_numerics(pen,"GCOC: beta penalty")
+    
 
 class OC_loss(object):
     def __init__(self, 

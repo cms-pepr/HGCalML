@@ -19,12 +19,12 @@ from datastructures import TrainData_NanoML
 #from tensorflow.keras import Model
 from Layers import DictModel
 
-from model_blocks import  pre_condensation_model
+from model_blocks import  pre_condensation_model, mini_pre_condensation_model
 
 K=12 #12
 
-plot_frequency= 150  # 150 #150 # 1000 #every 20 minutes approx
-record_frequency = 20
+plot_frequency= 20  # 150 #150 # 1000 #every 20 minutes approx
+record_frequency = 3
 
 def pretrain_model(Inputs,
                    td, 
@@ -34,17 +34,16 @@ def pretrain_model(Inputs,
 
     orig_inputs = td.interpretAllModelInputs(Inputs,returndict=True)
  
-    presel = pre_condensation_model(orig_inputs,
+    presel = mini_pre_condensation_model(orig_inputs,
                            record_metrics=True,
                            trainable=True,
                            t_d=0.5, # just starting point
                            t_b=0.6, # just starting point
                            q_min=1.,
                            purity_target=0.96,
-                           condensation_mode = 'simpleknn', # precond, pushpull, simpleknn
-                           
+                           condensation_mode = 'std', # std, precond, pushpull, simpleknn
                            noise_threshold=0.15,
-                           print_batch_time=True,
+                           print_batch_time=False,
                            condensate=True,
                            cluster_dims = 3,
                            cleaning_threshold=0.5,
@@ -52,7 +51,7 @@ def pretrain_model(Inputs,
                            debugplots_after=debugplots_after,
                            publishpath=publishpath
                            )
-    
+    presel.pop('noise_backscatter')
     return DictModel(inputs=Inputs, outputs=presel)
 
 import training_base_hgcal
@@ -118,7 +117,7 @@ cb = [
         output_file=train.outputDir+'/noise_metrics.html',
         record_frequency= record_frequency,
         plot_frequency = plot_frequency,
-        select_metrics=['*noise*accuracy','*noise*loss','*noise*reduction','*noise*purity','*noise*efficiency'],
+        select_metrics=['*noise*accuracy','*noise*loss','*noise*reduction','*purity','*efficiency'],
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -139,20 +138,20 @@ cb = [
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/gooey.html',
-        record_frequency= record_frequency,
-        plot_frequency = plot_frequency,
-        select_metrics='*gooey*',
-        publish=publishpath #no additional directory here (scp cannot create one)
-        ),
+    #simpleMetricsCallback(
+    #    output_file=train.outputDir+'/gooey.html',
+    #    record_frequency= record_frequency,
+    #    plot_frequency = plot_frequency,
+    #    select_metrics='*gooey*',
+    #    publish=publishpath #no additional directory here (scp cannot create one)
+    #    ),
     
     
     simpleMetricsCallback(
         output_file=train.outputDir+'/oc_thresh.html',
         record_frequency= record_frequency,
         plot_frequency = plot_frequency,
-        select_metrics='*ll_oc_thresholds*',
+        select_metrics='*_ll_*oc_thresholds*',
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -166,11 +165,11 @@ cb = [
     ]
 
 #cb=[]
-nbatch = 100000 
-train.change_learning_rate(1e-4)
+nbatch = 150000 
+train.change_learning_rate(5e-4)
 train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
 
-nbatch = 100000 
+nbatch = 150000 
 train.change_learning_rate(3e-5)
 train.trainModel(nepochs=10,batchsize=nbatch,additional_callbacks=cb)
 

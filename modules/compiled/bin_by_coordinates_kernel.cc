@@ -23,13 +23,16 @@ struct BinByCoordinatesNbinsHelperOpFunctor<CPUDevice, dummy> { //just because a
             int n_nbins,
             int nrs){
     int n=1;
-    for(int i=0;i<n_nbins;i++)
+    printf("n bins:");
+    for(int i=0;i<n_nbins;i++){
         n*=n_bins[i];
+        printf(" %d ,", n_bins[i]);
+    }
+    printf("\n");
 
     *out_tot_bins=n*(nrs-1);
     }
 };
-
 
 
 static void set_defaults(
@@ -57,6 +60,7 @@ static void calc(
         const int n_total_bins,
         const bool calc_n_per_bin
 ){
+
     for(int iv=0; iv<n_vert; iv++){
 
         ///same for cu
@@ -64,12 +68,13 @@ static void calc(
         int mul = 1;
         int idx = 0;
 
-        for (int ic = n_coords-1; ic != -1; ic--) {
+        for (int ic = n_coords-1; ic > -1; ic--) {
 
             int cidx = d_coords[I2D(iv,ic,n_coords)] / d_binswidth[0];
 
-            if(cidx >= n_bins[ic]){
-                printf("index %d of coordinate %d exceeds n bins %d\n",cidx,ic,n_bins[ic]);
+            if(cidx < 0 || cidx >= n_bins[ic]){
+                printf("index %d of coordinate %d exceeds n bins %d or below 0, coord %e\n",cidx,ic,n_bins[ic],d_coords[I2D(iv,ic,n_coords)]);
+                cidx = 0; //stable, but will create bogus later
             }
             d_assigned_bin[I2D(iv,ic+1,n_coords+1)]=cidx;
 
@@ -191,7 +196,7 @@ public:
 
         const int n_nbins = n_coords;//just for clarity
         
-        int n_tot_bins;
+        int n_tot_bins=0;
         BinByCoordinatesNbinsHelperOpFunctor<Device, int>() (
                 context->eigen_device<Device>(),
                 t_nbins.flat<int>().data(),

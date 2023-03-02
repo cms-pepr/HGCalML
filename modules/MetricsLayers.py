@@ -51,10 +51,13 @@ class SimpleReductionMetrics(MLBase):
         super(SimpleReductionMetrics, self).__init__(**kwargs)
         
     def metrics_call(self, inputs):
-        assert len(inputs)==2
-        after,bef = inputs
-        self.add_prompt_metric(tf.reduce_mean(after[-1]/bef[-1]),self.name+'_rel_reduction')
+        if len(inputs)==2:
+            after,bef = inputs
+            self.add_prompt_metric(tf.reduce_mean(after[-1]/bef[-1]),self.name+'_rel_reduction')
+        return 0.
         
+  
+
 
 from oc_helper_ops import per_rs_segids_to_unique
 class OCReductionMetrics(MLBase):
@@ -89,6 +92,9 @@ class OCReductionMetrics(MLBase):
             asso_idx, tidx, energy = inputs
             
         energy = energy[:,0]
+        
+        asso_idx = tf.where(asso_idx<0, tf.range(tf.shape(asso_idx)[0]), asso_idx)
+        
         nafter = tf.cast(tf.shape(tf.unique(asso_idx)[0])[0], dtype='float32')
         nbefore = tf.cast(tf.shape(asso_idx)[0], dtype='float32')
         
@@ -96,7 +102,6 @@ class OCReductionMetrics(MLBase):
         
         self.add_prompt_metric(reduction, self.name + '_reduction')
         
-        asso_idx = tf.where(asso_idx<0, tf.range(tf.shape(asso_idx)[0]), asso_idx)
         #use asso index
         asso_tidx = tf.gather(tidx[:,0], asso_idx)
         sames = tf.cast(asso_tidx == tidx[:,0], 'float32')
@@ -155,12 +160,16 @@ class MLReductionMetrics(MLBase):
         - sel row splits (for V_red)
         
         '''
+        self.extended = False
         super(MLReductionMetrics, self).__init__(**kwargs)
+        
+        
     
     
     def metrics_call(self, inputs):
-        assert len(inputs)==5
-        gsel,tidx,ten,rs,srs = inputs
+        #tren = None
+        if len(inputs)==5:
+            gsel,tidx,ten,rs,srs = inputs
         #tf.assert_equal(tidx.shape,ten.shape)#safety
         
         alltruthcount = None
@@ -198,12 +207,17 @@ class MLReductionMetrics(MLBase):
         #done with fractions
         
         #for simplicity assume that no energy is an exact duplicate (definitely good enough here)
+        no_noise_sel = tidx[:,0]>=0
+        ue,_,c = tf.unique_with_counts(tf.boolean_mask(ten, no_noise_sel)[:,0])
+        #ue = ue[c>3] #don't count <4 hit showers
+        no_noise_sel = stidx[:,0]>=0
+        uesel,_,c = tf.unique_with_counts(tf.boolean_mask(sten, no_noise_sel)[:,0])#only non-noise
         
-        ue,_ = tf.unique(ten[:,0])
-        uesel,_ = tf.unique(sten[:,0])
+        tot_lost_en_sum = tf.reduce_sum(ue) - tf.reduce_sum(uesel)
         
         allen = tf.concat([ue,uesel],axis=0)
         ue,_,c = tf.unique_with_counts(allen)
+        
         
         lostenergies = ue[c<2]
         #print(lostenergies)
@@ -216,6 +230,7 @@ class MLReductionMetrics(MLBase):
 
         self.add_prompt_metric(tf.reduce_mean(lostenergies),self.name+'_lost_energy_mean')
         self.add_prompt_metric(tf.reduce_max(lostenergies),self.name+'_lost_energy_max')
+        self.add_prompt_metric(tot_lost_en_sum,self.name+'_lost_energy_sum')
         
         reduced_to_fraction = tf.cast(srs[-1],dtype='float32')/tf.cast(rs[-1],dtype='float32')
         self.add_prompt_metric(reduced_to_fraction,self.name+'_reduction')

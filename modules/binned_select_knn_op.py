@@ -6,10 +6,16 @@ from oc_helper_ops import SelectWithDefault
 
 _binned_select_knn = tf.load_op_library('binned_select_knn.so')
 
-def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_bins, bin_width , tf_compatible=False):
+def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_bins, bin_width , tf_compatible=False,
+                     direction = None):
     '''
     the op wrapper only
     '''
+    if direction is None:
+        direction = tf.constant([],dtype='int32')
+        use_direction=False
+    else:
+        use_direction=True
     
     return _binned_select_knn.BinnedSelectKnn(n_neighbours=K, 
                                               coords=coords,
@@ -18,13 +24,24 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_b
                                               bin_boundaries=bin_boundaries,
                                               n_bins=n_bins,
                                               bin_width=bin_width,
-                                              tf_compatible=tf_compatible
+                                              tf_compatible=tf_compatible,
+                                              direction=direction,
+                                              use_direction = use_direction
                                               )
 
 
-def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf_compatible=False, max_radius=None):
+def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, max_bin_dims=3, tf_compatible=False, max_radius=None, name=""):
     '''
     max_radius is a dummy for now to make it a drop-in replacement
+    
+    0: can only be neighbour, 1: can only have neighbour, 2: neither
+    
+    direction, if provided, has the following options:
+    - 0: can only be neighbour
+    - 1: can only have neighbours
+    - 2: cannot be neighbour or have neighbours
+    - any other number: can be neighbour and have neighbours
+    
     '''
     from bin_by_coordinates_op import BinByCoordinates
     from index_replacer_op import IndexReplacer
@@ -34,18 +51,22 @@ def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf
     elems_per_rs = 1
     if row_splits.shape[0] is not None:
         elems_per_rs = row_splits[1]
+        #do checks
+        tf.assert_equal(row_splits[-1],coords.shape[0])
+        
+    max_bin_dims = min([max_bin_dims, coords.shape[1]])
     
     if n_bins is None:
         n_bins = tf.math.pow(tf.cast(elems_per_rs,dtype='float32')/(K/32),1/max_bin_dims)
         n_bins = tf.cast(n_bins,dtype='int32')
         n_bins = tf.where(n_bins<5,5,n_bins)
-        n_bins = tf.where(n_bins>20,20,n_bins)#just a guess
+        n_bins = tf.where(n_bins>30,30,n_bins)#just a guess
         
     bin_coords = coords
     if bin_coords.shape[-1]>max_bin_dims:
         bin_coords = bin_coords[:,:max_bin_dims]
     
-    dbinning,binning, nb, bin_width, nper = BinByCoordinates(bin_coords, row_splits, n_bins=n_bins)
+    dbinning,binning, nb, bin_width, nper = BinByCoordinates(bin_coords, row_splits, n_bins=n_bins, name=name)
     
     #if this becomes a bottleneck one could play tricks since nper and bin numbers are predefined
     sorting = tf.argsort(binning)
@@ -54,13 +75,16 @@ def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf
     sbinning = tf.gather_nd( binning, sorting[...,tf.newaxis])
     sdbinning = tf.gather_nd( dbinning, sorting[...,tf.newaxis])
     
+    if direction is not None:
+        direction = tf.gather_nd( direction, sorting[...,tf.newaxis])
+    
     #add a leading 0
     bin_boundaries = tf.concat([tf.zeros([1],dtype='int32'), nper],axis=0) #row_splits[0:1]
     # make it row split like
     bin_boundaries = tf.cumsum(bin_boundaries)
     
     idx,dist = _BinnedSelectKnn(K, scoords,  sbinning, sdbinning, bin_boundaries=bin_boundaries, 
-                                n_bins=nb, bin_width=bin_width, tf_compatible=tf_compatible )
+                                n_bins=nb, bin_width=bin_width, tf_compatible=tf_compatible, direction = direction )
     
     if row_splits.shape[0] is None:
         return idx, dist
@@ -68,6 +92,7 @@ def BinnedSelectKnn(K : int, coords, row_splits, n_bins=None, max_bin_dims=3, tf
     idx = IndexReplacer(idx,sorting)
     dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, dist.shape)
     idx = tf.scatter_nd(sorting[...,tf.newaxis], idx, idx.shape)
+    dist = tf.where(idx<0, 0., dist)#safety
     
     if not gl.knn_ops_use_tf_gradients:
         return idx, dist
@@ -90,5 +115,5 @@ def _BinnedSelectKnnGrad(op, idxgrad, dstgrad):
     coord_grad = _sknn_grad_op.SelectKnnGrad(grad_distances=dstgrad, indices=indices, distances=distances, coordinates=coords)
 
     
-    return coord_grad,None,None,None,None,None
+    return coord_grad,None,None,None,None,None,None
   
