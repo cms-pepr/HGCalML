@@ -1120,7 +1120,7 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
     
     def _m_mean(self, x, mask):
         x = tf.reduce_sum(x,axis=0,keepdims=True)
-        norm = tf.reduce_sum(mask,axis=0,keepdims=True) + self.epsilon
+        norm = tf.abs(tf.reduce_sum(mask, axis=0,keepdims=True)) + self.epsilon
         return tf.math.divide_no_nan(x, norm)
                     
     def _calc_mean_and_protect(self, x, mask, default):
@@ -1162,8 +1162,9 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
             cond = tf.ones_like(x_in[...,0:1])
         
         if (not self.loss_active) or (not self.trainable):
-            out = tf.where(cond>0.,  (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon), x_in)
-            return out*self.gamma + self.bias
+            out = (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon)
+            out = out*self.gamma + self.bias
+            return tf.where(cond>0.,  out, x_in)
         
         
         x = tf.stop_gradient(x_in) #stop feat gradient
@@ -1210,9 +1211,9 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         self.add_prompt_metric(tf.reduce_mean(x_v / self.variance), self.name+'_var')
         # self.add_prompt_metric(myloss, self.name+'_loss')
         
-        # apply after updates
-        out = tf.where(cond>0.,  (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon), x_in)
-        return out*self.gamma + self.bias
+        out = (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon)
+        out = out*self.gamma + self.bias
+        return tf.where(cond>0.,  out, x_in)
         
     
 class ConditionalScaledGooeyBatchNorm(LayerWithMetrics):
