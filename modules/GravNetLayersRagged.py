@@ -1211,7 +1211,10 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         self.add_prompt_metric(tf.reduce_mean(x_v / self.variance), self.name+'_var')
         # self.add_prompt_metric(myloss, self.name+'_loss')
         
-        out = (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon)
+        ngmean = tf.stop_gradient(self.mean)
+        ngvar = tf.stop_gradient(self.variance)
+        
+        out = (x_in - ngmean) / (tf.abs(ngvar) + self.epsilon)
         out = out*self.gamma + self.bias
         return tf.where(cond>0.,  out, x_in)
         
