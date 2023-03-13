@@ -867,6 +867,50 @@ class ElementScaling(tf.keras.layers.Layer):
     def call(self, inputs, training=None):
         
         return inputs * self.scales
+
+class ConditionalBatchNorm(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(ConditionalBatchNorm, self).__init__(**kwargs)
+        self.bn0 = tf.keras.layers.BatchNormalization()
+        self.bn1 = tf.keras.layers.BatchNormalization()
+
+    def call(self, inputs):
+        x, condition = inputs[0], inputs[1] 
+        condition = tf.cast(condition > 0.5, tf.bool)
+        idx0 = tf.where(condition)
+        idx1 = tf.where(tf.logical_not(condition))
+        x0 = tf.gather_nd(x, idx0)
+        x1 = tf.gather_nd(x, idx1)
+        x0 = self.bn0(x0)
+        x1 = self.bn1(x1)
+        x = tf.tensor_scatter_nd_update(x, idx0, x0)
+        x = tf.tensor_scatter_nd_update(x, idx1, x1)
+        return x
+
+
+class ConditionalBatchEmbedding(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(ConditionalBatchEmbedding, self).__init__(**kwargs)
+        self.bn0 = tf.keras.layers.BatchNormalization()
+        self.bn1 = tf.keras.layers.BatchNormalization()
+        self.d0 = tf.keras.layers.Dense(32, activation='elu')
+        self.d1 = tf.keras.layers.Dense(32, activation='elu')
+
+    def call(self, inputs):
+        x, condition = inputs[0], inputs[1]
+        condition = tf.cast(condition > 0.5, tf.bool)  # Convert condition to boolean
+        idx0 = tf.where(condition)
+        idx1 = tf.where(tf.logical_not(condition))
+        x0 = self.d0(x)
+        x1 = self.d1(x)
+        x0 = tf.gather_nd(x, idx0)
+        x1 = tf.gather_nd(x, idx1)
+        x0 = self.bn0(x0)
+        x1 = self.bn1(x1)
+        x = tf.tensor_scatter_nd_update(x, idx0, x0)
+        x = tf.tensor_scatter_nd_update(x, idx1, x1)
+        return x
+
         
 class GooeyBatchNorm(LayerWithMetrics):
     def __init__(self,
