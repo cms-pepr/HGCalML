@@ -71,7 +71,7 @@ PUBLISHPATH = ""
 DENSE_ACTIVATION='elu'
 LEARNINGRATE = 1e-5
 NBATCH = 200000
-DENSE_REGULARIZER = tf.keras.regularizers.L2(l2=0.001)
+DENSE_REGULARIZER = tf.keras.regularizers.L2(l2=1e-5)
 if False and globals.acc_ops_use_tf_gradients: #for tf gradients the memory is limited
     NBATCH = int(NBATCH / 2)
 
@@ -128,7 +128,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     for i in range(TOTAL_ITERATIONS):
 
-        x = ConditionalBatchEmbedding()([x, is_track])
+        x = ConditionalBatchNorm()([x, is_track])
         x = RaggedGlobalExchange()([x, rs])
         x = Dense(64, activation=DENSE_ACTIVATION, 
             kernel_regularizer=DENSE_REGULARIZER)(x)

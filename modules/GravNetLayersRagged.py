@@ -868,11 +868,24 @@ class ElementScaling(tf.keras.layers.Layer):
         
         return inputs * self.scales
 
+
 class ConditionalBatchNorm(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         super(ConditionalBatchNorm, self).__init__(**kwargs)
         self.bn0 = tf.keras.layers.BatchNormalization()
         self.bn1 = tf.keras.layers.BatchNormalization()
+
+
+    """
+    def build(self, input_shape):
+
+        # Call the build function for the batch normalization layers
+        self.bn0.build(input_shape[0])
+        self.bn1.build(input_shape[0])
+
+        # Call the build function of the parent class
+        super(ConditionalBatchNorm, self).build(input_shape)
+    """
 
     def call(self, inputs):
         x, condition = inputs[0], inputs[1] 
@@ -881,20 +894,39 @@ class ConditionalBatchNorm(tf.keras.layers.Layer):
         idx1 = tf.where(tf.logical_not(condition))
         x0 = tf.gather_nd(x, idx0)
         x1 = tf.gather_nd(x, idx1)
+        x0 = tf.expand_dims(x0, axis=1)  # add a new dimension to make it 2D
+        x1 = tf.expand_dims(x1, axis=1)  # add a new dimension to make it 2D
         x0 = self.bn0(x0)
         x1 = self.bn1(x1)
+        x0 = tf.squeeze(x0, axis=1)  # remove the added dimension to make it 1D again
+        x1 = tf.squeeze(x1, axis=1)  # remove the added dimension to make it 1D again
         x = tf.tensor_scatter_nd_update(x, idx0, x0)
         x = tf.tensor_scatter_nd_update(x, idx1, x1)
         return x
 
 
 class ConditionalBatchEmbedding(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self, N=32, **kwargs):
         super(ConditionalBatchEmbedding, self).__init__(**kwargs)
         self.bn0 = tf.keras.layers.BatchNormalization()
         self.bn1 = tf.keras.layers.BatchNormalization()
-        self.d0 = tf.keras.layers.Dense(32, activation='elu')
-        self.d1 = tf.keras.layers.Dense(32, activation='elu')
+        self.d0 = tf.keras.layers.Dense(N, activation='elu')
+        self.d1 = tf.keras.layers.Dense(N, activation='elu')
+
+    """
+    def build(self, input_shape):
+        # Initialize the weights for the dense layers
+        self.d0.build(input_shape[0])
+        self.d1.build(input_shape[0])
+
+        # Call the build function for the batch normalization layers
+        self.bn0.build((input_shape[0][0], 32))
+        self.bn1.build((input_shape[0][0], 32))
+
+        # Call the build function of the parent class
+        super(ConditionalBatchEmbedding, self).build(input_shape)
+    """
+
 
     def call(self, inputs):
         x, condition = inputs[0], inputs[1]
@@ -905,8 +937,12 @@ class ConditionalBatchEmbedding(tf.keras.layers.Layer):
         x1 = self.d1(x)
         x0 = tf.gather_nd(x, idx0)
         x1 = tf.gather_nd(x, idx1)
+        x0 = tf.expand_dims(x0, axis=1)  # add a new dimension to make it 2D
+        x1 = tf.expand_dims(x1, axis=1)  # add a new dimension to make it 2D
         x0 = self.bn0(x0)
         x1 = self.bn1(x1)
+        x0 = tf.squeeze(x0, axis=1)  # remove the added dimension to make it 1D again
+        x1 = tf.squeeze(x1, axis=1)  # remove the added dimension to make it 1D again
         x = tf.tensor_scatter_nd_update(x, idx0, x0)
         x = tf.tensor_scatter_nd_update(x, idx1, x1)
         return x
