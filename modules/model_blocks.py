@@ -1569,7 +1569,7 @@ def intermediate_condensation(
     return x #RaggedToFlatRS()(c_x)
     
 
-from GravNetLayersRagged import ScaledGooeyBatchNorm2, EdgeConvStatic, SplitOffTracks, ConcatRaggedTensors, ConditionalScaledGooeyBatchNorm
+from GravNetLayersRagged import SelfAttention, ScaledGooeyBatchNorm2, EdgeConvStatic, SplitOffTracks, ConcatRaggedTensors, ConditionalScaledGooeyBatchNorm
 from Layers import RaggedGlobalExchange
 from GraphCondensationLayers import CreateGraphCondensation, PushUp, SelectUp, PullDown, LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
 from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, LLGraphCondensationEdges
@@ -1587,7 +1587,6 @@ def pre_graph_condensation(
         K_loss = 96,
         publish=None,
         dynamic_spectators=True,
-        flatten=True,
         first_call=True):
     
     activation = 'elu'
@@ -1604,17 +1603,17 @@ def pre_graph_condensation(
     
     x = orig_inputs['features'] # coords
     coords = orig_inputs['prime_coords']
+    prime_coords = coords
     rs = orig_inputs['row_splits']
     energy = orig_inputs['rechit_energy']
     is_track = orig_inputs['is_track']
     
-    
     x = ConditionalScaledGooeyBatchNorm(
-            learn = not first_call,
             name=name+'_cond_batchnorm',
             record_metrics = record_metrics)([x, is_track])
             
-           
+    x_in = x
+            
     if trainable:
         for k in orig_inputs.keys():
             if (not 't_' == k[0:2]) and (not 'row_splits' in k):
@@ -1622,18 +1621,15 @@ def pre_graph_condensation(
             
     if first_call:
      
-        x_full_skip = x
-        
         #pre-processing
         x_track = Dense(64, activation='elu', name=name+'emb_xtrack',trainable=trainable)(x)
+        x_track = Dense(32, activation='elu', name=name+'emb_xtrack1',trainable=trainable)(x_track)
         x_hit = Dense(64, activation='elu', name=name+'emb_xhit',trainable=trainable)(x)
+        x_hit = Dense(32, activation='elu', name=name+'emb_xhit1',trainable=trainable)(x_hit)
         x = MixWhere()([is_track, x_track, x_hit]) #Concatenate()([coords,x,good_track_feat])
         x = ScaledGooeyBatchNorm2(name = name+'_batchnorm_0a', trainable=trainable, 
                                   record_metrics = record_metrics)(x) 
     
-    else:
-        x_full_skip = x
-        
     x_skip = x
 
     #gravnet block
@@ -1643,42 +1639,39 @@ def pre_graph_condensation(
     nidx,dist = KNN(K=K,record_metrics=record_metrics,name=name+'_np_knn',
                     min_bins=20)([coords,orig_inputs['row_splits']])#hard code it here, this is optimised given our datasets
     
-    if flatten:
-        dist,nidx = SortAndSelectNeighbours(K=-1)([dist,nidx])#sorting matters
-        xflat = Concatenate()([x,x_full_skip])
-        xflat = Dense(8, activation='tanh',name = name+'_preflat_dense', trainable=trainable)(xflat)
-        xflat = SelectFromIndicesWithPad()([nidx, xflat])
-        xflat = Flatten()(xflat)
-        xflat = ScaledGooeyBatchNorm2(name = name+'_batchnorm_f0', trainable=trainable, record_metrics = record_metrics)(xflat) 
-        xflat = Dense(64, activation='elu',name = name+'_flat_dense1', trainable=trainable)(xflat)
-        xflat = Dense(32, activation='tanh',name = name+'_flat_dense2', trainable=trainable)(xflat)
-        x = Concatenate()([x,xflat])
-    
-    
-    # x = ScaledGooeyBatchNorm2(name = name+'_batchnorm0', trainable=trainable, record_metrics = record_metrics)(x)                                     
-    x = DistanceWeightedMessagePassing([32,32,32,32],name=name+'np_dmp1',
+    x = Concatenate()([SelfAttention(name = name+'_selfatt1')(x),x])
+    x = DistanceWeightedMessagePassing([32,32],name=name+'np_dmp1',
                                         activation='elu',#keep output in check
                                         trainable=trainable)([x,nidx,dist])# hops are rather light 
-                                        
-    if flatten:
-        xflat = Concatenate()([x,x_full_skip])
-        xflat = Dense(8, activation='tanh',name = name+'_2_preflat_dense', trainable=trainable)(xflat)
-        xflat = SelectFromIndicesWithPad()([nidx, xflat])
-        xflat = Flatten()(xflat)
-        xflat = ScaledGooeyBatchNorm2(name = name+'_batchnorm_f1', trainable=trainable, record_metrics = record_metrics)(xflat) 
-        xflat = Dense(64, activation='elu',name = name+'_2_flat_dense1', trainable=trainable)(xflat)
-        xflat = Dense(32, activation='tanh',name = name+'_2_flat_dense2', trainable=trainable)(xflat)
-        x = Concatenate()([x,xflat])
-        
-    #x = ScaledGooeyBatchNorm2(name = name+'_batchnorm2', trainable=trainable, record_metrics = record_metrics)(x)
-    # 
-    # ## some local edge conv (within reason)
-    # x = Dense(64,activation=activation,name=name+'dense_np_1a',trainable=trainable)(x)
-    x = Dense(64,activation=activation,name=name+'dense_np_1b',trainable=trainable)(x)  
+    
+    x = ScaledGooeyBatchNorm2(name = name+'_batchnorm1', trainable=trainable, record_metrics = record_metrics)(x)
+    
+    x = Concatenate()([SelfAttention(name = name+'_selfatt2')(x),x])
+    x = Dense(64,activation=activation,name=name+'dense_np_0b',trainable=trainable)(x) 
+    
+    x = DistanceWeightedMessagePassing([32,32],name=name+'np_dmp2',
+                                        activation='elu',#keep output in check
+                                        trainable=trainable)([x,nidx,dist])# hops are rather light 
+    
+    x = ScaledGooeyBatchNorm2(name = name+'_batchnorm2', trainable=trainable, record_metrics = record_metrics)(x)
+    
+    x = Concatenate()([SelfAttention(name = name+'_selfatt3')(x),x])
+    
+    
+    x = DistanceWeightedMessagePassing([32,32],name=name+'np_dmp3',
+                                        activation='elu',#keep output in check
+                                        trainable=trainable)([x,nidx,dist])# hops are rather light 
+               
+    x = Dense(46,activation=activation,name=name+'dense_np_1b',trainable=trainable)(x)  
     x = Dense(32,activation='elu',name=name+'dense_np_2a',trainable=trainable)(x) 
     x = RaggedGlobalExchange(skip_min=True)([x,rs]) #not a lot of information in minimum due to elu activation
     x = ScaledGooeyBatchNorm2(name = name+'_batchnorm3', trainable=trainable, record_metrics = record_metrics)(x)
-    x = Concatenate()([x, x_full_skip])
+    #make sure things don't explode
+    x = Dense(32,activation='elu',name=name+'dense_np_2b',trainable=trainable)(x) 
+    x = Concatenate()([x, prime_coords])
+    x = ScaledGooeyBatchNorm2(name = name+'_batchnorm4', 
+                              trainable=trainable, record_metrics = record_metrics)(x)
+    
     
     if dynamic_spectators:
         tmp_spec = Dense(1, activation = 'sigmoid', name = name+'_dyn_specw')(x)
@@ -1692,14 +1685,14 @@ def pre_graph_condensation(
                    #kernel_initializer = 'zeros',
                    trainable=trainable)(x)
                    
-        
     coords = LLClusterCoordinates(
+                downsample=10000,
                 record_metrics = record_metrics,
                 active=trainable,
                 scale = 1.,
                 ignore_noise = True, #this is filtered by the graph condensation anyway
                 print_batch_time=True,
-                hinge_mode = False
+                hinge_mode = True
                 )([coords, orig_inputs['t_idx'], orig_inputs['t_spectator_weight'], 
                                             score, rs ])
     
@@ -1774,8 +1767,9 @@ def pre_graph_condensation(
                         trans_a['weights_down'], trans_a['nidx_down'], rs])
                      
         orig_inputs['t_energy'] = PlotGraphCondensationEfficiency(
-                     plot_every = debugplots_after,
+                     plot_every = debugplots_after//2,
                      outdir= debug_outdir ,
+                     name = name + '_efficiency',
                      publish = publish)(orig_inputs['t_energy'], orig_inputs['t_idx'], trans_a)
     
     
@@ -1788,7 +1782,7 @@ def pre_graph_condensation(
                                              trans_a['rs_up']])
     
                     
-    out['down_features'] = Concatenate()([x,x_skip, x_full_skip]) # this is for further "bouncing"
+    out['down_features'] = Concatenate()([x,x_skip,x_in]) # this is for further "bouncing"
     out['is_track'] = SelectUp()(is_track, trans_a)
     out['cond_coords'] = coords
     out['row_splits'] = trans_a['rs_up']

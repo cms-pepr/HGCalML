@@ -450,7 +450,7 @@ class CondensateToIdxs(LayerWithMetrics):
         
         if self.return_thresholds:
             self.dyn_t_d = self.add_weight(name = 'dyn_td', shape=(1,),
-                                        initializer = td_init, 
+                                       initializer = td_init, 
                                         constraint = 'non_neg',
                                         trainable = self.trainable and self.return_thresholds) 
             
@@ -1178,17 +1178,26 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
         out = super(SignedScaledGooeyBatchNorm, self).call(v, training)
         return s*out
 
-
 class ScaledGooeyBatchNorm2(LayerWithMetrics):
     def __init__(self, 
                  viscosity=0.01,
                  fluidity_decay=1e-4,
                  max_viscosity=0.99,
-                 loss_active = True, #can be turned off for performance in val mode
-                 learn = True,
-                 epsilon=1e-4,
-                 first_calls = 1024,
+                 no_gaus = True,
+                 epsilon=1e-2,
                  **kwargs):
+        '''
+        Input features (or [features, condition]), output: normed features
+        
+        Options:
+        - viscosity:      starting viscosity, where the update for the next batch is
+                          update = old + (1. - viscosity)*(new - old).
+                          This means, low values will create strong updates with each batch
+        - fluidity_decay: 'thickening' of the viscosity (see scripts/gooey_plot.py for visualisation)
+        - no_gaus:         do not take variance but take mean difference to mean. 
+                           Better for non-gaussian inputs and much more robust.
+        - epsilon:         when dividing, added to the denominator (should not require adjustment)
+        '''
         
         super(ScaledGooeyBatchNorm2, self).__init__(**kwargs)
         
@@ -1201,9 +1210,7 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         self.max_viscosity = max_viscosity
         self.viscosity_init = viscosity
         self.epsilon = epsilon
-        self.loss_active = loss_active
-        self.learn = learn
-        self.first_calls = first_calls
+        self.no_gaus = no_gaus
         
     def compute_output_shape(self, input_shapes):
         #return input_shapes[0]
@@ -1216,9 +1223,7 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
                   'fluidity_decay': self.fluidity_decay,
                   'max_viscosity': self.max_viscosity,
                   'epsilon': self.epsilon,
-                  'loss_active': self.loss_active,
-                  'learn': self.learn,
-                  'first_calls': self.first_calls
+                  'no_gaus': self.no_gaus
                   }
         base_config = super(ScaledGooeyBatchNorm2, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -1233,9 +1238,9 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
             shape = (1,)+input_shapes[1:]
         
         self.mean = self.add_weight(name = 'mean',shape = shape, 
-                                    initializer = 'zeros', trainable =  self.trainable) 
-        self.variance = self.add_weight(name = 'variance',shape = shape, 
-                                    initializer = 'ones', trainable =  self.trainable)
+                                    initializer = 'zeros', trainable =  False) 
+        self.den = self.add_weight(name = 'den',shape = shape, 
+                                    initializer = 'ones', trainable =  False)
         self.viscosity = tf.Variable(initial_value=self.viscosity_init, 
                                          name='viscosity',
                                          trainable=False,dtype='float32')
@@ -1245,15 +1250,11 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         
         self.gamma = self.add_weight(name = 'gamma',shape = shape, 
                                     initializer = 'ones', trainable = self.trainable) 
-        
-        self._first_calls = tf.Variable(initial_value=self.first_calls, 
-                                         name='_first_calls',
-                                         trainable=False,dtype='int32')
             
         super(ScaledGooeyBatchNorm2, self).build(input_shapes)
     
     def _m_mean(self, x, mask):
-        x = tf.reduce_sum(x,axis=0,keepdims=True)
+        x = tf.reduce_sum( x * mask ,axis=0,keepdims=True)
         norm = tf.abs(tf.reduce_sum(mask, axis=0,keepdims=True)) + self.epsilon
         return tf.math.divide_no_nan(x, norm)
                     
@@ -1275,108 +1276,79 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
             newvisc = tf.keras.backend.in_train_phase(newvisc,self.viscosity,training=training)
             tf.keras.backend.update(self.viscosity,newvisc)
     
-    def _update_calls(self, training):
-        now = self._first_calls - 1
-        now = tf.where(now >= 0, now, 0)
-        now = tf.keras.backend.in_train_phase(now,self._first_calls,training=training)
-        tf.keras.backend.update(self._first_calls, now)
-    
-    def _loss(self, delta):
-        delta_abs = tf.abs(delta)
-        delta_log = 2. * tf.math.log(delta_abs) + 1.
-        delta = tf.where(delta_abs < 1., delta_abs**2, delta_log)
-        return tf.where(tf.math.is_finite(delta),delta,0.)
+    def _calc_out(self, x_in, cond):
+        
+        ngmean = tf.stop_gradient(self.mean)
+        ngden = tf.stop_gradient(self.den)
+        
+        out = (x_in - ngmean) / (tf.abs(ngden) + self.epsilon)
+        out = out*self.gamma + self.bias
+        return tf.where(cond>0.5,  out, x_in)
     
     def call(self, inputs, training=None):
         if isinstance(inputs,list):
             x_in, cond = inputs
-            cond = tf.where(cond==0., 0., tf.ones_like(cond)) #make sure it's ones and zeros
+            cond = tf.where(cond > 0.5, tf.ones_like(cond), 0.) #make sure it's ones and zeros
         else:
             x_in = inputs
             cond = tf.ones_like(x_in[...,0:1])
         
-        if (not self.loss_active) or (not self.trainable):
-            out = (x_in - self.mean) / (tf.abs(self.variance) + self.epsilon)
-            out = out*self.gamma + self.bias
-            return tf.where(cond>0.,  out, x_in)
-        
+        if not self.trainable:
+            return self._calc_out(x_in, cond)
         
         x = tf.stop_gradient(x_in) #stop feat gradient
         #x = x_in #maybe don't stop the gradient?
         x_m = self._calc_mean_and_protect(x, cond, self.mean)
-        x_v = self._calc_mean_and_protect((x - x_m)**2, cond, self.variance)
-        myloss = 0.
-        if self.learn:
+        
+        diff_to_mean = tf.abs(x - self.mean) #self.mean or x_m
+        if not self.no_gaus:
+            diff_to_mean = diff_to_mean**2
             
-            #huber like losses
-            mloss = self._loss(x_m - self.mean)
-            vloss = self._loss(x_v - self.variance)
+        x_std = self._calc_mean_and_protect(diff_to_mean, cond, self.den) 
+        
+        if not self.no_gaus:
+            x_std = tf.sqrt(x_std + self.epsilon)
             
-            mloss = (1. - self.viscosity) * tf.reduce_mean(mloss)
-            vloss = (1. - self.viscosity) * tf.reduce_mean(vloss)
-            myloss = mloss + vloss
-            self.add_loss(myloss) # should be zero
-            
-            if self._first_calls > 0:
-                #fast decay to get the starting point right
-                visc = 1. - tf.cast(self._first_calls,'float32') / float(self.first_calls)
-                
-                update = self._calc_update(self.mean,x_m,training, visc)
-                update = tf.where(self._first_calls > 0, update, self.mean)
-                update = tf.keras.backend.in_train_phase(update,self.mean,training=training)
-                tf.keras.backend.update(self.mean, update)
-                
-                update = self._calc_update(self.variance,x_v,training, visc)
-                update = tf.where(self._first_calls > 0, update, self.variance)
-                update = tf.keras.backend.in_train_phase(update,self.variance,training=training)
-                tf.keras.backend.update(self.variance, update)
-            
-        else:
-            update = self._calc_update(self.mean,x_m,training)
-            tf.keras.backend.update(self.mean, update)
-            
-            update = self._calc_update(self.variance,x_v,training)
-            tf.keras.backend.update(self.variance, update)
-            
-        self._update_calls(training)
+        
+        update = self._calc_update(self.mean,x_m,training)
+        tf.keras.backend.update(self.mean, update)
+        
+        update = self._calc_update(self.den,x_std,training)
+        tf.keras.backend.update(self.den, update)
+        
         self._update_viscosity(training)
         
-        self.add_prompt_metric(tf.reduce_mean(x_m - self.mean), self.name+'_mean')
-        self.add_prompt_metric(tf.reduce_mean(x_v / self.variance), self.name+'_var')
-        # self.add_prompt_metric(myloss, self.name+'_loss')
+        out = self._calc_out(x_in, cond)
         
-        ngmean = tf.stop_gradient(self.mean)
-        ngvar = tf.stop_gradient(self.variance)
-        
-        out = (x_in - ngmean) / (tf.abs(ngvar) + self.epsilon)
-        out = out*self.gamma + self.bias
-        return tf.where(cond>0.,  out, x_in)
+        return out
+    
         
     
 class ConditionalScaledGooeyBatchNorm(LayerWithMetrics):
-    def __init__(self,
-                 viscosity=0.1,
-                 fluidity_decay=1e-4,
-                 max_viscosity=0.99,
-                 loss_active = True, #can be turned off for performance in val mode
-                 learn = True,
-                 epsilon=1e-4,
-                 **kwargs):
+    def __init__(self,**kwargs):
+        '''
+        Inputs (list):
+        - features
+        - condition (threshold > 0.5)
+        
+        Applies normalisation to two different classes within the array.
+        The condition (float) selects which is applied to which entry.
+        
+        Options: see ScaledGooeyBatchNorm2 options, will be passed as kwargs
+        '''
         
         super(ConditionalScaledGooeyBatchNorm, self).__init__(**kwargs)
         if 'name' in kwargs.keys():
             kwargs.pop('name')
         
         with tf.name_scope(self.name + "/1/"):
-            self.bn_a = ScaledGooeyBatchNorm2(viscosity,fluidity_decay,max_viscosity,
-                                              loss_active,learn,epsilon,name=self.name+'_bn_a',**kwargs)
+            self.bn_a = ScaledGooeyBatchNorm2(name=self.name+'_bn_a',**kwargs)
         with tf.name_scope(self.name + "/2/"):
-            self.bn_b = ScaledGooeyBatchNorm2(viscosity,fluidity_decay,max_viscosity,
-                                              loss_active,learn,epsilon,name=self.name+'_bn_b',**kwargs)
+            self.bn_b = ScaledGooeyBatchNorm2(name=self.name+'_bn_b',**kwargs)
         
     def compute_output_shape(self, input_shapes):
         #return input_shapes[0]
-        return input_shapes
+        return self.bn_a.compute_output_shape(input_shapes)
               
     def build(self, input_shapes):
         
@@ -1389,12 +1361,12 @@ class ConditionalScaledGooeyBatchNorm(LayerWithMetrics):
         
     def call(self, inputs, training=None):
         x, cond = inputs
-        cond = tf.where(cond==0., 0., tf.ones_like(cond)) #make sure it's ones and zeros
+        cond = tf.where(cond > 0.5, tf.ones_like(cond),  0.) #make sure it's ones and zeros
         
         x_a = self.bn_a([x, cond],training = training)
         x_b = self.bn_b([x, 1.-cond], training = training)
         
-        return tf.where(cond>0., x_a, x_b)
+        return tf.where(cond>0.5, x_a, x_b)
             
 
 class ProcessFeatures(tf.keras.layers.Layer):
@@ -3274,7 +3246,8 @@ class RaggedGravNet(LayerWithMetrics):
         
         idx,dist = BinnedSelectKnn(self.n_neighbours+1, coordinates,  row_splits,
                                  max_radius= -1.0, tf_compatible=False,
-                                 n_bins=self.n_knn_bins
+                                 n_bins=self.n_knn_bins, name=self.name
+                                 
                                  )
         idx = tf.reshape(idx, [-1, self.n_neighbours+1])
         dist = tf.reshape(dist, [-1, self.n_neighbours+1])
@@ -3309,7 +3282,26 @@ class RaggedGravNet(LayerWithMetrics):
         base_config = super(RaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-
+class SelfAttention(tf.keras.layers.Layer):
+    
+    def __init__(self,**kwargs):
+        
+        super(SelfAttention, self).__init__(**kwargs)
+        with tf.name_scope(self.name + "/1/"):
+            self.att_dense = tf.keras.layers.Dense(1, activation = 'softmax')
+            
+    def build(self, input_shapes): 
+        with tf.name_scope(self.name + "/1/"):
+            self.att_dense.build(input_shapes)
+        super(SelfAttention, self).build(input_shapes)
+        
+    def compute_output_shape(self, input_shapes): 
+        return input_shapes
+    
+    def call(self, input):
+        att = 2.* self.att_dense(input)
+        return input * att
+    
 
 class MultiAttentionGravNetAdd(LayerWithMetrics):
     def __init__(self,
@@ -3804,17 +3796,15 @@ class XYZtoXYZPrime(tf.keras.layers.Layer):
         x = inputs[...,0:1] 
         y = inputs[...,1:2] 
         z = inputs[...,2:3] 
-        r = tf.sqrt(tf.reduce_sum(inputs**2, axis=-1, keepdims=True) + 1e-6)
+        r = tf.sqrt(tf.reduce_sum(inputs**2, axis=-1, keepdims=True) + 1e-2)
         
         #also adjust scale a bit
-        xprime = x / tf.where(z == 0., 1e-3, z *10.)
-        yprime = y / tf.where(z == 0., 1e-3, z *10.)
+        xprime = x / tf.where(z == 0., tf.sign(z)*1., z *10.)
+        yprime = y / tf.where(z == 0., tf.sign(z)*1., z *10.)
         zprime = r / 100.
         
         return tf.concat([xprime,yprime,zprime], axis=-1)
         
-
-
 
 
         
