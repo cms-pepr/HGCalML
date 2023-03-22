@@ -16,7 +16,7 @@ from datastructures import TrainData_NanoML, TrainData_PreselectionNanoML
 
 from Layers import RaggedGravNet, DistanceWeightedMessagePassing
 from Layers import RaggedGlobalExchange, DistanceWeightedMessagePassing 
-from Layers import DictModel, ConditionalScaledGooeyBatchNorm, ScaledGooeyBatchNorm 
+from Layers import DictModel
 from Layers import ConditionalBatchNorm, ConditionalBatchEmbedding
 from Layers import CastRowSplits, PlotCoordinates, LLFullObjectCondensation
 from Regularizers import AverageDistanceRegularizer
@@ -55,7 +55,7 @@ LOSS_OPTIONS = {
     }
 
 # Configuration for model
-PRESELECTION = True
+PRESELECTION = False
 PASS_THROUGH = not PRESELECTION
 # PRESELECTION_PATH = os.getenv("HGCALML") + '/models/pre_selection_toydetector_ACAT/KERAS_check_best_model.h5'
 # Best model as of 01.02. 11:30
@@ -136,9 +136,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             kernel_regularizer=DENSE_REGULARIZER)(x)
         x = Dense(64,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
-        # x = ScaledGooeyBatchNorm(**BATCHNORM_OPTIONS)(x)
-        # x = ConditionalScaledGooeyBatchNorm(**BATCHNORM_OPTIONS)([x, is_track])
-        x = ConditionalBatchNorm()([x, is_track])
+        x = BatchNormalization()(x)
         x = Concatenate()([c_coords,x])
         
         xgn, gncoords, gnnidx, gndist = RaggedGravNet(
@@ -169,7 +167,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             activation=DENSE_ACTIVATION
             )([x, gnnidx, gndist])
             
-        x = ScaledGooeyBatchNorm(**BATCHNORM_OPTIONS)(x)
+        x = BatchNormalization()(x)
         
         x = Dense(64,name='dense_past_mp_'+str(i),activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
@@ -178,7 +176,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         x = Dense(64,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
         
-        x = ScaledGooeyBatchNorm(**BATCHNORM_OPTIONS)(x)
+        x = BatchNormalization()(x)
         
         allfeat.append(x)
         
@@ -194,7 +192,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ########### weights                                       #################
     ###########################################################################
     
-    x = ScaledGooeyBatchNorm(**BATCHNORM_OPTIONS)(x)
+    x = BatchNormalization()(x)
     x = Concatenate()([c_coords]+[x])
     
     pred_beta, pred_ccoords, pred_dist, \
