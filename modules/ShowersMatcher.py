@@ -124,7 +124,7 @@ class ShowersMatcher:
 
         keys = self.predictions_dict.keys()
         pred_nodes = []
-        skip = {'row_splits', 'rechit_energy'}
+        skip = ['row_splits', 'rechit_energy', 'no_noise_rs', 'noise_backscatter']
 
         for i in range(len(pred_shower_sid)):
             node_attributes = dict()
