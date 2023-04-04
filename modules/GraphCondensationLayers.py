@@ -132,10 +132,12 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
                                       tf.assert_greater(tf.shape(score)[0]+1,
                                                         tf.shape(trans['sel_idx_up'])[0])]):
         
-            nidx, dist = select_knn(self.K+1, coords, rs, direction = direction, n_bins = self.n_knn_bins)
+            nidx, dist = select_knn(self.K+1, coords, rs, direction = direction, 
+                                    n_bins = self.n_knn_bins, name=self.name)
             nidx = tf.reshape(nidx, [-1, self.K+1]) #to define shape for later
             dist = tf.reshape(dist, [-1, self.K+1])
             dist = tf.where(nidx<0,0.,dist)#needed?
+            dist = tf.stop_gradient(dist)
         
         trans['nidx_down'] = nidx[:,1:] #remove the self reference
         trans['distsq_down'] = dist[:,1:]
@@ -222,6 +224,9 @@ class PushUp(tf.keras.layers.Layer):
                  mode = 'mean',
                  add_self = False,
                  **kwargs):
+        '''
+        If weights are provided to the call function, they will be forced to be >=0 .
+        '''
         
         assert mode == 'sum' or mode == 'mean'
         
@@ -244,6 +249,7 @@ class PushUp(tf.keras.layers.Layer):
         
         up_f = features
         if weight is not None:
+            weight = tf.nn.relu(weight) #safe guard
             up_f *= weight
                 
         if self.mode == 'mean': 
@@ -260,7 +266,7 @@ class PushUp(tf.keras.layers.Layer):
         up_f = push_sum(nweights, up_f, nidx)
         up_f = tf.gather_nd(up_f, transition['sel_idx_up'])
         if self.mode == 'mean': 
-            up_f = tf.math.divide_no_nan(up_f[:,1:] , up_f[:,0:1])
+            up_f = tf.math.divide_no_nan(up_f[:,1:] , up_f[:,0:1] + 1e-3 )
         up_f = tf.reshape(up_f, [-1, features.shape[1]])#just so the shapes are defined upon placeholder call
         
         return up_f
@@ -752,7 +758,7 @@ class LLGraphCondensationScore(LossLayerBase):
         elif len(inputs) == 5:
             score, coords, t_idx, t_energy, rs = inputs
         
-        nidx, _ = select_knn(self.K, coords, rs)
+        nidx, _ = select_knn(self.K, coords, rs, name=self.name)
         
         n_score = select(nidx, score, 0.)
         n_t_idx = select(nidx, t_idx, -2)
@@ -799,7 +805,7 @@ class LLGraphCondensationScore(LossLayerBase):
         assert len(inputs) == 4
         score, coords, t_idx, rs = inputs
         
-        nidx, _ = select_knn(self.K, coords, rs)
+        nidx, _ = select_knn(self.K, coords, rs, name=self.name)
         
         n_score = select(nidx, score, 0.)
         n_t_idx = select(nidx, t_idx, -2)
@@ -842,7 +848,7 @@ class LLGraphCondensationScore(LossLayerBase):
         #global_loss = tf.where(tf.math.is_finite(global_loss), global_loss ,0.)
         
         # now the more complicaed one
-        nidx, _ = select_knn(self.K, coords, rs)
+        nidx, _ = select_knn(self.K, coords, rs, name=self.name)
         
         n_score = select(nidx, score, 0.)
         n_t_idx = select(nidx, t_idx, -2)
@@ -895,7 +901,7 @@ class LLGraphCondensationScore(LossLayerBase):
         #global_loss = tf.where(tf.math.is_finite(global_loss), global_loss ,0.)
         
         # now the more complicaed one
-        nidx, _ = select_knn(self.K, coords, rs)
+        nidx, _ = select_knn(self.K, coords, rs, name=self.name)
         
         n_score = select(nidx, score, 0.)
         n_t_idx = select(nidx, t_idx, -2)

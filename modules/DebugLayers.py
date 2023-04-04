@@ -15,6 +15,25 @@ from DeepJetCore.training.DeepJet_callbacks import publish
 import queue
 import os
 
+class CumulativeArray(object):
+    def __init__(self, capacity = 60, default=0.):
+        
+        assert capacity > 0
+        self.data = None
+        self.capacity = capacity
+        self.default = default
+        
+    def put(self, arr):
+        arr = np.where(arr == np.nan, self.default, arr)
+        if self.data is None:
+            self.data = [np.array(arr)]
+        else:
+            self.data.append(np.array(arr))
+            if len(self.data) > self.capacity:
+                self.data = self.data[1:] #remove oldest
+                
+    def get(self):
+        return np.sum( self.data , axis=0 )
 
 class AveragedArray(object):
     def __init__(self, update = 0.2, default=0.):
@@ -535,8 +554,10 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         Output:
          - t_energy 
         '''
-        self.eff = AveragedArray(update, default=0.)
+        
         super(PlotGraphCondensationEfficiency, self).__init__(**kwargs)
+        self.num = CumulativeArray(40)
+        self.den = CumulativeArray(40)
     
     #overwrite here
     def call(self, t_energy, t_idx, graph_trans , training=None):
@@ -592,22 +613,29 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         orig_energies = np.concatenate(orig_energies, axis=0)
         energies = np.concatenate(energies, axis=0)
         
-        bins = np.logspace(-1, 2., num=10)
+        bins = np.logspace(-1, 2.3, num=16)#roughly up to 200
         
         h, bins = np.histogram(energies, bins = bins)
         h = np.array(h, dtype='float32')
+        
+        self.num.put(h)
 
         h_orig, _ = np.histogram(orig_energies, bins = bins)
         h_orig = np.array(h_orig, dtype='float32')
         
-        h /= h_orig + 1e-6
+        self.den.put(h)
+        
+        ##interface to old code
+        
+        h = self.num.get()
+        h_orig = self.den.get()
+        
+        h /= h_orig + 1e-3
         
         h = np.where( h_orig==0, np.nan, h )
         
         #make bins points
         bins = bins[:-1] + (bins[1:]-bins[:-1])/2.
-        
-        h = self.eff.put(h)
         
         fig = px.line(x=bins, y=h, template='plotly_dark', log_x = True)
         
@@ -615,7 +643,6 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
             xaxis_title="Truth shower energy [GeV]",
             yaxis_title="Efficiency",
         )
-        
         
         fig.write_html(self.outdir+'/'+self.name+'.html')
         if self.publish is not None:

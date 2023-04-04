@@ -1,5 +1,6 @@
 import gzip
 import pickle
+import numpy as np
 
 from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
@@ -139,7 +140,8 @@ class HGCalPredictor():
                 else:
                     predictions_dict = model(data_in[0])
                 for k in predictions_dict.keys():
-                    predictions_dict[k] = predictions_dict[k].numpy()
+                    # predictions_dict[k] = predictions_dict[k].numpy()
+                    predictions_dict[k] = np.array(predictions_dict[k])
                 features_dict = td.createFeatureDict(data_in[0])
                 truth_dict = td.createTruthDict(data_in[0])
                 

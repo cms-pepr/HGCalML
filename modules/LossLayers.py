@@ -1066,7 +1066,7 @@ class LLClusterCoordinates(LossLayerBase):
     
     def _attfunc(self, dsq):
         if self.hinge_mode:
-            return dsq
+            return tf.sqrt(dsq+1e-4)
         return tf.math.log(tf.math.exp(1.)*dsq+1.)
     
     def _rep_func(self,dsq):
@@ -1162,6 +1162,8 @@ class LLClusterCoordinates(LossLayerBase):
                 sel = tf.expand_dims(sel,axis=1)
                 coords = tf.gather_nd(coords, sel)
                 tidx = tf.gather_nd(tidx, sel)
+                specw = tf.gather_nd(specw, sel)
+                energy = tf.gather_nd(energy, sel)
             
             tlv, tdl, trl = self._rs_loop(coords,tidx,specw,energy)
             tlv = tf.where(tf.math.is_finite(tlv), tlv, 0.)
