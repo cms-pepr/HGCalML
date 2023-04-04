@@ -38,7 +38,6 @@ def noise_model(Inputs, td, debugplots_after=600, debug_outdir=None):
     # this will create issues with the output and 
     # is only needed if used in a full dim model.
     # so it's ok to pop it here for training
-    filtered.pop('scatterids')
     
     return DictModel(inputs=Inputs, outputs=filtered)
 

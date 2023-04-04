@@ -131,12 +131,14 @@ def noise_filter_block(orig_inputs, x, name, trainable,
         out[k] = SelectFromIndices()([no_noise_sel, out[k]]) 
     
     out['row_splits'] = no_noise_rs
+
+    '''
     scatterids = noise_backscatter
-        
     if 'scatterids' in orig_inputs.keys():
         out['scatterids'] = orig_inputs['scatterids'] + scatterids
     else:
         out['scatterids'] = scatterids
+    '''
         
     if not 'orig_row_splits' in orig_inputs.keys():
         out['orig_row_splits'] = orig_inputs['row_splits']
@@ -144,6 +146,6 @@ def noise_filter_block(orig_inputs, x, name, trainable,
         out['orig_row_splits'] = orig_inputs['orig_row_splits']#pass through 
     out['no_noise_sel'] = no_noise_sel
     out['no_noise_rs'] = no_noise_rs
-    out['noise_backscatter'] = noise_backscatter
+    # out['noise_backscatter'] = noise_backscatter
         
     return out
