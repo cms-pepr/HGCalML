@@ -78,14 +78,20 @@ class OCHits2ShowersLayer(tf.keras.layers.Layer):
 
 
 def process_endcap(hits2showers_layer, energy_gather_layer, features_dict, predictions_dict):
-    pred_sid, _, alpha_idx, _, ncond = hits2showers_layer(predictions_dict['pred_ccoords'],predictions_dict['pred_beta'],predictions_dict['pred_dist'])
+    pred_sid, _, alpha_idx, _, ncond = hits2showers_layer(
+            predictions_dict['pred_ccoords'],
+            predictions_dict['pred_beta'],
+            predictions_dict['pred_dist'])
     pred_sid = pred_sid.numpy()
     alpha_idx = alpha_idx.numpy()
 
     processed_pred_dict = dict()
     processed_pred_dict['pred_sid'] = pred_sid
 
-    pred_energy = energy_gather_layer(pred_sid, predictions_dict['pred_energy_corr_factor'],  features_dict['recHitEnergy'])
+    pred_energy = energy_gather_layer(
+            pred_sid, 
+            predictions_dict['pred_energy_corr_factor'],  
+            features_dict['recHitEnergy'])
     processed_pred_dict['pred_energy'] = pred_energy.numpy()
 
     if 'pred_energy_high_quantile' in predictions_dict.keys():
@@ -93,7 +99,9 @@ def process_endcap(hits2showers_layer, energy_gather_layer, features_dict, predi
             = 0.5 * (predictions_dict['pred_energy_high_quantile'] - predictions_dict['pred_energy_low_quantile'])
         processed_pred_dict.update(predictions_dict)
         processed_pred_dict.pop('pred_beta')
-        processed_pred_dict['pred_id'] = np.argmax(processed_pred_dict['pred_id'], axis=1)[:, np.newaxis]
+        processed_pred_dict['pred_id'] = np.argmax(
+                processed_pred_dict['pred_id'], 
+                axis=1)[:, np.newaxis]
 
     return processed_pred_dict, alpha_idx
 

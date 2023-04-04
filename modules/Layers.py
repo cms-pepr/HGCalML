@@ -113,6 +113,15 @@ global_layers_list['PrintMeanAndStd']=PrintMeanAndStd
 from GravNetLayersRagged import ElementScaling
 global_layers_list['ElementScaling']=ElementScaling
 
+from GravNetLayersRagged import ConditionalNormalizationLayer
+global_layers_list['ConditionalNormalizationLayer']=ConditionalNormalizationLayer
+
+from GravNetLayersRagged import ConditionalBatchNorm
+global_layers_list['ConditionalBatchNorm']=ConditionalBatchNorm
+
+from GravNetLayersRagged import ConditionalBatchEmbedding
+global_layers_list['ConditionalBatchEmbedding']=ConditionalBatchEmbedding
+
 from GravNetLayersRagged import GooeyBatchNorm
 global_layers_list['GooeyBatchNorm']=GooeyBatchNorm
 

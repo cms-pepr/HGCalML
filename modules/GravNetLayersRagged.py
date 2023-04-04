@@ -867,6 +867,140 @@ class ElementScaling(tf.keras.layers.Layer):
     def call(self, inputs, training=None):
         
         return inputs * self.scales
+
+
+class ConditionalNormalizationLayer(tf.keras.layers.Layer):
+    """
+    Layer that normalizes the input to zero mean and unit variance
+    This is written for inputs that are made out of two types of data
+    such that they can be normalized separately (e.g. hits and track).
+    The call function takes the condtion as an argument (e.g. is_track == 1)
+    - mean0: shape (n_features,)
+        array with the mean of the first type of data
+    - mean1: shape (n_features,)
+        array with the mean of the second type of data
+    - std0: shape (n_features,)
+        array with the standard deviation of the first type of data
+    - std1: shape (n_features,)
+        array with the standard deviation of the second type of data
+    """
+    def __init__(self,
+        mean0=[
+            2.9607140e-02,  2.6290069e+00,  0.0000000e+00,  1.5184632e-01, 3.3951630e+02,
+            -1.4371893e+00, -9.8884726e-01,  3.3424982e+02, 0.0000000e+00,  8.6794233e-01],
+        mean1=[
+            1.2764481e+01,  2.2522159e+00,  1.0000000e+00,  2.2571583e-01, 3.2457993e+02,
+            -1.1017900e+01, -3.2713771e+00,  3.1500000e+02, 0.0000000e+00,  0.0000000e+00],
+        std0=[
+            0.04933382, 0.3124265, 0.0, 0.05499146, 11.042463,
+            35.32781, 34.771965, 9.525104, 0.0, 0.34948865],
+        std1=[
+            31.369707, 0.3951621, 0.0, 0.08696821, 7.2839437,
+            50.60379, 49.66359, 0.0, 0.0, 0.0 ],
+        eps=1e-8):
+        super(ConditionalNormalizationLayer, self).__init__()
+        self.mean0 = tf.cast(mean0, tf.float32)
+        self.mean1 = tf.cast(mean1, tf.float32)
+        self.std0 = tf.cast(std0, tf.float32)
+        self.std1 = tf.cast(std1, tf.float32)
+        self.eps = tf.cast(eps, tf.float32)
+
+    def call(self, inputs):
+        """
+        inputs: [data, condition]
+        - data: tensor of shape (batch_size, n_features)
+        - condition: tensor of shape (batch_size, 1) or (batch_size,)
+        """
+        data, condition = inputs
+
+        condition = tf.reshape(condition, (-1, 1))
+        condition = tf.cast(condition, tf.bool)
+
+        mean = tf.where(condition, self.mean1, self.mean0)
+        std = tf.where(condition, self.std1, self.std0)
+
+        data = (data - mean) / (std + self.eps)
+        return data
+
+
+class ConditionalBatchNorm(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(ConditionalBatchNorm, self).__init__(**kwargs)
+        self.bn0 = tf.keras.layers.BatchNormalization()
+        self.bn1 = tf.keras.layers.BatchNormalization()
+
+
+    """
+    def build(self, input_shape):
+
+        # Call the build function for the batch normalization layers
+        self.bn0.build(input_shape[0])
+        self.bn1.build(input_shape[0])
+
+        # Call the build function of the parent class
+        super(ConditionalBatchNorm, self).build(input_shape)
+    """
+
+    def call(self, inputs):
+        x, condition = inputs[0], inputs[1] 
+        condition = tf.cast(condition > 0.5, tf.bool)
+        idx0 = tf.where(condition)
+        idx1 = tf.where(tf.logical_not(condition))
+        x0 = tf.gather_nd(x, idx0)
+        x1 = tf.gather_nd(x, idx1)
+        x0 = tf.expand_dims(x0, axis=1)  # add a new dimension to make it 2D
+        x1 = tf.expand_dims(x1, axis=1)  # add a new dimension to make it 2D
+        x0 = self.bn0(x0)
+        x1 = self.bn1(x1)
+        x0 = tf.squeeze(x0, axis=1)  # remove the added dimension to make it 1D again
+        x1 = tf.squeeze(x1, axis=1)  # remove the added dimension to make it 1D again
+        x = tf.tensor_scatter_nd_update(x, idx0, x0)
+        x = tf.tensor_scatter_nd_update(x, idx1, x1)
+        return x
+
+
+class ConditionalBatchEmbedding(tf.keras.layers.Layer):
+    def __init__(self, N=32, **kwargs):
+        super(ConditionalBatchEmbedding, self).__init__(**kwargs)
+        self.bn0 = tf.keras.layers.BatchNormalization()
+        self.bn1 = tf.keras.layers.BatchNormalization()
+        self.d0 = tf.keras.layers.Dense(N, activation='elu')
+        self.d1 = tf.keras.layers.Dense(N, activation='elu')
+
+    """
+    def build(self, input_shape):
+        # Initialize the weights for the dense layers
+        self.d0.build(input_shape[0])
+        self.d1.build(input_shape[0])
+
+        # Call the build function for the batch normalization layers
+        self.bn0.build((input_shape[0][0], 32))
+        self.bn1.build((input_shape[0][0], 32))
+
+        # Call the build function of the parent class
+        super(ConditionalBatchEmbedding, self).build(input_shape)
+    """
+
+
+    def call(self, inputs):
+        x, condition = inputs[0], inputs[1]
+        condition = tf.cast(condition > 0.5, tf.bool)  # Convert condition to boolean
+        idx0 = tf.where(condition)
+        idx1 = tf.where(tf.logical_not(condition))
+        x0 = self.d0(x)
+        x1 = self.d1(x)
+        x0 = tf.gather_nd(x, idx0)
+        x1 = tf.gather_nd(x, idx1)
+        x0 = tf.expand_dims(x0, axis=1)  # add a new dimension to make it 2D
+        x1 = tf.expand_dims(x1, axis=1)  # add a new dimension to make it 2D
+        x0 = self.bn0(x0)
+        x1 = self.bn1(x1)
+        x0 = tf.squeeze(x0, axis=1)  # remove the added dimension to make it 1D again
+        x1 = tf.squeeze(x1, axis=1)  # remove the added dimension to make it 1D again
+        x = tf.tensor_scatter_nd_update(x, idx0, x0)
+        x = tf.tensor_scatter_nd_update(x, idx1, x1)
+        return x
+
         
 class GooeyBatchNorm(LayerWithMetrics):
     def __init__(self,
