@@ -25,12 +25,14 @@ def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_e
 def create_outputs(x, n_ccoords=3, 
                    n_classes=n_id_classes,
                    n_pos = 2,
-                   fix_distance_scale=False,
+                   fix_distance_scale=True,
                    energy_factor=True,
                    name_prefix="output_module"):
     '''
     returns pred_beta, pred_ccoords, pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,pred_pos, pred_time, pred_id
     '''
+    if not fix_distance_scale:
+        print("warning: fix_distance_scale=False can lead to issues.")
     
     pred_beta = Dense(1, activation='sigmoid',name = name_prefix+'_beta')(x)
     pred_ccoords = Dense(n_ccoords,
