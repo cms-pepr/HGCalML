@@ -353,6 +353,52 @@ class LLValuePenalty(LossLayerBase):
 
 
 
+class LLObjectValuePenalty(LLValuePenalty):
+    
+    def __init__(self, 
+                 noise_scale = 10.,
+                 **kwargs):
+        '''
+        Simple value penalty loss, tries to keep values around default using simple
+        L2 regularisation; normalises per object
+        
+        inputs:
+        - value to penalise
+        - t_idx
+        
+        returns input
+        '''
+        self.noise_scale = noise_scale
+        super(LLObjectValuePenalty, self).__init__(**kwargs)
+
+    def get_config(self):
+        config = {'noise_scale': self.noise_scale}
+        base_config = super(LLObjectValuePenalty, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def loss(self, inputs):
+        assert len(inputs) == 2
+        val, tidx = inputs
+        
+        Msel,_,_ = CreateMidx(tidx, calc_m_not=False)
+        
+        if Msel is None or tf.shape(Msel)[0] == None:
+            return 0.
+        
+        val_k_m = SelectWithDefault(Msel, val, self.default) #K x V-obj x 1
+        mask_k_m = SelectWithDefault(Msel, tf.ones_like(val), 0.) #K x V-obj x 1
+        vloss = (self.default - val_k_m) ** 2
+        vloss = tf.math.divide_no_nan(tf.reduce_sum(vloss, axis=1), 
+                                      tf.reduce_sum(mask_k_m, axis=1) + 1e-6)
+        vloss = tf.reduce_mean(vloss)
+        
+        #now the noise
+        is_noise = tf.cast( tidx < 0, dtype='float32' )
+        vloss += self.noise_scale * tf.math.divide_no_nan(tf.reduce_sum(is_noise * (self.default - val)**2), 
+                                                          tf.reduce_sum(is_noise) + 1e-6)
+        return vloss
+        
+
 
 class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
     def __init__(self, 

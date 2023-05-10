@@ -360,9 +360,16 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 
 
-
-
-
+class GroupSortActivation(tf.keras.layers.Layer): 
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, inputs):
+        
+        return tf.sort(inputs, axis=-1)
+        
+global_layers_list['GroupSortActivation']=GroupSortActivation
 
 class SplitFeatures(Layer):
     def __init__(self,**kwargs):
