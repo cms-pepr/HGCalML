@@ -37,7 +37,7 @@ from GravNetLayersRagged import NeighbourGroups,AccumulateNeighbours,SelectFromI
 from GravNetLayersRagged import RecalcDistances, ElementScaling, RemoveSelfRef, CastRowSplits
 
 from Layers import CreateTruthSpectatorWeights, ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CreateGlobalIndices, SelectFromIndices, MultiBackScatter, KNN, MessagePassing, DictModel
-from Layers import GausActivation,GooeyBatchNorm, ScaledGooeyBatchNorm #make a new line
+from Layers import GausActivation,GooeyBatchNorm, ScaledGooeyBatchNorm2 #make a new line
 from model_blocks import create_outputs
 from Regularizers import AverageDistanceRegularizer
 
@@ -65,14 +65,6 @@ make this about coordinate shifts
 
 '''
 
-batchnorm_options={
-    'viscosity': .1,
-    'fluidity_decay': 1e-4,
-    'max_viscosity': 1.,
-    'soft_mean': False,
-    'variance_only': False,
-    'record_metrics': True,
-    }
 
 #loss options:
 loss_options={
@@ -161,7 +153,7 @@ def gravnet_model(Inputs,
         x = Dense(64,activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
-        x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
+        x = ScaledGooeyBatchNorm2()(x)
         ### reduction done
         
         n_dims = 6
@@ -194,13 +186,13 @@ def gravnet_model(Inputs,
                                            activation=dense_activation
                                            )([x,gnnidx,gndist])
             
-        x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
+        x = ScaledGooeyBatchNorm2()(x)
         
         x = Dense(64,name='dense_past_mp_'+str(i),activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         x = Dense(64,activation=dense_activation)(x)
         
-        x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
+        x = ScaledGooeyBatchNorm2()(x)
         
         
         allfeat.append(x)
@@ -221,7 +213,7 @@ def gravnet_model(Inputs,
     #######################################################################
     
     #use a standard batch norm at the last stage
-    x = ScaledGooeyBatchNorm(**batchnorm_options)(x)
+    x = ScaledGooeyBatchNorm2()(x)
     x = Concatenate()([c_coords]+[x])
     
     pred_beta, pred_ccoords, pred_dist,\
