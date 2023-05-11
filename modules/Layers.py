@@ -366,8 +366,8 @@ class GroupSortActivation(tf.keras.layers.Layer):
         return input_shapes
     
     def call(self, inputs):
-        
-        return tf.sort(inputs, axis=-1)
+        out = tf.sort(inputs, axis=-1)
+        return tf.reshape(out, tf.shape(inputs))
         
 global_layers_list['GroupSortActivation']=GroupSortActivation
 
