@@ -59,6 +59,8 @@ class GraphCondensation(RestrictedDict):
         super().__init__(*args,**kwargs)
         
     ## just for convenience ##
+    def check(self):
+        assert self['weights_down'].shape[1] == self['nidx_down'].shape[1] 
     
 
 
@@ -69,6 +71,7 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
                  score_threshold=0.5,
                  n_knn_bins = 21,
                  safeguard = True, #makes sure there are never no points selected per row split
+                 print_reduction = False,
                  **kwargs):
         
         super(CreateGraphCondensation, self).__init__(**kwargs)
@@ -77,9 +80,10 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         self.score_threshold = score_threshold
         self.n_knn_bins = n_knn_bins
         self.safeguard = safeguard
+        self.print_reduction = print_reduction
         
     def get_config(self):
-        config = {'K': self.K, 'score_threshold': self.score_threshold, 'n_knn_bins': self.n_knn_bins, 'safeguard': self.safeguard}
+        config = {'K': self.K, 'score_threshold': self.score_threshold, 'n_knn_bins': self.n_knn_bins, 'safeguard': self.safeguard, 'print_reduction': self.print_reduction}
         base_config = super(CreateGraphCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
         
@@ -123,8 +127,8 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         #use ragged to select
         trans['rs_up'] = tf.cast(rsel.row_splits,'int32')#for whatever reason
         
-        print(self.name, 'rs down',trans['rs_down'])
-        print(self.name, 'rs up',trans['rs_up'])
+        #print(self.name, 'rs down',trans['rs_down'])
+        #print(self.name, 'rs up',trans['rs_up'])
         #undo ragged
         trans['sel_idx_up'] = rsel.values
         
@@ -162,6 +166,8 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         trans['distsq_down'] = tf.reshape(trans['distsq_down'], [-1, self.K])
         trans['weights_down'] = tf.reshape(trans['weights_down'], [-1, self.K])
         
+        if self.print_reduction:
+            print(self.name, 'reduction', trans['rs_up'][-1], 'from', trans['rs_down'][-1])
         #curiosity:
         #print(self.name, 'max number of assigned:', tf.reduce_max( tf.unique_with_counts( tf.reshape(trans['nidx_down'], [-1]) )[2] ))
         
@@ -348,6 +354,26 @@ class PullDown(tf.keras.layers.Layer):
         return down_f
     
 graph_condensation_layers['PullDown'] =   PullDown  
+
+
+class SelectDown(tf.keras.layers.Layer): 
+    
+    def call(self, features, transition : GraphCondensation):
+        
+        #simply copied down
+        down_f = tf.scatter_nd(transition['sel_idx_up'], 
+                               features, 
+                               shape = [tf.shape(transition['weights_down'])[0],
+                                        tf.shape(features)[1]])
+        
+        nidx = transition['nidx_down']
+        out = tf.reshape(select(nidx, down_f, 0.), [tf.shape(nidx)[0], features.shape[1] * nidx.shape[1]])
+        print(self.name,'out shape',out.shape)
+        return out
+        
+graph_condensation_layers['SelectDown'] =   SelectDown          
+        
+        
 
 class Mix(tf.keras.layers.Layer): 
     '''
@@ -1049,6 +1075,96 @@ class MLGraphCondensationMetrics(MLReductionMetrics):
 
 
 graph_condensation_layers['MLGraphCondensationMetrics'] =   MLGraphCondensationMetrics 
+
+
+
+# convenience function
+from LossLayers import LLClusterCoordinates
+
+def add_attention(graph_transition, x, name, trainable = True):
+    a = graph_transition.copy()
+    att = tf.keras.layers.Dense(a['weights_down'].shape[1], activation='softmax', name=name, trainable = trainable)(x)
+    a['weights_down'] = att
+    return a
+    
+
+def point_pool(indict : dict, rs, name="p_pool", n_heads = 3, K_loss=64, trainable=True):
+    
+    #dict needs to contain: x, is_track, t_idx, t_spectator_weight
+    
+    x, is_track, t_idx, t_spectator_weight = indict['x'], indict['is_track'], indict['t_idx'], indict['t_spectator_weight']
+    
+    score = tf.keras.layers.Dense(1, activation='sigmoid',name=name+'_gc_score', trainable = trainable)(x)
+    coords = tf.keras.layers.Dense(3, name=name+'_xyz_cond', use_bias = False, trainable = trainable)(x) 
+
+    coords = LLClusterCoordinates(
+        active = trainable,
+                downsample=5000, #no need to use all
+                scale = 1.,
+                name = name+'_ll_cc',
+                ignore_noise = True, #this is filtered by the graph condensation anyway
+                hinge_mode = True
+                )([coords, t_idx, t_spectator_weight, 
+                                            score, rs ])
+                
+    score = LLGraphCondensationScore(
+        active = trainable,
+                name = name+'_ll_score',
+        K=K_loss,
+            )([score, coords, t_idx, rs])
+
+    trans_a = CreateGraphCondensation(
+        print_reduction = False,
+                name = name+'_gc_create',
+            score_threshold = 0.5,
+            K=5
+            )(score,coords,rs,
+              always_promote = is_track)
+    
+    out = []        
+    for i in range(n_heads):
+        att = add_attention(trans_a, x, name+'_up_att_'+str(i), trainable = trainable)
+        out.append( PushUp()(x,att) )
+        
+    odict = {}
+    for k in indict.keys():
+        odict[k] = SelectUp()(indict[k],trans_a)
+        
+    out.append(odict['x'])
+    out = tf.keras.layers.Concatenate()(out)
+    odict['x'] = out
+        
+    return trans_a, odict, trans_a['rs_up'] #for backscatter
+
+
+def point_scatter(x, trans : list, dense_nodes = 64, name = ""):
+    '''
+    watch out -> this can become big
+    '''
+    
+    trans = trans.copy()
+    trans.reverse()
+    for t in range(len(trans)):
+        ta = trans[t]
+        x = SelectDown()(x,ta)
+        x = tf.keras.layers.Dense(dense_nodes, activation='elu', name = name+'_d_'+str(t))(x)
+        
+    return x
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     
     
     
