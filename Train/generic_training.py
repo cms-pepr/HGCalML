@@ -177,7 +177,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         
         allfeat.append(x)
         
-    x = Concatenate()([c_coords] + allfeat)
+    x = Concatenate()(allfeat)
     x = Dense(64, name='Last_Dense_1', activation=DENSE_ACTIVATION)(x)
     x = Dense(64, name='Last_Dense_2', activation=DENSE_ACTIVATION)(x)
     x = Dense(64, name='Last_Dense_3', activation=DENSE_ACTIVATION)(x)
@@ -190,7 +190,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ###########################################################################
     
     x = ScaledGooeyBatchNorm2()(x)
-    x = Concatenate()([c_coords]+[x])
+    # x = Concatenate()([x])
     
     pred_beta, pred_ccoords, pred_dist, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
