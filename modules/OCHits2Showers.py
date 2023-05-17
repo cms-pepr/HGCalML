@@ -27,6 +27,228 @@ class OCGatherEnergyCorrFac(tf.keras.layers.Layer):
 
         return pred_energy[:, tf.newaxis]
 
+
+class OCGatherEnergyCorrFac3(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(OCGatherEnergyCorrFac2, self).__init__(**kwargs)
+
+    def call(self, pred_sid,pred_corr_factor, rechit_energy, no_noise_idx,
+            pred_beta, is_track=None, return_track_if_possible=False, row_splits=None,
+            return_tracks_where_possible=True, return_tracks=False, raw=False):
+        """
+        Same as `OCGatherEnergyCorrFac` with the addition that one can chose if the energy
+        reconstructed with the tracks or the enery reconstructed by the calorimeter should be used.
+        Shapes:
+            * rechit_energy, is_track:      [N_orig, 1]     (before noise filter)
+            * pred_sid, pred_corr_factor:   [N_filtered, 1] (after noise filter)
+            * no_noise_idx:                 [N_filtered, 1] (with indices up to N_orig as entries)
+        Returns: 
+            Will always return only one value:
+                return_tracks_where_possible overrides `return_tracks`
+            By default returns hit energy
+        """
+
+        is_track = tf.cast(is_track, tf.int32)
+        is_track = tf.reshape(tf.gather(is_track, no_noise_idx), (-1,1))            # Shape [N_filtered, 1]
+        rechit_energy = tf.reshape(tf.gather(rechit_energy, no_noise_idx), (-1,1))  # Shape [N_filtered, 1]
+
+        if row_splits is None:
+            row_splits = tf.constant([0, rechit_energy.shape[0]])
+        else:
+            print("WARNING OCGatherEnergyCorrFac2: \nI am not sure if this works with explicit row splits")
+
+
+        pred_sid_p1 = pred_sid +1 # For the -1 label for noise
+        pred_corr_factor = tf.where(pred_sid==-1, tf.zeros_like(pred_corr_factor, tf.float32), pred_corr_factor)
+
+        e_hit = tf.where(is_track==0, rechit_energy, tf.zeros_like(rechit_energy))
+        e_track = tf.where(is_track==1, rechit_energy, tf.zeros_like(rechit_energy))
+
+        # Second term is a factor to make all the pred_sids unique
+        # In case of only one sample (i.e. rowsplits [0, N_filtered]) this is identical to `pred_sid_p1`
+        # Shape: [N_filtered,] ! Different from other shapes
+        unique_segments = pred_sid_p1[:, 0] +\
+                (tf.reduce_max(pred_sid_p1)+1) * tf.ragged.row_splits_to_segment_ids(row_splits, out_type=tf.int32)
+
+        track_ids = pred_sid[is_track == 1]
+        track_uniques, track_ids, track_counts = tf.unique_with_counts(track_ids)
+        track_duplicates = track_uniques[track_counts > 1]
+        # track_duplicates now is a list that inclused the `pred_sid` where two tracks
+        # are assigned to the same `pred_sid`
+        duplicate_tensor = tf.logical_and(
+                tf.equal(tf.expand_dims(pred_sid, axis=-1), track_duplicates),
+                tf.expand_dims(is_track==1, axis=-1)
+                )
+        beta_exp = tf.reshape(
+                tf.repeat(pred_beta, repeats=track_duplicates.shape[0]),
+                (-1, 1, track_duplicates.shape[0])
+                )
+        beta_check = tf.where(duplicate_tensor, beta_exp, tf.zeros_like(beta_exp))
+        # beta_check: shape (Nbatch, 1, n_duplicates)
+        # all values are zero except for 
+        track_select = tf.argmax(beta_check, axis=0)
+        # track_select now includes the information of which index to chose for the pred_sid
+        # that are listed in `track_duplicates`
+        indices = tf.expand_dims(track_duplicates+1, axis=1)
+        updates = tf.gather_nd(e_track[:, 0], tf.expand_dims(track_select[0], axis=1))
+        pred_shower_tracks = (
+                tf.math.unsorted_segment_sum(
+                    e_track[:, 0] * pred_corr_factor[:, 0],
+                    unique_segments,
+                    num_segments=(tf.reduce_max(unique_segments)+1))
+                )
+        pred_shower_tracks = tf.tensor_scatter_nd_update(
+                pred_shower_tracks, indices, updates)
+        # This returns the summed up energy with the and has length n_showers
+        # we need to replace the entries that have duplicate tracks with the chosen
+        # track's energy (multiplied by the corresponding correction factor)
+        indices = tf.expand_dims(track_duplicates+1, axis=1)
+        updates = tf.gather_nd(e_track[:, 0], tf.expand_dims(track_select[0], axis=1))
+        pred_shower_tracks = tf.tensor_scatter_nd_update(
+                pred_shower_tracks, indices, updates)
+        # This is the updating
+
+        pred_shower_hits = (
+                tf.math.unsorted_segment_sum(
+                    e_hit[:, 0] * pred_corr_factor[:, 0],
+                    unique_segments,
+                    num_segments=(tf.reduce_max(unique_segments)+1))
+                )
+
+        pred_energy_hits = tf.gather(pred_shower_hits, unique_segments)
+        pred_energy_tracks = tf.gather(pred_shower_tracks, unique_segments)
+
+        if return_tracks_where_possible:
+            pred_energy = tf.where(
+                    pred_energy_tracks!=0., 
+                    pred_energy_tracks,
+                    pred_energy_hits)
+            return pred_energy[:, tf.newaxis]
+        elif return_tracks:
+            return pred_energy_tracks[:, tf.newaxis]
+        else:
+            return pred_energy_hits[:, tf.newaxis]
+
+
+
+class OCGatherEnergyCorrFac2(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(OCGatherEnergyCorrFac2, self).__init__(**kwargs)
+
+    def call(self, pred_sid,pred_corr_factor, rechit_energy, no_noise_idx,
+            pred_beta, is_track=None, return_track_if_possible=False, row_splits=None,
+            return_tracks_where_possible=True, return_tracks=False, raw=False):
+        """
+        Same as `OCGatherEnergyCorrFac` with the addition that one can chose if the energy
+        reconstructed with the tracks or the enery reconstructed by the calorimeter should be used.
+        Shapes:
+            * rechit_energy, is_track:      [N_orig, 1]     (before noise filter)
+            * pred_sid, pred_corr_factor:   [N_filtered, 1] (after noise filter)
+            * no_noise_idx:                 [N_filtered, 1] (with indices up to N_orig as entries)
+        Returns: 
+            Will always return only one value:
+                return_tracks_where_possible overrides `return_tracks`
+            By default returns hit energy
+        """
+
+        is_track = tf.cast(is_track, tf.int32)
+        # is_track = tf.reshape(tf.gather(is_track, no_noise_idx), (-1,1)) # Shape [N_filtered, 1]
+        # rechit_energy = tf.reshape(tf.gather(rechit_energy, no_noise_idx), (-1,1))  # Shape [N_filtered, 1]
+
+        if row_splits is None:
+            row_splits = tf.constant([0, rechit_energy.shape[0]])
+        else:
+            print("WARNING OCGatherEnergyCorrFac2: \nI am not sure if this works with explicit row splits")
+
+
+        pred_sid_p1 = pred_sid +1 # For the -1 label for noise
+        pred_corr_factor = tf.where(pred_sid==-1, tf.zeros_like(pred_corr_factor, tf.float32), pred_corr_factor)
+
+        e_hit = tf.where(is_track==0, rechit_energy, tf.zeros_like(rechit_energy))
+        e_track = tf.where(is_track==1, rechit_energy, tf.zeros_like(rechit_energy))
+
+        # Second term is a factor to make all the pred_sids unique
+        # In case of only one sample (i.e. rowsplits [0, N_filtered]) this is identical to `pred_sid_p1`
+        # Shape: [N_filtered,] ! Different from other shapes
+        unique_segments = pred_sid_p1[:, 0] +\
+                (tf.reduce_max(pred_sid_p1)+1) * tf.ragged.row_splits_to_segment_ids(row_splits, out_type=tf.int32)
+
+        track_ids = pred_sid[is_track == 1]
+        track_uniques, track_ids, track_counts = tf.unique_with_counts(track_ids)
+        track_duplicates = track_uniques[track_counts > 1]
+        # track_duplicates now is a list that inclused the `pred_sid` where two tracks
+        # are assigned to the same `pred_sid`
+        duplicate_tensor = tf.logical_and(
+                tf.equal(tf.expand_dims(pred_sid, axis=-1), track_duplicates),
+                tf.expand_dims(is_track==1, axis=-1)
+                )
+        beta_exp = tf.reshape(
+                tf.repeat(pred_beta, repeats=track_duplicates.shape[0]),
+                (-1, 1, track_duplicates.shape[0])
+                )
+        beta_check = tf.where(duplicate_tensor, beta_exp, tf.zeros_like(beta_exp))
+        # beta_check: shape (Nbatch, 1, n_duplicates)
+        # all values are zero except for 
+        track_select = tf.argmax(beta_check, axis=0)
+        # track_select now includes the information of which index to chose for the pred_sid
+        # that are listed in `track_duplicates`
+        indices = tf.expand_dims(track_duplicates+1, axis=1)
+        updates = tf.gather_nd(e_track[:, 0], tf.expand_dims(track_select[0], axis=1))
+        if raw:
+            pred_shower_tracks = (
+                    tf.math.unsorted_segment_sum(
+                        e_track[:, 0],
+                        unique_segments,
+                        num_segments=(tf.reduce_max(unique_segments)+1))
+                    )
+        else:
+            pred_shower_tracks = (
+                    tf.math.unsorted_segment_sum(
+                        e_track[:, 0] * pred_corr_factor[:, 0],
+                        unique_segments,
+                        num_segments=(tf.reduce_max(unique_segments)+1))
+                    )
+        pred_shower_tracks = tf.tensor_scatter_nd_update(
+                pred_shower_tracks, indices, updates)
+        # This returns the summed up energy with the and has length n_showers
+        # we need to replace the entries that have duplicate tracks with the chosen
+        # track's energy (multiplied by the corresponding correction factor)
+        indices = tf.expand_dims(track_duplicates+1, axis=1)
+        updates = tf.gather_nd(e_track[:, 0], tf.expand_dims(track_select[0], axis=1))
+        pred_shower_tracks = tf.tensor_scatter_nd_update(
+                pred_shower_tracks, indices, updates)
+
+        if raw:
+            pred_shower_hits = (
+                    tf.math.unsorted_segment_sum(
+                        e_hit[:, 0],
+                        unique_segments,
+                        num_segments=(tf.reduce_max(unique_segments)+1))
+                    )
+        else:
+            pred_shower_hits = (
+                    tf.math.unsorted_segment_sum(
+                        e_hit[:, 0] * pred_corr_factor[:, 0],
+                        unique_segments,
+                        num_segments=(tf.reduce_max(unique_segments)+1))
+                    )
+
+        pred_energy_hits = tf.gather(pred_shower_hits, unique_segments)
+        pred_energy_tracks = tf.gather(pred_shower_tracks, unique_segments)
+
+        if return_tracks_where_possible:
+            pred_energy = tf.where(
+                    pred_energy_tracks!=0., 
+                    pred_energy_tracks,
+                    pred_energy_hits)
+            return pred_energy[:, tf.newaxis]
+        elif return_tracks:
+            return pred_energy_tracks[:, tf.newaxis]
+        else:
+            return pred_energy_hits[:, tf.newaxis]
+
+
+
 class OCHits2ShowersLayer(tf.keras.layers.Layer):
     def __init__(self, beta_threshold, distance_threshold, use_local_distance_thresholding=True, assign_by_max_beta=True, nbinning_dims=3,**kwargs):
         super(OCHits2ShowersLayer, self).__init__(**kwargs)
@@ -75,6 +297,137 @@ class OCHits2ShowersLayer(tf.keras.layers.Layer):
 
         return x
 
+
+
+def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict, 
+        predictions_dict, energy_mode='comb', raw=False):
+    """
+    Almost identical to `process_endcap`. 
+    Difference is that this takes into account the existence of tracks when
+    summing over the energies.
+    As we don't have the `is_track` variable included in the features or
+    predictions we currently identify tracks over their z-position (Z==315)
+    """
+    is_track = np.abs(features_dict['recHitZ']) == 315
+    pred_sid, _, alpha_idx, _, ncond = hits2showers_layer(
+            predictions_dict['pred_ccoords'],
+            predictions_dict['pred_beta'],
+            predictions_dict['pred_dist'])
+    pred_sid = pred_sid.numpy()
+    alpha_idx = alpha_idx.numpy()
+
+    processed_pred_dict = dict()
+    processed_pred_dict['pred_sid'] = pred_sid
+
+
+    pred_energy_hits = energy_gather_layer(
+            pred_sid, 
+            predictions_dict['pred_energy_corr_factor'],  
+            features_dict['recHitEnergy'],
+            predictions_dict['no_noise_sel'],
+            predictions_dict['pred_beta'],
+            is_track = is_track,
+            return_tracks_where_possible=False,
+            return_tracks=False,
+            raw=False,
+            )
+
+    pred_energy_tracks = energy_gather_layer(
+            pred_sid, 
+            predictions_dict['pred_energy_corr_factor'],  
+            features_dict['recHitEnergy'],
+            predictions_dict['no_noise_sel'],
+            predictions_dict['pred_beta'],
+            is_track = is_track,
+            return_tracks_where_possible=False,
+            return_tracks=True,
+            raw=False,
+            )
+
+    pred_energy_comb = energy_gather_layer(
+            pred_sid, 
+            predictions_dict['pred_energy_corr_factor'],  
+            features_dict['recHitEnergy'],
+            predictions_dict['no_noise_sel'],
+            predictions_dict['pred_beta'],
+            is_track = is_track,
+            return_tracks_where_possible=True,
+            return_tracks=False,
+            raw=False,
+            )
+
+    pred_energy_hits_raw = energy_gather_layer(
+            pred_sid, 
+            predictions_dict['pred_energy_corr_factor'],  
+            features_dict['recHitEnergy'],
+            predictions_dict['no_noise_sel'],
+            predictions_dict['pred_beta'],
+            is_track = is_track,
+            return_tracks_where_possible=False,
+            return_tracks=False,
+            raw=True,
+            )
+
+    pred_energy_tracks_raw = energy_gather_layer(
+            pred_sid, 
+            predictions_dict['pred_energy_corr_factor'],  
+            features_dict['recHitEnergy'],
+            predictions_dict['no_noise_sel'],
+            predictions_dict['pred_beta'],
+            is_track = is_track,
+            return_tracks_where_possible=False,
+            return_tracks=True,
+            raw=True,
+            )
+
+    pred_energy_comb_raw = energy_gather_layer(
+            pred_sid, 
+            predictions_dict['pred_energy_corr_factor'],  
+            features_dict['recHitEnergy'],
+            predictions_dict['no_noise_sel'],
+            predictions_dict['pred_beta'],
+            is_track = is_track,
+            return_tracks_where_possible=True,
+            return_tracks=False,
+            raw=raw,
+            )
+
+    if energy_mode == 'hits':
+        if raw:
+            processed_pred_dict['pred_energy'] = pred_energy_hits_raw.numpy()
+        else:
+            processed_pred_dict['pred_energy'] = pred_energy_hits.numpy()
+    elif energy_mode == 'tracks':
+        if raw:
+            processed_pred_dict['pred_energy'] = pred_energy_tracks_raw.numpy()
+        else:
+            processed_pred_dict['pred_energy'] = pred_energy_tracks.numpy()
+    elif energy_mode == 'combined':
+        if raw:
+            processed_pred_dict['pred_energy'] = pred_energy_comb_raw.numpy()
+        else:
+            processed_pred_dict['pred_energy'] = pred_energy_comb.numpy()
+    else:
+        print("Unrecognized energy_mode")
+        exit(1)
+
+    processed_pred_dict['pred_energy_hits'] = pred_energy_hits.numpy()
+    processed_pred_dict['pred_energy_tracks'] = pred_energy_tracks.numpy()
+    processed_pred_dict['pred_energy_comb'] = pred_energy_comb.numpy()
+    processed_pred_dict['pred_energy_hits_raw'] = pred_energy_hits_raw.numpy()
+    processed_pred_dict['pred_energy_tracks_raw'] = pred_energy_tracks_raw.numpy()
+    processed_pred_dict['pred_energy_comb_raw'] = pred_energy_comb_raw.numpy()
+
+    if 'pred_energy_high_quantile' in predictions_dict.keys():
+        processed_pred_dict['pred_energy_unc'] \
+            = 0.5 * (predictions_dict['pred_energy_high_quantile'] - predictions_dict['pred_energy_low_quantile'])
+        processed_pred_dict.update(predictions_dict)
+        processed_pred_dict.pop('pred_beta')
+        processed_pred_dict['pred_id'] = np.argmax(
+                processed_pred_dict['pred_id'], 
+                axis=1)[:, np.newaxis]
+
+    return processed_pred_dict, alpha_idx
 
 
 def process_endcap(hits2showers_layer, energy_gather_layer, features_dict, predictions_dict):
