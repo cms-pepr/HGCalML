@@ -32,7 +32,8 @@ triggered=False
 triggeredname=False
 triggeredconstraint=False
 name="batchscript"
-constraint="a100"
+# constraint="a100"
+constraint="a100-80gb"
 for clo in sys.argv:
     
     if clo == '---n':
@@ -83,7 +84,7 @@ CWD = os.getcwd()
 
 bscript_temp='''#!/bin/bash
 
-#SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 3-0 --constraint={constraint}
+#SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint={constraint}
 
 nvidia-smi
 singularity  run  -B /mnt --nv {djcloc} /bin/bash runscript_{uext}.sh
