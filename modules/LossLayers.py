@@ -2141,46 +2141,25 @@ class LLFullObjectCondensation(LossLayerBase):
             tloss = tf.where( t_dep_energy < 1., 0.,  tloss)
             
         return tloss
-    
-    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique=None, hasunique=None):
         
+    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique=None, hasunique=None):
+
         if self.classification_loss_weight <= 0:
             return tf.reduce_mean(pred_id,axis=1, keepdims=True)
 
-        # Truth PID is not one-hot encoded. 
-        # Encoding: 0:Muon, 1:Electron, 2:Photon, 3:chad, 4:nhad, 5:amb
-        truth_pid_tmp = tf.zeros_like(orig_t_pid) - 1
-        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 13, 0, truth_pid_tmp)
-        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 11, 1, truth_pid_tmp)
-        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 22, 2, truth_pid_tmp)
-        truth_pid_tmp = tf.where(tf.logical_or(
-            tf.logical_or(tf.abs(orig_t_pid) == 211, tf.abs(orig_t_pid) == 321),
-            tf.abs(orig_t_pid) == 2212),
-            3, truth_pid_tmp)
-        truth_pid_tmp = tf.where(tf.logical_or(
-            tf.logical_or(tf.abs(orig_t_pid) == 111, tf.abs(orig_t_pid) == 2112),
-            tf.logical_or(tf.abs(orig_t_pid) == 130, tf.abs(orig_t_pid) == 2114)),
-            4, truth_pid_tmp)
-        truth_pid_tmp = tf.where(truth_pid_tmp == -1, 5, truth_pid_tmp) #CONT
-        truth_pid_tmp = tf.cast(truth_pid_tmp, tf.int32)
-
-        truth_pid_onehot = tf.one_hot(truth_pid_tmp, depth=6)
-        truth_pid_onehot = tf.reshape(truth_pid_onehot, (-1, 6))
-
-        
         pred_id = tf.clip_by_value(pred_id, 1e-9, 1. - 1e-9)
-        # t_pid = tf.clip_by_value(orig_t_pid, 1e-9, 1. - 1e-9)
-        t_pid = truth_pid_onehot
+        t_pid = tf.clip_by_value(orig_t_pid, 1e-9, 1. - 1e-9)
         classloss = tf.keras.losses.categorical_crossentropy(t_pid, pred_id)
-        classloss = tf.where(orig_t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
-        
+        classloss = tf.where( orig_t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
+
         #take out undefined
         classloss = tf.where( tf.reduce_sum(t_pid,axis=1)>1. , 0., classloss)
         classloss = tf.where( tf.reduce_sum(t_pid,axis=1)<1.-1e-3 , 0., classloss)
-        
+
         classloss = tf.debugging.check_numerics(classloss, "classloss")
-        
+
         return classloss[...,tf.newaxis] # self.softclip(classloss[...,tf.newaxis], 2.)#for high weights
+    
     
 
     def calc_beta_push(self, betas, tidx):
@@ -2238,7 +2217,8 @@ class LLFullObjectCondensation(LossLayerBase):
         #also kill any gradients for zero weight
         energy_loss,energy_quantiles_loss = None,None        
         if self.train_energy_correction:
-            energy_loss,energy_quantiles_loss = self.calc_energy_correction_factor_loss(t_energy,t_rec_energy,pred_energy,pred_energy_low_quantile,pred_energy_high_quantile)
+            energy_loss,energy_quantiles_loss = \
+                    self.calc_energy_correction_factor_loss(t_energy,t_rec_energy,pred_energy,pred_energy_low_quantile,pred_energy_high_quantile)
             energy_loss *= self.energy_loss_weight 
         else:
             energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
@@ -2422,6 +2402,101 @@ class LLFullObjectCondensation(LossLayerBase):
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+
+class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):
+    
+    def __init__(self, *args, **kwargs):
+        '''
+        Same as `LLFullObjectCondensation` but adds:
+        * different version of particle ID
+        * 
+        '''
+        super(LLFullObjectCondensationUncertainty, self).__init__(*args, **kwargs)
+        
+        
+    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique=None, hasunique=None):
+        
+        if self.classification_loss_weight <= 0:
+            return tf.reduce_mean(pred_id,axis=1, keepdims=True)
+
+        # Truth PID is not one-hot encoded. 
+        # Encoding: 0:Muon, 1:Electron, 2:Photon, 3:chad, 4:nhad, 5:amb
+        truth_pid_tmp = tf.zeros_like(orig_t_pid) - 1
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 13, 0, truth_pid_tmp)
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 11, 1, truth_pid_tmp)
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 22, 2, truth_pid_tmp)
+        truth_pid_tmp = tf.where(tf.logical_or(
+            tf.logical_or(tf.abs(orig_t_pid) == 211, tf.abs(orig_t_pid) == 321),
+            tf.abs(orig_t_pid) == 2212),
+            3, truth_pid_tmp)
+        truth_pid_tmp = tf.where(tf.logical_or(
+            tf.logical_or(tf.abs(orig_t_pid) == 111, tf.abs(orig_t_pid) == 2112),
+            tf.logical_or(tf.abs(orig_t_pid) == 130, tf.abs(orig_t_pid) == 2114)),
+            4, truth_pid_tmp)
+        truth_pid_tmp = tf.where(truth_pid_tmp == -1, 5, truth_pid_tmp) #CONT
+        truth_pid_tmp = tf.cast(truth_pid_tmp, tf.int32)
+
+        truth_pid_onehot = tf.one_hot(truth_pid_tmp, depth=6)
+        truth_pid_onehot = tf.reshape(truth_pid_onehot, (-1, 6))
+
+        
+        pred_id = tf.clip_by_value(pred_id, 1e-9, 1. - 1e-9)
+        # t_pid = tf.clip_by_value(orig_t_pid, 1e-9, 1. - 1e-9)
+        t_pid = truth_pid_onehot
+        classloss = tf.keras.losses.categorical_crossentropy(t_pid, pred_id)
+        classloss = tf.where(orig_t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
+        
+        #take out undefined
+        classloss = tf.where( tf.reduce_sum(t_pid,axis=1)>1. , 0., classloss)
+        classloss = tf.where( tf.reduce_sum(t_pid,axis=1)<1.-1e-3 , 0., classloss)
+        
+        classloss = tf.debugging.check_numerics(classloss, "classloss")
+        
+        return classloss[...,tf.newaxis] # self.softclip(classloss[...,tf.newaxis], 2.)#for high weights
+
+        
+    def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, 
+                                           pred_energy,pred_energy_low_quantile,pred_energy_high_quantile,
+                                           return_concat=False): 
+        
+        t_energy = tf.clip_by_value(t_energy,0.,1e12)
+        t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
+
+        epred = pred_energy * t_dep_energies
+        ediff = (t_energy - epred)/tf.sqrt(tf.abs(t_energy)+1e-3)
+        
+        ediff = tf.debugging.check_numerics(ediff, "eloss ediff")
+        
+        eloss = tf.math.log(ediff**2 + 1. + 1e-5)
+        eloss = tf.debugging.check_numerics(eloss, "eloss loss")
+            
+
+        #do not propagate the gradient for quantiles further up
+        pred_energy = tf.stop_gradient(pred_energy)
+
+        # This is where the uncertainty loss starts
+        # We use the parameter 'pred_energy_high_quantile' and 
+        # force the network to set 'pred_energy_low_quantile' to the same value
+        # Uncertainty 'sigma' must minimize this term:
+        # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
+        uncertainty_loss0 = (pred_energy_low_quantile - pred_energy_high_quantile)**2
+
+        sigma = pred_energy_high_quantile * epred # Learn sigma as function of epred
+        uncertainty_loss1 = tf.math.log(sigma**2 + 1e-6)
+        uncertainty_loss2 = tf.math.divide_no_nan((t_energy - epred), sigma + 1e-6)**2
+        # uncertainty_loss2 = ((t_energy - epred) / (sigma+1e-6))**2
+
+        uncertainty_loss0 = tf.debugging.check_numerics(uncertainty_loss0, "uncertainty_loss0")
+        uncertainty_loss1 = tf.debugging.check_numerics(uncertainty_loss1, "uncertainty_loss1")
+        uncertainty_loss2 = tf.debugging.check_numerics(uncertainty_loss2, "uncertainty_loss2")
+        euncloss = uncertainty_loss0 + uncertainty_loss1 + uncertainty_loss2
+        euncloss = tf.debugging.check_numerics(euncloss, "euncloss loss")
+        
+        if return_concat:
+            return tf.concat([eloss, euncloss], axis=-1) # for ragged map flat values
+        
+        return eloss, euncloss
+    
 
 class LLGraphCondOCLoss(LLFullObjectCondensation):
     
