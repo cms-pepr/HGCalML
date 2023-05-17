@@ -2146,11 +2146,33 @@ class LLFullObjectCondensation(LossLayerBase):
         
         if self.classification_loss_weight <= 0:
             return tf.reduce_mean(pred_id,axis=1, keepdims=True)
+
+        # Truth PID is not one-hot encoded. 
+        # Encoding: 0:Muon, 1:Electron, 2:Photon, 3:chad, 4:nhad, 5:amb
+        truth_pid_tmp = tf.zeros_like(orig_t_pid) - 1
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 13, 0, truth_pid_tmp)
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 11, 1, truth_pid_tmp)
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 22, 2, truth_pid_tmp)
+        truth_pid_tmp = tf.where(tf.logical_or(
+            tf.logical_or(tf.abs(orig_t_pid) == 211, tf.abs(orig_t_pid) == 321),
+            tf.abs(orig_t_pid) == 2212),
+            3, truth_pid_tmp)
+        truth_pid_tmp = tf.where(tf.logical_or(
+            tf.logical_or(tf.abs(orig_t_pid) == 111, tf.abs(orig_t_pid) == 2112),
+            tf.logical_or(tf.abs(orig_t_pid) == 130, tf.abs(orig_t_pid) == 2114)),
+            4, truth_pid_tmp)
+        truth_pid_tmp = tf.where(truth_pid_tmp == -1, 5, truth_pid_tmp) #CONT
+        truth_pid_tmp = tf.cast(truth_pid_tmp, tf.int32)
+
+        truth_pid_onehot = tf.one_hot(truth_pid_tmp, depth=6)
+        truth_pid_onehot = tf.reshape(truth_pid_onehot, (-1, 6))
+
         
         pred_id = tf.clip_by_value(pred_id, 1e-9, 1. - 1e-9)
-        t_pid = tf.clip_by_value(orig_t_pid, 1e-9, 1. - 1e-9)
+        # t_pid = tf.clip_by_value(orig_t_pid, 1e-9, 1. - 1e-9)
+        t_pid = truth_pid_onehot
         classloss = tf.keras.losses.categorical_crossentropy(t_pid, pred_id)
-        classloss = tf.where( orig_t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
+        classloss = tf.where(orig_t_pid[:,-1]>0. , 0., classloss)#remove ambiguous, last class flag
         
         #take out undefined
         classloss = tf.where( tf.reduce_sum(t_pid,axis=1)>1. , 0., classloss)
