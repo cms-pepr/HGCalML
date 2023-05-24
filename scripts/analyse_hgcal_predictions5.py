@@ -3,13 +3,11 @@ import os
 import gzip
 import pickle
 import numpy as np
-
 import mgzip
-
 import argparse
 import time
-
 import pandas as pd
+from globals import pu
 
 from OCHits2Showers import OCHits2ShowersLayer, process_endcap, OCGatherEnergyCorrFac
 from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
@@ -28,7 +26,7 @@ def filter_truth_dict(truth_dict, mask):
         else:
             print(key, " untouched")
     return filtered
-        
+
 
 def filter_features_dict(features_dict, mask):
     n_orig = features_dict['recHitEnergy'].shape[0]
@@ -41,13 +39,13 @@ def filter_features_dict(features_dict, mask):
         else:
             print(key, " untouched")
     return filtered
-        
 
 
 
-def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold, 
-        matching_mode, analysisoutpath, nfiles, nevents, 
-        local_distance_scaling, is_soft, de_e_cut, angle_cut, 
+
+def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
+        matching_mode, analysisoutpath, nfiles, nevents,
+        local_distance_scaling, is_soft, de_e_cut, angle_cut,
         kill_pu=False, filter_pu=False, toydata=False, energy_mode='hits', raw=False):
 
     hits2showers = OCHits2ShowersLayer(
@@ -56,9 +54,15 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
     energy_gatherer = OCGatherEnergyCorrFac2()
 
-    files_to_be_tested = [os.path.join(preddir, x) for x in os.listdir(preddir) if (x.endswith('.bin.gz') and x.startswith('pred'))]
+    files_to_be_tested = [
+        os.path.join(preddir, x)
+        for x in os.listdir(preddir)
+        if (x.endswith('.bin.gz') and x.startswith('pred'))]
     if toydata:
-        extra_files = [os.path.join(preddir, x) for x in os.listdir(preddir) if ( x.endswith('.pkl') and x.startswith('pred') )]
+        extra_files = [
+            os.path.join(preddir, x)
+            for x in os.listdir(preddir)
+            if ( x.endswith('.pkl') and x.startswith('pred') )]
     if nfiles!=-1:
         files_to_be_tested = files_to_be_tested[0:min(nfiles, len(files_to_be_tested))]
 
@@ -77,16 +81,16 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
         with mgzip.open(file, 'rb') as f:
             file_data = pickle.load(f)
             if toydata:
-                with open(extra_files[i], 'rb') as xf: 
+                with open(extra_files[i], 'rb') as xf:
                     xfile = pickle.load(xf)
-            for j, endcap_data in enumerate(file_data): 
+            for j, endcap_data in enumerate(file_data):
                 if (nevents != -1) and (j > nevents):
                     continue
                 if toydata:
                     t_min_bias = xfile[j][0][0]
                 print("Analysing endcap %d/%d" % (j, len(file_data)))
                 stopwatch = time.time()
-                features_dict, truth_dict, predictions_dict = endcap_data 
+                features_dict, truth_dict, predictions_dict = endcap_data
                 features.append(features_dict)
                 prediction.append(predictions_dict)
                 truth.append(truth_dict)
@@ -119,9 +123,9 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 filtered_truth = filter_truth_dict(truth_dict, noise_mask)
 
                 processed_pred_dict, pred_shower_alpha_idx = process_endcap2(
-                        hits2showers, 
-                        energy_gatherer, 
-                        filtered_features, 
+                        hits2showers,
+                        energy_gatherer,
+                        filtered_features,
                         predictions_dict,
                         energy_mode=energy_mode)
                 alpha_ids.append(pred_shower_alpha_idx)
@@ -142,12 +146,6 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
                 print('took',time.time()-stopwatch,'s for inference clustering')
                 stopwatch = time.time()
-                # showers_matcher.set_inputs(
-                    # features_dict=features_dict,
-                    # truth_dict=truth_dict,
-                    # predictions_dict=processed_pred_dict,
-                    # pred_alpha_idx=pred_shower_alpha_idx
-                # )
                 showers_matcher.set_inputs(
                     features_dict=filtered_features,
                     truth_dict=filtered_truth,
@@ -166,7 +164,6 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 dataframe['event_id'] = event_id
                 event_id += 1
                 if kill_pu:
-                    from globals import pu
                     if len(dataframe[dataframe['truthHitAssignementIdx']>=pu.t_idx_offset]):
                         print('\nWARNING REMOVING PU TRUTH MATCHED SHOWERS, HACK.\n')
                         dataframe = dataframe[dataframe['truthHitAssignementIdx']<pu.t_idx_offset]
@@ -190,10 +187,6 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
             'events_dataframe' : None,
             'scalar_variables' : scalar_variables,
             'alpha_ids'        : alpha_ids,
-            # 'processed_dataframe' : processed_dataframe,
-            # 'features': features,
-            # 'truth': truth,
-            # 'prediction': prediction,
             'noise_masks': noise_masks,
             'matched': matched,
         }
@@ -216,19 +209,23 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         'Analyse predictions from object condensation and plot relevant results')
     parser.add_argument('preddir',
-                        help='Directory with .bin.gz files or a txt file with full paths of the bin gz files from the prediction.')
+        help='Directory with .bin.gz files or a txt file with full paths of the \
+            bin-gz files from the prediction.')
     parser.add_argument('-p',
-                        help='Output directory for the final analysis pdf file (otherwise, it won\'t be produced)',
-                        default='')
+        help="Output directory for the final analysis pdf file (otherwise, it won't be produced)",
+        default='')
     parser.add_argument('-b', help='Beta threshold (default 0.1)', default='0.1')
     parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
     parser.add_argument('-m', help='Matching mode', default='iou_max')
-    parser.add_argument('--analysisoutpath', help='Will dump analysis data to a file to remake plots without re-running everything.',
-                        default='')
-    parser.add_argument('--nfiles', help='Maximum number of files. -1 for everything in the preddir',
-                        default=-1)
-    parser.add_argument('--no_local_distance_scaling', help='With local distance scaling', action='store_true')
+    parser.add_argument('--analysisoutpath',
+        help='Will dump analysis data to a file to remake plots without re-running everything.',
+        default='')
+    parser.add_argument('--nfiles',
+        help='Maximum number of files. -1 for everything in the preddir',
+        default=-1)
+    parser.add_argument('--no_local_distance_scaling', help='With local distance scaling',
+        action='store_true')
     parser.add_argument('--de_e_cut', help='dE/E threshold to allow match.', default=-1)
     parser.add_argument('--angle_cut', help='Angle cut for angle based matching', default=-1)
     parser.add_argument('--no_soft', help='Use condensate op', action='store_true')
@@ -237,28 +234,28 @@ if __name__ == '__main__':
     parser.add_argument('--nevents', help='Maximum number of events (per file)', default=-1)
     parser.add_argument('--emode', help='Mode how energy is calculated', default='hits')
     parser.add_argument('--raw', help="Ignore energy correction factor", action='store_true')
-    parser.add_argument('--slim', 
-            help="Produce only a small analysis.bin.gz file. Only applicable if --analysisoutpath is set", action='store_true')
+    parser.add_argument('--slim',
+        help="Produce only a small analysis.bin.gz file. \
+            Only applicable if --analysisoutpath is set",
+        action='store_true')
 
 
     args = parser.parse_args()
 
-    analyse(preddir=args.preddir, 
-            pdfpath=args.p, 
-            beta_threshold=float(args.b), 
+    analyse(preddir=args.preddir,
+            pdfpath=args.p,
+            beta_threshold=float(args.b),
             distance_threshold=float(args.d),
-            iou_threshold=float(args.i), 
-            matching_mode=args.m, 
+            iou_threshold=float(args.i),
+            matching_mode=args.m,
             analysisoutpath=args.analysisoutpath,
-            nfiles=int(args.nfiles), 
+            nfiles=int(args.nfiles),
             local_distance_scaling=not args.no_local_distance_scaling,
-            is_soft=not args.no_soft, 
-            de_e_cut=float(args.de_e_cut), 
-            angle_cut=float(args.angle_cut), 
+            is_soft=not args.no_soft,
+            de_e_cut=float(args.de_e_cut),
+            angle_cut=float(args.angle_cut),
             filter_pu=bool(args.filter_pu),
             toydata=bool(args.toydata),
             nevents=int(args.nevents),
             energy_mode=str(args.emode),
             raw=bool(args.raw),)
-
-
