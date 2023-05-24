@@ -46,7 +46,7 @@ def create_outputs(x, n_ccoords=3,
     energy_act=None
     if energy_factor:
         energy_act='elu'
-    energy_res_act = None 
+    energy_res_act = 'relu'
     pred_energy = Dense(1,name = name_prefix+'_energy',
                         kernel_initializer='zeros',
                         activation=energy_act

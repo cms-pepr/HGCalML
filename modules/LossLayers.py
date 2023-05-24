@@ -2281,13 +2281,24 @@ class LLFullObjectCondensation(LossLayerBase):
         #also kill any gradients for zero weight
         energy_loss,energy_quantiles_loss = None,None        
         if self.train_energy_correction:
-            energy_loss,energy_quantiles_loss = \
-                    self.calc_energy_correction_factor_loss(t_energy,t_rec_energy,pred_energy,pred_energy_low_quantile,pred_energy_high_quantile)
+            energy_loss, energy_quantiles_loss = \
+                    self.calc_energy_correction_factor_loss(
+                            t_energy,
+                            t_rec_energy,
+                            pred_energy,
+                            pred_energy_low_quantile,
+                            pred_energy_high_quantile)
             energy_loss *= self.energy_loss_weight 
+            energy_quantiles_loss *= self.energy_loss_weight
         else:
             energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
-            _, energy_quantiles_loss =  self.calc_energy_correction_factor_loss(t_energy,t_rec_energy,pred_energy,pred_energy_low_quantile,pred_energy_high_quantile)
-        energy_quantiles_loss *= self.energy_loss_weight/2. 
+            _, energy_quantiles_loss =  self.calc_energy_correction_factor_loss(
+                    t_energy,
+                    t_rec_energy,
+                    pred_energy,
+                    pred_energy_low_quantile,
+                    pred_energy_high_quantile)
+        # energy_quantiles_loss *= self.energy_loss_weight/2. 
 
         position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time, pred_time_unc,t_rec_energy)
@@ -2301,16 +2312,21 @@ class LLFullObjectCondensation(LossLayerBase):
         self.add_prompt_metric(tf.reduce_mean(pred_time_unc),self.name+'_time_pred_std')
         #end just for metrics
 
-        nan_energy = tf.reduce_any(tf.math.is_nan(energy_loss))
-        nan_position = tf.reduce_any(tf.math.is_nan(position_loss))
-        nan_timing = tf.reduce_any(tf.math.is_nan(timing_loss))
-        nan_class = tf.reduce_any(tf.math.is_nan(timing_loss))
-        print("Energy: ", nan_energy)
-        print("Position: ", nan_position)
-        print("Timing: ", nan_timing)
-        print("Class: ", nan_class)
+        # nan_energy = tf.reduce_any(tf.math.is_nan(energy_loss))
+        # nan_position = tf.reduce_any(tf.math.is_nan(position_loss))
+        # nan_timing = tf.reduce_any(tf.math.is_nan(timing_loss))
+        # nan_class = tf.reduce_any(tf.math.is_nan(timing_loss))
+        # print("Energy: ", nan_energy)
+        # print("Position: ", nan_position)
+        # print("Timing: ", nan_timing)
+        # print("Class: ", nan_class)
         
-        full_payload = tf.concat([energy_loss,position_loss,timing_loss,classification_loss,energy_quantiles_loss], axis=-1)
+        full_payload = tf.concat([
+            energy_loss,
+            position_loss,
+            timing_loss,
+            classification_loss,
+            energy_quantiles_loss], axis=-1)
         
         if self.payload_beta_clip > 0:
             full_payload = tf.where(pred_beta<self.payload_beta_clip, 0., full_payload)
@@ -2602,20 +2618,22 @@ class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):
                                            pred_energy,pred_energy_low_quantile,pred_energy_high_quantile,
                                            return_concat=False): 
         
+        eps = 1e-3
         t_energy = tf.clip_by_value(t_energy,0.,1e12)
         t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
 
         epred = pred_energy * t_dep_energies
-        ediff = (t_energy - epred)/tf.sqrt(tf.abs(t_energy)+1e-3)
+        # ediff = (t_energy - epred)/tf.sqrt(tf.abs(t_energy)+eps)
         
-        ediff = tf.debugging.check_numerics(ediff, "eloss ediff")
+        # ediff = tf.debugging.check_numerics(ediff, "eloss ediff")
         
-        eloss = tf.math.log(ediff**2 + 1. + 1e-5)
-        eloss = tf.debugging.check_numerics(eloss, "eloss loss")
+        # eloss = tf.math.log(ediff**2 + 1. + 1e-5)
+        # eloss = tf.debugging.check_numerics(eloss, "eloss loss")
             
 
         #do not propagate the gradient for quantiles further up
-        pred_energy = tf.stop_gradient(pred_energy)
+        # pred_energy = tf.stop_gradient(pred_energy)
+        # epred = tf.stop_gradient(epred)
 
         # This is where the uncertainty loss starts
         # We use the parameter 'pred_energy_high_quantile' and 
@@ -2624,8 +2642,8 @@ class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):
         # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
         uncertainty_loss0 = (pred_energy_low_quantile - pred_energy_high_quantile)**2
         sigma = pred_energy_high_quantile
-        uncertainty_loss1 = tf.math.log(sigma**2 + 1e-6)
-        uncertainty_loss2 = tf.math.divide_no_nan((t_energy - epred), sigma + 1e-6)**2
+        uncertainty_loss1 = tf.math.log(sigma**2 + eps)
+        uncertainty_loss2 = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2 + eps)
         # uncertainty_loss2 = ((t_energy - epred) / (sigma+1e-6))**2
 
         uncertainty_loss0 = tf.debugging.check_numerics(
@@ -2640,7 +2658,8 @@ class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):
         if return_concat:
             return tf.concat([eloss, euncloss], axis=-1) # for ragged map flat values
         
-        return eloss, euncloss
+        # return eloss, euncloss
+        return uncertainty_loss2, uncertainty_loss0 + uncertainty_loss1
     
 
 class LLGraphCondOCLoss(LLFullObjectCondensation):
