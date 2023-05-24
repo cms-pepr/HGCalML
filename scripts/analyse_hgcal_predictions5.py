@@ -577,6 +577,9 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
         plotter.set_data(showers_dataframe, None, '', pdfpath, scalar_variables=scalar_variables)
         plotter.process()
 
+    print("DONE")
+    return
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
