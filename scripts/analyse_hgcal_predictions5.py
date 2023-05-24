@@ -15,6 +15,28 @@ from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 
 
+def dictlist_to_dataframe(dictlist, masks=None):
+    full_df = pd.DataFrame()
+    for i in range(len(dictlist)):
+        df = pd.DataFrame()
+        for key, value in dictlist[i].items():
+            if key in ['row_splits']:
+                continue
+            if len(value.shape) == 1:
+                continue
+            if value.shape[1] > 1:
+                for j in range(value.shape[1]):
+                    df[key + '_' + str(j)] = value[:, j]
+            else:
+                df[key] = value[:, 0]
+        df['event_id'] = i * np.ones_like(df.shape[0])
+        if masks is not None:
+            mask = masks[i].reshape(-1)
+            df = df.iloc[mask]
+        full_df = pd.concat([full_df, df])
+    return full_df
+
+
 def filter_truth_dict(truth_dict, mask):
     n_orig = truth_dict['truthHitAssignementIdx'].shape[0]
     n_filtered = mask.shape[0]
@@ -71,6 +93,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     features = []
     truth = []
     prediction = []
+    processed = []
     alpha_ids = []
     noise_masks = []
     event_id = 0
@@ -130,6 +153,8 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                         energy_mode=energy_mode)
                 alpha_ids.append(pred_shower_alpha_idx)
                 columns = list(processed_pred_dict.keys())[:-1] #Drops the row_splits
+                processed.append(processed_pred_dict)
+                """
                 proc = pd.DataFrame()
                 for key in columns:
                     array = np.array(processed_pred_dict[key])
@@ -142,6 +167,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                         array = array.reshape(-1)
                         proc[key] = array
                 proc['event_id'] = event_id
+                """
 
 
                 print('took',time.time()-stopwatch,'s for inference clustering')
@@ -168,7 +194,8 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                         print('\nWARNING REMOVING PU TRUTH MATCHED SHOWERS, HACK.\n')
                         dataframe = dataframe[dataframe['truthHitAssignementIdx']<pu.t_idx_offset]
                 showers_dataframe = pd.concat((showers_dataframe, dataframe))
-                processed_dataframe = pd.concat((processed_dataframe, proc))
+                # processed_dataframe = pd.concat((processed_dataframe, proc))
+                processed_dataframe = dictlist_to_dataframe(processed)
 
     # This is only to write to pdf files
     scalar_variables = {
