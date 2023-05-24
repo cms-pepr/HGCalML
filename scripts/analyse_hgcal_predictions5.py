@@ -17,6 +17,49 @@ from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 
 
+def calc_efficiencies(df, bins):
+    mask_predicted = np.isnan(df['pred_energy']) == False
+    mask_truth = np.isnan(df['truthHitAssignedEnergies']) == False
+    n_trues = []
+    n_pred = []
+    n_fakes = []
+    n_matched = []
+    efficiencies = []
+    fake_rate = []
+    for i in range(len(bins) - 1):
+        mask_bintruth = np.logical_and(
+            df['truthHitAssignedEnergies'] >= bins[i],
+            df['truthHitAssignedEnergies'] < bins[i + 1])
+        n_trues.append(np.sum(mask_bintruth))
+        mask_binpred = np.logical_and(
+            df['pred_energy'] >= bins[i],
+            df['pred_energy'] < bins[i + 1])
+        n_pred.append(np.sum(mask_binpred))
+
+        matched = np.logical_and(
+            mask_predicted,
+            mask_bintruth)
+        n_matched.append(np.sum(matched))
+        faked = np.logical_and(
+            mask_binpred,
+            np.logical_not(mask_truth))
+        n_fakes.append(np.sum(faked))
+
+        efficiencies.append(np.sum(matched) / np.sum(mask_bintruth))
+        fake_rate.append(np.sum(faked) / np.sum(mask_binpred))
+
+    data = pd.DataFrame({
+        "n_trues": np.array(n_trues),
+        "n_pred": np.array(n_pred),
+        "n_matched": np.array(n_matched),
+        "n_fakes": np.array(n_fakes),
+        "efficiencies": np.array(efficiencies),
+        "fake_rate": np.array(fake_rate),
+    })
+
+    return data
+
+
 def calc_resolution(df, bins):
     has_truth = np.isnan(df['truthHitAssignedEnergies']) == False
     has_pred = np.isnan(df['pred_energy']) == False
