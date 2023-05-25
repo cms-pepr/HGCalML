@@ -15,7 +15,7 @@ from OCHits2Showers import OCHits2ShowersLayer, process_endcap, OCGatherEnergyCo
 from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
 from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
-import plotting_tools as pt
+import extra_plotting as ep
 
 
 def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
@@ -97,8 +97,8 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
                 noise_mask = predictions_dict['no_noise_sel']
                 noise_masks.append(noise_mask)
-                filtered_features = pt.filter_features_dict(features_dict, noise_mask)
-                filtered_truth = pt.filter_truth_dict(truth_dict, noise_mask)
+                filtered_features = ep.filter_features_dict(features_dict, noise_mask)
+                filtered_truth = ep.filter_truth_dict(truth_dict, noise_mask)
 
                 processed_pred_dict, pred_shower_alpha_idx = process_endcap2(
                         hits2showers,
@@ -127,27 +127,27 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                         print('\nWARNING REMOVING PU TRUTH MATCHED SHOWERS, HACK.\n')
                         dataframe = dataframe[dataframe['truthHitAssignementIdx']<pu.t_idx_offset]
                 showers_dataframe = pd.concat((showers_dataframe, dataframe))
-                processed_dataframe = pt.dictlist_to_dataframe(processed)
+                processed_dataframe = ep.dictlist_to_dataframe(processed)
 
     ###############################################################################################
     ### New plotting stuff ########################################################################
     ###############################################################################################
 
     ### Tracks versus hits ########################################################################
-    bins = pt.calc_energy_bins(200,10)
-    data_track_raw, ratios_track_raw, = pt.calc_resolution(
+    bins = ep.calc_energy_bins(200,10)
+    data_track_raw, ratios_track_raw, = ep.calc_resolution(
         showers_dataframe, bins, predstring='pred_energy_tracks_raw')
     medians_track_raw = [np.median(r) for r in ratios_track_raw]
 
-    data_track, ratios_track = pt.calc_resolution(
+    data_track, ratios_track = ep.calc_resolution(
         showers_dataframe, bins, predstring='pred_energy_tracks')
     medians_track = [np.median(r) for r in ratios_track]
 
-    data_hits_raw, ratios_hits_raw = pt.calc_resolution(
+    data_hits_raw, ratios_hits_raw = ep.calc_resolution(
         showers_dataframe, bins, predstring='pred_energy_hits_raw')
     medians_hits_raw = [np.median(r) for r in ratios_hits_raw]
 
-    data_hits, ratios_hits = pt.calc_resolution(
+    data_hits, ratios_hits = ep.calc_resolution(
         showers_dataframe, bins, predstring='pred_energy_hits')
     medians_hits = [np.median(r) for r in ratios_hits]
     fig_comp, ax_comp = plt.subplots(figsize=(10, 6))
@@ -168,11 +168,11 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     fig_comp.savefig(os.path.join('.', 'median_ratios.jpg'))
 
     ### Efficiency plots ##########################################################################
-    fig_eff = pt.efficiency_plot(showers_dataframe)
+    fig_eff = ep.efficiency_plot(showers_dataframe)
     fig_eff.savefig(os.path.join('.', 'efficiency.jpg'))
 
     ### Resolution plots ##########################################################################
-    fig_res = pt.energy_resolution(showers_dataframe)
+    fig_res = ep.energy_resolution(showers_dataframe)
     fig_res.savefig(os.path.join('.', 'energy_resolution.jpg'))
 
     # This is only to write to pdf files
