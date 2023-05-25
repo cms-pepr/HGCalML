@@ -423,9 +423,7 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             = 0.5 * (predictions_dict['pred_energy_high_quantile'] - predictions_dict['pred_energy_low_quantile'])
         processed_pred_dict.update(predictions_dict)
         processed_pred_dict.pop('pred_beta')
-        processed_pred_dict['pred_id'] = np.argmax(
-                processed_pred_dict['pred_id'], 
-                axis=1)[:, np.newaxis]
+        processed_pred_dict['pred_id'] = np.argmax(processed_pred_dict['pred_id'], axis=1)
 
     return processed_pred_dict, alpha_idx
 

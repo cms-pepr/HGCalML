@@ -109,6 +109,8 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
                 alpha_ids.append(pred_shower_alpha_idx)
                 processed.append(processed_pred_dict)
+                print("ANALYSE SCRIPT: PROCESSED PRED: ", np.unique(processed_pred_dict['pred_id']))
+                print("ANALYSE SCRIPT: PROCESSED PRED: ", processed_pred_dict['pred_id'].shape)
                 showers_matcher.set_inputs(
                     features_dict=filtered_features,
                     truth_dict=filtered_truth,

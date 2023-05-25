@@ -1,3 +1,4 @@
+import pdb
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
@@ -190,11 +191,17 @@ class ShowersMatcher:
                 if k in skip:
                     continue
                 elif k == 'pred_id':
-                    node_attributes[k] = np.argmax(
-                            self.predictions_dict[k][self.pred_alpha_idx[i],:],
-                            axis=1)
+                    # print("SHAPE pred_id: ", self.predictions_dict[k].shape)
+                    # print("UNIQUE pred_id: ", np.unique(self.predictions_dict[k]))
+                    # node_attributes[k] = np.argmax(
+                            # self.predictions_dict[k][self.pred_alpha_idx[i]],
+                            # axis=1)
+                    import pdb
+                    pdb.set_trace()
+                    node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i]]
+                    # Same as 'else' should work. 
                 else:
-                    print("X", k)
+                    # print("X", k)
                     node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i], 0]
             node = (pred_shower_sid[i], node_attributes)
             node_attributes['type'] = ShowersMatcher._NODE_TYPE_PRED_SHOWER
