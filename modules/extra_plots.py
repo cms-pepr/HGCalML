@@ -147,10 +147,12 @@ def within_uncertainty(df, bins=None, binwidth=10.):
     fig, ax = plt.subplots(nrows=2, figsize=(20, 10))
     x = (bins[1:] + bins[:-1]) / 2
     xerr = (bins[1:] - bins[:-1]) / 2
-    ax[0].errorbar(x, within_1sigma, xerr=xerr, label='within 1 sigma')
-    ax[0].errorbar(x, within_2sigma, xerr=xerr, label='within 2 sigma')
-    ax[0].errorbar(x, within_3sigma, xerr=xerr, label='within 3 sigma')
-    ax[1].errorbar(x, mean, xerr=xerr, yerr=std, label='uncertainty')
+    ax[0].errorbar(x, within_1sigma, xerr=xerr, fmt='o', label='within 1 sigma')
+    ax[0].errorbar(x, within_2sigma, xerr=xerr, fmt='o', label='within 2 sigma')
+    ax[0].errorbar(x, within_3sigma, xerr=xerr, fmt='o', label='within 3 sigma')
+    ax[1].errorbar(x, mean, xerr=xerr, yerr=std, fmt='o', label='uncertainty')
+    ax[0].legend()
+    ax[1].legend()
     return fig
 
 def energy_resolution(df, bins=None, binwidth=10., addfit=False):
