@@ -15,7 +15,7 @@ from OCHits2Showers import OCHits2ShowersLayer, process_endcap, OCGatherEnergyCo
 from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
 from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
-import extra_plotting as ep
+import extra_plots as ep
 
 
 def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
