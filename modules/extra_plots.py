@@ -87,14 +87,76 @@ def resolution_func(energy, a, b, c):
     return np.sqrt(a**2 + b**2 / energy + c**2 / energy**2)
 
 
-def energy_resolution(df, bins=None, binwidth=10., addfit=False):
+def calc_within_uncertainty(df, bins, predstring='pred_energy'):
     has_truth = np.isnan(df['truthHitAssignedEnergies']) == False
-    has_pred = np.isnan(df['pred_energy']) == False
+    has_pred = np.isnan(df[predstring]) == False
     mask = np.logical_and(has_truth, has_pred)
+    fraction_within_1sigma = []
+    fraction_within_2sigma = []
+    fraction_within_3sigma = []
+
+    for i in range(len(bins) - 1):
+        mask_bin = np.logical_and(
+            df['truthHitAssignedEnergies'] >= bins[i],
+            df['truthHitAssignedEnergies'] < bins[i + 1])
+        mask_bin = np.logical_and(mask_bin, mask)
+        e_true = df['truthHitAssignedEnergies'][mask_bin]
+        e_pred = df[predstring][mask_bin]
+        uncertainty = df['pred_energy_high_quantile'][mask_bin]
+        fraction_within_1sigma.append(
+            np.sum(np.abs(e_true - e_pred) < uncertainty) / len(e_true))
+        fraction_within_2sigma.append(
+            np.sum(np.abs(e_true - e_pred) < 2 * uncertainty) / len(e_true))
+        fraction_within_3sigma.append(
+            np.sum(np.abs(e_true - e_pred) < 3 * uncertainty) / len(e_true))
+
+    fraction_within_1sigma = np.array(fraction_within_1sigma)
+    fraction_within_2sigma = np.array(fraction_within_2sigma)
+    fraction_within_3sigma = np.array(fraction_within_3sigma)
+    return fraction_within_1sigma, fraction_within_2sigma, fraction_within_3sigma
+
+
+def bin_uncertainty(df, bins, predstring='pred_energy'):
+    has_truth = np.isnan(df['truthHitAssignedEnergies']) == False
+    has_pred = np.isnan(df[predstring]) == False
+    mask = np.logical_and(has_truth, has_pred)
+    mean = []
+    std = []
+
+    for i in range(len(bins) - 1):
+        mask_bin = np.logical_and(
+            df['truthHitAssignedEnergies'] >= bins[i],
+            df['truthHitAssignedEnergies'] < bins[i + 1])
+        mask_bin = np.logical_and(mask_bin, mask)
+        uncertainty = df['pred_energy_high_quantile'][mask_bin]
+        mean.append(np.mean(uncertainty))
+        std.append(np.std(uncertainty))
+    mean = np.array(mean)
+    std = np.array(std)
+    return mean, std
+
+
+def within_uncertainty(df, bins=None, binwidth=10.):
     if bins is None:
         binmax = df['truthHitAssignedEnergies'].max()
         bins = calc_energy_bins(binmax, binwidth)
 
+    within_1sigma, within_2sigma, within_3sigma = calc_within_uncertainty(df, bins)
+    mean, std = bin_uncertainty(df, bins)
+
+    fig, ax = plt.subplots(nrows=2, figsize=(20, 10))
+    x = (bins[1:] + bins[:-1]) / 2
+    xerr = (bins[1:] - bins[:-1]) / 2
+    ax[0].errorbar(x, within_1sigma, xerr=xerr, label='within 1 sigma')
+    ax[0].errorbar(x, within_2sigma, xerr=xerr, label='within 2 sigma')
+    ax[0].errorbar(x, within_3sigma, xerr=xerr, label='within 3 sigma')
+    ax[1].errorbar(x, mean, xerr=xerr, yerr=std, label='uncertainty')
+    return fig
+
+def energy_resolution(df, bins=None, binwidth=10., addfit=False):
+    if bins is None:
+        binmax = df['truthHitAssignedEnergies'].max()
+        bins = calc_energy_bins(binmax, binwidth)
 
     data, ratios = calc_resolution(df, bins)
     means = data['means']

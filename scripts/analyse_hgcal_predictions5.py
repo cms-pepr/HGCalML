@@ -175,6 +175,10 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     fig_res = ep.energy_resolution(showers_dataframe)
     fig_res.savefig(os.path.join('.', 'energy_resolution.jpg'))
 
+    ### Energy uncertainty plot ###################################################################
+    fig_unc = ep.within_uncertainty(showers_dataframe)
+    fig_unc.savefig(os.path.join('.', 'within_uncertainty.jpg'))
+
     # This is only to write to pdf files
     scalar_variables = {
         'beta_threshold': str(beta_threshold),
