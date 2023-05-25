@@ -189,8 +189,13 @@ class ShowersMatcher:
             for k in keys:
                 if k in skip:
                     continue
-                print("X", k)
-                node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i], 0]
+                elif k == 'pred_id':
+                    node_attributes[k] = np.argmax(
+                            self.predictions_dict[k][self.pred_alpha_idx[i],:],
+                            axis=1)
+                else:
+                    print("X", k)
+                    node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i], 0]
             node = (pred_shower_sid[i], node_attributes)
             node_attributes['type'] = ShowersMatcher._NODE_TYPE_PRED_SHOWER
 
