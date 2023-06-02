@@ -2,56 +2,37 @@
 This is one of the really good models and configurations.
 Keep this in mind
 '''
-from experiment_database_manager import ExperimentDatabaseManager
+import uuid
 import tensorflow as tf
-from argparse import ArgumentParser
-# from K import Layer
-import numpy as np
-from tensorflow.keras.layers import BatchNormalization, Dropout, Add
-from LayersRagged  import RaggedConstructTensor
-from GravNetLayersRagged import ProcessFeatures, SoftPixelCNN, RaggedGravNet, DistanceWeightedMessagePassing, \
-    EyeInitializer
-from tensorflow.keras.layers import Multiply, Dense, Concatenate, GaussianDropout
-from DeepJetCore.modeltools import DJCKerasModel
-from DeepJetCore.training.training_base import training_base
-from tensorflow.keras import Model
+from tensorflow.keras.layers import Add
+from tensorflow.keras.layers import Dense, Concatenate
+from tensorboard_manager import TensorBoardManager
+
 import matching_and_analysis
+from experiment_database_manager import ExperimentDatabaseManager
 from experiment_database_reading_manager import ExperimentDatabaseReadingManager
 from hgcal_predictor import HGCalPredictor
 from hyperparam_optimizer import OCHyperParamOptimizer
-from callbacks import RunningFullValidation
-from tensorboard_manager import TensorBoardManager
 from running_plots import RunningMetricsDatabaseAdditionCallback, RunningMetricsPlotterCallback
-import tensorflow.keras as keras
 from datastructures import TrainData_TrackML
-import uuid
-
-from DeepJetCore.modeltools import fixLayersContaining
-# from tensorflow.keras.models import load_model
-from DeepJetCore.training.training_base import custom_objects_list
-
-# from tensorflow.keras.optimizer_v2 import Adam
-
-from callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining, plotClusteringDuringTraining
-from DeepJetCore.DJCLayers import StopGradient,ScalarMultiply, SelectFeatures, ReduceSumEntirely
 
 from clr_callback import CyclicLR
-from LossLayers import LLFullObjectCondensation, LLClusterCoordinates
-
+from callbacks import RunningFullValidation
+from callbacks import plotEventDuringTraining, plotGravNetCoordsDuringTraining
+from callbacks import plotClusteringDuringTraining
 from model_blocks import create_outputs
 
-from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform,RaggedGlobalExchange,LocalDistanceScaling,CheckNaN,NeighbourApproxPCA,LocalClusterReshapeFromNeighbours,GraphClusterReshape, SortAndSelectNeighbours, LLLocalClusterCoordinates,DistanceWeightedMessagePassing,CollectNeighbourAverageAndMax,CreateGlobalIndices, LocalClustering, SelectFromIndices, MultiBackGather, KNN, MessagePassing, RobustModel
-from Layers import GooeyBatchNorm #make a new line
-from datastructures import TrainData_OC
-import sql_credentials
-from datetime import datetime
-
+from LossLayers import LLFullObjectCondensation
+from DeepJetCore.DJCLayers import SelectFeatures, ReduceSumEntirely
+from GravNetLayersRagged import ProcessFeatures, RaggedGravNet
+from GravNetLayersRagged import DistanceWeightedMessagePassing, EyeInitializer
+from Layers import LocalClusterReshapeFromNeighbours2,ManualCoordTransform
+from Layers import LocalDistanceScaling, NeighbourApproxPCA, DistanceWeightedMessagePassing
+from Layers import CreateGlobalIndices, MultiBackGather, KNN, RobustModel, GooeyBatchNorm
+from LayersRagged  import RaggedConstructTensor
 
 
 td=TrainData_TrackML()
-'''
-
-'''
 
 
 def gravnet_model(Inputs,
@@ -408,6 +389,3 @@ model, history = train.trainModel(nepochs=121,
                                   [CyclicLR (base_lr = learningrate/10.,
                                   max_lr = learningrate,
                                   step_size = 100)]+cb)
-#
-
-
