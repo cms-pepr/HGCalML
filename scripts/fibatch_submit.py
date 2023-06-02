@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+Script to submit batch jobs to the FI cluster.
+"""
 
 import sys
 import os
@@ -8,112 +11,109 @@ import uuid
 HGCALML=os.getenv("HGCALML")
 if HGCALML is None:
     print('run with HGCALML environment sourced')
-    exit()
+    sys.exit()
 
 
 if '-h' in sys.argv or '--help' in sys.argv:
     print('script to submit commands within the djc container to sbatch.\n')
     print('all commands are fully forwarded with one exception:')
-    print('\n    ---d <workdir>    specifies a working directory can be specified that\n                      will contain the batch logs. It is created if \n                      it does not exist.\n')
+    print('\n    ---d <workdir>    specifies a working directory that can be specified '
+      'that will contain the batch logs. It is created if it does not exist.\n')
     print('\n    ---n <name> (opt) specifies a name for the batch script\n')
     print('\n    ---c <constraint> (opt) specifies a resource constraint, default a100\n')
-    
-    exit()
+    sys.exit()
 
-#can be used by others on FI
-djcloc='/mnt/ceph/users/jkieseler/containers/deepjetcore3_latest.sif'
+# can be used by others on FI
+DJCLOC='/mnt/ceph/users/jkieseler/containers/deepjetcore3_latest.sif'
+UEXT = str(uuid.uuid4())
 
-uext = str(uuid.uuid4())
-
-workdir=None
+WORKDIR=None
 
 filtered_clo=[]
-triggered=False
-triggeredname=False
-triggeredconstraint=False
-name="batchscript"
+TRIGGERED=False
+TRIGGERED_NAME=False
+TRIGGERED_CONSTRAINT=False
+NAME="batchscript"
 # constraint="a100"
-constraint="a100-80gb"
+CONSTRAINT="a100-80gb"
+
 for clo in sys.argv:
-    
+
     if clo == '---n':
-        triggeredname = True
+        TRIGGERED_NAME = True
         continue
-    if triggeredname:
-        name = clo
-        triggeredname=False
+    if TRIGGERED_NAME:
+        NAME = clo
+        TRIGGERED_NAME=False
         continue
-    
+
     if clo == '---d':
-        triggered=True
+        TRIGGERED=True
         continue
-    if triggered:
-        workdir=clo
-        triggered=False
+    if TRIGGERED:
+        WORKDIR=clo
+        TRIGGERED=False
         continue
-    
+
     if clo == '---c':
-        triggeredconstraint=True
+        TRIGGERED_CONSTRAINT=True
         continue
-    if triggeredconstraint:
-        constraint=clo
-        triggeredconstraint=False
+    if TRIGGERED_CONSTRAINT:
+        CONSTRAINT=clo
+        TRIGGERED_CONSTRAINT=False
         continue
-    
+
     filtered_clo.append(clo)
 
-if workdir is None:
+if WORKDIR is None:
     print('please specify a batch working directory with ---d <workdir>')
-    exit()
-    
-if os.path.isdir(workdir):
-    var = input('Working directory exists, are you sure you want to continue, please type "yes/y"\n')
+    sys.exit()
+
+if os.path.isdir(WORKDIR):
+    var = input(\
+        'Working directory exists, are you sure you want to continue, please type "yes/y"\n')
     var = var.lower()
-    if not (var == 'yes' or var == 'y'):
-        exit()
+    if not var in ('yes', 'y'):
+        sys.exit()
 else:
-    os.system('mkdir -p '+workdir)
+    os.system('mkdir -p '+WORKDIR)
 
 
 filtered_clo = filtered_clo[1:] #remove
-commands = " "
+COMMANDS = " "
 for clos in filtered_clo:
-    commands += clos + " "
+    COMMANDS += clos + " "
 
 CWD = os.getcwd()
 
-bscript_temp='''#!/bin/bash
+bscript_temp=f'''#!/bin/bash
 
-#SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint={constraint}
+#SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint={CONSTRAINT}
 
 nvidia-smi
-singularity  run  -B /mnt --nv {djcloc} /bin/bash runscript_{uext}.sh
+singularity  run  -B /mnt --nv {DJCLOC} /bin/bash runscript_{UEXT}.sh
 
-'''.format(djcloc=djcloc,
-           uext=uext,
-            workdir=workdir,
-            constraint=constraint)
+'''
 
-runscript_temp='''
-~/private/keytabd.sh >/dev/null & 
+runscript_temp=f'''
+~/private/keytabd.sh >/dev/null &
 KTPID=$!
-cd {hgcalml}
+cd {HGCALML}
 source env.sh
-cd {cwd}
-{commands}
+cd {CWD}
+{COMMANDS}
 kill $KTPID
 exit
-'''.format(hgcalml=HGCALML, 
-            cwd=CWD,
-            commands=commands )
+'''
 
-
-with open(workdir+'/'+name+'_'+uext+'.sh','w') as f:
+with open(WORKDIR+'/'+NAME+'_'+UEXT+'.sh','w', encoding='utf-8') as f:
     f.write(bscript_temp)
-    
-with open(workdir+'/runscript_'+uext+'.sh','w') as f:
+
+with open(WORKDIR+'/runscript_'+UEXT+'.sh','w', encoding='utf-8') as f:
     f.write(runscript_temp)
-    
-os.system('cd '+workdir + '; pwd; module load slurm singularity; unset PYTHONPATH ; sbatch '+name+'_'+uext+'.sh')
 
-
+COMMAND = (
+    'cd ' + WORKDIR + '; pwd; module load slurm singularity; unset PYTHONPATH ; '
+    'sbatch ' + NAME + '_' + UEXT + '.sh'
+)
+os.system(COMMAND)
