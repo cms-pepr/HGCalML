@@ -15,7 +15,7 @@ from datastructures import TrainData_PreselectionNanoML
 from Layers import RaggedGravNet
 from Layers import DistanceWeightedMessagePassing
 from Layers import DictModel
-from Layers import CastRowSplits, PlotCoordinates, LLFullObjectCondensation
+from Layers import CastRowSplits, PlotCoordinates, LLExtendedObjectCondensation
 from Layers import ScaledGooeyBatchNorm2
 from Layers import LLFillSpace
 from Regularizers import AverageDistanceRegularizer
@@ -32,10 +32,10 @@ from callbacks import plotClusterSummary
 ###############################################################################
 
 LOSS_OPTIONS = {
-    'energy_loss_weight': .2,
+    'energy_loss_weight': .0001,
     'q_min': 0.5,
     'use_average_cc_pos': 0.1,
-    'classification_loss_weight':0.0,
+    'classification_loss_weight':0.5,
     'too_much_beta_scale': 0.0,
     'position_loss_weight':0.0,
     'timing_loss_weight':0.0,
@@ -47,8 +47,8 @@ LOSS_OPTIONS = {
 PRESELECTION_PATH = '/mnt/home/pzehetner/Models_Good/NoiseTraining0/KERAS_check_best_model.h5'
 
 # Configuration for plotting
-RECORD_FREQUENCY = 20
-PLOT_FREQUENCY = 50 #plots every 1k batches
+RECORD_FREQUENCY = 5
+PLOT_FREQUENCY = 10 #plots every 1k batches
 PUBLISHPATH = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/July2022_jk/"
 PUBLISHPATH = ""
 
@@ -193,12 +193,12 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
 
     # loss
-    pred_beta = LLFullObjectCondensation(
+    pred_beta = LLExtendedObjectCondensation(
         scale=1.,
         use_energy_weights=True,
         record_metrics=True,
         print_loss=True,
-        name="FullOCLoss",
+        name="ExtendedOCLoss",
         **LOSS_OPTIONS
         )( # oc output and payload
             [pred_beta,
@@ -289,26 +289,13 @@ cb += [
     for i in [0, 2, 4]
     ]
 
-cb += [
-    plotEventDuringTraining(
-       outputfile=train.outputDir + "/condensation/c_"+str(i),
-       samplefile=samplepath,
-       after_n_batches=2*PLOT_FREQUENCY,
-       batchsize=200000,
-       on_epoch_end=False,
-       publish=None,
-       use_event=i)
-    for i in range(5)
-    ]
-
-
 
 cb += [
     simpleMetricsCallback(
         output_file=train.outputDir+'/metrics.html',
         record_frequency= RECORD_FREQUENCY,
         plot_frequency = PLOT_FREQUENCY,
-        select_metrics='FullOCLoss_*loss',
+        select_metrics=['ExtendedOCLoss*','FullOCLoss_*loss'],
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
 
@@ -358,8 +345,6 @@ cb += [
         after_n_batches=1000
         )
     ]
-
-cb = []
 
 
 ###############################################################################

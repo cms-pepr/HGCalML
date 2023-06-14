@@ -2562,6 +2562,103 @@ class LLFullObjectCondensationID(LLFullObjectCondensation):
 
         
 
+class LLExtendedObjectCondensation(LLFullObjectCondensation):
+    '''
+    Same as `LLFullObjectCondensation` but adds:
+    * different version of particle ID
+    * Energy uncertainty
+    '''
+
+ 
+    def __init__(self, *args, **kwargs):
+        super(LLExtendedObjectCondensation, self).__init__(*args, **kwargs)
+        
+        
+    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique=None, hasunique=None):
+        """
+        Truth PID is not yet one-hot encoded
+        Encoding:
+            0:  Muon
+            1:  Electron
+            2:  Photon
+            3:  Charged Hadron
+            4:  Neutral Hadron
+            5:  Ambiguous
+        """
+        if self.classification_loss_weight <= 0:
+            return tf.reduce_mean(pred_id,axis=1, keepdims=True)
+
+        charged_hadronic_conditions = [
+                tf.abs(orig_t_pid) == 211,  # Pions
+                tf.abs(orig_t_pid) == 312,  # Kaons
+                tf.abs(orig_t_pid) == 2212, # Protons
+                ]
+        neutral_hadronic_conditions = [
+                tf.abs(orig_t_pid) == 130,  # Klong
+                tf.abs(orig_t_pid) == 2112, # Neutrons
+                ]
+        charged_hadronic_true = tf.reduce_any(charged_hadronic_conditions, axis=0)
+        neutral_hadronic_true = tf.reduce_any(neutral_hadronic_conditions, axis=0)
+
+        truth_pid_tmp = tf.zeros_like(orig_t_pid) - 1 # Initialize with -1
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 13, 0, truth_pid_tmp)    # Muons
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 11, 1, truth_pid_tmp)    # Electrons
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 22, 2, truth_pid_tmp)    # Photons
+        truth_pid_tmp = tf.where(charged_hadronic_true, 3, truth_pid_tmp)       # Charged Had.
+        truth_pid_tmp = tf.where(neutral_hadronic_true, 4, truth_pid_tmp)       # Neutral Had.
+        truth_pid_tmp = tf.where(truth_pid_tmp == -1, 5, truth_pid_tmp)         # Catch rest
+        truth_pid_tmp = tf.cast(truth_pid_tmp, tf.int32)
+
+        truth_pid_onehot = tf.one_hot(truth_pid_tmp, depth=6)
+        truth_pid_onehot = tf.reshape(truth_pid_onehot, (-1, 6))
+
+        pred_id = tf.clip_by_value(pred_id, 1e-9, 1. - 1e-9)
+        classloss = tf.keras.losses.categorical_crossentropy(truth_pid_onehot, pred_id)
+
+        # For ambiguous: set classloss to zero
+        # classloss = tf.where(tf.reshape(truth_pid_tmp, classloss.shape) == -1, 0, classloss)
+        # Catch cases in which `t_pid` was not defined as expected
+        # classloss = tf.where(tf.reduce_sum(orig_t_pid,axis=1)>1. , 0., classloss)
+        # classloss = tf.where(tf.reduce_sum(orig_t_pid,axis=1)<1.-1e-3 , 0., classloss)
+
+        classloss = tf.debugging.check_numerics(classloss, "classloss")
+
+        return classloss[...,tf.newaxis]
+
+
+    def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, 
+                                           pred_energy, pred_uncertainty_low, pred_uncertainty_high,
+                                           return_concat=False):
+        """
+        This loss uses a Bayesian approach to predict an energy uncertainty. 
+        * t_energy              -> Truth energy of shower
+        * t_dep_energies        -> Sum of deposited energy IF clustered perfectly
+        * pred_energy           -> Correction factor applied to energy
+        * pred_uncertainty_low  -> predicted uncertainty
+        * pred_uncertainty_high -> predicted uncertainty (should be equal to ...low)
+        """
+
+        eps = 1e-3
+        t_energy = tf.clip_by_value(t_energy,0.,1e12)
+        t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
+        epred = pred_energy * t_dep_energies
+        sigma = pred_uncertainty_high * t_dep_energies + 0.1
+
+        # Uncertainty 'sigma' must minimize this term:
+        # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
+        matching_loss = (pred_uncertainty_low - pred_uncertainty_high)**2
+        matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
+        prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
+        prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
+        uncertainty_loss = tf.math.log(sigma**2)
+        uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
+
+        if return_concat:
+            return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
+        else: 
+            return prediction_loss, uncertainty_loss + matching_loss
+    
+    
 class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):
     
     def __init__(self, *args, **kwargs):

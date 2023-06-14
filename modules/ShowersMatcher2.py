@@ -196,8 +196,8 @@ class ShowersMatcher:
                     # node_attributes[k] = np.argmax(
                             # self.predictions_dict[k][self.pred_alpha_idx[i]],
                             # axis=1)
-                    import pdb
-                    pdb.set_trace()
+                    # import pdb
+                    # pdb.set_trace()
                     node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i]]
                     # Same as 'else' should work. 
                 else:
