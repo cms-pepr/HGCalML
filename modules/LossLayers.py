@@ -2626,9 +2626,10 @@ class LLExtendedObjectCondensation(LLFullObjectCondensation):
         return classloss[...,tf.newaxis]
 
 
-    def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, 
-                                           pred_energy, pred_uncertainty_low, pred_uncertainty_high,
-                                           return_concat=False):
+    def calc_energy_correction_factor_loss(self,
+            t_energy, t_dep_energies,
+            pred_energy, pred_uncertainty_low, pred_uncertainty_high,
+            return_concat=False, huber_loss=False):
         """
         This loss uses a Bayesian approach to predict an energy uncertainty. 
         * t_energy              -> Truth energy of shower
@@ -2642,15 +2643,19 @@ class LLExtendedObjectCondensation(LLFullObjectCondensation):
         t_energy = tf.clip_by_value(t_energy,0.,1e12)
         t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
         epred = pred_energy * t_dep_energies
-        sigma = pred_uncertainty_high * t_dep_energies + 0.1
+        sigma = pred_uncertainty_high * t_dep_energies + 1.0
 
         # Uncertainty 'sigma' must minimize this term:
         # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
         matching_loss = (pred_uncertainty_low - pred_uncertainty_high)**2
-        matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
-        prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
-        prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
+        # prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
+        prediction_loss = tf.math.divide_no_nan((t_energy - epred), sigma)
+        prediction_loss = huber(prediction_loss, d=2)
+
         uncertainty_loss = tf.math.log(sigma**2)
+
+        matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
+        prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
         uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
 
         if return_concat:
