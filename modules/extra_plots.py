@@ -437,3 +437,37 @@ def filter_features_dict(features_dict, mask):
             print(key, " untouched")
     return filtered
 
+def tracks_vs_hits(showers_dataframe):
+    bins = calc_energy_bins(200, 10)
+    _, ratios_track_raw, = calc_resolution(
+        showers_dataframe, bins, predstring='pred_energy_tracks_raw')
+    medians_track_raw = [np.median(r) for r in ratios_track_raw]
+
+    _, ratios_track = calc_resolution(
+        showers_dataframe, bins, predstring='pred_energy_tracks')
+    medians_track = [np.median(r) for r in ratios_track]
+
+    _, ratios_hits_raw = calc_resolution(
+        showers_dataframe, bins, predstring='pred_energy_hits_raw')
+    medians_hits_raw = [np.median(r) for r in ratios_hits_raw]
+
+    _, ratios_hits = calc_resolution(
+        showers_dataframe, bins, predstring='pred_energy_hits')
+    medians_hits = [np.median(r) for r in ratios_hits]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(bins[:-1], medians_track_raw, '--', color='red', lw=3,
+            label='Median of Ratio, Tracks Raw')
+    ax.plot(bins[:-1], medians_track, color='red',
+            label='Median of Ratio, Tracks Corrected')
+    ax.plot(bins[:-1], medians_hits_raw, '--', color='blue', lw=3,
+            label='Median of Ratio, Hits Raw')
+    ax.plot(bins[:-1], medians_hits, color='blue', lw=3,
+            label='Median of Ratio, Hits Corrected')
+    ax.legend()
+    ax.grid()
+    ax.set_title("Median of Ratios 'True' / Predicted'", fontsize=20)
+    ax.set_xlabel("True Energy [GeV]", fontsize=20)
+    ax.set_ylabel("Ratio", fontsize=20)
+
+    return fig
