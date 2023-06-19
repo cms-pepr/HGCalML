@@ -1200,14 +1200,15 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
         s,v = tf.sign(inputs), tf.abs(inputs)
         out = super(SignedScaledGooeyBatchNorm, self).call(v, training)
         return s*out
-
-class ScaledGooeyBatchNorm2(LayerWithMetrics):
+    
+class ScaledGooeyBatchNorm2(tf.keras.layers.Layer):
     def __init__(self, 
                  viscosity=0.01,
                  fluidity_decay=1e-4,
                  max_viscosity=0.99,
                  no_gaus = True,
                  epsilon=1e-2,
+                 invert_condition=False,
                  **kwargs):
         '''
         Input features (or [features, condition]), output: normed features
@@ -1219,7 +1220,8 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         - fluidity_decay: 'thickening' of the viscosity (see scripts/gooey_plot.py for visualisation)
         - no_gaus:         do not take variance but take mean difference to mean. 
                            Better for non-gaussian inputs and much more robust.
-        - epsilon:         when dividing, added to the denominator (should not require adjustment)
+        - epsilon:         when dividing, added to the denominator (should not require adjustment),
+        - invert_condition: instead of >0.5 uses <=0.5
         '''
         
         super(ScaledGooeyBatchNorm2, self).__init__(**kwargs)
@@ -1234,6 +1236,7 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         self.viscosity_init = viscosity
         self.epsilon = epsilon
         self.no_gaus = no_gaus
+        self.invert_condition = invert_condition
         
     def compute_output_shape(self, input_shapes):
         #return input_shapes[0]
@@ -1246,7 +1249,8 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
                   'fluidity_decay': self.fluidity_decay,
                   'max_viscosity': self.max_viscosity,
                   'epsilon': self.epsilon,
-                  'no_gaus': self.no_gaus
+                  'no_gaus': self.no_gaus,
+                  'invert_condition': self.invert_condition
                   }
         base_config = super(ScaledGooeyBatchNorm2, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -1259,21 +1263,27 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
             shape = (1,)+input_shapes[0][1:]
         else:
             shape = (1,)+input_shapes[1:]
-        
-        self.mean = self.add_weight(name = 'mean',shape = shape, 
-                                    initializer = 'zeros', trainable =  False) 
-        self.den = self.add_weight(name = 'den',shape = shape, 
-                                    initializer = 'ones', trainable =  False)
-        self.viscosity = tf.Variable(initial_value=self.viscosity_init, 
-                                         name='viscosity',
-                                         trainable=False,dtype='float32')
+            
+        def _visc_init(shape, dtype):
+            return tf.constant(self.viscosity_init, dtype = dtype)
         
         self.bias = self.add_weight(name = 'bias',shape = shape, 
                                     initializer = 'zeros', trainable = self.trainable) 
         
         self.gamma = self.add_weight(name = 'gamma',shape = shape, 
                                     initializer = 'ones', trainable = self.trainable) 
-            
+        
+        
+        self.viscosity = self.add_weight(initializer=_visc_init, 
+                                         name='viscosity', 
+                                         trainable=False)
+               
+        self.mean = self.add_weight(name = 'mean',shape = shape, 
+                                    initializer = 'zeros', trainable =  False)
+         
+        self.den = self.add_weight(name = 'den',shape = shape, 
+                                    initializer = 'ones', trainable =  False)
+        
         super(ScaledGooeyBatchNorm2, self).build(input_shapes)
     
     def _m_mean(self, x, mask):
@@ -1306,7 +1316,10 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         
         out = (x_in - ngmean) / (tf.abs(ngden) + self.epsilon)
         out = out*self.gamma + self.bias
-        return tf.where(cond>0.5,  out, x_in)
+        if self.invert_condition:
+            return tf.where(cond<=0.5,  out, x_in)
+        else:
+            return tf.where(cond>0.5,  out, x_in)
     
     def call(self, inputs, training=None):
         if isinstance(inputs,list):
@@ -1315,6 +1328,10 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         else:
             x_in = inputs
             cond = tf.ones_like(x_in[...,0:1])
+        
+        
+        #print(self.name, self.mean)
+        #tf.print(self.name, self.mean)
         
         if not self.trainable:
             return self._calc_out(x_in, cond)
@@ -1347,7 +1364,7 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
     
         
     
-class ConditionalScaledGooeyBatchNorm(LayerWithMetrics):
+class ConditionalScaledGooeyBatchNorm(tf.keras.layers.Layer):
     def __init__(self,**kwargs):
         '''
         Inputs (list):
@@ -1360,38 +1377,9 @@ class ConditionalScaledGooeyBatchNorm(LayerWithMetrics):
         Options: see ScaledGooeyBatchNorm2 options, will be passed as kwargs
         '''
         
-        super(ConditionalScaledGooeyBatchNorm, self).__init__(**kwargs)
-        if 'name' in kwargs.keys():
-            kwargs.pop('name')
+        raise ValueError("problems with weight saving, use two ScaledGooeyBatchNorm2 layers and invert condition on one.")
         
-        with tf.name_scope(self.name + "/1/"):
-            self.bn_a = ScaledGooeyBatchNorm2(name=self.name+'_bn_a',**kwargs)
-        with tf.name_scope(self.name + "/2/"):
-            self.bn_b = ScaledGooeyBatchNorm2(name=self.name+'_bn_b',**kwargs)
         
-    def compute_output_shape(self, input_shapes):
-        #return input_shapes[0]
-        return self.bn_a.compute_output_shape(input_shapes)
-              
-    def build(self, input_shapes):
-        
-        with tf.name_scope(self.name + "/1/"):
-            self.bn_a.build(input_shapes)
-        with tf.name_scope(self.name + "/2/"):
-            self.bn_b.build(input_shapes)
-            
-        super(ConditionalScaledGooeyBatchNorm, self).build(input_shapes)
-        
-    def call(self, inputs, training=None):
-        x, cond = inputs
-        cond = tf.where(cond > 0.5, tf.ones_like(cond),  0.) #make sure it's ones and zeros
-        
-        x_a = self.bn_a([x, cond],training = training)
-        x_b = self.bn_b([x, 1.-cond], training = training)
-        
-        return tf.where(cond>0.5, x_a, x_b)
-            
-
 class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
                  newformat=True,#compat can be restored but default is new format

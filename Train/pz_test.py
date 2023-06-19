@@ -48,8 +48,10 @@ LOSS_OPTIONS = {
 # Configuration for model
 PRESELECTION_PATH = os.getenv("HGCALML")+'/models/tiny_pc_pool/model.h5'
 
+PRESELECTION_PATH = '/afs/cern.ch/user/j/jkiesele/Cernbox/www/files/temp/June2023/tiny_again2/KERAS_check_model_last.h5'
+
 # Configuration for plotting
-RECORD_FREQUENCY = 60
+RECORD_FREQUENCY = 10
 PLOT_FREQUENCY = 10 #plots every 600 batches -> roughly 10 minutes
 PUBLISHPATH = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/June2023/"
 PUBLISHPATH = None
@@ -57,7 +59,7 @@ PUBLISHPATH = None
 # Configuration for training
 DENSE_ACTIVATION='elu'
 LEARNINGRATE = 1e-4
-NBATCH = 60000#200000
+NBATCH = 70000#200000
 DENSE_REGULARIZER = tf.keras.regularizers.L2(l2=1e-5)
 DENSE_REGULARIZER = None
 
@@ -77,30 +79,28 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ##################### Input processing, no need to change much here ########
     ############################################################################
 
-    is_preselected = isinstance(td, TrainData_PreselectionNanoML)
     pre_selection = td.interpretAllModelInputs(Inputs, returndict=True)
 
-    #can be loaded - or use pre-selected dataset (to be made)
-    if not is_preselected:
-        pre_selection = condition_input(pre_selection, no_scaling=True)
-        trans, pre_selection = tiny_pc_pool(
-            pre_selection,
-            trainable=False)
-    else:
-        pre_selection['row_splits'] = CastRowSplits()(pre_selection['row_splits'])
-        print(">> preselected dataset will omit pre-selection step")
-
+    pre_selection = condition_input(pre_selection, no_scaling=True)
+    trans, pre_selection = tiny_pc_pool(
+        pre_selection,
+        record_metrics=True,
+        #trainable=True
+        )#train in one go.. what is up with the weight loading?
+    
     #just for info what's available
     print('available pre-selection outputs',list(pre_selection.keys()))
 
     rs = pre_selection['row_splits']
     is_track = pre_selection['is_track']
 
-    x_in = Concatenate()([pre_selection['coords'],
+    x_in = Concatenate()([pre_selection['prime_coords'],
                           pre_selection['features']])
+    
+    x_in = ScaledGooeyBatchNorm2()(x_in)
     x = x_in
     energy = pre_selection['rechit_energy']
-    c_coords = pre_selection['coords']#pre-clustered coordinates
+    c_coords = pre_selection['prime_coords']#pre-clustered coordinates
     t_idx = pre_selection['t_idx']
 
     ############################################################################
@@ -270,7 +270,9 @@ if not train.modelSet():
     train.keras_model.summary()
 
     if not isinstance(train.train_data.dataclass(), TrainData_PreselectionNanoML):
-        apply_weights_from_path(PRESELECTION_PATH, train.keras_model)
+        train.keras_model = apply_weights_from_path(PRESELECTION_PATH, train.keras_model)
+        
+    exit()
 
 ###############################################################################
 ### Create Callbacks ##########################################################
@@ -311,11 +313,12 @@ cb += [
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
 
+    # collect all pre pooling metrics here
     simpleMetricsCallback(
-        output_file=train.outputDir+'/gooey_metrics.html',
+        output_file=train.outputDir+'/pgp_metrics.html',
         record_frequency= RECORD_FREQUENCY,
         plot_frequency = PLOT_FREQUENCY,
-        select_metrics='*gooey_*',
+        select_metrics='*pre_graph_pool*',
         publish=PUBLISHPATH
         ),
     simpleMetricsCallback(

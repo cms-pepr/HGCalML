@@ -1610,8 +1610,14 @@ def pre_graph_condensation(
     energy = orig_inputs['rechit_energy']
     is_track = orig_inputs['is_track']
     
-    x = ConditionalScaledGooeyBatchNorm(
-            name=name+'_cond_batchnorm',
+    
+    x = ScaledGooeyBatchNorm2(
+            name=name+'_cond_batchnorm_a',
+            record_metrics = record_metrics)([x, is_track])
+            
+    x = ScaledGooeyBatchNorm2(
+            name=name+'_cond_batchnorm_b',
+            invert_condition = True,
             record_metrics = record_metrics)([x, is_track])
             
     x_in = x
@@ -2148,14 +2154,11 @@ def tiny_pc_pool(
         name='pre_graph_pool',
         debugplots_after=-1,
         record_metrics=True,
-        produce_output = True,
-        reduction_target = 0.2,
+        reduction_target = 0.075,
         K_loss = 48,
         low_energy_cut_target = 2.0,
-        recalc_coords = False,
         first_embed = True,
         coords = None,
-        no_push_mode = False, #mostly for fast pre-training
         publish=None,):
     '''
     This function needs pre-processed input (from condition_input)
@@ -2178,10 +2181,13 @@ def tiny_pc_pool(
     energy = orig_inputs['rechit_energy']
     is_track = orig_inputs['is_track']
     
-    x = ConditionalScaledGooeyBatchNorm(
-            name=name+'_cond_batchnorm',
-            record_metrics = record_metrics, 
-            trainable=trainable)([x, is_track])
+    
+    x = ScaledGooeyBatchNorm2(
+            name=name+'_cond_batchnorm_a')([x, is_track])
+            
+    x = ScaledGooeyBatchNorm2(
+            name=name+'_cond_batchnorm_b',
+            invert_condition = True)([x, is_track])
             
     x_in = x
     
@@ -2192,7 +2198,7 @@ def tiny_pc_pool(
         x_hit = Dense(16, activation='elu', name=name+'emb_xhit',trainable=trainable)(x)
         x = MixWhere()([is_track, x_track, x_hit]) 
         x = ScaledGooeyBatchNorm2(name = name+'_emb_batchnorm', trainable=trainable, 
-                                  record_metrics = record_metrics)(x) 
+                                  )(x) 
         
     #simple gravnet       
     nidx,dist = KNN(K=K,record_metrics=record_metrics,name=name+'_np_knn',
@@ -2222,20 +2228,9 @@ def tiny_pc_pool(
                                         
     score = Dense(1, activation='sigmoid', name=name+'_pcp_score',trainable=trainable)(x)
     
-    #for some reason this makes it much slower
-    
-    if recalc_coords:
-        add_coords = Dense(3, name=name+'_pcp_coord_add',
-                           trainable=trainable,
-                           use_bias = False,
-                           kernel_initializer = 'zeros')(x)
-        #give this a name so we can access the coordinates explicitly later                    
-        coords = Add(name = name+'_pcp_coords')([coords,add_coords])
-        nidx,dist = None, None #not used anymore
-        #the kNN in graph condensation is actually faster than this + sorting
-        #dist = RecalcDistances()([coords,nidx])
     
     score = LLGraphCondensationScore(
+        name=name+'_ll_graph_condensation_score',
         record_metrics = record_metrics,
         K=K_loss,
                 active=trainable,
@@ -2243,6 +2238,7 @@ def tiny_pc_pool(
             )([score, coords, orig_inputs['t_idx'], orig_inputs['t_energy'], rs])
             
     coords = LLClusterCoordinates(
+        name=name+'_ll_cluster_coordinates',
                 downsample=1000,
                 record_metrics = record_metrics,
                 active=trainable,
@@ -2269,6 +2265,7 @@ def tiny_pc_pool(
                      name=name+'_gc_edges')(x, trans_a)
                      
     x_e = LLGraphCondensationEdges(
+        name=name+'_ll_graph_condensation_edges',
         active=trainable,
         record_metrics=record_metrics
         )(x_e, trans_a, orig_inputs['t_idx'])
@@ -2300,9 +2297,6 @@ def tiny_pc_pool(
     out['rechit_energy'] = PushUp(mode='sum', add_self=True)(energy, trans_a)
     out['is_track'] = SelectUp()(is_track, trans_a)
     out['row_splits'] = trans_a['rs_up']
-    
-    if no_push_mode:
-        return trans_a, out #still add the prime coords as debug check
     
     out['coords'] = PushUp(add_self=True)(orig_inputs['coords'], trans_a, weight = energy)
     

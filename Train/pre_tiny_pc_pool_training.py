@@ -60,7 +60,6 @@ def pretrain_model(Inputs,
                           publish=publishpath,
                           debugplots_after=debugplots_after,
                           debug_outdir=debug_outdir,
-                          no_push_mode= True
                           )
     
     
