@@ -222,10 +222,10 @@ class MLReductionMetrics(MLBase):
         lostenergies = ue[c<2]
         #print(lostenergies)
         
-        self.add_prompt_metric(tf.reduce_mean(nonoisecounts_bef),self.name+'_hits_pobj_bef_mean')
+        self.add_prompt_metric(tf.reduce_mean(tf.cast(nonoisecounts_bef,'float32')),self.name+'_hits_pobj_bef_mean')
         self.add_prompt_metric(tf.reduce_max(nonoisecounts_bef),self.name+'_hits_pobj_bef_max')
         
-        self.add_prompt_metric(tf.reduce_mean(nonoisecounts_after),self.name+'_hits_pobj_after_mean')
+        self.add_prompt_metric(tf.reduce_mean(tf.cast(nonoisecounts_after,'float32')),self.name+'_hits_pobj_after_mean')
         self.add_prompt_metric(tf.reduce_max(nonoisecounts_after),self.name+'_hits_pobj_after_max')
 
         self.add_prompt_metric(tf.reduce_mean(lostenergies),self.name+'_lost_energy_mean')

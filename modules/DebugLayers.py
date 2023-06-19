@@ -16,12 +16,13 @@ import queue
 import os
 
 class CumulativeArray(object):
-    def __init__(self, capacity = 60, default=0.):
+    def __init__(self, capacity = 60, default=0., name=None):
         
         assert capacity > 0
         self.data = None
         self.capacity = capacity
         self.default = default
+        self.name = name
         
     def put(self, arr):
         arr = np.where(arr == np.nan, self.default, arr)
@@ -544,7 +545,8 @@ class PlotGraphCondensation(_DebugPlotBase):
                 
                 
 class PlotGraphCondensationEfficiency(_DebugPlotBase):
-    def __init__(self, update = 0.1, **kwargs):
+    def __init__(self, accumulate_every :int = 10 , #how 
+                 **kwargs):
         '''
         Inputs:
          - t_energy
@@ -556,8 +558,23 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         '''
         
         super(PlotGraphCondensationEfficiency, self).__init__(**kwargs)
-        self.num = CumulativeArray(40)
-        self.den = CumulativeArray(40)
+        
+        self.acc_counter = 0
+        self.accumulate_every = accumulate_every
+        
+        self.only_accumulate_this_time = False
+        
+        accumulate = self.plot_every // accumulate_every + 50
+        
+        self.num = CumulativeArray(accumulate, name = self.name+'_num')
+        self.den = CumulativeArray(accumulate, name = self.name+'_den')
+    
+    
+    
+    def get_config(self):
+        config = {'accumulate_every': self.accumulate_every}#outdir/publish is explicitly not saved and needs to be set again every time
+        base_config = super(PlotGraphCondensationEfficiency, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
     
     #overwrite here
     def call(self, t_energy, t_idx, graph_trans , training=None):
@@ -567,13 +584,31 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         
         os.system('mkdir -p '+self.outdir)
         try:
-            print(self.name, 'plotting...')
             self.plot(t_energy, t_idx, graph_trans,training)
         except Exception as e:
             raise e
             #do nothing, don't interrupt training because a debug plot failed
             
         return t_energy
+        
+    def check_make_plot(self, inputs, training = None):
+        pre =  super(PlotGraphCondensationEfficiency, self).check_make_plot(inputs, training)
+        
+        if self.plot_every <= 0: #nothing
+            return pre
+        
+        self.only_accumulate_this_time = False
+        #OR:
+        if self.accumulate_every < self.acc_counter:
+            self.acc_counter = 0
+            self.only_accumulate_this_time = not pre
+            
+            return True
+        
+        self.acc_counter += 1
+        return pre
+            
+            
         
     def plot(self, t_energy, t_idx, graph_trans, training=None):
         
@@ -623,10 +658,14 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         h_orig, _ = np.histogram(orig_energies, bins = bins)
         h_orig = np.array(h_orig, dtype='float32')
         
-        self.den.put(h)
+        self.den.put(h_orig)
+        
+        if self.only_accumulate_this_time:
+            return
+        
+        print(self.name, 'plotting...')
         
         ##interface to old code
-        
         h = self.num.get()
         h_orig = self.den.get()
         
@@ -646,7 +685,7 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         
         fig.write_html(self.outdir+'/'+self.name+'.html')
         if self.publish is not None:
-                publish(self.outdir+'/'+self.name+'.html', self.publish)
+            publish(self.outdir+'/'+self.name+'.html', self.publish)
             
             
             

@@ -10,8 +10,10 @@ _push_knn_grad = tf.load_op_library('push_knn_grad.so')
 def PushKnn(w,f,nidx):
     '''
     Pushes features (summing them) to the neighbours.
-    This assumes that if there is a self neighbour index, that is actually means something!
+    This assumes that if there is a self neighbour index, that actually means something!
     This op is compatible with '-1' indices as synonym for no neighbour
+    
+    This op does not assume that an index of '-1' truncates the list
     '''
     #go through the columns
     

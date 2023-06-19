@@ -216,7 +216,21 @@ class CreateMask(tf.keras.layers.Layer):
         
 
 class Where(tf.keras.layers.Layer):
-    def __init__(self, outputval, condition = '>0', **kwargs):
+    def __init__(self, outputval = None , condition = '>0', **kwargs):
+        '''
+        Simple wrapper around tf.where.
+        
+        Inputs if outputval=None:
+        - tensor defining condition
+        - value to return if condition == True
+        - value to return else
+        
+        Inputs if outputval=val:
+        - tensor defining condition
+        - value to return if condition is not fulfilled
+         --> will return constant outputval=val if condition is fulfilled
+        
+        '''
         conditions = ['>0','>=0','<0','<=0','==0', '!=0']
         assert condition in conditions
         self.condition = condition
@@ -237,20 +251,29 @@ class Where(tf.keras.layers.Layer):
         return (input_shapes[1],)
     
     def call(self,inputs):
-        assert len(inputs)==2
+        
+        if self.outputval is not None:
+            assert len(inputs)==2
+            left = self.outputval
+            right = inputs[1]
+        else:
+            assert len(inputs)==3
+            left = inputs[1]
+            right = inputs[1]
+            
         izero = tf.constant(0,dtype=inputs[0].dtype)
         if self.condition == '>0':
-            return tf.where(inputs[0]> izero,  self.outputval, inputs[1])
+            return tf.where(inputs[0]> izero, left, right)
         elif self.condition == '>=0':
-            return tf.where(inputs[0]>=izero, self.outputval, inputs[1])
+            return tf.where(inputs[0]>=izero, left, right)
         elif self.condition == '<0':
-            return tf.where(inputs[0]< izero,  self.outputval, inputs[1])
+            return tf.where(inputs[0]< izero, left, right)
         elif self.condition == '<=0':
-            return tf.where(inputs[0]<=izero, self.outputval, inputs[1])
+            return tf.where(inputs[0]<=izero, left, right)
         elif self.condition == '!=0':
-            return tf.where(inputs[0]!=izero, self.outputval, inputs[1])
+            return tf.where(inputs[0]!=izero, left, right)
         else:
-            return tf.where(inputs[0]==izero, self.outputval, inputs[1])
+            return tf.where(inputs[0]==izero, left, right)
 
 
 class MixWhere(tf.keras.layers.Layer):
@@ -1996,8 +2019,8 @@ class RecalcDistances(tf.keras.layers.Layer):
     def call(self,inputs):
         assert len(inputs)==2
         coords, nidx = inputs
-        
-        ncoords = SelectWithDefault(nidx, coords, 0.) # V x K x C
+        #no check needed here
+        ncoords = SelectWithDefault(nidx, coords, 0., no_check=True) # V x K x C
         dist = tf.reduce_sum( (ncoords - tf.expand_dims(coords,axis=1))**2, axis=2 )
         return dist
 
@@ -2456,13 +2479,15 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         return [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i]) for i in range(len(output_shapes))]
         
     @staticmethod 
-    def raw_call(distances, nidx, K, radius, sort, incr_sorting_score, keep_self=True):
+    def raw_call(distances, nidx, K, radius=-1, sort=True, incr_sorting_score = None, keep_self=True):
         
         K = K if K>0 else distances.shape[1]
         if not sort:
             return distances[:,:K],nidx[:,:K]
         
-        if tf.shape(incr_sorting_score)[1] is not None and tf.shape(incr_sorting_score)[1]==1:
+        if incr_sorting_score is None:
+            incr_sorting_score = distances
+        elif tf.shape(incr_sorting_score)[1] is not None and tf.shape(incr_sorting_score)[1]==1:
             incr_sorting_score = SelectWithDefault(nidx, incr_sorting_score, 0.)[:,0]
         
         tfssc = tf.where(nidx<0, 1e9, incr_sorting_score) #make sure the -1 end up at the end
@@ -3152,9 +3177,12 @@ class RaggedGravNet(LayerWithMetrics):
             self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation=feature_activation)
 
         with tf.name_scope(self.name + "/2/"):
+            s_kernel_initializer = 'glorot_uniform'
+            if coord_initialiser_noise is not None:
+                s_kernel_initializer = EyeInitializer(mean=0, stddev=coord_initialiser_noise)
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,
                                                                  #very slow turn on
-                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=coord_initialiser_noise),
+                                                                 kernel_initializer=s_kernel_initializer,
                                                                  use_bias=False)
 
         with tf.name_scope(self.name + "/3/"):
@@ -3548,6 +3576,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
                  n_feature_transformation, #=[32, 32, 32, 32, 4, 4],
                  sumwnorm=False,
                  activation='relu',
+                 exp_distances = True, #use feat * exp(-distance) weighting, if not simple feat * distance
                  **kwargs):
         super(DistanceWeightedMessagePassing, self).__init__(**kwargs)
 
@@ -3555,6 +3584,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         self.sumwnorm = sumwnorm
         self.feature_tranformation_dense = []
         self.activation = activation
+        self.exp_distances = exp_distances
         for i in range(len(self.n_feature_transformation)):
             with tf.name_scope(self.name + "/5/" + str(i)):
                 self.feature_tranformation_dense.append(tf.keras.layers.Dense(self.n_feature_transformation[i],
@@ -3579,6 +3609,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
     def get_config(self):
         config = {'n_feature_transformation': self.n_feature_transformation,
                   'activation': self.activation,
+                  'exp_distances': self.exp_distances,
                   'sumwnorm':self.sumwnorm
         }
         base_config = super(DistanceWeightedMessagePassing, self).get_config()
@@ -3603,9 +3634,15 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
     def collect_neighbours(self, features, neighbour_indices, distancesq):
         f=None
         if self.sumwnorm:
-            f,_ = AccumulateKnnSumw(10.*distancesq,  features, neighbour_indices, mean_and_max=True)
+            if self.exp_distances:
+                f,_ = AccumulateKnnSumw(10.*distancesq,  features, neighbour_indices, mean_and_max=True)
+            else:
+                f,_ = AccumulateLinKnnSumw(distancesq,  features, neighbour_indices, mean_and_max=True)
         else:
-            f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
+            if self.exp_distances:
+                f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
+            else:
+                f,_ = AccumulateLinKnn(distancesq,  features, neighbour_indices)
         return f
 
     def call(self, inputs):
@@ -3980,6 +4017,8 @@ class FlatNeighbourFeatures(tf.keras.layers.Layer):
         super(FlatNeighbourFeatures, self).__init__(**kwargs)
         
     def call(self, inputs):
+        
+        assert len(inputs) == 2
         feat,nidx = inputs
         
         n_feat = SelectWithDefault(nidx,feat,0.) # [V x K x F]

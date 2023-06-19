@@ -264,6 +264,10 @@ global_layers_list['SingleLocalGravNetAttention']=SingleLocalGravNetAttention
 from GravNetLayersRagged import LocalGravNetAttention 
 global_layers_list['LocalGravNetAttention']=LocalGravNetAttention
 
+
+from GravNetLayersRagged import FlatNeighbourFeatures 
+global_layers_list['FlatNeighbourFeatures']=FlatNeighbourFeatures
+
 ### odd debug layers
 from DebugLayers import PlotCoordinates
 global_layers_list['PlotCoordinates']=PlotCoordinates

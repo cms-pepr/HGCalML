@@ -1187,7 +1187,7 @@ class LLClusterCoordinates(LossLayerBase):
         return distloss+reploss, distloss, reploss
     
     
-    def raw_loss(self,acoords, atidx, aspecw, aenergy, rs, downsample):
+    def raw_loss(self,acoords, atidx, aspecw, aenergy, rs):
         
         lossval = tf.zeros_like(acoords[0,0])
         reploss = tf.zeros_like(acoords[0,0])
@@ -1203,8 +1203,14 @@ class LLClusterCoordinates(LossLayerBase):
             specw = aspecw[rs[i]:rs[i+1]]
             energy = aenergy[rs[i]:rs[i+1]]
             
-            if downsample>0 and downsample < coords.shape[0]:
-                sel = tf.random.uniform(shape=(downsample,), minval=0, maxval=coords.shape[0]-1, dtype=tf.int32)
+            if self.downsample > 0:# and self.downsample < coords.shape[0]:
+                sel = tf.range(coords.shape[0])
+                sel = tf.random.shuffle(sel)
+                
+                length = tf.reduce_min([tf.constant(self.downsample), tf.shape(coords)[0]])
+                
+                sel = sel[:length]
+                #sel = tf.random.uniform(shape=(self.downsample,), minval=0, maxval=coords.shape[0]-1, dtype=tf.int32)
                 sel = tf.expand_dims(sel,axis=1)
                 coords = tf.gather_nd(coords, sel)
                 tidx = tf.gather_nd(tidx, sel)
@@ -1241,7 +1247,7 @@ class LLClusterCoordinates(LossLayerBase):
         #    return zero_loss
             
         lossval,distloss, reploss = self.raw_loss(
-            coords, tidx, specw, energy, rs, self.downsample)
+            coords, tidx, specw, energy, rs)
         
         lossval = tf.where(tf.math.is_finite(lossval), lossval, 0.)#DEBUG
         

@@ -64,11 +64,14 @@ class GraphCondensation(RestrictedDict):
     
 
 
+from GravNetLayersRagged import SortAndSelectNeighbours  
+
 class CreateGraphCondensation(tf.keras.layers.Layer):
     
     def __init__(self,
                  K=5,
                  score_threshold=0.5,
+                 reduction_target=None,
                  n_knn_bins = 21,
                  safeguard = True, #makes sure there are never no points selected per row split
                  print_reduction = False,
@@ -78,16 +81,58 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         
         self.K = K
         self.score_threshold = score_threshold
+        if reduction_target is not None:
+            assert reduction_target > 0 and reduction_target < 1.
+        self.reduction_target = reduction_target
         self.n_knn_bins = n_knn_bins
         self.safeguard = safeguard
         self.print_reduction = print_reduction
         
     def get_config(self):
-        config = {'K': self.K, 'score_threshold': self.score_threshold, 'n_knn_bins': self.n_knn_bins, 'safeguard': self.safeguard, 'print_reduction': self.print_reduction}
+        config = {'K': self.K, 'score_threshold': self.score_threshold, 
+                  'reduction_target': self.reduction_target,
+                  'n_knn_bins': self.n_knn_bins, 'safeguard': self.safeguard, 'print_reduction': self.print_reduction}
         base_config = super(CreateGraphCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+    
+
+    def build(self,input_shape):
         
-    def call(self, score, coords, rs, always_promote=None, training = None):
+        def _init(shape, dtype=None):
+            return tf.constant(self.score_threshold)[...,tf.newaxis]
+
+        self.dyn_score_threshold = self.add_weight(name = 'dyn_th', shape=(1, ),
+                                       initializer = _init, 
+                                        constraint = 'non_neg',
+                                        trainable = False) 
+            
+        super(CreateGraphCondensation, self).build(input_shape)
+        
+    def update_thresh(self, trans, training):
+        if self.reduction_target is None:
+            return 
+        if not self.trainable: #establish expected behaviour
+            return
+        smoothness = 10. #hard coded, but should be fine
+        
+        red = tf.cast(trans['rs_up'][-1], 
+                      dtype='float32') / tf.cast(trans['rs_down'][-1],
+                                                dtype='float32') 
+        red_diff = red - self.reduction_target  # < 1, > -1
+        step_up = (1. - self.dyn_score_threshold) * red_diff
+        step_down = self.dyn_score_threshold * red_diff
+        #if reduction is larger than target (diff < 0), score needs to step up
+        step = tf.where(red_diff > 0., step_up, step_down)
+        score_update = self.dyn_score_threshold + step / smoothness #slight reduction for safety
+        #update only in training phase
+        score_update = tf.keras.backend.in_train_phase(score_update,
+                                                       self.dyn_score_threshold,
+                                                       training=training)
+        tf.keras.backend.update(self.dyn_score_threshold,score_update)
+        
+        tf.print(self.name, 'dyn th',self.dyn_score_threshold, 'red', red, 'target', self.reduction_target)
+        
+    def call(self, score, coords, rs, nidx = None, dist = None, always_promote=None, training = None):
         
         trans = GraphCondensation()
         trans['rs_down'] = rs
@@ -102,7 +147,7 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
          - any other number: can be neighbour and have neighbours
         '''
         
-        direction = tf.where(score > self.score_threshold, 0, direction)
+        direction = tf.where(score > self.dyn_score_threshold, 0, direction)
         
         if always_promote is not None:
             direction = tf.where(always_promote>0, 2, direction)
@@ -115,13 +160,13 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         rsel = tf.RaggedTensor.from_row_splits(sel,rs)
         rscore = tf.RaggedTensor.from_row_splits(score,rs)
         
-        threshold = self.score_threshold
+        threshold = self.dyn_score_threshold
         
         #make sure there is something left, bad with very inhomogenous batches, but good for training
         if self.safeguard: 
             mrss = tf.reduce_max(rscore,axis=1, keepdims=True)
             threshold = tf.reduce_min( tf.concat( [ tf.reduce_min(mrss)[tf.newaxis]*0.98, 
-                                                tf.constant(self.score_threshold)[tf.newaxis] ], axis=0))
+                                                self.dyn_score_threshold ], axis=0))
         
         rsel = tf.ragged.boolean_mask(rsel, rscore[...,0]  >= threshold)
         #use ragged to select
@@ -136,8 +181,12 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
                                       tf.assert_greater(tf.shape(score)[0]+1,
                                                         tf.shape(trans['sel_idx_up'])[0])]):
         
-            nidx, dist = select_knn(self.K+1, coords, rs, direction = direction, 
+            if (nidx is not None) and (dist is not None):
+                dist, nidx = SortAndSelectNeighbours.raw_call(dist,nidx, K=self.K+1) 
+            else: #yes this is swapped ordering
+                nidx, dist = select_knn(self.K+1, coords, rs, direction = direction, 
                                     n_bins = self.n_knn_bins, name=self.name)
+                
             nidx = tf.reshape(nidx, [-1, self.K+1]) #to define shape for later
             dist = tf.reshape(dist, [-1, self.K+1])
             dist = tf.where(nidx<0,0.,dist)#needed?
@@ -167,11 +216,13 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         trans['weights_down'] = tf.reshape(trans['weights_down'], [-1, self.K])
         
         if self.print_reduction:
-            print(self.name, 'reduction', trans['rs_up'][-1], 'from', trans['rs_down'][-1])
+            print(self.name, 'reduction', trans['rs_up'][-1], 'from', trans['rs_down'][-1],
+                  tf.cast(trans['rs_up'][-1],dtype='float32')/tf.cast(trans['rs_down'][-1],dtype='float32') * 100, '%')
         #curiosity:
         #print(self.name, 'max number of assigned:', tf.reduce_max( tf.unique_with_counts( tf.reshape(trans['nidx_down'], [-1]) )[2] ))
         
         #trans.check_filled() # just during debugging
+        self.update_thresh(trans,training)
         
         return trans
     
@@ -255,7 +306,7 @@ class PushUp(tf.keras.layers.Layer):
         
         up_f = features
         if weight is not None:
-            weight = tf.nn.relu(weight) #safe guard
+            weight = tf.nn.relu(weight)  + 1e-4 #safe guard, assume weights are O(1)
             up_f *= weight
                 
         if self.mode == 'mean': 
@@ -266,13 +317,19 @@ class PushUp(tf.keras.layers.Layer):
         nidx = transition['nidx_down']
         nweights = transition['weights_down']
         if self.add_self:
-            nidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx],axis=1)
-            nweights = tf.concat([tf.ones_like(nweights[:,0:1]), nweights],axis=1)
+            #this will 
+            snidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx[:,1:]*0 -1 ],axis=1)
+            is_up = nidx[:,0:1] < 0
+            nweights = tf.where(is_up, 1., nweights)
+            nidx = tf.where(is_up, snidx, nidx)
+            # bug
+            #nidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx],axis=1)
+            #nweights = tf.concat([tf.ones_like(nweights[:,0:1]), nweights],axis=1)
             
         up_f = push_sum(nweights, up_f, nidx)
         up_f = tf.gather_nd(up_f, transition['sel_idx_up'])
         if self.mode == 'mean': 
-            up_f = tf.math.divide_no_nan(up_f[:,1:] , up_f[:,0:1] + 1e-3 )
+            up_f = tf.math.divide_no_nan(up_f[:,1:] , up_f[:,0:1])
         up_f = tf.reshape(up_f, [-1, features.shape[1]])#just so the shapes are defined upon placeholder call
         
         return up_f
@@ -568,16 +625,19 @@ class CreateGraphCondensationEdges(tf.keras.layers.Layer):
         
         
         with tf.name_scope(self.name + "/0/"):
-            self.pre_dense = tf.keras.layers.Dense(self.pre_nodes, activation='elu')
+            self.pre_dense = tf.keras.layers.Dense(self.pre_nodes, activation='elu', 
+                                                   trainable = self.trainable)
         
         self.edge_dense = []
         self.self_dense = []
         for i,n in enumerate(edge_dense):
             with tf.name_scope(self.name + "/1/" + str(i)):
-                self.edge_dense.append(tf.keras.layers.Dense(n, activation='elu'))
+                self.edge_dense.append(tf.keras.layers.Dense(n, activation='elu', 
+                                                   trainable = self.trainable))
                 
         with tf.name_scope(self.name + "/1/" + str(i+1)):
-            self.edge_dense.append(tf.keras.layers.Dense(self.K))
+            self.edge_dense.append(tf.keras.layers.Dense(self.K, 
+                                                   trainable = self.trainable))
         
         if self_dense is None:
             self_dense = edge_dense
@@ -586,10 +646,12 @@ class CreateGraphCondensationEdges(tf.keras.layers.Layer):
             
         for i,n in enumerate(self_dense):
             with tf.name_scope(self.name + "/2/" + str(i)):
-                self.self_dense.append(tf.keras.layers.Dense(n, activation='elu'))
+                self.self_dense.append(tf.keras.layers.Dense(n, activation='elu', 
+                                                   trainable = self.trainable))
             
         with tf.name_scope(self.name + "/2/" + str(i+1)):
-            self.self_dense.append(tf.keras.layers.Dense(1))
+            self.self_dense.append(tf.keras.layers.Dense(1, 
+                                                   trainable = self.trainable))
         
     def get_config(self):
         config = {'edge_dense': [self.edge_dense[i].units for i in range(len(self.edge_dense)-1)],
@@ -635,13 +697,14 @@ class CreateGraphCondensationEdges(tf.keras.layers.Layer):
         for d in self.edge_dense:
             x_n = d(x_n)
         
-        x_s = x
-        for d in self.self_dense:
-            x_s = d(x_s)
+        
             
         if self.no_self:
             x = x_n
         else:
+            x_s = x
+            for d in self.self_dense:
+                x_s = d(x_s)
             x = tf.concat([x_s, x_n],axis=1)
             
         x = tf.nn.softmax(x,axis=1)
