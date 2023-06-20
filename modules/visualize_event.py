@@ -120,8 +120,25 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
         ids = np.unique(df.truthHitAssignementIdx)
     else:
         ids = np.unique(df.pred_sid)
-    print(ids)
 
+    if clusterspace.lower() == 'pca':
+        keys = list(df.keys())
+        coord_keys = [key for key in keys if key.startswith('pred_ccoords')]
+        N_coords = len(coord_keys)
+        coords = []
+        for j in range(N_coords):
+            coords.append(df_i[coord_keys[j]])
+        coords = np.stack(coords, axis=-1)
+        pca = PCA(n_components=3)
+        pca_coords = pca.fit_transform(coords)
+        pca_x = pca_coords[:, 0]
+        pca_y = pca_coords[:, 1]
+        pca_z = pca_coords[:, 2]
+        df['pca_x'] = pca_x
+        df['pca_y'] = pca_y
+        df['pca_z'] = pca_z
+
+    print(ids)
     for i in ids:
         if truth:
             df_i = df[df.truthHitAssignementIdx == i]
@@ -140,18 +157,9 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
             y = df_i['pred_ccoords_' + j1]
             z = df_i['pred_ccoords_' + j2]
         elif clusterspace.lower() == 'pca':
-            keys = list(df_i.keys())
-            coord_keys = [key for key in keys if key.startswith('pred_ccoords')]
-            N_coords = len(coord_keys)
-            coords = []
-            for j in range(N_coords):
-                coords.append(df_i[coord_keys[j]])
-            coords = np.stack(coords, axis=-1)
-            pca = PCA(n_components=3)
-            pca_coords = pca.fit_transform(coords)
-            x = pca_coords[:, 0]
-            y = pca_coords[:, 1]
-            z = pca_coords[:, 2]
+            x = df_i['pca_x']
+            y = df_i['pca_y']
+            z = df_i['pca_z']
 
         size = 50 * np.log(df_i.recHitEnergy + 1)
         size[size > 10] = 10
