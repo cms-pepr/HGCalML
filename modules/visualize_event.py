@@ -121,22 +121,23 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
     else:
         ids = np.unique(df.pred_sid)
 
-    if clusterspace.lower() == 'pca':
-        keys = list(df.keys())
-        coord_keys = [key for key in keys if key.startswith('pred_ccoords')]
-        N_coords = len(coord_keys)
-        coords = []
-        for j in range(N_coords):
-            coords.append(df_i[coord_keys[j]])
-        coords = np.stack(coords, axis=-1)
-        pca = PCA(n_components=3)
-        pca_coords = pca.fit_transform(coords)
-        pca_x = pca_coords[:, 0]
-        pca_y = pca_coords[:, 1]
-        pca_z = pca_coords[:, 2]
-        df['pca_x'] = pca_x
-        df['pca_y'] = pca_y
-        df['pca_z'] = pca_z
+    if isinstance(clusterspace, str):
+        if clusterspace.lower() == 'pca':
+            keys = list(df.keys())
+            coord_keys = [key for key in keys if key.startswith('pred_ccoords')]
+            N_coords = len(coord_keys)
+            coords = []
+            for j in range(N_coords):
+                coords.append(df[coord_keys[j]])
+            coords = np.stack(coords, axis=-1)
+            pca = PCA(n_components=3)
+            pca_coords = pca.fit_transform(coords)
+            pca_x = pca_coords[:, 0]
+            pca_y = pca_coords[:, 1]
+            pca_z = pca_coords[:, 2]
+            df['pca_x'] = pca_x
+            df['pca_y'] = pca_y
+            df['pca_z'] = pca_z
 
     print(ids)
     for i in ids:

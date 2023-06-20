@@ -68,6 +68,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
         with mgzip.open(file, 'rb') as analysis_file:
             file_data = pickle.load(analysis_file)
         for j, endcap_data in enumerate(file_data):
+            print(f"Event {j} out of {len(file_data)}")
             if (nevents != -1) and (j > nevents):
                 continue
             print(f"Analysing endcap {j}/{len(file_data)}")
@@ -138,6 +139,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     ###############################################################################################
 
     ### Tracks versus hits ########################################################################
+    pdb.set_trace()
     fig = ep.tracks_vs_hits(showers_dataframe)
     fig.savefig(os.path.join('.', 'median_ratios.jpg'))
 
