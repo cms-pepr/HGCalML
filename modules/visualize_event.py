@@ -9,6 +9,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
+from sklearn.decomposition import PCA
 
 # get environment variable 'HGCALML'
 try:
@@ -138,7 +139,11 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
             for j in range(N_coords):
                 coords.append(df_i[coord_keys[j]])
             coords = np.stack(coords, axis=-1)
-            pdb.set_trace()
+            pca = PCA(n_components=3)
+            pca_coords = pca.fit_transform(coords)
+            x = pca_coords[:, 0]
+            y = pca_coords[:, 1]
+            z = pca_coords[:, 2]
 
         size = 50 * np.log(df_i.recHitEnergy + 1)
         size[size > 10] = 10
