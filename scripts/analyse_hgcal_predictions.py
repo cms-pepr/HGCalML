@@ -115,7 +115,6 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 # tmp_feat.drop(['event_id'], inplace=True)
                 # tmp_truth.drop(['event_id'], inplace=True)
                 s_feat = tmp_feat.shape
-                s_truth = tmp_truth.shape
                 s_processed = processed_dataframe.shape
                 if s_processed[0] != s_feat[0]:
                     pdb.set_trace()
@@ -126,6 +125,10 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 fig_pred = dataframe_to_plot(full_df, truth=False)
                 fig_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_truth.html'))
                 fig_pred.write_html(os.path.join('.', 'events', f'event_{event_id}_pred.html'))
+                fig_cluster_pca = dataframe_to_plot(full_df, truth=False, clusterspace='pca')
+                fig_cluster_first = dataframe_to_plot(full_df, truth=False, clusterspace=(0,1,2))
+                fig_cluster_pca.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_pca.html'))
+                fig_cluster_first.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_first.html'))
 
             event_id += 1
 

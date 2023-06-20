@@ -82,7 +82,7 @@ def djcdc_to_dataframe(input_path, n_events):
     return output_df
 
 
-def dataframe_to_plot(df, id=0, truth=True):
+def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
     df = df[df.event_id == id]
     size = 100 * np.log(df.recHitEnergy + 1)
     # change sizes bigger than 5 to 5
@@ -126,9 +126,20 @@ def dataframe_to_plot(df, id=0, truth=True):
             df_i = df[df.truthHitAssignementIdx == i]
         else:
             df_i = df[df.pred_sid == i]
-        x = df_i.recHitZ
-        y = df_i.recHitY
-        z = df_i.recHitX
+        if not clusterspace:
+            x = df_i.recHitZ
+            y = df_i.recHitY
+            z = df_i.recHitX
+        elif clusterspace.lower() == 'pca':
+            keys = list(df_i.keys())
+            coord_keys = [key for key in keys if key.startswith('pred_ccoords')]
+            N_coords = len(coord_keys)
+            coords = []
+            for j in range(N_coords):
+                coords.append(df_i[coord_keys[j]])
+            coords = np.stack(coords, axis=-1)
+            pdb.set_trace()
+
         size = 50 * np.log(df_i.recHitEnergy + 1)
         size[size > 10] = 10
         size[size < 0.1] = 0.1
