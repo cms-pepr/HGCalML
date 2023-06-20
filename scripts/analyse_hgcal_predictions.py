@@ -15,6 +15,7 @@ from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
 from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 import extra_plots as ep
+from visualize event import dictlist_to_dataframe, dataframe_to_plot
 
 
 def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
@@ -100,9 +101,22 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
             matched.append((matched_truth_sid, matched_pred_sid))
 
             dataframe['event_id'] = event_id
-            event_id += 1
             showers_dataframe = pd.concat((showers_dataframe, dataframe))
             processed_dataframe = ep.dictlist_to_dataframe(processed)
+
+            os.mkdir(os.path.join('.', 'events'))
+            if event_id < 10:
+                # make 3d plot of the event and save it
+                tmp_feat = ep.dictlist_to_dataframe([filtered_features])
+                tmp_truth = ep.dictlist_to_dataframe([filtered_truth])
+                full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe), axis=1)
+                fig_truth = dataframe_to_plot(full_df, truth=True)
+                fig_pred = dataframe_to_plot(full_df, truth=False)
+                fig_truth.savefig(os.path.join('.', 'events', f'event_{event_id}_truth.jpg'))
+                fig_pred.savefig(os.path.join('.', 'events', f'event_{event_id}_pred.jpg'))
+
+            event_id += 1
+
 
     ###############################################################################################
     ### New plotting stuff ########################################################################
