@@ -1200,7 +1200,7 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
         out = super(SignedScaledGooeyBatchNorm, self).call(v, training)
         return s*out
 
-class ScaledGooeyBatchNorm2(tf.keras.layers.Layer):
+class ScaledGooeyBatchNorm2(LayerWithMetrics):
     def __init__(self,
                  viscosity=0.01,
                  fluidity_decay=1e-4,
