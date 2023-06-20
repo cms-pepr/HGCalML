@@ -3,6 +3,7 @@
 Analysis script to run of the predictions of the model.
 """
 
+import pdb
 import os
 import argparse
 import pickle
@@ -15,7 +16,7 @@ from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
 from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 import extra_plots as ep
-from visualize event import dictlist_to_dataframe, dataframe_to_plot
+from visualize_event import dictlist_to_dataframe, dataframe_to_plot
 
 
 def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
@@ -102,18 +103,29 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
             dataframe['event_id'] = event_id
             showers_dataframe = pd.concat((showers_dataframe, dataframe))
-            processed_dataframe = ep.dictlist_to_dataframe(processed)
+            processed_dataframe = ep.dictlist_to_dataframe(processed[-1:])
 
-            os.mkdir(os.path.join('.', 'events'))
+            eventsdir = os.path.join('.', 'events')
+            if not os.path.isdir(eventsdir):
+                os.mkdir(eventsdir)
             if event_id < 10:
                 # make 3d plot of the event and save it
-                tmp_feat = ep.dictlist_to_dataframe([filtered_features])
-                tmp_truth = ep.dictlist_to_dataframe([filtered_truth])
+                tmp_feat = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
+                tmp_truth = ep.dictlist_to_dataframe([filtered_truth], add_event_id=False)
+                # tmp_feat.drop(['event_id'], inplace=True)
+                # tmp_truth.drop(['event_id'], inplace=True)
+                s_feat = tmp_feat.shape
+                s_truth = tmp_truth.shape
+                s_processed = processed_dataframe.shape
+                if s_processed[0] != s_feat[0]:
+                    pdb.set_trace()
+                print("tmp_feat: ", tmp_feat.shape, "\ntmp_truth: ", tmp_truth.shape)
+                print("processed: ", processed_dataframe.shape)
                 full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe), axis=1)
                 fig_truth = dataframe_to_plot(full_df, truth=True)
                 fig_pred = dataframe_to_plot(full_df, truth=False)
-                fig_truth.savefig(os.path.join('.', 'events', f'event_{event_id}_truth.jpg'))
-                fig_pred.savefig(os.path.join('.', 'events', f'event_{event_id}_pred.jpg'))
+                fig_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_truth.html'))
+                fig_pred.write_html(os.path.join('.', 'events', f'event_{event_id}_pred.html'))
 
             event_id += 1
 

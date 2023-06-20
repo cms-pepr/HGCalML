@@ -1,4 +1,5 @@
 # Plotting tools used when analysing model predictions
+import pdb
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -392,12 +393,13 @@ def calc_resolution(showers, bins, predstring='pred_energy'):
     return data, all_ratios
 
 
-def dictlist_to_dataframe(dictlist, masks=None):
+def dictlist_to_dataframe(dictlist, masks=None, add_event_id=True):
     full_df = pd.DataFrame()
     for i in range(len(dictlist)):
         df = pd.DataFrame()
         for key, value in dictlist[i].items():
-            if key in ['row_splits']:
+            print(key)
+            if key in ['row_splits', 'recHitXY']:
                 continue
             if len(value.shape) == 1:
                 continue
@@ -406,7 +408,8 @@ def dictlist_to_dataframe(dictlist, masks=None):
                     df[key + '_' + str(j)] = value[:, j]
             else:
                 df[key] = value[:, 0]
-        df['event_id'] = i * np.ones_like(df.shape[0])
+        if add_event_id:
+            df['event_id'] = i * np.ones_like(df.shape[0])
         if masks is not None:
             mask = masks[i].reshape(-1)
             df = df.iloc[mask]
