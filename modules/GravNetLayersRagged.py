@@ -1257,33 +1257,27 @@ class ScaledGooeyBatchNorm2(tf.keras.layers.Layer):
     
     
     def build(self, input_shapes):
-        
+
         #shape = (1,)+input_shapes[0][1:]
         if isinstance(input_shapes,list):
             shape = (1,)+input_shapes[0][1:]
         else:
             shape = (1,)+input_shapes[1:]
-            
-        def _visc_init(shape, dtype):
-            return tf.constant(self.viscosity_init, dtype = dtype)
-        
-        self.bias = self.add_weight(name = 'bias',shape = shape, 
-                                    initializer = 'zeros', trainable = self.trainable) 
-        
-        self.gamma = self.add_weight(name = 'gamma',shape = shape, 
-                                    initializer = 'ones', trainable = self.trainable) 
-        
-        
-        self.viscosity = self.add_weight(initializer=_visc_init, 
-                                         name='viscosity', 
-                                         trainable=False)
-               
-        self.mean = self.add_weight(name = 'mean',shape = shape, 
+
+        self.mean = self.add_weight(name = 'mean',shape = shape,
                                     initializer = 'zeros', trainable =  False)
-         
-        self.den = self.add_weight(name = 'den',shape = shape, 
+        self.den = self.add_weight(name = 'den',shape = shape,
                                     initializer = 'ones', trainable =  False)
-        
+        self.viscosity = tf.Variable(initial_value=self.viscosity_init,
+                                         name='viscosity',
+                                         trainable=False,dtype='float32')
+
+        self.bias = self.add_weight(name = 'bias',shape = shape,
+                                    initializer = 'zeros', trainable = self.trainable)
+
+        self.gamma = self.add_weight(name = 'gamma',shape = shape,
+                                    initializer = 'ones', trainable = self.trainable)
+
         super(ScaledGooeyBatchNorm2, self).build(input_shapes)
     
     def _m_mean(self, x, mask):
