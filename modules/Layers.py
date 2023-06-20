@@ -299,6 +299,8 @@ global_layers_list.update(ragged_layers)
 from LossLayers import LLValuePenalty,LLNotNoiseClassifier,CreateTruthSpectatorWeights, NormaliseTruthIdxs, LLGraphCondOCLoss
 from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace, LLOCThresholds
 from LossLayers import LossLayerBase, LLBasicObjectCondensation, LLFullObjectCondensation,LLPFCondensates,LLNeighbourhoodClassifier
+from LossLayers import LLFullObjectCondensationUncertainty, LLFullObjectCondensationID
+from LossLayers import LLExtendedObjectCondensation
 from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator, LLGoodNeighbourHood, LLKnnPushPullObjectCondensation
 from LossLayers import LLEnergySums,LLKnnSimpleObjectCondensation, LLPushTracks, LLFullOCThresholds, LLLocalEnergyConservation
 import traceback
@@ -332,6 +334,9 @@ global_layers_list['LLKnnSimpleObjectCondensation']=LLKnnSimpleObjectCondensatio
 global_layers_list['LLKnnPushPullObjectCondensation']=LLKnnPushPullObjectCondensation
 global_layers_list['LLBasicObjectCondensation']=LLBasicObjectCondensation
 global_layers_list['LLFullObjectCondensation']=LLFullObjectCondensation
+global_layers_list['LLFullObjectCondensationUncertainty']=LLFullObjectCondensationUncertainty
+global_layers_list['LLExtendedObjectCondensation']=LLExtendedObjectCondensation
+global_layers_list['LLFullObjectCondensationID']=LLFullObjectCondensationID
 global_layers_list['LLGraphCondOCLoss']=LLGraphCondOCLoss
 global_layers_list['LLPFCondensates']=LLPFCondensates
 global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier

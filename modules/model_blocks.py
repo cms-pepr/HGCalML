@@ -46,7 +46,7 @@ def create_outputs(x, n_ccoords=3,
     energy_act=None
     if energy_factor:
         energy_act='elu'
-    energy_res_act = None 
+    energy_res_act = 'relu'
     pred_energy = Dense(1,name = name_prefix+'_energy',
                         kernel_initializer='zeros',
                         activation=energy_act
@@ -56,11 +56,11 @@ def create_outputs(x, n_ccoords=3,
         pred_energy = Add(name= name_prefix+'_one_plus_energy')([OnesLike()(pred_energy),pred_energy])    
                         
     pred_energy_low_quantile = Dense(1,name = name_prefix+'_energy_low_quantile',
-                                     kernel_initializer='zeros',
+                                     # kernel_initializer='zeros',
                         activation=energy_res_act)(x)
     
     pred_energy_high_quantile = Dense(1,name = name_prefix+'_energy_high_quantile',
-                                      kernel_initializer='zeros',
+                                      # kernel_initializer='zeros',
                         activation=energy_res_act)(x)
     
     pred_pos =  Dense(n_pos,use_bias=False,name = name_prefix+'_pos')(x)
