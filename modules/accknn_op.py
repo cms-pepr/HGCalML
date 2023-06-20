@@ -14,6 +14,8 @@ Alternatively, the index -1 is skipped (non TF conpatible padding)
 _accknn_op = tf.load_op_library('accumulate_knn.so')
 _accknn_grad_op = tf.load_op_library('accumulate_knn_grad.so')
 
+if gl.acc_ops_use_tf_gradients:
+    print('accknn_op: warning, running with less memory efficient TF gradients.')
 
 def AccumulateLinKnn(weights,  features, indices, 
                   mean_and_max=True, force_tf=False):

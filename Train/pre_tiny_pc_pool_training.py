@@ -11,6 +11,10 @@ not compatible with datasets before end of Jan 2022
 
 '''
 
+import globals
+if True: #for testing
+    globals.acc_ops_use_tf_gradients = True 
+    #globals.knn_ops_use_tf_gradients = True
 
 import tensorflow as tf
 # from K import Layer
@@ -167,7 +171,7 @@ cb = [
         output_file=train.outputDir+'/hit_reduction_metrics.html',
         record_frequency = record_frequency ,
         plot_frequency = plot_frequency,
-        select_metrics=['*hits*','*lost*'],#includes time
+        select_metrics=['*hits*','*lost*','*tracks*'],#includes time
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -193,14 +197,13 @@ cb = [
 
 
 
-
 #cb=[]
-nbatch = 150000 
-train.change_learning_rate(1e-3)
+nbatch = 70000 
+train.change_learning_rate(4e-3)
 train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
 
-nbatch = 150000 
-train.change_learning_rate(1e-4)
+nbatch = 70000 
+train.change_learning_rate(1e-3)
 train.trainModel(nepochs=100, batchsize=nbatch,additional_callbacks=cb)
 
 exit() #done

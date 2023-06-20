@@ -1205,7 +1205,7 @@ class ScaledGooeyBatchNorm2(tf.keras.layers.Layer):
     def __init__(self, 
                  viscosity=0.01,
                  fluidity_decay=1e-4,
-                 max_viscosity=0.99,
+                 max_viscosity=0.99999,
                  no_gaus = True,
                  epsilon=1e-2,
                  invert_condition=False,

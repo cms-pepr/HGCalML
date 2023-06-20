@@ -150,8 +150,9 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         direction = tf.where(score > self.dyn_score_threshold, 0, direction)
         
         if always_promote is not None:
-            direction = tf.where(always_promote>0, 2, direction)
+            direction = tf.where(always_promote>0, 2, direction) #this should be a 2!!
             score = tf.where(always_promote>0, 1., score)
+            
             
         #make this indices for gather and scatter   
         sel = tf.range(tf.shape(score)[0])[...,tf.newaxis]
@@ -1128,12 +1129,16 @@ class MLGraphCondensationMetrics(MLReductionMetrics):
         - GraphCondensation
         - t_idx
         - t_energy
+        - is_track (opt)
         
         '''
         super(MLGraphCondensationMetrics, self).__init__(**kwargs)
-    def call(self, graph_transition : GraphCondensation, t_idx, t_energy):
+    def call(self, graph_transition : GraphCondensation, t_idx, t_energy, is_track = None):
         gt = graph_transition
-        self.metrics_call([gt['sel_idx_up'], t_idx, t_energy, gt['rs_down'], gt['rs_up']])
+        if is_track is None:
+            self.metrics_call([gt['sel_idx_up'], t_idx, t_energy, gt['rs_down'], gt['rs_up']])
+        else:
+            self.metrics_call([gt['sel_idx_up'], t_idx, t_energy, is_track, gt['rs_down'], gt['rs_up']])
         return graph_transition
 
 

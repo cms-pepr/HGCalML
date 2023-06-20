@@ -167,9 +167,11 @@ class MLReductionMetrics(MLBase):
     
     
     def metrics_call(self, inputs):
-        #tren = None
+        istrack = None
         if len(inputs)==5:
             gsel,tidx,ten,rs,srs = inputs
+        if len(inputs)==6:
+            gsel,tidx,ten,istrack,rs,srs = inputs
         #tf.assert_equal(tidx.shape,ten.shape)#safety
         
         alltruthcount = None
@@ -181,6 +183,7 @@ class MLReductionMetrics(MLBase):
             return
         
         stidx, sten = tf.constant([[0]],dtype='int32'), tf.constant([[0.]],dtype='float32')
+        n_track_before, n_track_after = tf.constant([[0.]],dtype='float32'),tf.constant([[0.]],dtype='float32')
         
         if self.active:
             stidx, sten = SelIdx.raw_call(gsel,[tidx,ten])
@@ -198,7 +201,12 @@ class MLReductionMetrics(MLBase):
                     seltruthcount = u.shape[0]
                 else:
                     seltruthcount += u.shape[0]
-        
+                    
+            if istrack is not None:
+                n_track_before = tf.reduce_sum(istrack)
+                n_track_after = SelIdx.raw_call(gsel,[istrack])
+                n_track_after = tf.reduce_sum(n_track_after)
+                
         nonoisecounts_bef = tf.concat(nonoisecounts_bef,axis=0)
         nonoisecounts_after = tf.concat(nonoisecounts_after,axis=0)
         
@@ -238,6 +246,11 @@ class MLReductionMetrics(MLBase):
         no_noise_hits_bef = tf.cast(tf.math.count_nonzero(tidx+1)  ,dtype='float32')
         no_noise_hits_aft = tf.cast(tf.math.count_nonzero(stidx+1) ,dtype='float32')
         self.add_prompt_metric(no_noise_hits_aft/no_noise_hits_bef,self.name+'_no_noise_reduction')
+        
+        if istrack is not None:
+            self.add_prompt_metric(n_track_before,self.name+'_tracks_bef')
+            self.add_prompt_metric(n_track_after,self.name+'_tracks_after')
+        
         
         
         

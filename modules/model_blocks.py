@@ -2163,7 +2163,7 @@ def tiny_pc_pool(
     '''
     This function needs pre-processed input (from condition_input)
     '''
-    K = 16
+    K = 12
     K_gp = 5
     
     ## gather inputs and norm
@@ -2276,7 +2276,7 @@ def tiny_pc_pool(
     trans_a = MLGraphCondensationMetrics(
         name = name + '_graphcondensation_metrics',
         record_metrics = record_metrics,
-        )(trans_a, orig_inputs['t_idx'], orig_inputs['t_energy'])
+        )(trans_a, orig_inputs['t_idx'], orig_inputs['t_energy'],is_track=is_track)
     
     orig_inputs['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = debugplots_after,

@@ -375,6 +375,23 @@ class GroupSortActivation(tf.keras.layers.Layer):
         
 global_layers_list['GroupSortActivation']=GroupSortActivation
 
+class SphereActivation(tf.keras.layers.Layer): 
+    
+    def compute_output_shape(self, input_shapes):
+        out = []
+        for s in input_shapes:
+            out.append(s)
+        out[-1] += 1
+        return out
+    
+    def call(self, x):
+        norm = tf.reduce_sum(x**2, axis=-1,keepdims=True)
+        norm = tf.sqrt(norm+1e-6)
+        x = tf.concat([x / norm, norm], axis=-1)
+        return input
+        
+global_layers_list['SphereActivation']=SphereActivation
+
 class SplitFeatures(Layer):
     def __init__(self,**kwargs):
         super(SplitFeatures, self).__init__(**kwargs)
