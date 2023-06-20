@@ -32,7 +32,7 @@ from callbacks import plotClusterSummary
 ###############################################################################
 
 LOSS_OPTIONS = {
-    'energy_loss_weight': .0001,
+    'energy_loss_weight': .1,
     'q_min': 0.5,
     'use_average_cc_pos': 0.1,
     'classification_loss_weight':0.5,
