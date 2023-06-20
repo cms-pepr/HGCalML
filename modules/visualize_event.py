@@ -131,6 +131,14 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
             x = df_i.recHitZ
             y = df_i.recHitY
             z = df_i.recHitX
+        elif type(clusterspace) == tuple:
+            if not len(clusterspace) == 3:
+                print("clusterspace tuple must have length 3")
+                exit(1)
+            j0, j1, j2 = str(clusterspace[0]), str(clusterspace[1]), str(clusterspace[2])
+            x = df_i['pred_ccoords_' + j0]
+            y = df_i['pred_ccoords_' + j1]
+            z = df_i['pred_ccoords_' + j2]
         elif clusterspace.lower() == 'pca':
             keys = list(df_i.keys())
             coord_keys = [key for key in keys if key.startswith('pred_ccoords')]
