@@ -130,6 +130,10 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 fig_cluster_first = dataframe_to_plot(full_df, truth=False, clusterspace=(0,1,2))
                 fig_cluster_pca.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_pca.html'))
                 fig_cluster_first.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_first.html'))
+                fig_cluster_pca_truth = dataframe_to_plot(full_df, truth=True, clusterspace='pca')
+                fig_cluster_first_truth = dataframe_to_plot(full_df, truth=True, clusterspace=(0,1,2))
+                fig_cluster_pca_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_pca_truth.html'))
+                fig_cluster_first_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_first_truth.html'))
 
             event_id += 1
 

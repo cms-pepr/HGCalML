@@ -162,7 +162,10 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
             y = df_i['pca_y']
             z = df_i['pca_z']
 
-        size = 50 * np.log(df_i.recHitEnergy + 1)
+        if clusterspace:
+            size = np.arctanh(df_i['pred_beta'])
+        else:
+            size = 50 * np.log(df_i.recHitEnergy + 1)
         size[size > 10] = 10
         size[size < 0.1] = 0.1
         # get a random discrete color from color palette
