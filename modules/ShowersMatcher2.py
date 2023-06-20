@@ -97,11 +97,13 @@ class ShowersMatcher:
         self.angle_cut=angle_cut
         self.iom_threshold=0.9
 
+
     def set_inputs(self, features_dict, truth_dict, predictions_dict, pred_alpha_idx):
         self.features_dict = features_dict.copy()
         self.truth_dict = truth_dict.copy()
         self.predictions_dict = predictions_dict.copy()
         self.pred_alpha_idx = pred_alpha_idx.copy()
+
 
     def _assign_additional_attr(self):
         x = self.features_dict['recHitX']
@@ -148,6 +150,10 @@ class ShowersMatcher:
 
 
     def _build_data_graph(self):
+        """
+        Builds a graph in which all truth showers and all predicted showers are nodes
+        This does not yet build any edges.
+        """
 
         graph = nx.Graph()
 
@@ -159,14 +165,12 @@ class ShowersMatcher:
         truth_nodes = []
         keys = self.truth_dict.keys()
 
+        # Building adding truth nodes to the graph
         for i in range(len(truth_shower_sid)):
             node_attributes = dict()
 
             for k in keys:
-                if k != 'truthHitAssignedPIDs':
-                    node_attributes[k] = self.truth_dict[k][truth_shower_idx[i], 0]
-                else:
-                    node_attributes[k] = np.argmax(self.truth_dict[k][truth_shower_idx[i]])
+                node_attributes[k] = self.truth_dict[k][truth_shower_idx[i], 0]
 
             node_attributes['type'] = ShowersMatcher._NODE_TYPE_TRUTH_SHOWER
 
@@ -185,6 +189,7 @@ class ShowersMatcher:
         pred_nodes = []
         skip = ['row_splits', 'rechit_energy', 'no_noise_rs', 'noise_backscatter']
 
+        # Adding nodes for the predicted showers
         for i in range(len(pred_shower_sid)):
             node_attributes = dict()
             for k in keys:
@@ -199,7 +204,7 @@ class ShowersMatcher:
                     # import pdb
                     # pdb.set_trace()
                     node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i]]
-                    # Same as 'else' should work. 
+                    # Same as 'else' should work.
                 else:
                     # print("X", k)
                     node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i], 0]
@@ -234,6 +239,7 @@ class ShowersMatcher:
                                   y['energy'])
 
         return C
+
 
     def _cost_matrix_intersection_based(self, truth_shower_sid, pred_shower_sid, return_raw=False):
         pred_shower_energy = np.array([self.graph.nodes[x]['pred_energy'] for x in pred_shower_sid])
@@ -275,286 +281,54 @@ class ShowersMatcher:
             return C, iou_matrix
         return C
 
+
     def _match_single_pass(self):
-        truth_shower_sid = [x[0] for x in self.graph.nodes(data=True) if x[1]['type']==ShowersMatcher._NODE_TYPE_TRUTH_SHOWER]
-        pred_shower_sid = [x[0] for x in self.graph.nodes(data=True) if x[1]['type']==ShowersMatcher._NODE_TYPE_PRED_SHOWER]
+        truth_shower_sid = [
+            x[0]
+            for x in self.graph.nodes(data=True)
+            if x[1]['type']==ShowersMatcher._NODE_TYPE_TRUTH_SHOWER
+            ]
+        pred_shower_sid = [
+            x[0]
+            for x in self.graph.nodes(data=True)
+            if x[1]['type']==ShowersMatcher._NODE_TYPE_PRED_SHOWER
+            ]
 
-        if len(truth_shower_sid) > 0 and len(pred_shower_sid) > 0:
-            if self.match_mode == 'iou_max' or self.match_mode == 'emax_iou':
-                C = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
-            elif self.match_mode == 'emax_angle':
-                C = self._cost_matrix_angle_based(truth_shower_sid, pred_shower_sid)
-            else:
-                raise NotImplementedError('Error in match mode')
+        if not len(truth_shower_sid) > 0:
+            print("No truth showers")
+            return
+        if not len(pred_shower_sid) > 0:
+            print("No predicted showers")
+            return
+        if not self.match_mode == 'iou_max':
+            raise NotImplementedError("Only use iou_max for now")
 
-            row_id, col_id = linear_sum_assignment(C, maximize=True)
+        C = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
 
+        row_id, col_id = linear_sum_assignment(C, maximize=True)
 
         self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
         matched_full_graph = nx.Graph()
         matched_full_graph.add_nodes_from(self.graph.nodes(data=True))
 
-        if len(truth_shower_sid) > 0 and len(pred_shower_sid) > 0:
-            for p, t in zip(row_id, col_id):
-                if C[p, t] > 0:
-                    matched_full_graph.add_edge(truth_shower_sid[t], pred_shower_sid[p], attached_in_pass=0)
-
-        self.calculated_graph = matched_full_graph
-
-    def _merge_pred_nodes(self, nodes):
-        pred_energy = sum([self.graph.nodes[x]['pred_energy'] for x in nodes])
-        d = {
-            'pred_energy' : pred_energy,
-            'type' : ShowersMatcher._NODE_TYPE_PRED_SHOWER,
-        }
-        return d
-
-    def _merge_truth_nodes(self, nodes):
-        truthHitAssignedEnergies = sum([self.graph.nodes[x]['truthHitAssignedEnergies'] for x in nodes])
-        t_rec_energy = sum([self.graph.nodes[x]['t_rec_energy'] for x in nodes])
-        all_pids = np.array([self.graph.nodes[x]['truthHitAssignedPIDs'] for x in nodes])
-        u_pids = set(np.unique(all_pids))
-        if u_pids == {1,2}:
-            r = 1
-        elif u_pids == {3}:
-            r = 3
-        else:
-            r = 6
-
-        d = {
-            'truthHitAssignedEnergies' : truthHitAssignedEnergies,
-            't_rec_energy' : t_rec_energy,
-            'type' : ShowersMatcher._NODE_TYPE_TRUTH_SHOWER,
-            'truthHitAssignedPIDs' : r
-        }
-        return d
-
-    def _reduce_graph(self, graph):
-        cc = list(nx.connected_components(graph))
-
-        calculated_graph = nx.Graph()
-
-        rename_pred = {-1:-1}
-        rename_true = {-1:-1}
-
-        shower_id_final = 0
-        for c in cc:
-            pred = []
-            true = []
-
-            for s in c:
-                if self.graph.nodes[s]['type'] == ShowersMatcher._NODE_TYPE_TRUTH_SHOWER:
-                    true.append(s)
-                elif self.graph.nodes[s]['type'] == ShowersMatcher._NODE_TYPE_PRED_SHOWER:
-                    pred.append(s)
-
-            if(len(true)>1 or len(pred)>1):
-                print(true, pred)
-
-            a,b = -1, -1
-            if len(pred) > 0:
-                new_pred_node = self._merge_pred_nodes(pred)
-                a = shower_id_final
-                shower_id_final += 1
-                new_pred_node['id'] = a
-                new_pred_node['pred_sid'] = a
-                calculated_graph.add_node(a, **new_pred_node)
-
-                for p in pred:
-                    rename_pred[p] = a
-
-            if len(true) > 0:
-                new_truth_node = self._merge_truth_nodes(true)
-                b=shower_id_final
-                shower_id_final += 1
-                new_truth_node['id'] = b
-                new_truth_node['truthHitAssignementIdx'] = a
-                calculated_graph.add_node(b,**new_truth_node)
-
-                for t in true:
-                    rename_true[t] = b
-
-            if a != -1 and b != -1:
-                calculated_graph.add_edge(a,b)
-
-        return calculated_graph, rename_true, rename_pred
-
-
-    def _match_multipass(self):
-        truth_shower_sid = np.array([x[0] for x in self.graph.nodes(data=True) if x[1]['type']==ShowersMatcher._NODE_TYPE_TRUTH_SHOWER])
-        pred_shower_sid = np.array([x[0] for x in self.graph.nodes(data=True) if x[1]['type']==ShowersMatcher._NODE_TYPE_PRED_SHOWER])
-
-        weight = self.features_dict['recHitEnergy'][:, 0]
-
-        sid_to_idx = {s:i for i,s in enumerate(truth_shower_sid)}
-        sid_to_idx.update({s:i for i,s in enumerate(pred_shower_sid)})
-
-        self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
-        iou_matrix, pred_sum_matrix, truth_sum_matrix, intersection_matrix = calculate_iou_serial_fast(self.truth_sid,
-                                                                                              self.pred_sid,
-                                                                                              truth_shower_sid,
-                                                                                              pred_shower_sid,
-                                                                                              weight,
-                                                                                              return_all=True)
-
-        min_matrix = intersection_matrix / np.minimum(pred_sum_matrix[:, np.newaxis], truth_sum_matrix[np.newaxis, :])
-
-        n = max(len(truth_shower_sid), len(pred_shower_sid))
-        # Cost matrix
-        C = np.zeros((n, n))
-        C_s = min_matrix * 1.0
-        # C_s[min_matrix < self.iom_threshold] = 0
-        C_s[iou_matrix < self.iou_threshold] = 0
-        C[0:len(pred_shower_sid), 0:len(truth_shower_sid)] = C_s
-
-        row_id, col_id = linear_sum_assignment(C, maximize=True)
-
-        free_pred_nodes_set = set(range(len(pred_shower_sid)))
-        free_truth_nodes_set = set(range(len(truth_shower_sid)))
-        connected_p = []
-        connected_t = []
-        connected = []
         for p, t in zip(row_id, col_id):
             if C[p, t] > 0:
-                connected_p.append(p)
-                connected_t.append(t)
-                free_pred_nodes_set.remove(p)
-                free_truth_nodes_set.remove(t)
-                connected.append((p,t))
-
-        connected_p = np.array(connected_p)
-        connected_t = np.array(connected_t)
-
-        for _pass in range(1, 5):
-            free_pred_nodes = np.sort(list(free_pred_nodes_set)).astype(np.int32)
-            free_truth_nodes = np.sort(list(free_truth_nodes_set)).astype(np.int32)
-
-            # print(free_pred_nodes)
-
-            C1 = intersection_matrix[connected_p,:]
-            C1 = C1[:, free_truth_nodes]
-            C1 = C1 / np.minimum(pred_sum_matrix[connected_p][:,np.newaxis], truth_sum_matrix[free_truth_nodes][np.newaxis, :])
-            C1[C1<self.iom_threshold] = 0
-
-            C2 = intersection_matrix[:, connected_t]
-            C2 = C2[free_pred_nodes,:]
-            C2 = C2 / np.minimum(truth_sum_matrix[connected_t][np.newaxis, :], pred_sum_matrix[free_pred_nodes][:,np.newaxis])
-            C2 = np.transpose(C2)
-            C2[C2<self.iom_threshold] = 0
-
-            # print("Y", C2.shape, C1.shape)
-            row_id, col_id = linear_sum_assignment(C1, maximize=True)
-            for ip, it in zip(row_id, col_id):
-                if C1[ip, it] > 0:
-                    p = connected_p[ip]
-                    t = free_truth_nodes[it]
-                    free_truth_nodes_set.remove(t)
-                    connected.append((p, t))
-
-
-            row_id, col_id = linear_sum_assignment(C2, maximize=True)
-            for it, ip in zip(row_id, col_id):
-                if C2[it, ip] > 0:
-                    t = connected_t[it]
-                    p = free_pred_nodes[ip]
-                    free_pred_nodes_set.remove(p)
-                    connected.append((p, t))
-
-        matched_full_graph = self.graph.copy()
-        for p,t in connected:
-            matched_full_graph.add_edge(pred_shower_sid[p], truth_shower_sid[t])
-
-        self.calculated_graph, rename_true, rename_pred = self._reduce_graph(matched_full_graph)
-        self.pred_sid = np.array([rename_pred[p] for p in self.pred_sid[:,0]])
-
-        self.truth_sid = np.array([rename_true[t] for t in self.truth_sid])
-
-        x = self.features_dict['recHitX']
-        y = self.features_dict['recHitY']
-        z = self.features_dict['recHitZ']
-        e = self.features_dict['recHitEnergy']
-
-        for n,att in self.calculated_graph.nodes(data=True):
-            if att['type'] != ShowersMatcher._NODE_TYPE_TRUTH_SHOWER:
-                continue
-
-            filt = self.truth_sid==n
-
-            e2 = e[filt]
-            x2 = np.sum(x[filt] * e2) / np.sum(e2)
-            y2 = np.sum(y[filt] * e2) / np.sum(e2)
-            z2 = np.sum(z[filt] * e2) / np.sum(e2)
-
-            eta, phi, _ = x_y_z_to_eta_phi_theta(x2, y2, z2)
-
-            att['truthHitAssignedPhi'] = phi
-            att['truthHitAssignedEta'] = eta
-            att['truthHitAssignedX'] = x2
-            att['truthHitAssignedY'] = y2
-            att['truthHitAssignedZ'] = z2
-
-
-
-    def _no_match(self):
-        # print("No match")
-        truth_shower_sid = [x[0] for x in self.graph.nodes(data=True) if
-                            x[1]['type'] == ShowersMatcher._NODE_TYPE_TRUTH_SHOWER]
-        pred_shower_sid = [x[0] for x in self.graph.nodes(data=True) if
-                           x[1]['type'] == ShowersMatcher._NODE_TYPE_PRED_SHOWER]
-
-        if True: # If only minbias
-            truth_shower_sid = np.array(truth_shower_sid)
-            _, iou_matrix = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid, return_raw=True)
-
-            if len(truth_shower_sid) == 0:
-                pred_shower_sid = []
-            else:
-                # Pick all the pred showers that have x% match with the non-minbias
-                # print((np.max(iou_matrix, axis=1) > self.iou_threshold).shape, iou_matrix.shape)
-                # print("\nTP", len(truth_shower_sid), len(pred_shower_sid))
-                pred_shower_sid = (np.array(pred_shower_sid)[np.max(iou_matrix, axis=1) > self.iou_threshold]).tolist()
-
-        keep = set(truth_shower_sid)
-
-        self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
-
-        # intersecting_indices = np.where((np.max(iou_matrix, axis=1))>0.1)
-        # intersecting_indices = intersecting_indices[0]
-        if len(pred_shower_sid) > 0:
-            keep = keep.union(pred_shower_sid)
-        # print(keep)
-        # 0/0
-        matched_full_graph = nx.Graph()
-        nodes_tracked = []
-        for n, attr in self.graph.nodes(data=True):
-            if n in keep:
-                nodes_tracked.append((n,attr))
-        matched_full_graph.add_nodes_from(nodes_tracked)
+                matched_full_graph.add_edge(
+                    truth_shower_sid[t],
+                    pred_shower_sid[p],
+                    attached_in_pass=0)
 
         self.calculated_graph = matched_full_graph
+
 
     def process(self):
         self._build_data_graph()
         if self.match_mode == 'iou_max':
             self._match_single_pass()
-        elif self.match_mode == 'iom_max_multi':
-            self._match_multipass()
-        elif self.match_mode == 'emax_iou':
-            raise NotImplementedError('Need to finish some work')
-            # self._match_single_pass()
-        elif self.match_mode == 'emax_angle':
-            raise NotImplementedError('Need to finish some work')
-            # self._match_single_pass()
-        elif self.match_mode == 'no_match':
-            self._no_match()
         else:
             raise NotImplementedError('Match mode not found')
         self._assign_additional_attr()
 
-    def get_hit_data(self):
-        event_pred_dataframe = None
-        event_truth_dataframe = None
-        return event_truth_dataframe, event_pred_dataframe
 
     def get_matched_hit_sids(self):
         pred_sid = self.pred_sid[:, 0]
@@ -603,6 +377,7 @@ class ShowersMatcher:
         # event_truth_dataframe = None
         # 0/0
         return truth_sid_2, pred_sid_2
+
 
     def get_result_as_dataframe(self):
         event_variables = None # Not sure if it should be a dataframe, can just be a dictionary
