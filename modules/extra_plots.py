@@ -157,6 +157,7 @@ def within_uncertainty(df, bins=None, binwidth=10.):
     ax[1].legend()
     return fig
 
+
 def energy_resolution(df, bins=None, binwidth=10., addfit=False):
     if bins is None:
         binmax = df['truthHitAssignedEnergies'].max()
@@ -395,6 +396,8 @@ def calc_resolution(showers, bins, predstring='pred_energy'):
 
 
 def dictlist_to_dataframe(dictlist, masks=None, add_event_id=True):
+    if isinstance(dictlist, dict):
+        dictlist = [dictlist]
     full_df = pd.DataFrame()
     for i in range(len(dictlist)):
         df = pd.DataFrame()
