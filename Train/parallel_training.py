@@ -64,6 +64,8 @@ N_NEIGHBOURS = [64, 64]
 TOTAL_ITERATIONS = len(N_NEIGHBOURS)
 N_CLUSTER_SPACE_COORDINATES = 4
 N_GRAVNET = 6
+CLUSTER_TRAINABLE = False
+EXTENSION_TRAINABLE = True
 
 ###############################################################################
 ### Define model ##############################################################
@@ -110,23 +112,31 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     c_coords = extent_coords_if_needed(c_coords, x, N_CLUSTER_SPACE_COORDINATES)
     x_track = Dense(64,
             activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
+            kernel_regularizer=DENSE_REGULARIZER,
+            trainable=CLUSTER_TRAINABLE)(x)
     x_hit = Dense(64,
             activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
+            kernel_regularizer=DENSE_REGULARIZER,
+            trainable=CLUSTER_TRAINABLE)(x)
     is_track_bool = tf.cast(is_track, tf.bool)
     x = tf.where(is_track_bool, x_track, x_hit)
 
     for i in range(TOTAL_ITERATIONS):
 
         # x = RaggedGlobalExchange()([x, rs])
-        x = Dense(64, activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(64,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(64,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = ScaledGooeyBatchNorm2()(x)
+        x = Dense(64,
+            activation=DENSE_ACTIVATION,
+            kernel_regularizer=DENSE_REGULARIZER,
+            trainable=CLUSTER_TRAINABLE)(x)
+        x = Dense(64,
+            activation=DENSE_ACTIVATION,
+            kernel_regularizer=DENSE_REGULARIZER,
+            trainable=CLUSTER_TRAINABLE)(x)
+        x = Dense(64,
+            activation=DENSE_ACTIVATION,
+            kernel_regularizer=DENSE_REGULARIZER,
+            trainable=CLUSTER_TRAINABLE)(x)
+        x = ScaledGooeyBatchNorm2(trainable=CLUSTER_TRAINABLE)(x)
         x = Concatenate()([c_coords,x])
 
         xgn, gncoords, gnnidx, gndist = RaggedGravNet(
@@ -136,44 +146,64 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             n_propagate=64,
             record_metrics=True,
             coord_initialiser_noise=1e-2,
-            use_approximate_knn=False #weird issue with that for now
+            use_approximate_knn=False, #weird issue with that for now
+            trainable=CLUSTER_TRAINABLE,
             )([x, rs])
         x = Concatenate()([x, xgn])
 
         gndist = AverageDistanceRegularizer(
             strength=1e-4,
-            record_metrics=True
+            record_metrics=True,
+            trainable=CLUSTER_TRAINABLE,
             )(gndist)
 
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
             outdir=debug_outdir,
-            name='gn_coords_'+str(i)
+            name='gn_coords_'+str(i),
+            trainable=CLUSTER_TRAINABLE,
             )([gncoords, energy, t_idx, rs])
         x = Concatenate()([gncoords,x])
 
         x = DistanceWeightedMessagePassing(
             [64,64,32,32,16,16],
-            activation=DENSE_ACTIVATION
+            activation=DENSE_ACTIVATION,
+            trainable=CLUSTER_TRAINABLE,
             )([x, gnnidx, gndist])
 
-        x = ScaledGooeyBatchNorm2()(x)
+        x = ScaledGooeyBatchNorm2(trainable=CLUSTER_TRAINABLE)(x)
 
-        x = Dense(64,name='dense_past_mp_'+str(i),activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(64,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(64,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
+        x = Dense(64,
+            name='dense_past_mp_'+str(i),
+            activation=DENSE_ACTIVATION,
+            kernel_regularizer=DENSE_REGULARIZER,
+            trainable=CLUSTER_TRAINABLE)(x)
+        x = Dense(64,
+            activation=DENSE_ACTIVATION,
+            kernel_regularizer=DENSE_REGULARIZER,
+            trainable=CLUSTER_TRAINABLE)(x)
+        x = Dense(64,
+            activation=DENSE_ACTIVATION,
+            kernel_regularizer=DENSE_REGULARIZER,
+            trainable=CLUSTER_TRAINABLE)(x)
 
-        x = ScaledGooeyBatchNorm2()(x)
+        x = ScaledGooeyBatchNorm2(trainable=CLUSTER_TRAINABLE)(x)
 
         allfeat.append(x)
 
     x = Concatenate()(allfeat)
-    x = Dense(64, name='Last_Dense_1', activation=DENSE_ACTIVATION)(x)
-    x = Dense(64, name='Last_Dense_2', activation=DENSE_ACTIVATION)(x)
-    x = Dense(64, name='Last_Dense_3', activation=DENSE_ACTIVATION)(x)
+    x = Dense(64,
+        name='Last_Dense_1',
+        activation=DENSE_ACTIVATION,
+        trainable=CLUSTER_TRAINABLE)(x)
+    x = Dense(64,
+        name='Last_Dense_2',
+        activation=DENSE_ACTIVATION,
+        trainable=CLUSTER_TRAINABLE)(x)
+    x = Dense(64,
+        name='Last_Dense_3',
+        activation=DENSE_ACTIVATION,
+        trainable=CLUSTER_TRAINABLE)(x)
     x = ScaledGooeyBatchNorm2()(x)
 
     y = Concatenate()(allfeat)
@@ -193,12 +223,18 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     pred_beta, pred_ccoords, pred_dist, \
         _, _, _, \
         pred_pos, pred_time, pred_time_unc, _ = \
-        create_outputs(x, n_ccoords=N_CLUSTER_SPACE_COORDINATES, fix_distance_scale=True)
+        create_outputs(x,
+            n_ccoords=N_CLUSTER_SPACE_COORDINATES,
+            fix_distance_scale=True,
+            trainable=CLUSTER_TRAINABLE,)
 
     _, _, _, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
         _, _, _, pred_id = \
-        create_outputs(y, n_ccoords=N_CLUSTER_SPACE_COORDINATES, fix_distance_scale=True)
+        create_outputs(y,
+            n_ccoords=N_CLUSTER_SPACE_COORDINATES,
+            fix_distance_scale=True,
+            trainable=EXTENSION_TRAINABLE)
 
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
 
