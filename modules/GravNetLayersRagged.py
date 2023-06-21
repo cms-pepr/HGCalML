@@ -1041,6 +1041,8 @@ class GooeyBatchNorm(LayerWithMetrics):
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
         
+        raise ValueError("Layer deprecated, please use ScaledGooeyBatchNorm2")
+        
         assert viscosity >= 0 and viscosity <= 1.
         assert fluidity_decay >= 0 and fluidity_decay <= 1.
         assert max_viscosity >= viscosity
@@ -1201,7 +1203,8 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
         out = super(SignedScaledGooeyBatchNorm, self).call(v, training)
         return s*out
     
-class ScaledGooeyBatchNorm2(tf.keras.layers.Layer):
+    
+class ScaledGooeyBatchNorm2(LayerWithMetrics):
     def __init__(self, 
                  viscosity=0.01,
                  fluidity_decay=1e-4,
