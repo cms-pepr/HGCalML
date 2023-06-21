@@ -392,6 +392,17 @@ class SphereActivation(tf.keras.layers.Layer):
         
 global_layers_list['SphereActivation']=SphereActivation
 
+
+class Sqrt(tf.keras.layers.Layer): 
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, x):
+        return tf.sqrt(x + 1e-6)
+        
+global_layers_list['Sqrt']=Sqrt
+
 class SplitFeatures(Layer):
     def __init__(self,**kwargs):
         super(SplitFeatures, self).__init__(**kwargs)
