@@ -32,14 +32,14 @@ from callbacks import plotClusterSummary
 ###############################################################################
 
 LOSS_OPTIONS = {
-    'energy_loss_weight': .1,
+    'energy_loss_weight': .05,
     'q_min': 0.5,
     'use_average_cc_pos': 0.1,
-    'classification_loss_weight':0.5,
+    'classification_loss_weight':0.05,
     'too_much_beta_scale': 0.0,
     'position_loss_weight':0.0,
     'timing_loss_weight':0.0,
-    'beta_loss_scale':1., #2.0
+    'beta_loss_scale':0.1, #1.0
     'beta_push': 0.00,#0.01 or 0.00 #push betas gently up at low values to not lose the gradients
     }
 
