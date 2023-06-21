@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from visualize_event import dictlist_to_dataframe
 
 
 def calc_efficiencies(df, bins):
@@ -440,6 +441,7 @@ def filter_features_dict(features_dict, mask):
             print(key, " untouched")
     return filtered
 
+
 def tracks_vs_hits(showers_dataframe):
     bins = calc_energy_bins(200, 10)
     _, ratios_track_raw, = calc_resolution(
@@ -473,4 +475,18 @@ def tracks_vs_hits(showers_dataframe):
     ax.set_xlabel("True Energy [GeV]", fontsize=20)
     ax.set_ylabel("Ratio", fontsize=20)
 
+    return fig
+
+
+def prediction_overview(prediction_dictlist):
+    prediction = dictlist_to_dataframe(prediction_dictlist)
+    fig, ax = plt.subplots(nrows=4, ncols=3, figsize=(40, 30))
+    ax = ax.flatten()
+    skip = ['row_splits']
+    for i, key in enumerate(prediction.keys()):
+        if key in skip:
+            continue
+        ax[i].hist(prediction[key], bins=100)
+        ax[i].set_title(key)
+    fig.tight_layout()
     return fig

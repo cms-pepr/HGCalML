@@ -144,6 +144,10 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     ###############################################################################################
 
     ### Tracks versus hits ########################################################################
+    fig = ep.prediction_overview(prediction)
+    fig.savefig(os.path.join('.', 'prediction_overview.jpg'))
+
+    ### Tracks versus hits ########################################################################
     fig = ep.tracks_vs_hits(showers_dataframe)
     fig.savefig(os.path.join('.', 'median_ratios.jpg'))
 
