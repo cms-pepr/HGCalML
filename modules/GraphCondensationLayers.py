@@ -307,7 +307,7 @@ class PushUp(tf.keras.layers.Layer):
         
         up_f = features
         if weight is not None:
-            weight = tf.nn.relu(weight)  + 1e-4 #safe guard, assume weights are O(1)
+            weight = tf.nn.relu(weight) # + 1e-4 #safe guard, assume weights are O(1)
             up_f *= weight
                 
         if self.mode == 'mean': 
@@ -317,20 +317,17 @@ class PushUp(tf.keras.layers.Layer):
             
         nidx = transition['nidx_down']
         nweights = transition['weights_down']
+        
         if self.add_self:
-            #this will 
             snidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx[:,1:]*0 -1 ],axis=1)
             is_up = nidx[:,0:1] < 0
-            nweights = tf.where(is_up, 1., nweights)
             nidx = tf.where(is_up, snidx, nidx)
-            # bug
-            #nidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx],axis=1)
-            #nweights = tf.concat([tf.ones_like(nweights[:,0:1]), nweights],axis=1)
             
         up_f = push_sum(nweights, up_f, nidx)
         up_f = tf.gather_nd(up_f, transition['sel_idx_up'])
-        if self.mode == 'mean': 
-            up_f = tf.math.divide_no_nan(up_f[:,1:] , up_f[:,0:1])
+        if self.mode == 'mean':
+            up_f_d = tf.math.divide_no_nan(up_f[:,1:] , up_f[:,0:1])
+            up_f = tf.where(up_f[:,0:1]>0, up_f_d, 0.)
         up_f = tf.reshape(up_f, [-1, features.shape[1]])#just so the shapes are defined upon placeholder call
         
         return up_f
