@@ -184,6 +184,7 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
         
             if (nidx is not None) and (dist is not None):
                 dist, nidx = SortAndSelectNeighbours.raw_call(dist,nidx, K=self.K+1) 
+                raise ValueError("not implemented yet. Needs cleaning w.r.t. directions.")
             else: #yes this is swapped ordering
                 nidx, dist = select_knn(self.K+1, coords, rs, direction = direction, 
                                     n_bins = self.n_knn_bins, name=self.name)

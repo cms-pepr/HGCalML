@@ -345,9 +345,13 @@ class PlotCoordinates(_DebugPlotBase):
         elif len(inputs) == 6:
             coords, features, hoverfeat, nidx, tidx, rs = inputs
         
+        #give each an index
+        idxs = np.arange(features.shape[0])
+        
         #just select first
         coords = coords[0:rs[1]]
         tidx = tidx[0:rs[1]]
+        idxs = idxs[0:rs[1]]
         if len(tidx.shape) <2:
             tidx = tidx[...,tf.newaxis]
         features = features[0:rs[1]]
@@ -368,7 +372,8 @@ class PlotCoordinates(_DebugPlotBase):
                 'Y':  coords[:,1+i:2+i].numpy(),
                 'Z':  coords[:,2+i:3+i].numpy(),
                 'tIdx': tidx[:,0:1].numpy(),
-                'features': features[:,0:1].numpy()
+                'features': features[:,0:1].numpy(),
+                'idx' : idxs[...,np.newaxis]
                 }
             hoverdict={}
             if hoverfeat is not None:
@@ -384,7 +389,7 @@ class PlotCoordinates(_DebugPlotBase):
             rdst = np.random.RandomState(1234567890)#all the same
             shuffle_truth_colors(df,'tIdx',rdst)
             
-            hover_data=['orig_tIdx']+[k for k in hoverdict.keys()]
+            hover_data=['orig_tIdx','idx']+[k for k in hoverdict.keys()]
             if nidx is not None:
                 hover_data.append('av_same')
             fig = px.scatter_3d(df, x="X", y="Y", z="Z", 

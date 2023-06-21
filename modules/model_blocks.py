@@ -2154,7 +2154,7 @@ def tiny_pc_pool(
         name='pre_graph_pool',
         debugplots_after=-1,
         record_metrics=True,
-        reduction_target = 0.075,
+        reduction_target = 0.05,
         K_loss = 48,
         low_energy_cut_target = 1.0,
         first_embed = True,
@@ -2242,25 +2242,13 @@ def tiny_pc_pool(
                 active=trainable,
             low_energy_cut = low_energy_cut_target #allow everything below 2 GeV to be removed (other than tracks)
             )([score, coords, orig_inputs['t_idx'], orig_inputs['t_energy'], rs])
-            
-    #coords = LLClusterCoordinates(
-    #    name=name+'_ll_cluster_coordinates',
-    #            downsample=1000,
-    #            record_metrics = record_metrics,
-    #            active=trainable,
-    #            hinge_mode=True,
-    #            scale = 1.,
-    #            ignore_noise = True, #this is filtered by the graph condensation anyway
-    #            print_batch_time=True
-    #            )([coords, orig_inputs['t_idx'], orig_inputs['t_spectator_weight'], 
-    #                                        score, rs ])
-    
+     
     trans_a = CreateGraphCondensation(
         trainable = trainable,
             reduction_target = reduction_target,
             K=K_gp,
             name=name+'_pcp_create',
-            )(score,coords,rs,nidx,dist_orig,
+            )(score,coords,rs, #nidx,dist_orig, #do not use nidx here yet.
               always_promote = is_track)
     
     x_e = Concatenate()([x,x_in])#skip

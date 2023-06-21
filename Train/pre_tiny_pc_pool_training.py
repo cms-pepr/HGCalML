@@ -14,7 +14,7 @@ not compatible with datasets before end of Jan 2022
 import globals
 if True: #for testing
     globals.acc_ops_use_tf_gradients = True 
-    #globals.knn_ops_use_tf_gradients = True
+    globals.knn_ops_use_tf_gradients = True
 
 import tensorflow as tf
 # from K import Layer
@@ -30,9 +30,10 @@ from GraphCondensationLayers import add_attention, PushUp
 
 
 plot_frequency= 20  # 150 #150 # 1000 #every 20 minutes approx
-record_frequency = 100
+record_frequency = 20
 
-reduction_target = 0.075
+
+reduction_target = 0.05
 
 no_publish = True
 
@@ -54,7 +55,7 @@ def pretrain_model(Inputs,
                                         outdir=debug_outdir,name='pc_pool_coords_pre',
                                         publish=publishpath)(
                                             [presel['prime_coords'],
-                                             Where(0.1)([presel['is_track'],presel['rechit_energy']]), 
+                                             presel['rechit_energy'], 
                                              presel['t_idx'],presel['row_splits']])
  
     trans,presel = tiny_pc_pool(presel,
@@ -67,12 +68,29 @@ def pretrain_model(Inputs,
                           )
     
     
+    presel['cond_coords'] = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name='pc_pool_cond_coords0',
+                                        publish=publishpath)(
+                                            [presel['cond_coords'],
+                                             presel['rechit_energy'],#Where(0.5)([presel['is_track'],presel['rechit_energy']]), 
+                                             presel['t_idx'],presel['row_splits']])
+                                        
+    
     presel['prime_coords'] = PlotCoordinates(plot_every=debugplots_after,
-                                        outdir=debug_outdir,name='pc_pool_coords0',
+                                        outdir=debug_outdir,name='pc_pool_post_prime',
                                         publish=publishpath)(
                                             [presel['prime_coords'],
                                              presel['rechit_energy'],#Where(0.5)([presel['is_track'],presel['rechit_energy']]), 
                                              presel['t_idx'],presel['row_splits']])
+    
+    presel['select_prime_coords'] = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name='pc_pool_post_sel_prime',
+                                        publish=publishpath)(
+                                            [presel['select_prime_coords'],
+                                             presel['rechit_energy'],#Where(0.5)([presel['is_track'],presel['rechit_energy']]), 
+                                             presel['t_idx'],presel['row_splits']])
+                                        
+                                        
                                         
     if train_second:
         
@@ -199,7 +217,7 @@ cb = [
 
 #cb=[]
 nbatch = 70000 
-train.change_learning_rate(4e-3)
+train.change_learning_rate(5e-3)
 train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
 
 nbatch = 70000 
