@@ -480,13 +480,16 @@ def tracks_vs_hits(showers_dataframe):
 
 def prediction_overview(prediction_dictlist):
     prediction = dictlist_to_dataframe(prediction_dictlist)
-    fig, ax = plt.subplots(nrows=4, ncols=3, figsize=(40, 30))
+    fig, ax = plt.subplots(nrows=7, ncols=3, figsize=(40, 50))
     ax = ax.flatten()
     skip = ['row_splits']
+    print(prediction.keys())
     for i, key in enumerate(prediction.keys()):
         if key in skip:
             continue
+        N = len(prediction[key])
+        ax[i].set_yscale('log')
         ax[i].hist(prediction[key], bins=100)
-        ax[i].set_title(key)
+        ax[i].set_title(f"{key} - {N} entries", fontsize=20)
     fig.tight_layout()
     return fig

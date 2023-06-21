@@ -143,7 +143,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     ### New plotting stuff ########################################################################
     ###############################################################################################
 
-    ### Tracks versus hits ########################################################################
+    ### Prediction overview #######################################################################
     fig = ep.prediction_overview(prediction)
     fig.savefig(os.path.join('.', 'prediction_overview.jpg'))
 
