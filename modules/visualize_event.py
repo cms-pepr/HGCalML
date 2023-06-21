@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
 from sklearn.decomposition import PCA
+import extra_plots as ep
 
 # get environment variable 'HGCALML'
 try:
@@ -19,28 +20,6 @@ try:
 except KeyError:
     HGCALML = None
     print("HGCALML not set, relying on gzip/pickle")
-
-
-def dictlist_to_dataframe(dictlist):
-    """
-    Converta a list of dictionaries to a pandas dataframe
-    """
-    full_df = pd.DataFrame()
-    for i in range(len(dictlist)):
-        df = pd.DataFrame()
-        for key, value in dictlist[i].items():
-            if key in ['row_splits']:
-                continue
-            if len(value.shape) == 1:
-                continue
-            if value.shape[1] > 1:
-                for j in range(value.shape[1]):
-                    df[key + '_' + str(j)] = value[:, j]
-            else:
-                df[key] = value[:, 0]
-        df['event_id'] = i * np.ones_like(df.shape[0])
-        full_df = pd.concat([full_df, df])
-    return full_df
 
 
 def djcdc_to_dataframe(input_path, n_events):
@@ -76,8 +55,8 @@ def djcdc_to_dataframe(input_path, n_events):
         truth_list.append(td.createTruthDict(data))
         feature_list.append(td.createFeatureDict(data))
 
-    features = dictlist_to_dataframe(feature_list)
-    truth = dictlist_to_dataframe(truth_list)
+    features = ep.dictlist_to_dataframe(feature_list)
+    truth = ep.dictlist_to_dataframe(truth_list)
     features = features.drop(columns=['event_id'])
     output_df = pd.concat([features, truth], axis=1)
     return output_df
