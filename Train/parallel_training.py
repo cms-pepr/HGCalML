@@ -204,14 +204,23 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         name='Last_Dense_3',
         activation=DENSE_ACTIVATION,
         trainable=CLUSTER_TRAINABLE)(x)
-    x = ScaledGooeyBatchNorm2()(x)
+    x = ScaledGooeyBatchNorm2(trainable=CLUSTER_TRAINABLE)(x)
 
     y = Concatenate()(allfeat)
     y = tf.stop_gradient(y)
-    y = Dense(64, name='Last_Dense_1_energy', activation=DENSE_ACTIVATION)(y)
-    y = Dense(64, name='Last_Dense_2_energy', activation=DENSE_ACTIVATION)(y)
-    y = Dense(64, name='Last_Dense_3_energy', activation=DENSE_ACTIVATION)(y)
-    y = ScaledGooeyBatchNorm2()(y)
+    y = Dense(64,
+        name='Last_Dense_1_energy',
+        activation=DENSE_ACTIVATION,
+        trainable=EXTENSION_TRAINABLE)(y)
+    y = Dense(64,
+        name='Last_Dense_2_energy',
+        activation=DENSE_ACTIVATION,
+        trainable=EXTENSION_TRAINABLE)(y)
+    y = Dense(64,
+        name='Last_Dense_3_energy',
+        activation=DENSE_ACTIVATION,
+        trainable=EXTENSION_TRAINABLE)(y)
+    y = ScaledGooeyBatchNorm2(trainable=EXTENSION_TRAINABLE)(y)
 
 
     ###########################################################################
