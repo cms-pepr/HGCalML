@@ -121,7 +121,8 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                     pdb.set_trace()
                 print("tmp_feat: ", tmp_feat.shape, "\ntmp_truth: ", tmp_truth.shape)
                 print("processed: ", processed_dataframe.shape)
-                full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe), axis=1)
+                tmp_predbeta = pd.DataFrame(predictions_dict['pred_beta'], columns=['pred_beta'])
+                full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe, tmp_predbeta), axis=1)
                 fig_truth = dataframe_to_plot(full_df, truth=True)
                 fig_pred = dataframe_to_plot(full_df, truth=False)
                 fig_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_truth.html'))
@@ -143,7 +144,6 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     ###############################################################################################
 
     ### Tracks versus hits ########################################################################
-    pdb.set_trace()
     fig = ep.tracks_vs_hits(showers_dataframe)
     fig.savefig(os.path.join('.', 'median_ratios.jpg'))
 

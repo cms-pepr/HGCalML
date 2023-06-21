@@ -164,6 +164,8 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
 
         if clusterspace:
             size = np.arctanh(df_i['pred_beta'])
+            size *= 5
+            size[size < 1.0] = 1.0
         else:
             size = 50 * np.log(df_i.recHitEnergy + 1)
         size[size > 10] = 10
