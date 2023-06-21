@@ -10,6 +10,7 @@ import pickle
 import gzip
 import mgzip
 import pandas as pd
+import numpy as np
 
 from OCHits2Showers import OCHits2ShowersLayer
 from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
@@ -58,6 +59,14 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     noise_masks = []
     matched = []
     event_id = 0
+    n_hits_orig = [] # Non noise hits
+    n_hits_filtered = [] # Non noise hits after filter
+    n_noise_orig = [] # Noise hits
+    n_noise_filtered = [] # Noise hits after filter
+    e_hits_orig = [] # Non noise hits energy
+    e_hits_filtered = [] # Non noise hits energy after filter
+    e_noise_orig = [] # Noise hits energy
+    e_noise_filtered = [] # Noise hits energy after filter
 
     ###############################################################################################
     ### Loop over all events ######################################################################
@@ -79,8 +88,24 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
             noise_mask = predictions_dict['no_noise_sel']
             noise_masks.append(noise_mask)
+            truth_df = ep.dictlist_to_dataframe([truth_dict], add_event_id=False)
+            features_df = ep.dictlist_to_dataframe([features_dict], add_event_id=False)
             filtered_features = ep.filter_features_dict(features_dict, noise_mask)
             filtered_truth = ep.filter_truth_dict(truth_dict, noise_mask)
+            filtered_truth_df = ep.dictlist_to_dataframe([filtered_truth], add_event_id=False)
+            filtered_features_df = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
+            n_hits_orig.append(np.sum(truth_df.truthHitAssignementIdx != -1))
+            n_hits_filtered.append(np.sum(filtered_truth_df.truthHitAssignementIdx != -1))
+            n_noise_orig.append(np.sum(truth_df.truthHitAssignementIdx == -1))
+            n_noise_filtered.append(np.sum(filtered_truth_df.truthHitAssignementIdx == -1))
+            e_hits_orig.append(np.sum(
+                features_df[truth_df.truthHitAssignementIdx != -1].recHitEnergy))
+            e_hits_filtered.append(np.sum(
+                filtered_features_df[filtered_truth_df.truthHitAssignementIdx != -1].recHitEnergy))
+            e_noise_orig.append(np.sum(
+                features_df[truth_df.truthHitAssignementIdx == -1].recHitEnergy))
+            e_noise_filtered.append(np.sum(
+                filtered_features_df[filtered_truth_df.truthHitAssignementIdx == -1].recHitEnergy))
 
             processed_pred_dict, pred_shower_alpha_idx = process_endcap2(
                     hits2showers,
@@ -138,10 +163,24 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
             event_id += 1
 
+    noise_df = pd.DataFrame({
+        'n_hits_orig': n_hits_orig,
+        'n_hits_filtered': n_hits_filtered,
+        'n_noise_orig': n_noise_orig,
+        'n_noise_filtered': n_noise_filtered,
+        'e_hits_orig': e_hits_orig,
+        'e_hits_filtered': e_hits_filtered,
+        'e_noise_orig': e_noise_orig,
+        'e_noise_filtered': e_noise_filtered,
+    })
 
     ###############################################################################################
     ### New plotting stuff ########################################################################
     ###############################################################################################
+
+    ### Noise Filter Performance ##################################################################
+    fig = ep.noise_performance(noise_df)
+    fig.savefig(os.path.join('.', 'noise_performance.jpg'))
 
     ### Prediction overview #######################################################################
     fig = ep.prediction_overview(prediction)

@@ -493,3 +493,20 @@ def prediction_overview(prediction_dictlist):
         ax[i].set_title(f"{key} - {N} entries", fontsize=20)
     fig.tight_layout()
     return fig
+
+
+def noise_performance(noise_df):
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 10))
+    ax.set_title("Noise Filter", fontsize=20)
+    noise_reduction_hit = 1. - noise_df.n_noise_filtered / noise_df.n_noise_orig
+    noise_reduction_energy = 1. - noise_df.e_noise_filtered / noise_df.e_noise_orig
+    hit_retention_hit = noise_df.n_hits_filtered / noise_df.n_hits_orig
+    hit_retention_energy = noise_df.e_hits_filtered / noise_df.e_hits_orig
+    # make boxplot of noise_reduction_hit, noise_reduction_energy, hit_retention_hit, hit_retention_energy
+    ax.boxplot(
+        [noise_reduction_hit, noise_reduction_energy, hit_retention_hit, hit_retention_energy],
+        labels=['Noise Reduction (Hits)', 'Noise Reduction (Energy)', 'Hit Retention (Hits)', 'Hit Retention (Energy)'])
+    ax.set_ylabel("Fraction", fontsize=20)
+    return fig
+
+
