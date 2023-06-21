@@ -6,7 +6,7 @@ from tensorflow.keras.layers import Lambda
 import tensorflow as tf
 from Initializers import EyeInitializer
 from GravNetLayersRagged import CondensateToIdxs, EdgeCreator
-from Layers import SplitFeatures, FlatNeighbourFeatures
+from Layers import SplitFeatures, FlatNeighbourFeatures, Sqrt
 
 from datastructures.TrainData_NanoML import n_id_classes
 
@@ -2156,14 +2156,14 @@ def tiny_pc_pool(
         record_metrics=True,
         reduction_target = 0.075,
         K_loss = 48,
-        low_energy_cut_target = 2.0,
+        low_energy_cut_target = 1.0,
         first_embed = True,
         coords = None,
         publish=None,):
     '''
     This function needs pre-processed input (from condition_input)
     '''
-    K = 12
+    K = 16
     K_gp = 5
     
     ## gather inputs and norm
@@ -2175,7 +2175,13 @@ def tiny_pc_pool(
             name = name+'_coords_batchnorm', trainable=trainable,
             fluidity_decay=1e-2,#can freeze quickly
             )(coords)
-        coords = ElementScaling(name=name+'_es_coords', trainable=trainable)(coords)
+           
+        coords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_coords',
+                                        publish=publish)(
+                                            [coords,
+                                             orig_inputs['rechit_energy'], 
+                                             orig_inputs['t_idx'],orig_inputs['row_splits']])
         
     rs = orig_inputs['row_splits']
     energy = orig_inputs['rechit_energy']
@@ -2190,7 +2196,7 @@ def tiny_pc_pool(
             invert_condition = True)([x, is_track])
             
     x_in = x
-    
+    x_emb = x
     #create different embeddings for tracks and hits
     if first_embed:
     
@@ -2199,32 +2205,32 @@ def tiny_pc_pool(
         x = MixWhere()([is_track, x_track, x_hit]) 
         x = ScaledGooeyBatchNorm2(name = name+'_emb_batchnorm', trainable=trainable, 
                                   )(x) 
+        x_emb = x
         
     #simple gravnet       
     nidx,dist = KNN(K=K,record_metrics=record_metrics,name=name+'_np_knn',
-                    min_bins=20)([StopGradient()(coords), #stop gradient here as it's given explicitly below
+                    min_bins=20)([coords, #stop gradient here as it's given explicitly below
                                   orig_inputs['row_splits']])#hard code it here, this is optimised given our datasets
     
     dist_orig = dist
-    x = Concatenate()([x,StopGradient()(dist)])
+    dist = Sqrt()(dist)#make a stronger distance gradient for message passing
     
     #each is a simple attention head
-    for i,n in enumerate([8,8,8,8,8]):
+    for i,n in enumerate([8,8,8,8]):
         #this is a super lightweight 'guess' attention; coords get explicit gradient down there
-        x_d = Dense(3, activation='elu', name=name+'_pcp_x_d'+str(i),trainable=trainable)(x)
-        x_d = FlatNeighbourFeatures()([x_d,nidx])
-        dist = Dense(K+1, activation='softmax', name=name+'_pcp_dist'+str(i),trainable=trainable)(Concatenate()([x_d,dist,x]))
-    
+        
         x = DistanceWeightedMessagePassing([n],name=name+'np_dmp'+str(i),
                                         activation='elu',#keep output in check
-                                        exp_distances = False, #linear weights
+                                        exp_distances = True, #linear weights
                                         trainable=trainable)([x,nidx,dist])# hops are rather light 
+        
+        x = Dense(32, activation='elu', name=name+'_pcp_x_out'+str(i),trainable=trainable)(x)
         
         x = ScaledGooeyBatchNorm2(
             name = name+'_dmp_batchnorm'+str(i),
             trainable=trainable,
             )(x)
-        x = Dense(64, activation='elu', name=name+'_pcp_x_out'+str(i),trainable=trainable)(x)
+        x = Concatenate()([x, x_emb])#skip connect
                                         
     score = Dense(1, activation='sigmoid', name=name+'_pcp_score',trainable=trainable)(x)
     
@@ -2237,17 +2243,17 @@ def tiny_pc_pool(
             low_energy_cut = low_energy_cut_target #allow everything below 2 GeV to be removed (other than tracks)
             )([score, coords, orig_inputs['t_idx'], orig_inputs['t_energy'], rs])
             
-    coords = LLClusterCoordinates(
-        name=name+'_ll_cluster_coordinates',
-                downsample=1000,
-                record_metrics = record_metrics,
-                active=trainable,
-                hinge_mode=True,
-                scale = 1.,
-                ignore_noise = True, #this is filtered by the graph condensation anyway
-                print_batch_time=True
-                )([coords, orig_inputs['t_idx'], orig_inputs['t_spectator_weight'], 
-                                            score, rs ])
+    #coords = LLClusterCoordinates(
+    #    name=name+'_ll_cluster_coordinates',
+    #            downsample=1000,
+    #            record_metrics = record_metrics,
+    #            active=trainable,
+    #            hinge_mode=True,
+    #            scale = 1.,
+    #            ignore_noise = True, #this is filtered by the graph condensation anyway
+    #            print_batch_time=True
+    #            )([coords, orig_inputs['t_idx'], orig_inputs['t_spectator_weight'], 
+    #                                        score, rs ])
     
     trans_a = CreateGraphCondensation(
         trainable = trainable,
@@ -2257,12 +2263,14 @@ def tiny_pc_pool(
             )(score,coords,rs,nidx,dist_orig,
               always_promote = is_track)
     
+    x_e = Concatenate()([x,x_in])#skip
+    
     x_e = CreateGraphCondensationEdges(
-                     edge_dense=[16,16],
-                     pre_nodes=16,
+                     edge_dense=[16],
+                     pre_nodes=32,
                      K=K_gp, 
                      trainable=trainable, 
-                     name=name+'_gc_edges')(x, trans_a)
+                     name=name+'_gc_edges')(x_e, trans_a)
                      
     x_e = LLGraphCondensationEdges(
         name=name+'_ll_graph_condensation_edges',
@@ -2299,10 +2307,13 @@ def tiny_pc_pool(
     out['row_splits'] = trans_a['rs_up']
     
     out['coords'] = PushUp(add_self=True)(orig_inputs['coords'], trans_a, weight = energy)
+    out['cond_coords'] = PushUp(add_self=True)(coords, trans_a, weight = energy)
     
     x_o = Concatenate()([x,x_in])
     out['down_features'] = x_o # this is for further "bouncing"
     out['up_features'] = SelectUp()(x_o, trans_a)
+    
+    out['select_prime_coords'] = SelectUp()(orig_inputs['prime_coords'], trans_a)
     
     x_of = PushUp()(x_o, trans_a)
     x_of2 = PushUp()(x_o, trans_a, weight = energy)
