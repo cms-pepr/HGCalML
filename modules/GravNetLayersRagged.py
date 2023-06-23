@@ -1204,7 +1204,7 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
         return s*out
     
     
-class ScaledGooeyBatchNorm2(LayerWithMetrics):
+class ScaledGooeyBatchNorm2(tf.keras.layers.Layer):
     def __init__(self, 
                  viscosity=0.01,
                  fluidity_decay=1e-4,
@@ -1212,6 +1212,8 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
                  no_gaus = True,
                  epsilon=1e-2,
                  invert_condition=False,
+                 _promptnames=None, #compatibility, does nothing
+                 record_metrics=False, #compatibility, does nothing
                  **kwargs):
         '''
         Input features (or [features, condition]), output: normed features
@@ -1267,6 +1269,11 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         else:
             shape = (1,)+input_shapes[1:]
 
+        self.bias = self.add_weight(name = 'bias',shape = shape,
+                                    initializer = 'zeros', trainable = self.trainable)
+        self.gamma = self.add_weight(name = 'gamma',shape = shape,
+                                    initializer = 'ones', trainable = self.trainable)
+        
         self.mean = self.add_weight(name = 'mean',shape = shape,
                                     initializer = 'zeros', trainable =  False)
         self.den = self.add_weight(name = 'den',shape = shape,
@@ -1274,12 +1281,6 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         self.viscosity = tf.Variable(initial_value=self.viscosity_init,
                                          name='viscosity',
                                          trainable=False,dtype='float32')
-
-        self.bias = self.add_weight(name = 'bias',shape = shape,
-                                    initializer = 'zeros', trainable = self.trainable)
-
-        self.gamma = self.add_weight(name = 'gamma',shape = shape,
-                                    initializer = 'ones', trainable = self.trainable)
 
         super(ScaledGooeyBatchNorm2, self).build(input_shapes)
     
@@ -3102,7 +3103,7 @@ class SoftPixelCNN(tf.keras.layers.Layer):
 
 ######## generic neighbours
 
-class RaggedGravNet(LayerWithMetrics):
+class RaggedGravNet(tf.keras.layers.Layer):
     def __init__(self,
                  n_neighbours: int,
                  n_dimensions: int,
@@ -3116,6 +3117,8 @@ class RaggedGravNet(LayerWithMetrics):
                  use_dynamic_knn=True,
                  debug = False,
                  n_knn_bins=None,
+                 _promptnames=None, #compatibility, does nothing
+                 record_metrics=False, #compatibility, does nothing
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -3316,7 +3319,7 @@ class SelfAttention(tf.keras.layers.Layer):
         return input * att
     
 
-class MultiAttentionGravNetAdd(LayerWithMetrics):
+class MultiAttentionGravNetAdd(tf.keras.layers.Layer):
     def __init__(self,
                  n_attention_kernels :int,
                  **kwargs):
@@ -3378,10 +3381,10 @@ class MultiAttentionGravNetAdd(LayerWithMetrics):
         for di in range(len(self.kernel_coord_dense)):
             refcadd = self.kernel_coord_dense[di](feat)
             
-            for i in range(coord.shape[-1]):
-                meancoord = tf.reduce_mean(refcadd[:,i])
-                self.add_prompt_metric(meancoord, self.name+'_coord_add_mean_'+str(di)+'_'+str(i))
-                self.add_prompt_metric(tf.math.reduce_std(refcadd[:,i]-meancoord), self.name+'_coord_add_var_'+str(di)+'_'+str(i))
+            #for i in range(coord.shape[-1]):
+            #    meancoord = tf.reduce_mean(refcadd[:,i])
+            #    self.add_prompt_metric(meancoord, self.name+'_coord_add_mean_'+str(di)+'_'+str(i))
+            #    self.add_prompt_metric(tf.math.reduce_std(refcadd[:,i]-meancoord), self.name+'_coord_add_var_'+str(di)+'_'+str(i))
             
             refcoord = refcadd + coord
             refcoord = tf.expand_dims(refcoord,axis=1)#V x 1 x C
