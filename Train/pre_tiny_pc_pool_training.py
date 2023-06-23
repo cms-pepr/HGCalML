@@ -12,7 +12,7 @@ not compatible with datasets before end of Jan 2022
 '''
 
 import globals
-if True: #for testing
+if False: #for testing
     globals.acc_ops_use_tf_gradients = True 
     globals.knn_ops_use_tf_gradients = True
 
@@ -221,16 +221,14 @@ cb = [
     
     ]
 
-
-
 #cb=[]
 nbatch = 70000 
-train.change_learning_rate(5e-3)
+train.change_learning_rate(9e-3)
 train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
 
 nbatch = 70000 
 train.change_learning_rate(1e-3)
-train.trainModel(nepochs=30, batchsize=nbatch,additional_callbacks=cb)
+train.trainModel(nepochs=10, batchsize=nbatch,additional_callbacks=cb)
 
 nbatch = 70000 
 train.change_learning_rate(1e-4)

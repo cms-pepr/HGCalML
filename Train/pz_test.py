@@ -5,11 +5,19 @@ Intended to be used on toy data set found on FI
 As of November 10th, 2022 both classification loss and timing loss do not
 work and should be left at 0.0 in the LOSS_OPTIONS
 '''
+
+
+import globals
+if True: #for testing
+    globals.acc_ops_use_tf_gradients = True 
+    globals.knn_ops_use_tf_gradients = True
+    
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, Concatenate
 
 import training_base_hgcal
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
+from DeepJetCore.DJCLayers import StopGradient
 from datastructures import TrainData_PreselectionNanoML
 
 from Layers import RaggedGravNet
@@ -48,18 +56,16 @@ LOSS_OPTIONS = {
 # Configuration for model
 PRESELECTION_PATH = os.getenv("HGCALML")+'/models/tiny_pc_pool/model.h5'
 
-PRESELECTION_PATH = '/afs/cern.ch/user/j/jkiesele/Cernbox/www/files/temp/June2023/tiny_again2/KERAS_check_model_last.h5'
-
 # Configuration for plotting
-RECORD_FREQUENCY = 10
+RECORD_FREQUENCY = 20
 PLOT_FREQUENCY = 10 #plots every 600 batches -> roughly 10 minutes
 PUBLISHPATH = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/June2023/"
 PUBLISHPATH = None
 
 # Configuration for training
 DENSE_ACTIVATION='elu'
-LEARNINGRATE = 1e-4
-NBATCH = 70000#200000
+LEARNINGRATE = 5e-5
+NBATCH = 80000#200000
 DENSE_REGULARIZER = tf.keras.regularizers.L2(l2=1e-5)
 DENSE_REGULARIZER = None
 
@@ -67,14 +73,14 @@ DENSE_REGULARIZER = None
 # Configuration of GravNet Blocks
 N_NEIGHBOURS = [64, 64]
 TOTAL_ITERATIONS = len(N_NEIGHBOURS)
-N_CLUSTER_SPACE_COORDINATES = 4
-N_GRAVNET = 6
+N_CLUSTER_SPACE_COORDINATES = 3
+N_GRAVNET = 3
 
 ###############################################################################
 ### Define model ##############################################################
 ###############################################################################
 
-def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
+def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUENCY*PLOT_FREQUENCY):
     ############################################################################
     ##################### Input processing, no need to change much here ########
     ############################################################################
@@ -101,7 +107,16 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     x = x_in
     energy = pre_selection['rechit_energy']
     c_coords = pre_selection['prime_coords']#pre-clustered coordinates
+    c_coords = ScaledGooeyBatchNorm2(
+        fluidity_decay=0.5, #can freeze almost immediately
+        )(c_coords)
     t_idx = pre_selection['t_idx']
+
+    c_coords = PlotCoordinates(
+            plot_every=plot_debug_every,
+            outdir=debug_outdir,
+            name='input_c_coords'
+            )([c_coords, energy, t_idx, rs])
 
     ############################################################################
     ##################### now the actual model goes below ######################
@@ -111,14 +126,16 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     #extend coordinates already here if needed
     c_coords = extent_coords_if_needed(c_coords, x, N_CLUSTER_SPACE_COORDINATES)
-    x_track = Dense(64,
-            activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-    x_hit = Dense(64,
-            activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-    is_track_bool = tf.cast(is_track, tf.bool)
-    x = tf.where(is_track_bool, x_track, x_hit)
+    
+    ## not needed, embedding already done in the pre-pooling
+    #x_track = Dense(64,
+    #        activation=DENSE_ACTIVATION,
+    #        kernel_regularizer=DENSE_REGULARIZER)(x)
+    #x_hit = Dense(64,
+    #        activation=DENSE_ACTIVATION,
+    #        kernel_regularizer=DENSE_REGULARIZER)(x)
+    #is_track_bool = tf.cast(is_track, tf.bool)
+    #x = tf.where(is_track_bool, x_track, x_hit)
 
     for i in range(TOTAL_ITERATIONS):
 
@@ -129,22 +146,21 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             kernel_regularizer=DENSE_REGULARIZER)(x)
         x = Dense(64,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = ScaledGooeyBatchNorm2()(x)
+        
         x = Concatenate()([c_coords,x])
+        x = ScaledGooeyBatchNorm2()(x)
 
         xgn, gncoords, gnnidx, gndist = RaggedGravNet(
             n_neighbours=N_NEIGHBOURS[i],
             n_dimensions=N_GRAVNET,
             n_filters=64,
             n_propagate=64,
-            record_metrics=True,
-            coord_initialiser_noise=1e-2,
-            use_approximate_knn=False #weird issue with that for now
+            coord_initialiser_noise=1e-3,
             )([x, rs])
         x = Concatenate()([x, xgn])
 
         gndist = AverageDistanceRegularizer(
-            strength=1e-4,
+            strength=0.,
             record_metrics=True
             )(gndist)
 
@@ -153,14 +169,18 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             outdir=debug_outdir,
             name='gn_coords_'+str(i)
             )([gncoords, energy, t_idx, rs])
+        gncoords = StopGradient()(gncoords)
+        
         x = Concatenate()([gncoords,x])
 
-        x = DistanceWeightedMessagePassing(
-            [64,64,32,32,16,16],
-            activation=DENSE_ACTIVATION
-            )([x, gnnidx, gndist])
-
-        x = ScaledGooeyBatchNorm2()(x)
+        #does the same but with batch norm
+        for nn in [64,64,32,32,16,16]:
+            x = DistanceWeightedMessagePassing(
+                [nn],
+                activation=DENSE_ACTIVATION
+                )([x, gnnidx, gndist])
+            
+            x = ScaledGooeyBatchNorm2()(x)
 
         x = Dense(64,name='dense_past_mp_'+str(i),activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
@@ -173,12 +193,12 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
         allfeat.append(x)
 
-    x = Concatenate()(allfeat)
+    x = Concatenate()([c_coords]+allfeat)
     x = Dense(64, name='Last_Dense_1', activation=DENSE_ACTIVATION)(x)
     x = Dense(64, name='Last_Dense_2', activation=DENSE_ACTIVATION)(x)
     x = Dense(64, name='Last_Dense_3', activation=DENSE_ACTIVATION)(x)
-
-
+    x = Concatenate()([c_coords,x])
+    
     ###########################################################################
     ########### the part below should remain almost unchanged #################
     ########### of course with the exception of the OC loss   #################
@@ -272,7 +292,7 @@ if not train.modelSet():
     if not isinstance(train.train_data.dataclass(), TrainData_PreselectionNanoML):
         train.keras_model = apply_weights_from_path(PRESELECTION_PATH, train.keras_model)
         
-    exit()
+    #exit()
 
 ###############################################################################
 ### Create Callbacks ##########################################################
@@ -282,18 +302,6 @@ samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
 if PUBLISHPATH is not None:
     PUBLISHPATH += [d  for d in train.outputDir.split('/') if len(d)][-1]
 cb = []
-cb += [
-    plotClusteringDuringTraining(
-        use_backgather_idx=8 + i,
-        outputfile=train.outputDir + "/localclust/cluster_" + str(i) + '_',
-        samplefile=samplepath,
-        after_n_batches=500,
-        on_epoch_end=False,
-        publish=None,
-        use_event=0
-        )
-    for i in [0, 2, 4]
-    ]
 
 
 cb += [
@@ -305,14 +313,6 @@ cb += [
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
 
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/time_pred.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics=['FullOCLoss_*time_std','FullOCLoss_*time_pred_std'],
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
-
     # collect all pre pooling metrics here
     simpleMetricsCallback(
         output_file=train.outputDir+'/pgp_metrics.html',
@@ -321,22 +321,7 @@ cb += [
         select_metrics='*pre_graph_pool*',
         publish=PUBLISHPATH
         ),
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/latent_space_metrics.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics='average_distance_*',
-        publish=PUBLISHPATH
-        ),
-
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/non_amb_truth_fraction.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics='*_non_amb_truth_fraction',
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
-
+    
     simpleMetricsCallback(
         output_file=train.outputDir+'/val_metrics.html',
         call_on_epoch=True,
@@ -349,7 +334,7 @@ cb += [
     plotClusterSummary(
         outputfile=train.outputDir + "/clustering/",
         samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=1000
+        after_n_batches=RECORD_FREQUENCY*PLOT_FREQUENCY
         )
     ]
 
