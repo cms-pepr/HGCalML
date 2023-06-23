@@ -211,6 +211,14 @@ cb = [
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/batchnorm.html',
+        call_on_epoch=True,
+        select_metrics='*norm*',
+        publish=publishpath #no additional directory here (scp cannot create one)
+        ),
+    
     ]
 
 
@@ -222,7 +230,16 @@ train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
 
 nbatch = 70000 
 train.change_learning_rate(1e-3)
-train.trainModel(nepochs=100, batchsize=nbatch,additional_callbacks=cb)
+train.trainModel(nepochs=30, batchsize=nbatch,additional_callbacks=cb)
+
+nbatch = 70000 
+train.change_learning_rate(1e-4)
+train.trainModel(nepochs=60, batchsize=nbatch,additional_callbacks=cb)
+
+
+nbatch = 70000 
+train.change_learning_rate(1e-5)
+train.trainModel(nepochs=80, batchsize=nbatch,additional_callbacks=cb)
 
 exit() #done
 #nbatch = 150000 
