@@ -33,7 +33,7 @@ from model_blocks import extent_coords_if_needed
 from model_blocks import tiny_pc_pool, condition_input
 from model_tools import apply_weights_from_path
 from callbacks import plotEventDuringTraining, plotClusteringDuringTraining
-from callbacks import plotClusterSummary
+from callbacks import plotClusterSummary, NanSweeper
 import os
 
 
@@ -54,7 +54,7 @@ LOSS_OPTIONS = {
     }
 
 # Configuration for model
-PRESELECTION_PATH = os.getenv("HGCALML")+'/models/tiny_pc_pool/model.h5'
+PRESELECTION_PATH = os.getenv("HGCALML")+'/models/tiny_pc_pool/model_no_nan.h5'#model.h5'
 
 # Configuration for plotting
 RECORD_FREQUENCY = 20
@@ -64,7 +64,7 @@ PUBLISHPATH = None
 
 # Configuration for training
 DENSE_ACTIVATION='elu'
-LEARNINGRATE = 5e-5
+LEARNINGRATE = 1e-3
 NBATCH = 80000#200000
 DENSE_REGULARIZER = tf.keras.regularizers.L2(l2=1e-5)
 DENSE_REGULARIZER = None
@@ -197,7 +197,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
     x = Dense(64, name='Last_Dense_1', activation=DENSE_ACTIVATION)(x)
     x = Dense(64, name='Last_Dense_2', activation=DENSE_ACTIVATION)(x)
     x = Dense(64, name='Last_Dense_3', activation=DENSE_ACTIVATION)(x)
-    x = Concatenate()([c_coords,x])
+    #x = Concatenate()([c_coords,x])
     
     ###########################################################################
     ########### the part below should remain almost unchanged #################
@@ -285,7 +285,8 @@ if not train.modelSet():
         td=train.train_data.dataclass(),
         debug_outdir=train.outputDir+'/intplots',
         )
-    train.setCustomOptimizer(tf.keras.optimizers.Nadam(clipnorm=1.,epsilon=1e-2))
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam(clipnorm=2.,
+                                                       epsilon=1e-2))
     train.compileModel(learningrate=LEARNINGRATE)
     train.keras_model.summary()
 
@@ -305,6 +306,9 @@ cb = []
 
 
 cb += [
+    
+    NanSweeper(),#this takes a bit of time checking each batch but could be worth it
+    
     simpleMetricsCallback(
         output_file=train.outputDir+'/metrics.html',
         record_frequency= RECORD_FREQUENCY,
