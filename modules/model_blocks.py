@@ -2189,10 +2189,10 @@ def tiny_pc_pool(
     
     
     x = ScaledGooeyBatchNorm2(
-            name=name+'_cond_batchnorm_a')([x, is_track])
+            name=name+'_cond_batchnorm_a', trainable=trainable)([x, is_track])
             
     x = ScaledGooeyBatchNorm2(
-            name=name+'_cond_batchnorm_b',
+            name=name+'_cond_batchnorm_b', trainable=trainable,
             invert_condition = True)([x, is_track])
             
     x_in = x
