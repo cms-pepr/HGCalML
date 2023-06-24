@@ -9,7 +9,7 @@ work and should be left at 0.0 in the LOSS_OPTIONS
 
 import globals
 if True: #for testing
-    globals.acc_ops_use_tf_gradients = True 
+    #globals.acc_ops_use_tf_gradients = True 
     globals.knn_ops_use_tf_gradients = True
     
 import tensorflow as tf
@@ -25,7 +25,7 @@ from Layers import DistanceWeightedMessagePassing
 from Layers import DictModel
 from Layers import CastRowSplits, PlotCoordinates
 from Layers import LLFullObjectCondensation as  LLExtendedObjectCondensation
-from Layers import ScaledGooeyBatchNorm2
+from Layers import ScaledGooeyBatchNorm2, Sqrt
 from Layers import LLFillSpace
 from Regularizers import AverageDistanceRegularizer
 from model_blocks import create_outputs
@@ -64,14 +64,14 @@ PUBLISHPATH = None
 
 # Configuration for training
 DENSE_ACTIVATION='elu'
-LEARNINGRATE = 1e-3
-NBATCH = 80000#200000
+LEARNINGRATE = 3e-4
+NBATCH = 120000#200000
 DENSE_REGULARIZER = tf.keras.regularizers.L2(l2=1e-5)
 DENSE_REGULARIZER = None
 
 
 # Configuration of GravNet Blocks
-N_NEIGHBOURS = [64, 64]
+N_NEIGHBOURS = [256, 256]
 TOTAL_ITERATIONS = len(N_NEIGHBOURS)
 N_CLUSTER_SPACE_COORDINATES = 3
 N_GRAVNET = 3
@@ -172,6 +172,8 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
         gncoords = StopGradient()(gncoords)
         
         x = Concatenate()([gncoords,x])
+        
+        gndist = Sqrt()(gndist)#try same here
 
         #does the same but with batch norm
         for nn in [64,64,32,32,16,16]:
@@ -197,7 +199,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
     x = Dense(64, name='Last_Dense_1', activation=DENSE_ACTIVATION)(x)
     x = Dense(64, name='Last_Dense_2', activation=DENSE_ACTIVATION)(x)
     x = Dense(64, name='Last_Dense_3', activation=DENSE_ACTIVATION)(x)
-    #x = Concatenate()([c_coords,x])
+    x = Concatenate()([c_coords,x])
     
     ###########################################################################
     ########### the part below should remain almost unchanged #################

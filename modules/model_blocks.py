@@ -2159,11 +2159,14 @@ def tiny_pc_pool(
         low_energy_cut_target = 1.0,
         first_embed = True,
         coords = None,
-        publish=None,):
+        publish=None,
+        dmp_steps=[8,8,8,8],
+        dmp_compress = 32,
+        K_nn = 16):
     '''
     This function needs pre-processed input (from condition_input)
     '''
-    K = 16
+    
     K_gp = 5
     
     ## gather inputs and norm
@@ -2208,7 +2211,7 @@ def tiny_pc_pool(
         x_emb = x
         
     #simple gravnet       
-    nidx,dist = KNN(K=K,record_metrics=record_metrics,name=name+'_np_knn',
+    nidx,dist = KNN(K=K_nn,record_metrics=record_metrics,name=name+'_np_knn',
                     min_bins=20)([coords, #stop gradient here as it's given explicitly below
                                   orig_inputs['row_splits']])#hard code it here, this is optimised given our datasets
     
@@ -2216,7 +2219,7 @@ def tiny_pc_pool(
     dist = Sqrt()(dist)#make a stronger distance gradient for message passing
     
     #each is a simple attention head
-    for i,n in enumerate([8,8,8,8]):
+    for i,n in enumerate(dmp_steps):
         #this is a super lightweight 'guess' attention; coords get explicit gradient down there
         
         x = DistanceWeightedMessagePassing([n],name=name+'np_dmp'+str(i),
@@ -2224,7 +2227,7 @@ def tiny_pc_pool(
                                         exp_distances = True, #linear weights
                                         trainable=trainable)([x,nidx,dist])# hops are rather light 
         
-        x = Dense(32, activation='elu', name=name+'_pcp_x_out'+str(i),trainable=trainable)(x)
+        x = Dense(dmp_compress, activation='elu', name=name+'_pcp_x_out'+str(i),trainable=trainable)(x)
         
         x = ScaledGooeyBatchNorm2(
             name = name+'_dmp_batchnorm'+str(i),
@@ -2305,7 +2308,7 @@ def tiny_pc_pool(
     
     x_of = PushUp()(x_o, trans_a)
     x_of2 = PushUp()(x_o, trans_a, weight = energy)
-    out['features'] = Concatenate()([out['up_features'],x_of, x_of2])
+    out['features'] = Concatenate()([out['prime_coords'],out['up_features'],x_of, x_of2])
     
     out['cond_coords_down'] = coords #mostly for reference
     

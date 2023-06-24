@@ -27,6 +27,7 @@ from tensorflow.keras.layers import Concatenate, Dense
 
 from model_blocks import  tiny_pc_pool, condition_input
 from GraphCondensationLayers import add_attention, PushUp
+from callbacks import NanSweeper
 
 
 plot_frequency= 20  # 150 #150 # 1000 #every 20 minutes approx
@@ -34,11 +35,15 @@ record_frequency = 20
 
 
 reduction_target = 0.05
+lr_factor = 1.
 
 no_publish = True
 
-train_second = False
-train_all = True
+train_second = True
+if train_second:
+    lr_factor = reduction_target
+    
+train_all = False
 
 def pretrain_model(Inputs,
                    td, 
@@ -94,7 +99,7 @@ def pretrain_model(Inputs,
                                         
     if train_second:
         
-        if True:
+        if False:
             x = presel['down_features']
             xall = []
             for h in range(3): #3 heads
@@ -103,14 +108,15 @@ def pretrain_model(Inputs,
             presel['features'] = Concatenate()([presel['features']] + xall)
         
         #recalc coordinates explicitly
-        x = Concatenate()([presel['features'],presel['prime_coords']])
-        x = Dense(48, activation='elu')(x)
-        coords = Dense(3,use_bias = False)(x)
+        #x = Concatenate()([presel['features'],presel['prime_coords']])
+        #x = Dense(48, activation='elu')(x)
+        #coords = Dense(3,use_bias = False)(x)
         
         trans,presel = tiny_pc_pool(presel,
-                                    coords = coords,
+                                    #coords = coords,
                                     name='pre_graph_pool1',
                                     first_embed = False,
+                                    reduction_target=0.1,
                               trainable=True,
                               low_energy_cut_target = 1.0,
                               record_metrics = True,
@@ -176,6 +182,8 @@ from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 
 cb = [
     
+    NanSweeper(),
+    
     simpleMetricsCallback(
         output_file=train.outputDir+'/reduction_metrics.html',
         record_frequency = record_frequency ,
@@ -223,20 +231,20 @@ cb = [
 
 #cb=[]
 nbatch = 70000 
-train.change_learning_rate(9e-3)
+train.change_learning_rate(lr_factor*9e-3)
 train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
 
 nbatch = 70000 
-train.change_learning_rate(1e-3)
+train.change_learning_rate(lr_factor*1e-3)
 train.trainModel(nepochs=10, batchsize=nbatch,additional_callbacks=cb)
 
 nbatch = 70000 
-train.change_learning_rate(1e-4)
+train.change_learning_rate(lr_factor*1e-4)
 train.trainModel(nepochs=60, batchsize=nbatch,additional_callbacks=cb)
 
 
 nbatch = 70000 
-train.change_learning_rate(1e-5)
+train.change_learning_rate(lr_factor*1e-5)
 train.trainModel(nepochs=80, batchsize=nbatch,additional_callbacks=cb)
 
 exit() #done
