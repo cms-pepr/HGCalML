@@ -20,13 +20,13 @@ from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 from DeepJetCore.DJCLayers import StopGradient
 from datastructures import TrainData_PreselectionNanoML
 
-from Layers import RaggedGravNet
+from Layers import RaggedGravNet, RaggedGlobalExchange
 from Layers import DistanceWeightedMessagePassing
 from Layers import DictModel
 from Layers import CastRowSplits, PlotCoordinates
 from Layers import LLFullObjectCondensation as  LLExtendedObjectCondensation
 from Layers import ScaledGooeyBatchNorm2, Sqrt
-from Layers import LLFillSpace
+from Layers import LLFillSpace, SphereActivation
 from Regularizers import AverageDistanceRegularizer
 from model_blocks import create_outputs
 from model_blocks import extent_coords_if_needed
@@ -34,6 +34,7 @@ from model_blocks import tiny_pc_pool, condition_input
 from model_tools import apply_weights_from_path
 from callbacks import plotEventDuringTraining, plotClusteringDuringTraining
 from callbacks import plotClusterSummary, NanSweeper
+from Layers import layernorm
 import os
 
 
@@ -42,15 +43,20 @@ import os
 ###############################################################################
 
 LOSS_OPTIONS = {
-    'energy_loss_weight': .0001,
+    'energy_loss_weight': 0.,
     'q_min': 0.5,
-    'use_average_cc_pos': 0.1,
+    'use_average_cc_pos': 0.5,
     'classification_loss_weight':0., # to make it work0.5,
     'too_much_beta_scale': 0.0,
     'position_loss_weight':0.0,
     'timing_loss_weight':0.0,
     'beta_loss_scale':1., #2.0
     'beta_push': 0.00,#0.01 or 0.00 #push betas gently up at low values to not lose the gradients
+    }
+
+BATCHNORM_OPTIONS = {
+    'max_viscosity': 0.75 #keep very batchnorm like
+    
     }
 
 # Configuration for model
@@ -63,15 +69,14 @@ PUBLISHPATH = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/June2023/"
 PUBLISHPATH = None
 
 # Configuration for training
-DENSE_ACTIVATION='elu'
-LEARNINGRATE = 3e-4
-NBATCH = 120000#200000
+DENSE_ACTIVATION='elu' #layernorm #'elu'
+LEARNINGRATE = 1e-3 
+NBATCH = 150000#200000
 DENSE_REGULARIZER = tf.keras.regularizers.L2(l2=1e-5)
 DENSE_REGULARIZER = None
 
-
 # Configuration of GravNet Blocks
-N_NEIGHBOURS = [256, 256]
+N_NEIGHBOURS = [64, 64, 256, 256]
 TOTAL_ITERATIONS = len(N_NEIGHBOURS)
 N_CLUSTER_SPACE_COORDINATES = 3
 N_GRAVNET = 3
@@ -103,7 +108,9 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
     x_in = Concatenate()([pre_selection['prime_coords'],
                           pre_selection['features']])
     
-    x_in = ScaledGooeyBatchNorm2()(x_in)
+    x_in = Concatenate()([x_in, is_track, SphereActivation()(x_in)])
+    x_in = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_in)
+    x_in = Dense(128, activation=DENSE_ACTIVATION)(x_in)
     x = x_in
     energy = pre_selection['rechit_energy']
     c_coords = pre_selection['prime_coords']#pre-clustered coordinates
@@ -122,10 +129,11 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
     ##################### now the actual model goes below ######################
     ############################################################################
 
-    allfeat = []
+    allfeat = [x]
 
-    #extend coordinates already here if needed
-    c_coords = extent_coords_if_needed(c_coords, x, N_CLUSTER_SPACE_COORDINATES)
+    #extend coordinates already here if needed, starting point for gravnet
+    
+    c_coords = extent_coords_if_needed(c_coords, x, N_GRAVNET)
     
     ## not needed, embedding already done in the pre-pooling
     #x_track = Dense(64,
@@ -139,16 +147,15 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
 
     for i in range(TOTAL_ITERATIONS):
 
-        # x = RaggedGlobalExchange()([x, rs])
+        
+        #if len(allfeat):
+        
         x = Dense(64, activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(64,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(64,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
         
-        x = Concatenate()([c_coords,x])
-        x = ScaledGooeyBatchNorm2()(x)
+        x = Concatenate()([c_coords,x]+allfeat)
+        
+        x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
 
         xgn, gncoords, gnnidx, gndist = RaggedGravNet(
             n_neighbours=N_NEIGHBOURS[i],
@@ -157,10 +164,9 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
             n_propagate=64,
             coord_initialiser_noise=1e-3,
             )([x, rs])
-        x = Concatenate()([x, xgn])
-
+        
         gndist = AverageDistanceRegularizer(
-            strength=0.,
+            strength=1e-6,
             record_metrics=True
             )(gndist)
 
@@ -171,35 +177,41 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
             )([gncoords, energy, t_idx, rs])
         gncoords = StopGradient()(gncoords)
         
-        x = Concatenate()([gncoords,x])
+        x = Concatenate()([gncoords,x,xgn])
         
-        gndist = Sqrt()(gndist)#try same here
-
         #does the same but with batch norm
-        for nn in [64,64,32,32,16,16]:
+        for nn in [32,32,32,32]:
             x = DistanceWeightedMessagePassing(
                 [nn],
                 activation=DENSE_ACTIVATION
                 )([x, gnnidx, gndist])
             
-            x = ScaledGooeyBatchNorm2()(x)
+            x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
 
-        x = Dense(64,name='dense_past_mp_'+str(i),activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(64,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(64,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
+        #x = Dense(64,name='dense_past_mp_'+str(i),activation=DENSE_ACTIVATION,
+        #    kernel_regularizer=DENSE_REGULARIZER)(x)
+        #x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)    
+        #x = Dense(64,activation=DENSE_ACTIVATION,
+        #    kernel_regularizer=DENSE_REGULARIZER)(x)
+        #x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)    
+        #x = Dense(64,activation=DENSE_ACTIVATION,
+        #    kernel_regularizer=DENSE_REGULARIZER)(x)
+        #
+        #x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
 
-        x = ScaledGooeyBatchNorm2()(x)
+        allfeat.append(Dense(96, activation=DENSE_ACTIVATION)(x))
 
-        allfeat.append(x)
-
-    x = Concatenate()([c_coords]+allfeat)
-    x = Dense(64, name='Last_Dense_1', activation=DENSE_ACTIVATION)(x)
+    x = Concatenate()(allfeat)
+    x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
+    x = RaggedGlobalExchange()([x, rs])
+    #x = Concatenate()([x,SphereActivation()(x)])
+    x = Dense(96, name='Last_Dense_0', activation=DENSE_ACTIVATION)(x)
+    x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)  
+    x = Dense(96, name='Last_Dense_1', activation=DENSE_ACTIVATION)(x)
+    x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)    
     x = Dense(64, name='Last_Dense_2', activation=DENSE_ACTIVATION)(x)
-    x = Dense(64, name='Last_Dense_3', activation=DENSE_ACTIVATION)(x)
-    x = Concatenate()([c_coords,x])
+    x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)    
+    x = Dense(64, name='Last_Dense_3', activation='elu')(x)#we want this to be not bounded
     
     ###########################################################################
     ########### the part below should remain almost unchanged #################
@@ -207,7 +219,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
     ########### weights                                       #################
     ###########################################################################
 
-    x = ScaledGooeyBatchNorm2()(x)
+    x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
     # x = Concatenate()([x])
 
     pred_beta, pred_ccoords, pred_dist, \
@@ -220,7 +232,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=RECORD_FREQUEN
     # loss
     pred_beta = LLExtendedObjectCondensation(
         scale=1.,
-        use_energy_weights=True,
+        use_energy_weights=False,#well distributed anyways
         record_metrics=True,
         print_loss=True,
         name="ExtendedOCLoss",
@@ -316,6 +328,15 @@ cb += [
         record_frequency= RECORD_FREQUENCY,
         plot_frequency = PLOT_FREQUENCY,
         select_metrics=['ExtendedOCLoss*','FullOCLoss_*loss'],
+        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
+        ),
+    
+    
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/gndist.html',
+        record_frequency= RECORD_FREQUENCY,
+        plot_frequency = PLOT_FREQUENCY,
+        select_metrics=['*average_distance*'],
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
 

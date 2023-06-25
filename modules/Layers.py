@@ -375,23 +375,44 @@ class GroupSortActivation(tf.keras.layers.Layer):
         
 global_layers_list['GroupSortActivation']=GroupSortActivation
 
+
+def layernorm(x, return_norm=False):
+    x = x - tf.reduce_mean(x,axis=-1, keepdims=True)
+    norm = tf.reduce_sum(x**2, axis=-1,keepdims=True)
+    norm = tf.sqrt(norm+1e-6)
+    if return_norm:
+        x = tf.concat([x / norm * tf.sqrt(tf.cast(x.shape[-1],'float32')), norm], axis=-1)
+    else:
+        x = x / norm * tf.sqrt(tf.cast(x.shape[-1],'float32'))
+    return x
+
+global_layers_list['layernorm']= layernorm #convenience
+
 class SphereActivation(tf.keras.layers.Layer): 
     
+    def __init__(self,return_norm = False, **kwargs):
+        super(SphereActivation, self).__init__(**kwargs)
+        self.return_norm = return_norm
+        
+    def get_config(self):
+        config = {'return_norm': self.return_norm}
+        base_config = super(SphereActivation, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+    
     def compute_output_shape(self, input_shapes):
+        if not self.return_norm:
+            return input_shapes
         out = []
         for s in input_shapes:
             out.append(s)
         out[-1] += 1
         return out
     
+    
     def call(self, x):
-        norm = tf.reduce_sum(x**2, axis=-1,keepdims=True)
-        norm = tf.sqrt(norm+1e-6)
-        x = tf.concat([x / norm, norm], axis=-1)
-        return input
+        return layernorm(x, self.return_norm)
         
 global_layers_list['SphereActivation']=SphereActivation
-
 
 class Sqrt(tf.keras.layers.Layer): 
     

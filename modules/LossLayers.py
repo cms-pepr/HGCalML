@@ -1876,12 +1876,14 @@ class LLBasicObjectCondensation(LossLayerBase):
         
         super(LLBasicObjectCondensation, self).__init__(**kwargs)
         
-        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_kNNOC_per_sample, PreCond_OC_per_sample
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, Hinge_OC_per_sample, PreCond_OC_per_sample
         impl = Basic_OC_per_sample
         if implementation == 'pushpull':
             impl = PushPull_OC_per_sample
         if implementation == 'precond':
             impl = PreCond_OC_per_sample
+        if implementation == 'hinge':
+            impl = Hinge_OC_per_sample
         
         self.oc_loss_object = OC_loss(
             loss_impl = impl,
@@ -1967,6 +1969,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  div_repulsion=False,
                  dynamic_payload_scaling_onset=-0.005,
                  beta_push=0.,
+                 implementation = None,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -2019,9 +2022,20 @@ class LLFullObjectCondensation(LossLayerBase):
         if huber_energy_scale>0 and alt_energy_loss:
             raise ValueError("huber_energy_scale>0 and alt_energy_loss exclude each other")
         
+        
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, Hinge_OC_per_sample, PreCond_OC_per_sample
+        impl = Basic_OC_per_sample
+        if implementation == 'pushpull':
+            impl = PushPull_OC_per_sample
+        if implementation == 'precond':
+            impl = PreCond_OC_per_sample
+        if implementation == 'hinge':
+            impl = Hinge_OC_per_sample
+            
         #configuration here, no need for all that stuff below 
         #as far as the OC part is concerned (still config for payload though)
         self.oc_loss_object = OC_loss(
+            loss_impl = impl,
             q_min= q_min,
                  s_b=s_b,
                  use_mean_x=use_average_cc_pos,

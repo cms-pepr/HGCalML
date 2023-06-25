@@ -36,8 +36,6 @@ def create_outputs(x, n_ccoords=3,
     
     pred_beta = Dense(1, activation='sigmoid',name = name_prefix+'_beta')(x)
     pred_ccoords = Dense(n_ccoords,
-                         #this initialisation is much better than standard glorot
-                         kernel_initializer=EyeInitializer(stddev=0.001),
                          use_bias=False,
                          name = name_prefix+'_clustercoords'
                          )(x) #bias has no effect
