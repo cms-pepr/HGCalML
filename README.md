@@ -51,9 +51,11 @@ The naming scheme should be obvious and must be followed. Compile with make.
 Converting the data from ntuples
 ===========
 
-``convertFromSource.py -i <text file listing all training input files> -o <output dir> -c TrainData_NanoML``
+``convertFromSource.py -i <text file listing all training input files> -o <output dir> -c TrainData_NanoML`` 
 The conversion rule itself is located here:
 ``modules/datastructures/TrainData_NanoML.py``
+
+Other conversion rules / data structures can also be defined. For maximum compatibility, it is advised to follow the NanoML example w.r.t. the final outputs.
 
 The training files (see next section) usually also contain a comment in the beginning pointing to the latest data set at CERN and flatiron.
 
@@ -68,7 +70,7 @@ cd Train
 Look at the first lines of the file `std_training.py` containing a short description and where to find the dataset compatible with that training file. Then execute the following command to run a training.
 
 ```
-python3 std_training.py <path_to_dataset>/training_data.djcdc <training_output_path>
+python3 baseline_training.py <path_to_dataset>/training_data.djcdc <training_output_path>
 ```
 Please notice that the standard configuration might or might not include writing the printout to a file in the training output directory.
 
