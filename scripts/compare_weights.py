@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 
-from argparse import ArgumentParser
+"""
+Script to compare two model, their architecture and weights
+"""
+
+import argparse
 import numpy as np
 from DeepJetCore.modeltools import load_model
-from Layers import ScaledGooeyBatchNorm2
 
-parser = ArgumentParser('Compare weights of two models')
-parser.add_argument('model1')
-parser.add_argument('model2')
-parser.add_argument('--output',default='compare_weights.txt')
-parser.add_argument('--verbose',action='store_true')
+parser = argparse.ArgumentParser('Compare weights of two models')
+parser.add_argument('model1', help='Model 1')
+parser.add_argument('model2', help='Model 2')
+parser.add_argument('--output',default='compare_weights.txt', help='Output file')
+parser.add_argument('--verbose',action='store_true', help='Output if mean of weights is different')
+parser.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS,)
 args = parser.parse_args()
 
 outputstring = ''
