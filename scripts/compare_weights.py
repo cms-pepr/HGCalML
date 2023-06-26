@@ -8,6 +8,8 @@ from Layers import ScaledGooeyBatchNorm2
 parser = ArgumentParser('Compare weights of two models')
 parser.add_argument('model1')
 parser.add_argument('model2')
+parser.add_argument('--output',default='compare_weights.txt')
+parser.add_argument('--verbose',action='store_true')
 args = parser.parse_args()
 
 outputstring = ''
@@ -53,5 +55,7 @@ for l1,l2 in zip(common_layers1,common_layers2):
         outputstring += f"ERROR: Layer {l1.name} has different number of weights: {len(l1.weights)} != {len(l2.weights)}\n"
     n_weights = min(len(l1.weights),len(l2.weights))
     for i in range(n_weights):
+        if not args.verbose:
+            break
         if np.mean(l1.weights[i].numpy()) != np.mean(l2.weights[i].numpy()):
             outputstring += f"WARNING: Layer {l1.name} has different mean values for weight {i}: {np.mean(l1.weights[i].numpy())} != {np.mean(l2.weights[i].numpy())}\n"
