@@ -59,3 +59,8 @@ for l1,l2 in zip(common_layers1,common_layers2):
             break
         if np.mean(l1.weights[i].numpy()) != np.mean(l2.weights[i].numpy()):
             outputstring += f"WARNING: Layer {l1.name} has different mean values for weight {i}: {np.mean(l1.weights[i].numpy())} != {np.mean(l2.weights[i].numpy())}\n"
+
+
+# write output string
+with open(args.output,'w') as f:
+    f.write(outputstring)
