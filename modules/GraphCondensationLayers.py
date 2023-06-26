@@ -327,8 +327,9 @@ class PushUp(tf.keras.layers.Layer):
         up_f = push_sum(nweights, up_f, nidx)
         up_f = tf.gather_nd(up_f, transition['sel_idx_up'])
         if self.mode == 'mean':
-            up_f_d = tf.math.divide_no_nan(up_f[:,1:] , up_f[:,0:1])
-            up_f = tf.where(up_f[:,0:1]>0, up_f_d, 0.)
+            wsum = tf.nn.relu(up_f[:,0:1]) #just to catch numerics
+            wsum = tf.where(wsum>0., wsum, 1e-3)
+            up_f = tf.math.divide_no_nan(up_f[:,1:] , wsum)
         up_f = tf.reshape(up_f, [-1, features.shape[1]])#just so the shapes are defined upon placeholder call
         
         return up_f

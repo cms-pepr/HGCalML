@@ -236,8 +236,14 @@ class MLReductionMetrics(MLBase):
         self.add_prompt_metric(tf.reduce_mean(tf.cast(nonoisecounts_after,'float32')),self.name+'_hits_pobj_after_mean')
         self.add_prompt_metric(tf.reduce_max(nonoisecounts_after),self.name+'_hits_pobj_after_max')
 
-        self.add_prompt_metric(tf.reduce_mean(lostenergies),self.name+'_lost_energy_mean')
-        self.add_prompt_metric(tf.reduce_max(lostenergies),self.name+'_lost_energy_max')
+        l_em = tf.reduce_mean(lostenergies)
+        l_em = tf.where(tf.math.is_finite(l_em),l_em, 0.)
+        
+        l_ema = tf.reduce_max(lostenergies)
+        l_ema = tf.where(tf.math.is_finite(l_ema),l_ema, 0.)
+
+        self.add_prompt_metric(l_em,self.name+'_lost_energy_mean')
+        self.add_prompt_metric(l_ema,self.name+'_lost_energy_max')
         self.add_prompt_metric(tot_lost_en_sum,self.name+'_lost_energy_sum')
         
         reduced_to_fraction = tf.cast(srs[-1],dtype='float32')/tf.cast(rs[-1],dtype='float32')
