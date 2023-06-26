@@ -64,6 +64,13 @@ for l1,l2 in zip(common_layers1,common_layers2):
         if np.mean(l1.weights[i].numpy()) != np.mean(l2.weights[i].numpy()):
             outputstring += f"WARNING: Layer {l1.name} has different mean values for weight {i}: {np.mean(l1.weights[i].numpy())} != {np.mean(l2.weights[i].numpy())}\n"
 
+outputstring += '\n\n'
+for l1 in layer1_exclusive:
+    outputstring += f"Layer {l1.name} is exclusive to model 1\n"
+
+outputstring += '\n'
+for l2 in layer2_exclusive:
+    outputstring += f"Layer {l2.name} is exclusive to model 2\n"
 
 # write output string
 with open(args.output,'w') as f:
