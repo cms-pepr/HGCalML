@@ -180,6 +180,7 @@ class _DebugPlotBase(tf.keras.layers.Layer):
         out=inputs
         if isinstance(inputs,list):
             out=inputs[0]
+        self.add_loss(0. * tf.reduce_sum(out[0]))#to keep it alive
             
         if not self.check_make_plot(inputs, training):
             return out

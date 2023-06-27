@@ -40,7 +40,8 @@ def AccumulateKnnSumw(distances,  features, indices, mean_and_max=False):
     
     fmean = f[:,:origshape]
     fnorm = f[:,origshape:origshape+1]
-    fmean = tf.math.divide_no_nan(fmean,fnorm)
+    fnorm = tf.where(fnorm<1e-3, 1e-3, fnorm)
+    fmean = tf.math.divide_no_nan(fmean, fnorm)
     fmean = tf.reshape(fmean, [-1,origshape])
     if mean_and_max:
         fmean = tf.concat([fmean, f[:,origshape+1:-1]],axis=1)
@@ -3146,7 +3147,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         #n_neighbours += 1  # includes the 'self' vertex
         assert n_neighbours > 1
         assert not use_approximate_knn #not needed anymore. Exact one is faster by now
-
+        
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
         self.n_filters = n_filters
@@ -3186,27 +3187,18 @@ class RaggedGravNet(tf.keras.layers.Layer):
             self.input_feature_transform.build(input_shape)
 
         with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform.build(input_shape)
+            if len(input_shapes) == 3: #extra coords
+                c_shape = [s for s in input_shape]
+                c_shape[-1] += input_shapes[2][-1]
+                self.input_spatial_transform.build(c_shape)
+            else:
+                self.input_spatial_transform.build(input_shape)
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform.build((input_shape[0], self.n_prop_total + input_shape[1]))
 
         super(RaggedGravNet, self).build(input_shape)
 
-    def update_dynamic_radius(self, dist, training):
-        if not self.use_dynamic_knn or not self.trainable:
-            return
-        #update slowly, with safety margin
-        lindist = tf.sqrt(dist)
-        update = tf.reduce_max(lindist)*1.05 #can be inverted for performance TBI
-        mean_dist = tf.reduce_mean(lindist)
-        low_update = tf.where(update>2.,2.,update)#receptive field ends at 1.
-        update = tf.where(low_update>2.*mean_dist,low_update,2.*mean_dist)#safety setting to not loose all neighbours
-        update += 1e-3
-        update = self.dynamic_radius + 0.05*(update-self.dynamic_radius)
-        updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
-        #print('updated_radius',updated_radius)
-        tf.keras.backend.update(self.dynamic_radius,updated_radius)
         
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
@@ -3230,8 +3222,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
         if row_splits.shape[0] is not None:
             tf.assert_equal(row_splits[-1], x.shape[0])
         
+        x_coord = x
+        if len(inputs) == 3:
+            x_coord = tf.concat([inputs[2], x], axis=-1)
         
-        coordinates = self.input_spatial_transform(x)
+        coordinates = self.input_spatial_transform(x_coord)
         neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits, training)
         neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours]) #for proper output shape for keras
         distancesq = tf.reshape(distancesq, [-1, self.n_neighbours])
@@ -3270,8 +3265,6 @@ class RaggedGravNet(tf.keras.layers.Layer):
         
         dist = tf.where(idx<0,0.,dist)
         
-        self.update_dynamic_radius(dist,training)
-        
         if self.return_self:
             return idx[:, 1:], dist[:, 1:], idx, dist
         return idx[:, 1:], dist[:, 1:], None, None
@@ -3280,9 +3273,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
     def collect_neighbours(self, features, neighbour_indices, distancesq):
         f = None
         if self.sumwnorm:
-            f,_ = AccumulateKnnSumw(10.*distancesq,  features, neighbour_indices)
+            f,_ = AccumulateKnnSumw(10.*distancesq,  features, 
+                                    neighbour_indices, mean_and_max=True)
         else:
-            f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
+            f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices,
+                                mean_and_max=True)
         return f
 
     def get_config(self):

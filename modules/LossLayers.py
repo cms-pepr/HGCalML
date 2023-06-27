@@ -265,7 +265,7 @@ class LossLayerBase(LayerWithMetrics):
                 
             self.maybe_print_loss(lossval,now)
             
-            lossval = tf.debugging.check_numerics(lossval, self.name+" produced inf or nan.")
+            #lossval = tf.debugging.check_numerics(lossval, self.name+" produced inf or nan.")
             #this can happen for empty batches. If there are deeper problems, check in the losses themselves
             #lossval = tf.where(tf.math.is_finite(lossval), lossval ,0.)
             if not self.return_lossval:
@@ -1969,7 +1969,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  div_repulsion=False,
                  dynamic_payload_scaling_onset=-0.005,
                  beta_push=0.,
-                 implementation = None,
+                 implementation = '',
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -2023,7 +2023,7 @@ class LLFullObjectCondensation(LossLayerBase):
             raise ValueError("huber_energy_scale>0 and alt_energy_loss exclude each other")
         
         
-        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, Hinge_OC_per_sample, PreCond_OC_per_sample
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, Hinge_OC_per_sample, Hinge_Manhatten_OC_per_sample, PreCond_OC_per_sample
         impl = Basic_OC_per_sample
         if implementation == 'pushpull':
             impl = PushPull_OC_per_sample
@@ -2031,6 +2031,10 @@ class LLFullObjectCondensation(LossLayerBase):
             impl = PreCond_OC_per_sample
         if implementation == 'hinge':
             impl = Hinge_OC_per_sample
+        if implementation == 'hinge_manhatten':
+            impl = Hinge_Manhatten_OC_per_sample
+        self.implementation = implementation
+            
             
         #configuration here, no need for all that stuff below 
         #as far as the OC part is concerned (still config for payload though)
@@ -2115,6 +2119,9 @@ class LLFullObjectCondensation(LossLayerBase):
     def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, 
                                            pred_energy,pred_energy_low_quantile,pred_energy_high_quantile,
                                            return_concat=False): 
+        
+        if self.energy_loss_weight == 0.:
+            return pred_energy**2 + pred_energy_low_quantile**2 + pred_energy_high_quantile**2
         
         ediff = (t_energy - pred_energy*t_dep_energies)/tf.sqrt(tf.abs(t_energy)+1e-3)
         
@@ -2311,10 +2318,11 @@ class LLFullObjectCondensation(LossLayerBase):
         if is_spectator is None:
             is_spectator = tf.zeros_like(pred_beta)
         
-        full_payload = tf.debugging.check_numerics(full_payload,"full_payload has nans of infs")
-        pred_ccoords = tf.debugging.check_numerics(pred_ccoords,"pred_ccoords has nans of infs")
-        energy_weights = tf.debugging.check_numerics(energy_weights,"energy_weights has nans of infs")
-        pred_beta = tf.debugging.check_numerics(pred_beta,"beta has nans of infs")
+        #just go with it
+        #full_payload = tf.debugging.check_numerics(full_payload,"full_payload has nans of infs")
+        #pred_ccoords = tf.debugging.check_numerics(pred_ccoords,"pred_ccoords has nans of infs")
+        #energy_weights = tf.debugging.check_numerics(energy_weights,"energy_weights has nans of infs")
+        #pred_beta = tf.debugging.check_numerics(pred_beta,"beta has nans of infs")
         #safe guards
         with tf.control_dependencies(
             [tf.assert_equal(rowsplits[-1], pred_beta.shape[0]),
@@ -2461,7 +2469,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'super_attraction':self.super_attraction,
             'div_repulsion' : self.div_repulsion,
             'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset,
-            'beta_push': self.beta_push
+            'beta_push': self.beta_push,
+            'implementation': self.implementation
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
