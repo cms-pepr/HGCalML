@@ -5,25 +5,22 @@ Intended to be used on toy data set found on FI
 As of November 10th, 2022 both classification loss and timing loss do not
 work and should be left at 0.0 in the LOSS_OPTIONS
 '''
-import os
 import tensorflow as tf
-import numpy as np
 from tensorflow.keras.layers import Dense, Concatenate
 
 import training_base_hgcal
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
-from datastructures import TrainData_NanoML, TrainData_PreselectionNanoML
+from datastructures import TrainData_PreselectionNanoML
 
-from Layers import RaggedGravNet, DistanceWeightedMessagePassing
-from Layers import RaggedGlobalExchange, DistanceWeightedMessagePassing 
+from Layers import RaggedGravNet
+from Layers import DistanceWeightedMessagePassing
 from Layers import DictModel
-from Layers import ConditionalBatchNorm, ConditionalBatchEmbedding
-from Layers import CastRowSplits, PlotCoordinates, LLFullObjectCondensation
-from Layers import ScaledGooeyBatchNorm2, ConditionalScaledGooeyBatchNorm
+from Layers import CastRowSplits, PlotCoordinates, LLExtendedObjectCondensation
+from Layers import ScaledGooeyBatchNorm2
 from Layers import LLFillSpace
 from Regularizers import AverageDistanceRegularizer
-from model_blocks import pre_selection_model, create_outputs
-from model_blocks import extent_coords_if_needed, re_integrate_to_full_hits
+from model_blocks import create_outputs
+from model_blocks import extent_coords_if_needed
 from noise_filter import noise_filter
 from model_tools import apply_weights_from_path
 from callbacks import plotEventDuringTraining, plotClusteringDuringTraining
@@ -36,10 +33,10 @@ import globals
 ###############################################################################
 
 LOSS_OPTIONS = {
-    'energy_loss_weight': .2,
+    'energy_loss_weight': .05,
     'q_min': 0.5,
     'use_average_cc_pos': 0.1,
-    'classification_loss_weight':0.0,
+    'classification_loss_weight':0.05,
     'too_much_beta_scale': 0.0,
     'position_loss_weight':0.0,
     'timing_loss_weight':0.0,
@@ -81,43 +78,42 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     is_preselected = isinstance(td, TrainData_PreselectionNanoML)
     pre_selection = td.interpretAllModelInputs(Inputs, returndict=True)
-                                                
+
     #can be loaded - or use pre-selected dataset (to be made)
     if not is_preselected:
         pre_selection = noise_filter(
-            pre_selection, 
-            trainable=False, 
+            pre_selection,
+            trainable=False,
             pass_through=False)
     else:
         pre_selection['row_splits'] = CastRowSplits()(pre_selection['row_splits'])
         print(">> preselected dataset will omit pre-selection step")
-    
-    #just for info what's available
-    print('available pre-selection outputs',[k for k in pre_selection.keys()])
 
-    t_spectator_weight = pre_selection['t_spectator_weight']
+    #just for info what's available
+    print('available pre-selection outputs',list(pre_selection.keys()))
+
     rs = pre_selection['row_splits']
     is_track = pre_selection['is_track']
-                               
+
     x_in = Concatenate()([pre_selection['coords'],
                           pre_selection['features']])
     x = x_in
     energy = pre_selection['rechit_energy']
     c_coords = pre_selection['coords']#pre-clustered coordinates
     t_idx = pre_selection['t_idx']
-    
+
     ############################################################################
     ##################### now the actual model goes below ######################
     ############################################################################
-    
+
     allfeat = []
-    
+
     #extend coordinates already here if needed
     c_coords = extent_coords_if_needed(c_coords, x, N_CLUSTER_SPACE_COORDINATES)
-    x_track = Dense(64, 
+    x_track = Dense(64,
             activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
-    x_hit = Dense(64, 
+    x_hit = Dense(64,
             activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
     is_track_bool = tf.cast(is_track, tf.bool)
@@ -126,7 +122,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     for i in range(TOTAL_ITERATIONS):
 
         # x = RaggedGlobalExchange()([x, rs])
-        x = Dense(64, activation=DENSE_ACTIVATION, 
+        x = Dense(64, activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
         x = Dense(64,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
@@ -134,88 +130,88 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             kernel_regularizer=DENSE_REGULARIZER)(x)
         x = ScaledGooeyBatchNorm2()(x)
         x = Concatenate()([c_coords,x])
-        
+
         xgn, gncoords, gnnidx, gndist = RaggedGravNet(
-            n_neighbours=N_NEIGHBOURS[i], 
-            n_dimensions=N_GRAVNET, 
+            n_neighbours=N_NEIGHBOURS[i],
+            n_dimensions=N_GRAVNET,
             n_filters=64,
-            n_propagate=64, 
-            record_metrics=True, 
-            coord_initialiser_noise=1e-2, 
+            n_propagate=64,
+            record_metrics=True,
+            coord_initialiser_noise=1e-2,
             use_approximate_knn=False #weird issue with that for now
             )([x, rs])
-        x = Concatenate()([x, xgn])                                                      
-        
+        x = Concatenate()([x, xgn])
+
         gndist = AverageDistanceRegularizer(
-            strength=1e-4, 
+            strength=1e-4,
             record_metrics=True
             )(gndist)
-                                            
+
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
-            outdir=debug_outdir, 
+            outdir=debug_outdir,
             name='gn_coords_'+str(i)
-            )([gncoords, energy, t_idx, rs]) 
-        x = Concatenate()([gncoords,x])           
-        
+            )([gncoords, energy, t_idx, rs])
+        x = Concatenate()([gncoords,x])
+
         x = DistanceWeightedMessagePassing(
-            [64,64,32,32,16,16], 
+            [64,64,32,32,16,16],
             activation=DENSE_ACTIVATION
             )([x, gnnidx, gndist])
-            
+
         x = ScaledGooeyBatchNorm2()(x)
-        
+
         x = Dense(64,name='dense_past_mp_'+str(i),activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
         x = Dense(64,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
         x = Dense(64,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
-        
+
         x = ScaledGooeyBatchNorm2()(x)
-        
+
         allfeat.append(x)
-        
+
     x = Concatenate()([c_coords] + allfeat)
     x = Dense(64,activation=DENSE_ACTIVATION)(x)
     x = Dense(64,activation=DENSE_ACTIVATION)(x)
     x = Dense(64,activation=DENSE_ACTIVATION)(x)
-    
-    
+
+
     ###########################################################################
     ########### the part below should remain almost unchanged #################
     ########### of course with the exception of the OC loss   #################
     ########### weights                                       #################
     ###########################################################################
-    
+
     x = ScaledGooeyBatchNorm2()(x)
     x = Concatenate()([c_coords]+[x])
-    
+
     pred_beta, pred_ccoords, pred_dist, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
         pred_pos, pred_time, pred_time_unc, pred_id = \
         create_outputs(x, n_ccoords=N_CLUSTER_SPACE_COORDINATES, fix_distance_scale=True)
 
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
-    
+
     # loss
-    pred_beta = LLFullObjectCondensation(
-        scale=1., 
-        use_energy_weights=True, 
-        record_metrics=True, 
-        print_loss=True, 
-        name="FullOCLoss", 
+    pred_beta = LLExtendedObjectCondensation(
+        scale=1.,
+        use_energy_weights=True,
+        record_metrics=True,
+        print_loss=True,
+        name="ExtendedOCLoss",
         **LOSS_OPTIONS
         )( # oc output and payload
-            [pred_beta, 
-             pred_ccoords, 
-             pred_dist, 
+            [pred_beta,
+             pred_ccoords,
+             pred_dist,
              pred_energy_corr,
              pred_energy_low_quantile,
              pred_energy_high_quantile,
-             pred_pos, 
-             pred_time, 
-             pred_time_unc, 
+             pred_pos,
+             pred_time,
+             pred_time_unc,
              pred_id] +
             [energy] +
             # truth information
@@ -230,13 +226,13 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
              pre_selection['t_is_unique'],
              pre_selection['row_splits'] ]
             )
-                                         
+
     #fast feedback
     pred_ccoords = PlotCoordinates(
-        plot_every=plot_debug_every, 
-        outdir = debug_outdir, 
+        plot_every=plot_debug_every,
+        outdir = debug_outdir,
         name='condensation'
-        )([pred_ccoords, pred_beta,pre_selection['t_idx'], rs])                                    
+        )([pred_ccoords, pred_beta,pre_selection['t_idx'], rs])
     model_outputs = {
             'pred_beta': pred_beta,
             'pred_ccoords': pred_ccoords,
@@ -253,9 +249,9 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             'no_noise_rs': pre_selection['no_noise_rs'],
             # 'noise_backscatter': pre_selection['noise_backscatter'],
             }
-    
+
     return DictModel(inputs=Inputs, outputs=model_outputs)
-    
+
 ###############################################################################
 ### Model defined, set up training ############################################
 ###############################################################################
@@ -264,23 +260,23 @@ train = training_base_hgcal.HGCalTraining()
 
 if not train.modelSet():
     train.setModel(
-        gravnet_model, 
-        td=train.train_data.dataclass(), 
+        gravnet_model,
+        td=train.train_data.dataclass(),
         debug_outdir=train.outputDir+'/intplots',
         )
     train.setCustomOptimizer(tf.keras.optimizers.Nadam(clipnorm=1.,epsilon=1e-2))
     train.compileModel(learningrate=LEARNINGRATE)
     train.keras_model.summary()
-    
+
     if not isinstance(train.train_data.dataclass(), TrainData_PreselectionNanoML):
         apply_weights_from_path(PRESELECTION_PATH, train.keras_model)
-    
+
 ###############################################################################
 ### Create Callbacks ##########################################################
 ###############################################################################
 
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
-PUBLISHPATH += [d  for d in train.outputDir.split('/') if len(d)][-1] 
+PUBLISHPATH += [d  for d in train.outputDir.split('/') if len(d)][-1]
 cb = []
 cb += [
     plotClusteringDuringTraining(
@@ -314,18 +310,18 @@ cb += [
         output_file=train.outputDir+'/metrics.html',
         record_frequency= RECORD_FREQUENCY,
         plot_frequency = PLOT_FREQUENCY,
-        select_metrics='FullOCLoss_*loss',
+        select_metrics=['ExtendedOCLoss*','FullOCLoss_*loss'],
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
-    
+
     simpleMetricsCallback(
         output_file=train.outputDir+'/time_pred.html',
         record_frequency= RECORD_FREQUENCY,
         plot_frequency = PLOT_FREQUENCY,
-        select_metrics=['FullOCLoss_*time_std','FullOCLoss_*time_pred_std'],
+        select_metrics=['ExtendedOCLoss_*time_std','ExtendedOCLoss_*time_pred_std'],
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
-    
+
     simpleMetricsCallback(
         output_file=train.outputDir+'/gooey_metrics.html',
         record_frequency= RECORD_FREQUENCY,
@@ -340,7 +336,7 @@ cb += [
         select_metrics='average_distance_*',
         publish=PUBLISHPATH
         ),
-    
+
     simpleMetricsCallback(
         output_file=train.outputDir+'/non_amb_truth_fraction.html',
         record_frequency= RECORD_FREQUENCY,
@@ -348,7 +344,7 @@ cb += [
         select_metrics='*_non_amb_truth_fraction',
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
-    
+
     simpleMetricsCallback(
         output_file=train.outputDir+'/val_metrics.html',
         call_on_epoch=True,
@@ -365,8 +361,6 @@ cb += [
         )
     ]
 
-cb = []
-
 
 ###############################################################################
 ### Start training ############################################################
@@ -375,8 +369,8 @@ cb = []
 print("Batch size: ", NBATCH)
 train.change_learning_rate(LEARNINGRATE)
 model, history = train.trainModel(
-    nepochs=100, 
-    batchsize=NBATCH, 
+    nepochs=100,
+    batchsize=NBATCH,
     additional_callbacks=cb
     )
 
@@ -388,19 +382,19 @@ print("freeze BN")
 
 train.change_learning_rate(LEARNINGRATE/2.)
 model, history = train.trainModel(
-    nepochs=100, 
-    batchsize=NBATCH, 
+    nepochs=100,
+    batchsize=NBATCH,
     additional_callbacks=cb
     )
 
 train.change_learning_rate(LEARNINGRATE/2.)
 model, history = train.trainModel(
-    nepochs=100, 
-    batchsize=NBATCH, 
+    nepochs=100,
+    batchsize=NBATCH,
     additional_callbacks=cb
     )
 model, history = train.trainModel(
-    nepochs=100, 
-    batchsize=NBATCH, 
+    nepochs=100,
+    batchsize=NBATCH,
     additional_callbacks=cb
     )
