@@ -144,5 +144,3 @@ class TrainData_fcc(TrainData):
         
     
     
-    
- 
