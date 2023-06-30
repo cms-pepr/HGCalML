@@ -56,7 +56,7 @@ PUBLISHPATH = ""
 # Configuration for training
 DENSE_ACTIVATION='elu'
 LEARNINGRATE = 1e-4
-NBATCH = 200000
+NBATCH = 150000
 DENSE_REGULARIZER = tf.keras.regularizers.L2(l2=1e-5)
 if False and globals.acc_ops_use_tf_gradients: #for tf gradients the memory is limited
     NBATCH = int(NBATCH / 2)
@@ -341,13 +341,6 @@ cb += [
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
 
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/time_pred.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics=['ExtendedOCLoss_*time_std','ExtendedOCLoss_*time_pred_std'],
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
 
     simpleMetricsCallback(
         output_file=train.outputDir+'/gooey_metrics.html',
@@ -396,7 +389,7 @@ cb += [
 print("Batch size: ", NBATCH)
 train.change_learning_rate(LEARNINGRATE)
 model, history = train.trainModel(
-    nepochs=100,
+    nepochs=10,
     batchsize=NBATCH,
     additional_callbacks=cb
     )
@@ -409,19 +402,19 @@ print("freeze BN")
 
 train.change_learning_rate(LEARNINGRATE/2.)
 model, history = train.trainModel(
-    nepochs=100,
+    nepochs=10,
     batchsize=NBATCH,
     additional_callbacks=cb
     )
 
 train.change_learning_rate(LEARNINGRATE/2.)
 model, history = train.trainModel(
-    nepochs=100,
+    nepochs=10,
     batchsize=NBATCH,
     additional_callbacks=cb
     )
 model, history = train.trainModel(
-    nepochs=100,
+    nepochs=10,
     batchsize=NBATCH,
     additional_callbacks=cb
     )
