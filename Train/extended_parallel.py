@@ -66,6 +66,7 @@ N_NEIGHBOURS = [64, 64]
 TOTAL_ITERATIONS = len(N_NEIGHBOURS)
 N_CLUSTER_SPACE_COORDINATES = 4
 N_GRAVNET = 6
+EXTENSION_TRAINABLE=True
 
 ###############################################################################
 ### Define model ##############################################################
@@ -209,7 +210,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         create_outputs(x,
             n_ccoords=N_CLUSTER_SPACE_COORDINATES,
             fix_distance_scale=True,
-            trainable=CLUSTER_TRAINABLE,)
+            trainable=True,)
 
     _, _, _, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
@@ -217,7 +218,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         create_outputs(y,
             n_ccoords=N_CLUSTER_SPACE_COORDINATES,
             fix_distance_scale=True,
-            trainable=EXTENSION_TRAINABLE)
+            trainable=True)
 
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
 

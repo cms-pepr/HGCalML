@@ -17,7 +17,15 @@ def _getkeys(file):
     print(tmp_model.output_shape.keys())
     output_keys = list(tmp_model.output_shape.keys())
     output_keys.remove('row_splits')
-    output_keys.remove('orig_row_splits')
+    output_keys.remove('down_features')
+    output_keys.remove('cond_coords_down')
+    output_keys.remove('rs_down')
+    output_keys.remove('rs_up')
+    output_keys.remove('nidx_down')
+    output_keys.remove('distsq_down')
+    output_keys.remove('weights_down')
+
+    # output_keys.remove('orig_row_splits') # PZ: didn't exist
     if 'no_noise_row_splits' in output_keys:
         output_keys.remove('no_noise_row_splits')
     del tmp_model #close tf
@@ -114,6 +122,7 @@ class TrainData_PrepoolNanoML(TrainData):
 
         outSA = []
         for k2 in self.output_keys:
+            print(k2, ' ', newout[k2].shape)
             outSA.append(SimpleArray(newout[k2],rs,name=k2))
 
         return outSA,[], []

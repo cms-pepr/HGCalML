@@ -19,7 +19,7 @@ from Layers import CastRowSplits, PlotCoordinates, LLExtendedObjectCondensation
 from Layers import ScaledGooeyBatchNorm2
 from Layers import LLFillSpace
 from Regularizers import AverageDistanceRegularizer
-from model_blocks import tiny_pc_pool
+from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import create_outputs
 from model_blocks import extent_coords_if_needed
 from noise_filter import noise_filter
@@ -68,6 +68,7 @@ N_NEIGHBOURS = [64, 64]
 TOTAL_ITERATIONS = len(N_NEIGHBOURS)
 N_CLUSTER_SPACE_COORDINATES = 4
 N_GRAVNET = 6
+EXTENSION_TRAINABLE=True
 
 ###############################################################################
 ### Define model ##############################################################
@@ -80,10 +81,11 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     is_preselected = isinstance(td, TrainData_PreselectionNanoML)
     pre_selection = td.interpretAllModelInputs(Inputs, returndict=True)
+    pre_selection = condition_input(pre_selection, no_scaling=True)
 
     #can be loaded - or use pre-selected dataset (to be made)
     if not is_preselected:
-        pre_selection = tiny_pc_pool(
+        trans, pre_selection = tiny_pc_pool(
             pre_selection,
             trainable=False,
             pass_through=False)
@@ -211,7 +213,7 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         create_outputs(x,
             n_ccoords=N_CLUSTER_SPACE_COORDINATES,
             fix_distance_scale=True,
-            trainable=CLUSTER_TRAINABLE,)
+            trainable=True,)
 
     _, _, _, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
@@ -274,8 +276,10 @@ def gravnet_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             'pred_dist': pred_dist,
             'rechit_energy': energy,
             'row_splits': pre_selection['row_splits'],
-            'no_noise_sel': pre_selection['no_noise_sel'],
-            'no_noise_rs': pre_selection['no_noise_rs'],
+            # 'no_noise_sel': pre_selection['no_noise_sel'],
+            # 'no_noise_rs': pre_selection['no_noise_rs'],
+            'no_noise_sel': trans['sel_idx_up'],
+            'no_noise_rs': trans['rs_down'], #unclear what that actually means?
             # 'noise_backscatter': pre_selection['noise_backscatter'],
             }
 
