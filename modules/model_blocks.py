@@ -2194,10 +2194,14 @@ def tiny_pc_pool(
         publish=None,
         dmp_steps=[8,8,8,8],
         dmp_compress = 32,
-        K_nn = 16):
+        K_nn = 16,
+        pass_through=False):
     '''
     This function needs pre-processed input (from condition_input)
     '''
+
+    if pass_through:
+        return orig_inputs
 
     K_gp = 5
 
