@@ -209,7 +209,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
     ### low-high difference plot ##################################################################
 
-    fig_low_high = ep.plot_high_low_difference(showers_dataframe)
+    fig_low_high = ep.plot_high_low_difference(prediction)
     fig_low_high.savefig(os.path.join('.', 'low_high_difference.jpg'))
 
     # This is only to write to pdf files
