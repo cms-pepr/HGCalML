@@ -394,6 +394,9 @@ def layernorm(x, return_norm=False):
 global_layers_list['layernorm']= layernorm #convenience
 
 class SphereActivation(tf.keras.layers.Layer): 
+    '''
+    a layer norm that can also return the norm
+    '''
     
     def __init__(self,return_norm = False, **kwargs):
         super(SphereActivation, self).__init__(**kwargs)
@@ -404,20 +407,23 @@ class SphereActivation(tf.keras.layers.Layer):
         base_config = super(SphereActivation, self).get_config()
         return dict(list(base_config.items()) + list(config.items() ))
     
-    def compute_output_shape(self, input_shapes):
-        if not self.return_norm:
-            return input_shapes
-        out = []
-        for s in input_shapes:
-            out.append(s)
-        out[-1] += 1
-        return out
-    
-    
     def call(self, x):
-        return layernorm(x, self.return_norm)
+        if not self.return_norm:
+            return layernorm(x, False)
+        else:
+            out = layernorm(x, True)
+            return out[...,:x.shape[-1]], out[...,x.shape[-1]:x.shape[-1]+1]
         
 global_layers_list['SphereActivation']=SphereActivation
+
+class Multi(tf.keras.layers.Layer): 
+    
+    def call(self, inputs):
+        assert len(inputs)==2
+        x,y = inputs
+        return x*y #but with broadcasting
+    
+global_layers_list['Multi']=Multi
 
 class Sqrt(tf.keras.layers.Layer): 
     

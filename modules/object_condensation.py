@@ -160,11 +160,9 @@ class Basic_OC_per_sample(object):
     def V_att_k(self):
         '''
         '''
-        x_k_e = tf.expand_dims(self.x_k,axis=1)
-        
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
         
-        dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
+        dsq_k_m = self.calc_dsq_att() #K x V-obj x 1
         
         sigma = self.weighted_d_k_m(dsq_k_m) #create gradients for all
         
@@ -184,6 +182,16 @@ class Basic_OC_per_sample(object):
     
     def weighted_d_k_m(self, dsq): # dsq K x V x 1
         return tf.expand_dims(self.d_k, axis=1) # K x 1 x 1
+    
+    def calc_dsq_att(self):
+        x_k_e = tf.expand_dims(self.x_k,axis=1)
+        dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
+        return dsq_k_m
+    
+    def calc_dsq_rep(self):
+        dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
+        dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
+        return dsq
         
     def V_rep_k(self):
         
@@ -191,8 +199,7 @@ class Basic_OC_per_sample(object):
         N_k = tf.reduce_sum(self.Mnot, axis=1)
         #future remark: if this gets too large, one could use a kNN here
         
-        dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
-        dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
+        dsq = self.calc_dsq_rep()
         
         # nogradbeta = tf.stop_gradient(self.beta_k_m)
         #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
@@ -299,6 +306,18 @@ class Hinge_OC_per_sample(Basic_OC_per_sample):
         
     def rep_func(self,dsq_k_v):
         return tf.nn.relu(1. - tf.sqrt(dsq_k_v + 1e-6))
+    
+class Hinge_Manhatten_OC_per_sample(Hinge_OC_per_sample):   
+
+    def calc_dsq_att(self):
+        x_k_e = tf.expand_dims(self.x_k,axis=1)
+        dsq_k_m = tf.reduce_sum(tf.abs(self.x_k_m - x_k_e), axis=-1, keepdims=True) #K x V-obj x 1
+        return dsq_k_m**2 #still square it since that's what the function should return
+    
+    def calc_dsq_rep(self):
+        dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
+        dsq = tf.reduce_sum(tf.abs(dsq), axis=-1, keepdims=True)  #K x V x 1
+        return dsq**2 #still square it since that's what the function should return
 
 class PushPull_OC_per_sample(Basic_OC_per_sample):
     

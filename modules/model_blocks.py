@@ -1609,7 +1609,7 @@ from GraphCondensationLayers import CreateGraphCondensation, PushUp, SelectUp, P
 from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, LLGraphCondensationEdges
 from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
 from LossLayers import LLValuePenalty
-from Layers import CheckNaN
+from Layers import CheckNaN, SphereActivation
 
 def pre_graph_condensation(
         orig_inputs,
@@ -2195,7 +2195,9 @@ def tiny_pc_pool(
         dmp_steps=[8,8,8,8],
         dmp_compress = 32,
         K_nn = 16,
-        pass_through=False):
+        K_gp = 5,
+        is_second=False,
+        new_format=True):
     '''
     This function needs pre-processed input (from condition_input)
     '''
@@ -2203,7 +2205,21 @@ def tiny_pc_pool(
     if pass_through:
         return orig_inputs
 
-    K_gp = 5
+    edge_dense = [16]
+    edge_pre_nodes = 32
+    dwmp_activation = 'elu'
+
+    if is_second:
+        dmp_steps = [32,32,32,32]
+        dmp_compress = 64
+        low_energy_cut_target = 0.5
+        K_nn = 32
+        K_gp = 8
+        first_embed = False
+        edge_dense = [32,24,16]
+        edge_pre_nodes = 64
+        dwmp_activation = 'tanh' #more smooth
+
 
     ## gather inputs and norm
 
@@ -2251,6 +2267,7 @@ def tiny_pc_pool(
                     min_bins=20)([coords, #stop gradient here as it's given explicitly below
                                   orig_inputs['row_splits']])#hard code it here, this is optimised given our datasets
 
+    dist,nidx = SortAndSelectNeighbours(-1)([dist,nidx])#make it easy for edges
     dist_orig = dist
     dist = Sqrt()(dist)#make a stronger distance gradient for message passing
 
@@ -2259,8 +2276,8 @@ def tiny_pc_pool(
         #this is a super lightweight 'guess' attention; coords get explicit gradient down there
 
         x = DistanceWeightedMessagePassing([n],name=name+'np_dmp'+str(i),
-                                        activation='elu',#keep output in check
-                                        exp_distances = True, #linear weights
+                                        activation=dwmp_activation,#keep output in check
+                                        exp_distances = True,
                                         trainable=trainable)([x,nidx,dist])# hops are rather light
 
         x = Dense(dmp_compress, activation='elu', name=name+'_pcp_x_out'+str(i),trainable=trainable)(x)
@@ -2271,13 +2288,16 @@ def tiny_pc_pool(
             )(x)
         x = Concatenate()([x, x_emb])#skip connect
 
-    score = Dense(1, activation='sigmoid', name=name+'_pcp_score',trainable=trainable)(x)
 
+    score = Dense(1, activation='sigmoid',
+                  name=name+'_pcp_score',
+                  trainable=trainable)(x)
 
     score = LLGraphCondensationScore(
         name=name+'_ll_graph_condensation_score',
         record_metrics = record_metrics,
         K=K_loss,
+        penalty_fraction = 1. - reduction_target,
                 active=trainable,
             low_energy_cut = low_energy_cut_target #allow everything below 2 GeV to be removed (other than tracks)
             )([score, coords, orig_inputs['t_idx'], orig_inputs['t_energy'], rs])
@@ -2290,20 +2310,33 @@ def tiny_pc_pool(
             )(score,coords,rs, #nidx,dist_orig, #do not use nidx here yet.
               always_promote = is_track)
 
+
+
     x_e = Concatenate()([x,x_in])#skip
 
     x_e = CreateGraphCondensationEdges(
-                     edge_dense=[16],
-                     pre_nodes=32,
+                     edge_dense=edge_dense,
+                     pre_nodes=edge_pre_nodes,
                      K=K_gp,
                      trainable=trainable,
                      name=name+'_gc_edges')(x_e, trans_a)
 
+    if new_format:
+        dist = StopGradient()(dist)
+        #add non orderinvariant info
+        x_e = Concatenate()([dist,x_e,x])
+        x_e = Dense(32,name=name+'_graphn_edges_d1',
+            trainable=trainable, activation='elu')(x_e)
+        x_e = Dense(K_gp+1, name=name+'_graphn_edges_d2',
+            trainable=trainable, activation='softmax')(x_e)#one more for noise
+
     x_e = LLGraphCondensationEdges(
         name=name+'_ll_graph_condensation_edges',
         active=trainable,
+        print_loss = trainable,
         record_metrics=record_metrics
         )(x_e, trans_a, orig_inputs['t_idx'])
+
 
     trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
 

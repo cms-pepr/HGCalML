@@ -110,6 +110,7 @@ class _DebugPlotBase(tf.keras.layers.Layer):
                  outdir :str='' , 
                  plot_only_training=True,
                  publish = None,
+                 externally_triggered = False,
                  **kwargs):
         
         if 'dynamic' in kwargs:
@@ -118,6 +119,8 @@ class _DebugPlotBase(tf.keras.layers.Layer):
             super(_DebugPlotBase, self).__init__(dynamic=False,**kwargs)
             
         self.plot_every = plot_every
+        self.externally_triggered = externally_triggered
+        self.triggered = False
         self.plot_only_training = plot_only_training
         if len(outdir) < 1:
             self.plot_every=0
@@ -132,7 +135,8 @@ class _DebugPlotBase(tf.keras.layers.Layer):
     def get_config(self):
         config = {'plot_every': self.plot_every,
                   'outdir': self.outdir,
-                  'publish': self.publish}
+                  'publish': self.publish,
+                  'externally_triggered': self.externally_triggered}
         base_config = super(_DebugPlotBase, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
@@ -150,6 +154,10 @@ class _DebugPlotBase(tf.keras.layers.Layer):
         return self.outdir+'/'+self.name
     
     def check_make_plot(self, inputs, training = None):
+        
+        if self.externally_triggered:
+            return self.triggered
+        
         out=inputs
         if isinstance(inputs,list):
             out=inputs[0]
@@ -180,6 +188,7 @@ class _DebugPlotBase(tf.keras.layers.Layer):
         out=inputs
         if isinstance(inputs,list):
             out=inputs[0]
+        self.add_loss(0. * tf.reduce_sum(out[0]))#to keep it alive
             
         if not self.check_make_plot(inputs, training):
             return out
@@ -550,7 +559,9 @@ class PlotGraphCondensation(_DebugPlotBase):
                 
                 
 class PlotGraphCondensationEfficiency(_DebugPlotBase):
-    def __init__(self, accumulate_every :int = 10 , #how 
+    def __init__(self, 
+                 accumulate_every :int = 10 , #how 
+                 externally_triggered = False,
                  **kwargs):
         '''
         Inputs:
@@ -562,7 +573,8 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
          - t_energy 
         '''
         
-        super(PlotGraphCondensationEfficiency, self).__init__(**kwargs)
+        super(PlotGraphCondensationEfficiency, self).__init__(externally_triggered=externally_triggered,
+                                                              **kwargs)
         
         self.acc_counter = 0
         self.accumulate_every = accumulate_every
@@ -599,7 +611,7 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
     def check_make_plot(self, inputs, training = None):
         pre =  super(PlotGraphCondensationEfficiency, self).check_make_plot(inputs, training)
         
-        if self.plot_every <= 0: #nothing
+        if self.plot_every <= 0 and not self.externally_triggered: #nothing
             return pre
         
         self.only_accumulate_this_time = False

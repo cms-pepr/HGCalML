@@ -7,6 +7,9 @@ import numpy as np
 import uproot3 as uproot
 import awkward as ak1
 from numba import jit
+import gzip
+import os
+import pickle
 
 #@jit(nopython=False)
 def truth_loop(link_list :list, 
@@ -80,7 +83,7 @@ class TrainData_fcc(TrainData):
         hit_e = self.branchToFlatArray(tree["hit_e"])
         hit_theta = self.branchToFlatArray(tree["hit_theta"])
         
-        
+
         zerosf = 0.*hit_e
         
         print('hit_e',hit_e)
@@ -137,12 +140,34 @@ class TrainData_fcc(TrainData):
                 t['t_rec_energy'], t['t_is_unique'] ],[], []
         
         
-        
-#td = TrainData_fcc()
-#td.convertFromSourceFile("tree_clicdet.root",None,None)
+    
+    def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
+        outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
+        # print("hello", outfilename, inputfile)
 
+        outdict = dict()
+        outdict['predicted'] = predicted
+        outdict['features'] = features
+        outdict['truth'] = truth
+
+        print("Writing to ", outfilename)
+        with gzip.open(outfilename, "wb") as mypicklefile:
+            pickle.dump(outdict, mypicklefile)
+        print("Done")
+
+    def writeOutPredictionDict(self, dumping_data, outfilename):
+        '''
+        this function should not be necessary... why break with DJC standards?
+        '''
+        if not str(outfilename).endswith('.bin.gz'):
+            outfilename = os.path.splitext(outfilename)[0] + '.bin.gz'
+
+        with gzip.open(outfilename, 'wb') as f2:
+            pickle.dump(dumping_data, f2)
+
+    def readPredicted(self, predfile):
+        with gzip.open(predfile) as mypicklefile:
+            return pickle.load(mypicklefile)
         
     
     
-    
- 
