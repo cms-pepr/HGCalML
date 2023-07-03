@@ -186,6 +186,10 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     fig = ep.prediction_overview(prediction)
     fig.savefig(os.path.join('.', 'prediction_overview.jpg'))
 
+    ### Classification ############################################################################
+    fig = ep.classification_plot(showers_dataframe)
+    fig.savefig(os.path.join('.', 'classification_plot.jpg'))
+
     ### Tracks versus hits ########################################################################
     fig = ep.tracks_vs_hits(showers_dataframe)
     fig.savefig(os.path.join('.', 'median_ratios.jpg'))

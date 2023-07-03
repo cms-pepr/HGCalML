@@ -2,8 +2,10 @@
 import pdb
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from sklearn.metrics import confusion_matrix
 
 
 def calc_efficiencies(df, bins):
@@ -512,3 +514,57 @@ def noise_performance(noise_df):
     return fig
 
 
+def map_pid_to_classes(truth_pids):
+    """
+    0.  Muon
+    1.  Electron
+    2.  Photon
+    3.  Charged Hadron
+    4.  Neutral Hadron
+    5.  Ambiguous
+    """
+    map_dict = {
+        13: 0,
+        -13: 0,
+        11: 1,
+        -11: 1,
+        22: 2,
+        211: 3,
+        -211: 3,
+    }
+
+    mapped = truth_pids.map(map_dict)
+    return mapped
+
+
+def classification_plot(showers_df):
+    has_pred = np.logical_not(showers_df.pred_pos.isna())
+    has_truth = np.logical_not(showers_df.truth_mean_x.isna())
+    matched = showers_df[np.logical_and(has_pred, has_truth)]
+    matched_truthPID = matched.truthHitAssignedPIDs
+    matched_predPID = matched.pred_id
+    mapped_truthClasses = map_pid_to_classes(matched_truthPID)
+
+    confusion_matrix(mapped_truthClasses, matched_predPID, labels=[0,1,2,3,4,5])
+
+    classes = [
+        "Muon",
+        "Electron",
+        "Photon",
+        "Charged Hadron",
+        "Neutral Hadron",
+        "Ambiguous",
+    ]
+
+    df_cm = pd.DataFrame(
+        confusion_matrix(mapped_truthClasses, matched_predPID, labels=[0,1,2,3,4,5], normalize=None),
+        index = classes,
+        columns = classes)
+
+    fig = plt.figure(figsize = (10,7))
+    sns.heatmap(df_cm, annot=True)
+    plt.ylabel('True label', fontsize=20)
+    plt.xlabel(r'Predicted label', fontsize=20)
+    plt.show()
+
+    return fig
