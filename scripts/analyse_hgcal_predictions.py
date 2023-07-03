@@ -233,7 +233,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
             'matched': matched,
         }
         if not args.slim:
-            analysis_data['processed_dataframe'] = processed_dataframe
+            analysis_data['processed_dataframe'] = ep.dictlist_to_dataframe(processed)
             analysis_data['features'] = features
             analysis_data['truth'] = truth
             analysis_data['prediction'] = prediction
