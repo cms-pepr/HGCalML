@@ -568,3 +568,14 @@ def classification_plot(showers_df):
     plt.show()
 
     return fig
+
+
+def plot_high_low_difference(prediction):
+    prediction = dictlist_to_dataframe(prediction)
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 10))
+    low = prediction.pred_energy_low_quantile
+    high = prediction.pred_energy_high_quantile
+    distance = high - low
+    ax.hist(distance, bins=100)
+    ax.set_title("Difference between high and low quantile", fontsize=20)
+    return fig
