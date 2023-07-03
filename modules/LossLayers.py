@@ -289,10 +289,11 @@ class LossLayerBase(LayerWithMetrics):
         if self.print_loss:
             if hasattr(lossval, 'numpy'):
                 print(self.name, 'loss', lossval.numpy())
+                tf.print(self.name, 'loss', lossval.numpy())
             else:
                 tf.print(self.name, 'loss', lossval)
+                print(self.name, 'loss', lossval)
                 
-        
         if self.print_batch_time or self.record_metrics:
             now = tf.timestamp() 
             prev = self.time

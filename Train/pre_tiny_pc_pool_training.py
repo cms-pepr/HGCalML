@@ -30,18 +30,19 @@ from GraphCondensationLayers import add_attention, PushUp
 from callbacks import NanSweeper
 
 
-plot_frequency= 20  # 150 #150 # 1000 #every 20 minutes approx
+plot_frequency= 40  # 150 #150 # 1000 #every 20 minutes approx
 record_frequency = 20
-
 
 reduction_target = 0.05
 lr_factor = 1.
+nbatch = 170000 
 
-no_publish = True
+no_publish = False
 
 train_second = True
 if train_second:
-    lr_factor = reduction_target
+    lr_factor = reduction_target/5.
+    nbatch = 170000
     
 train_all = False
 
@@ -82,7 +83,7 @@ def pretrain_model(Inputs,
                                         
     
     presel['prime_coords'] = PlotCoordinates(plot_every=debugplots_after,
-                                        outdir=debug_outdir,name='pc_pool_post_prime',
+                                        outdir=debug_outdir,name='pc_pool_post_prime0',
                                         publish=publishpath)(
                                             [presel['prime_coords'],
                                              presel['rechit_energy'],#Where(0.5)([presel['is_track'],presel['rechit_energy']]), 
@@ -99,26 +100,14 @@ def pretrain_model(Inputs,
                                         
     if train_second:
         
-        if False:
-            x = presel['down_features']
-            xall = []
-            for h in range(3): #3 heads
-                t = add_attention(trans, x, 'att_'+str(h))
-                xall.append(PushUp()(x, t))
-            presel['features'] = Concatenate()([presel['features']] + xall)
-        
-        #recalc coordinates explicitly
-        #x = Concatenate()([presel['features'],presel['prime_coords']])
-        #x = Dense(48, activation='elu')(x)
-        #coords = Dense(3,use_bias = False)(x)
-        
         trans,presel = tiny_pc_pool(presel,
                                     #coords = coords,
                                     name='pre_graph_pool1',
-                                    first_embed = False,
+                                    is_second = True,
                                     reduction_target=0.1,
                               trainable=True,
-                              low_energy_cut_target = 1.0,
+                              #coords = coords,
+                              #low_energy_cut_target = 1.0,
                               record_metrics = True,
                               publish=publishpath,
                               debugplots_after=debugplots_after,
@@ -127,11 +116,19 @@ def pretrain_model(Inputs,
         
         
         presel['prime_coords'] = PlotCoordinates(plot_every=debugplots_after,
-                                            outdir=debug_outdir,name='pc_pool_coords1',
+                                            outdir=debug_outdir,name='pc_pool_post_prime1',
                                             publish=publishpath)(
                                                 [presel['prime_coords'],
                                                  presel['rechit_energy'],#Where(1.)([presel['is_track'],presel['rechit_energy']]), 
                                                  presel['t_idx'],presel['row_splits']])
+                                            
+        
+        presel['cond_coords'] = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name='pc_pool_cond_coords1',
+                                        publish=publishpath)(
+                                            [presel['cond_coords'],
+                                             presel['rechit_energy'],#Where(0.5)([presel['is_track'],presel['rechit_energy']]), 
+                                             presel['t_idx'],presel['row_splits']])
     
     presel.update(trans) #put them all in
     #presel.pop('row_splits')
@@ -174,7 +171,7 @@ verbosity = 2
 import os
 
 samplepath=train.val_data.getSamplePath(train.val_data.samples[0])
-# publishpath = 'jkiesele@lxplus.cern.ch:/eos/home-j/jkiesele/www/files/HGCalML_trainings/'+os.path.basename(os.path.normpath(train.outputDir))
+#publishpath = "jkiesele@lxplus.cern.ch:~/Cernbox/www/files/temp/June2023/"+os.path.basename(os.path.normpath(train.outputDir))
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 
@@ -230,20 +227,16 @@ cb = [
     ]
 
 #cb=[]
-nbatch = 70000 
-train.change_learning_rate(lr_factor*9e-3)
+
+train.change_learning_rate(lr_factor*2e-3)
 train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
 
-nbatch = 70000 
 train.change_learning_rate(lr_factor*1e-3)
 train.trainModel(nepochs=10, batchsize=nbatch,additional_callbacks=cb)
 
-nbatch = 70000 
 train.change_learning_rate(lr_factor*1e-4)
 train.trainModel(nepochs=60, batchsize=nbatch,additional_callbacks=cb)
 
-
-nbatch = 70000 
 train.change_learning_rate(lr_factor*1e-5)
 train.trainModel(nepochs=80, batchsize=nbatch,additional_callbacks=cb)
 

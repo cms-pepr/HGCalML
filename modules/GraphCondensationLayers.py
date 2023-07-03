@@ -1083,7 +1083,7 @@ class LLGraphCondensationEdges(LossLayerBase):
         '''
         
         super(LLGraphCondensationEdges, self).__init__(**kwargs)
-        self.cce = tf.keras.losses.CategoricalCrossentropy()
+        self.cce = tf.keras.losses.CategoricalCrossentropy(reduction = tf.keras.losses.Reduction.NONE)
         
     def call(self, x_e, trans, t_idx):  
         
@@ -1096,24 +1096,34 @@ class LLGraphCondensationEdges(LossLayerBase):
         assert len(inputs) == 4
         e_score, dist, nidx, t_idx = inputs
         
+        dist = tf.stop_gradient(dist) #important
+        
         K = nidx.shape[1]
         def one_hot_default():
             ones = tf.ones_like(t_idx, dtype='float32') # V x 1
             zeros = tf.zeros_like(nidx, dtype='float32') # V x K
             return tf.concat([ones,zeros],axis=1) # V x K + 1
         
-        #
         n_t_idx = select(nidx, t_idx, -2)
         n_same = t_idx[:,:,tf.newaxis] == n_t_idx  #V x K x 1
-        dist = tf.where(nidx < 0, 1e6, dist)
+        #all_same = tf.logi
+        no_n_mask = nidx < 0
+        dist = tf.where(no_n_mask, 1e6, dist)
         dist = tf.where(n_same[:,:,0], dist, 1e6)
         closest_and_same = tf.argmin( dist, axis=1) #no noise treatment yet
         #needs noise
         one_hot = tf.one_hot(closest_and_same + 1, K+1)
         one_hot = tf.where(t_idx < 0, one_hot_default(), one_hot)
         
+        #now where all are the same, and distances similar, don't apply loss
+        all_same = tf.reduce_all(n_same, axis=1)#all the same
+        distance_similar = (tf.reduce_max(dist, axis=1) - tf.reduce_min(dist, axis=1)) < 0.1 # assumes all normed to 1
+        
         lossval = self.cce(one_hot, e_score)
-        return lossval
+        #if it doesn't matter anyway don't apply hard loss
+        lossval = tf.where( tf.logical_and(all_same, distance_similar), 0., lossval ) #tbi
+        
+        return tf.reduce_mean(lossval)
         
 graph_condensation_layers['LLGraphCondensationEdges'] =   LLGraphCondensationEdges  
 
