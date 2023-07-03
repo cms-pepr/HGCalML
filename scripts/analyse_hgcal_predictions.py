@@ -17,7 +17,7 @@ from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
 from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 import extra_plots as ep
-from visualize_event import dataframe_to_plot
+from visualize_event import dataframe_to_plot, matched_plot
 
 
 def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
@@ -160,6 +160,8 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 fig_cluster_first_truth = dataframe_to_plot(full_df, truth=True, clusterspace=(0,1,2))
                 fig_cluster_pca_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_pca_truth.html'))
                 fig_cluster_first_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_first_truth.html'))
+                fig_matched = matched_plot(truth_dict, features_dict, processed_dataframe, dataframe)
+                fig_matched.write_html(os.path.join('.', 'events', f'event_{event_id}_matched.html'))
 
             event_id += 1
 

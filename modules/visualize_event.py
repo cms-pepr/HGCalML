@@ -62,14 +62,7 @@ def djcdc_to_dataframe(input_path, n_events):
     return output_df
 
 
-def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
-    df = df[df.event_id == id]
-    size = 100 * np.log(df.recHitEnergy + 1)
-    # change sizes bigger than 5 to 5
-    size[size > 10] = 10
-    size[size < 0.1] = 0.1
-    print(np.min(size), np.median(size), np.mean(size), np.max(size))
-
+def make_figure():
     fig = go.Figure(
         layout=go.Layout(
             width=1200,
@@ -95,6 +88,22 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
             ),
         ),
     )
+    return fig
+
+
+
+def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
+    df = df[df.event_id == id]
+    size = 100 * np.log(df.recHitEnergy + 1)
+    # change sizes bigger than 5 to 5
+    size[size > 10] = 10
+    size[size < 0.1] = 0.1
+
+    if verbose:
+        print(np.min(size), np.median(size), np.mean(size), np.max(size))
+
+    fig = make_figure()
+
     if truth:
         ids = np.unique(df.truthHitAssignementIdx)
     else:
@@ -195,6 +204,88 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
             customdata = customdata,
             hovertemplate = hovertemplate,
         )
+        fig.add_trace(trace_i)
+
+    return fig
+
+
+def matched_plot(truth, features, processed_df, showers_df):
+    fig = make_figure()
+    has_pred = ~np.isnan(showers_df.pred_sid)
+    has_truth = ~np.isnan(showers_df.truthHitAssignementIdx)
+    matched = np.logical_and(has_pred, has_truth)
+    just_pred = np.logical_and(has_pred, ~has_truth)
+    just_truth  = np.logical_and(~has_pred, has_truth)
+    matched_ids = np.unique(showers_df[matched].pred_sid)
+    just_pred_ids = np.unique(showers_df[just_pred].pred_sid)
+    just_truth_ids = np.unique(showers_df[just_truth].truthHitAssignementIdx)
+
+
+    for matched_id in matched_ids:
+        color = 'green'
+        mask = processed_df.pred_sid == matched_id
+        x = features['recHitZ'][mask]
+        y = features['recHitY'][mask]
+        z = features['recHitX'][mask]
+        size = 50 * np.log(features['recHitEnergy'][mask] + 1)
+
+        trace_i = go.Scatter3d(
+            x = x,
+            y = y,
+            z = z,
+            mode = 'markers',
+            marker = dict(
+                size = size,
+                color = color,
+                opacity = 0.8,
+                line=dict(width=0),
+            ),
+        )
+        fig.add_trace(trace_i)
+
+    for just_pred_id in just_pred_ids:
+        color = 'red'
+        mask = processed_df.pred_sid == just_pred_id
+        x = features['recHitZ'][mask]
+        y = features['recHitY'][mask]
+        z = features['recHitX'][mask]
+        size = 50 * np.log(features['recHitEnergy'][mask] + 1)
+
+        trace_i = go.Scatter3d(
+            x = x,
+            y = y,
+            z = z,
+            mode = 'markers',
+            marker = dict(
+                size = size,
+                color = color,
+                opacity = 0.8,
+                line=dict(width=0),
+            ),
+        )
+        fig.add_trace(trace_i)
+
+    for just_truth_id in just_truth_ids:
+        color = 'blue'
+        mask = truth['truthHitAssignementIdx'] == just_truth_id
+        x = features['recHitZ'][mask]
+        y = features['recHitY'][mask]
+        z = features['recHitX'][mask]
+        size = 50 * np.log(features['recHitEnergy'][mask] + 1)
+
+        trace_i = go.Scatter3d(
+            x = x,
+            y = y,
+            z = z,
+            mode = 'markers',
+            marker = dict(
+                size = size,
+                color = color,
+                opacity = 0.8,
+                line=dict(width=0),
+            ),
+        )
+
         fig.add_trace(trace_i)
 
     return fig
