@@ -149,8 +149,7 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False):
             size = 50 * np.log(df_i.recHitEnergy + 1)
         size[size > 10] = 10
         size[size < 0.1] = 0.1
-        # get a random discrete color from color palette
-        color = np.random.choice(px.colors.qualitative.Alphabet)
+        color = px.colors.qualitative.Alphabet[i % len(px.colors.qualitative.Alphabet)]
         if i < 0: color = 'black'
         if truth:
             customdata=np.stack((
