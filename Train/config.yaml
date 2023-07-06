@@ -1,0 +1,74 @@
+General:
+  pre-model-type: "noise-filter"
+  pre-model-path: "/"
+  description-string: ""
+  use_fill_space: True
+  use_layer_normalization: True
+
+Architecture:
+  gravnet:
+    - n: 256
+    - n: 256
+    - n: 256
+  message_passing:
+    - n: 64
+    - n: 64
+    - n: 32
+    - n: 32
+    - n: 16
+    - n: 16
+  dense_pre_gravnet:
+    - n: 64
+    - n: 64
+    - n: 64
+  dense_post_message_passing:
+    - n: 64
+    - n: 64
+    - n: 64
+  dense_final:
+    - n: 64
+    - n: 64
+    - n: 64
+  n_cluster_space_coordinates: 6
+  n_grav_net_space_coordinates: 6
+
+DenseOptions:
+  activation: "elu"
+  kernel_regularizer: "l2"
+  kernel_regularizer_rate: 0.001
+  dropout: 0.3
+
+BatchNormOptions:
+  max_viscosity: 0.5
+
+LossOptions:
+  energy_loss_weight: .05
+  q_min: 1.5
+  use_average_cc_pos: 0.1
+  classification_loss_weight: 0.05
+  too_much_beta_scale: 0.0
+  position_loss_weight: 0.0
+  timing_loss_weight: 0.0
+  beta_loss_scale: 0.1
+  beta_push': 0.00
+
+
+Training:
+  - stage_1:
+    batch_size: 150000
+    learning_rate: 0.01
+    epochs: 3
+
+  - stage_2:
+    batch_size: 150000
+    learning_rate: 0.001
+    epochs: 2
+
+  - stage_3:
+    batch_size: 150000
+    learning_rate: 0.0002
+    epochs: 2
+
+Plotting:
+  record_frequency: 2
+  plot_frequency: 5
