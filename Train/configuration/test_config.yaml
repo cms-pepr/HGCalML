@@ -1,6 +1,6 @@
 General:
   pre-model-type: "noise-filter"
-  pre-model-path: "/"
+  pre-model-path: "/mnt/home/pzehetner/Models_Good/NoiseTraining0/KERAS_check_best_model.h5"
   description-string: ""
   use_fill_space: True
   use_layer_normalization: True
@@ -30,7 +30,7 @@ Architecture:
     - n: 64
     - n: 64
   n_cluster_space_coordinates: 6
-  n_grav_net_space_coordinates: 6
+  n_gravnet_space_coordinates: 6
 
 DenseOptions:
   activation: "elu"
@@ -50,24 +50,23 @@ LossOptions:
   position_loss_weight: 0.0
   timing_loss_weight: 0.0
   beta_loss_scale: 0.1
-  beta_push': 0.00
 
 
 Training:
   - stage_1:
-    batch_size: 150000
+    batch_size: 120000
     learning_rate: 0.01
-    epochs: 3
+    epochs: 2
 
   - stage_2:
-    batch_size: 150000
+    batch_size: 120000
     learning_rate: 0.001
-    epochs: 2
+    epochs: 1
 
   - stage_3:
-    batch_size: 150000
+    batch_size: 120000
     learning_rate: 0.0002
-    epochs: 2
+    epochs: 1
 
 Plotting:
   record_frequency: 2

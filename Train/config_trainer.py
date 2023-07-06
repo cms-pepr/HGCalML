@@ -29,7 +29,12 @@ from callbacks import plotClusterSummary
 from callbacks import NanSweeper, DebugPlotRunner
 
 
-CONFIGFILE = "config.yaml"
+###############################################################################
+### Load Configuration ########################################################
+###############################################################################
+
+CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/test_config.yaml"
+
 with open(CONFIGFILE, 'r') as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -41,7 +46,7 @@ PRE_GRAVNET_DENSE_ITERATIONS = len(config['Architecture']['dense_pre_gravnet'])
 POST_MESSAGE_PASSING_DENSE_ITERATIONS = len(config['Architecture']['dense_post_message_passing'])
 FINAL_DENSE_ITERATIONS = len(config['Architecture']['dense_final'])
 LOSS_OPTIONS = config['LossOptions']
-BATCHNORM_OPTIONS = config['Architecture']['BatchNormOptions']
+BATCHNORM_OPTIONS = config['BatchNormOptions']
 DENSE_ACTIVATION = config['DenseOptions']['activation']
 if config['DenseOptions']['kernel_regularizer'].lower() == 'l2':
     DENSE_REGULARIZER = tf.keras.regularizers.l2(config['DenseOptions']['kernel_regularizer_rate'])
@@ -53,6 +58,9 @@ DROPOUT = config['DenseOptions']['dropout']
 USE_FILL_SPACE = config['General']['use_fill_space']
 USE_LAYER_NORMALIZATION = config['General']['use_layer_normalization']
 
+###############################################################################
+### Define Model ##############################################################
+###############################################################################
 
 def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     """
@@ -129,7 +137,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                       name=f"dense_pre_gravnet{j}_iteration_{i}",
                       activation=DENSE_ACTIVATION,
                       kernel_regularizer=DENSE_REGULARIZER)(x)
-            x = Dropout(DROPOUT, name=f"droput_1_iteration_{i}")(x)
+            x = Dropout(DROPOUT, name=f"droput_pre_gravnet_{j}_iteration_{i}")(x)
 
         x = ScaledGooeyBatchNorm2(
             name=f"batchnorm_1_iteration_{i}",
@@ -168,7 +176,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             n = config['Architecture']['message_passing'][j]['n']
             x = DistanceWeightedMessagePassing(
                 name=f"message_passing_{j}_iteration_{i}",
-                n_feature_transformation = n,
+                n_feature_transformation = [n],
                 activation=DENSE_ACTIVATION,
             )([x, gnnidx, gndist])
             x = ScaledGooeyBatchNorm2(
@@ -178,13 +186,13 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         for j in range(POST_MESSAGE_PASSING_DENSE_ITERATIONS):
             n = config['Architecture']['dense_post_message_passing'][j]['n']
             x = Dense(n,
-                      name=f"dense_post_gravnet{j}_iteration_{i}",
+                      name=f"dense_post_gravnet_{j}_iteration_{i}",
                       activation=DENSE_ACTIVATION,
                       kernel_regularizer=DENSE_REGULARIZER)(x)
-            x = Dropout(DROPOUT, name=f"droput_1_iteration_{i}")(x)
+            x = Dropout(DROPOUT, name=f"droput_{j}_iteration_{i}")(x)
 
         x = ScaledGooeyBatchNorm2(
-            name=f"batchnorm_2_iteration_{i}",
+            name=f"batchnorm_3_iteration_{i}",
             **BATCHNORM_OPTIONS)(x)
 
         allfeat.append(x)
@@ -202,7 +210,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         x = Dropout(DROPOUT, name=f"droput_final_{j}")(x)
 
     x = ScaledGooeyBatchNorm2(
-        name=f"batchnorm_2_iteration_{i}",
+        name=f"batchnorm_final",
         **BATCHNORM_OPTIONS)(x)
 
     pred_beta, pred_ccoords, pred_dist, \
@@ -295,11 +303,9 @@ PUBLISHPATH = ""
 PUBLISHPATH += [d  for d in train.outputDir.split('/') if len(d)][-1]
 RECORD_FREQUENCY = config['Plotting']['record_frequency']
 PLOT_FREQUENCY = config['Plotting']['plot_frequency']
-cb = []
+
+cb = [NanSweeper()] #this takes a bit of time checking each batch but could be worth it
 cb += [
-
-    NanSweeper(),#this takes a bit of time checking each batch but could be worth it
-
     plotClusteringDuringTraining(
         use_backgather_idx=8 + i,
         outputfile=train.outputDir + "/localclust/cluster_" + str(i) + '_',
@@ -358,11 +364,6 @@ cb += [
         select_metrics='val_*',
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
-
-    DebugPlotRunner(
-        plot_frequency = 2, #testing
-        sample = samplepath
-        ),
     ]
 
 cb += [
@@ -379,10 +380,14 @@ cb += [
 
 N_TRAINING_STAGES = len(config['Training'])
 for i in range(N_TRAINING_STAGES):
+    print(f"Starting training stage {i}")
     learning_rate = config['Training'][i]['learning_rate']
     epochs = config['Training'][i]['epochs']
     batch_size = config['Training'][i]['batch_size']
     train.change_learning_rate(learning_rate)
+    print(f"Training for {epochs} epochs")
+    print(f"Learning rate set to {learning_rate}")
+    print(f"Batch size: {batch_size}")
     model, history = train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,
