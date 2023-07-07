@@ -2137,7 +2137,7 @@ class LLFullObjectCondensation(LossLayerBase):
                                            return_concat=False):
 
         if self.energy_loss_weight == 0.:
-            return pred_energy**2 + pred_energy_low_quantile**2 + pred_energy_high_quantile**2
+            return pred_energy**2 + pred_energy_low_quantile**2 + pred_energy_high_quantile**2, pred_energy_high_quantile**2
 
         ediff = (t_energy - pred_energy*t_dep_energies)/tf.sqrt(tf.abs(t_energy)+1e-3)
 
@@ -2177,7 +2177,6 @@ class LLFullObjectCondensation(LossLayerBase):
             return tf.concat([eloss, euncloss], axis=-1) # for ragged map flat values
 
         return eloss, euncloss
-
 
     def calc_energy_loss(self, t_energy, pred_energy):
 

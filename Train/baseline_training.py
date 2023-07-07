@@ -19,7 +19,7 @@ from DeepJetCore.DJCLayers import StopGradient
 from Layers import RaggedGlobalExchange, DistanceWeightedMessagePassing, DictModel
 from Layers import RaggedGravNet, ScaledGooeyBatchNorm2 
 from Regularizers import AverageDistanceRegularizer
-from LossLayers import LLFullObjectCondensation
+from LossLayers import LLExtendedObjectCondensation
 from DebugLayers import PlotCoordinates
 
 from model_blocks import condition_input, extent_coords_if_needed, create_outputs, re_integrate_to_full_hits
@@ -27,7 +27,11 @@ from model_blocks import condition_input, extent_coords_if_needed, create_output
 from callbacks import plotClusterSummary
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
+import os
 
+from model_blocks import tiny_pc_pool
+
+from model_tools import apply_weights_from_path
 
 #loss options:
 loss_options={
@@ -65,7 +69,8 @@ learningrate = 1e-4
 # this is the maximum number of hits (points) per batch,
 # not the number of events (samples). This is safer w.r.t. 
 # memory
-nbatch = 10000
+nbatch = 170000
+
 
 #iterations of gravnet blocks
 n_neighbours=[64,64]
@@ -74,6 +79,8 @@ n_neighbours=[64,64]
 n_cluster_space_coordinates = 3
 n_gravnet_dims = 3
 
+do_presel = True
+PRESELECTION_PATH = os.getenv("HGCALML")+'/models/tiny_pc_pool/model.h5'
 
 def gravnet_model(Inputs,
                   td,
@@ -86,6 +93,9 @@ def gravnet_model(Inputs,
 
     input_list = td.interpretAllModelInputs(Inputs,returndict=True)
     input_list = condition_input(input_list, no_scaling=True)
+    
+    trans, input_list = tiny_pc_pool(input_list, pass_through=not do_presel)
+    
                               
     #just for info what's available, prints once
     print('available inputs',[k for k in input_list.keys()])
@@ -204,7 +214,7 @@ def gravnet_model(Inputs,
     pred_pos, pred_time, pred_time_unc, pred_id = create_outputs(x, n_ccoords=n_cluster_space_coordinates)
     
     # loss
-    pred_beta = LLFullObjectCondensation(scale=1.,
+    pred_beta = LLExtendedObjectCondensation(scale=1.,
                                          record_metrics=True,
                                          print_loss=True,
                                          name="FullOCLoss",
@@ -233,18 +243,24 @@ def gravnet_model(Inputs,
                                           rs])                                    
 
     # just to have a defined output, only adds names
-    model_outputs = re_integrate_to_full_hits(
-        input_list,
-        pred_ccoords,
-        pred_beta,
-        pred_energy_corr,
-        pred_energy_low_quantile,
-        pred_energy_high_quantile,
-        pred_pos,
-        pred_time,
-        pred_id,
-        pred_dist
-        )
+    model_outputs = {
+            'pred_beta': pred_beta,
+            'pred_ccoords': pred_ccoords,
+            'pred_energy_corr_factor': pred_energy_corr,
+            'pred_energy_low_quantile': pred_energy_low_quantile,
+            'pred_energy_high_quantile': pred_energy_high_quantile,
+            'pred_pos': pred_pos,
+            'pred_time': pred_time,
+            'pred_id': pred_id,
+            'pred_dist': pred_dist,
+            'rechit_energy': energy,
+            'row_splits': input_list['row_splits'], #are these the selected ones or not?
+            'no_noise_sel': trans['sel_idx_up'],
+            'no_noise_rs': trans['rs_down'], #unclear what that actually means?
+            'sel_idx': trans['sel_idx_up'], #just a duplication but more intuitive to understand
+            'sel_t_idx': input_list['t_idx'] #for convenience
+            # 'noise_backscatter': pre_selection['noise_backscatter'],
+            }
     
     return DictModel(inputs=Inputs, outputs=model_outputs)
     
@@ -263,6 +279,9 @@ if not train.modelSet():
     train.compileModel(learningrate=1e-4)
     
     train.keras_model.summary()
+    
+    if do_presel:
+        train.keras_model = apply_weights_from_path(PRESELECTION_PATH, train.keras_model)
     
 
 verbosity = 2
