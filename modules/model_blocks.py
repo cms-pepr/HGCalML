@@ -2192,25 +2192,35 @@ def tiny_pc_pool(
         dmp_compress = 32,
         K_nn = 16,
         K_gp = 5,
-        is_second=False,
-        new_format=True):
+        is_second=False):
     '''
     This function needs pre-processed input (from condition_input)
     '''
 
     if pass_through:
+        avail_keys = orig_inputs.keys()
         trans = GraphCondensation()
-        trans['rs_down'] = orig_inputs['row_splits']
-        trans['rs_up'] = orig_inputs['row_splits']
-        trans['nidx_down'] = None
-        trans['distsq_down'] = None
-        trans['sel_idx_up'] = None
-        trans['weights_down'] = None
         
-        return orig_inputs, trans
+        if 'rs_down' in avail_keys:
+            trans['rs_down'] = orig_inputs['rs_down']
+        else:
+            trans['rs_down'] = orig_inputs['row_splits']
+            
+        if 'rs_up' in avail_keys:
+            trans['rs_up'] = orig_inputs['rs_up']
+        else:
+            trans['rs_up'] = orig_inputs['row_splits'] 
+            
+        zeros = ScalarMultiply(0.)(orig_inputs['features'][:,0:1])
+        
+        for k in ['nidx_down', 'distsq_down', 'sel_idx_up', 'weights_down']:
+            if k in avail_keys:
+                trans[k] = orig_inputs[k]
+            else:
+                trans[k] = zeros
+        
+        return trans, orig_inputs 
 
-    edge_dense = [16]
-    edge_pre_nodes = 32
     dwmp_activation = 'elu'
 
     if is_second:
@@ -2220,8 +2230,6 @@ def tiny_pc_pool(
         K_nn = 32
         K_gp = 8
         first_embed = False
-        edge_dense = [32,24,16]
-        edge_pre_nodes = 64
         dwmp_activation = 'tanh' #more smooth
 
     ## gather inputs and norm

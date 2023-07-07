@@ -97,7 +97,7 @@ class TrainData_PrepoolNanoML(TrainData):
             out = model(feat)
             rs_tmp = out['row_splits'].numpy()
 
-            print('reduction', len(feat[0]), '->', rs_tmp[-1])
+            print('reduction', len(feat[0]), '->', rs_tmp[-1], '(' ,round(rs_tmp[-1]/len(feat[0]) * 100.) ,'%)')
             rs.append([rs_tmp[1]])
             if i == 0:
                 for k in self.output_keys:

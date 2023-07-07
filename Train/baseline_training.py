@@ -64,13 +64,20 @@ record_frequency=10
 # plotting will happen every M*N batches
 plotfrequency=50 
 
-learningrate = 1e-4
+learningrate = 1e-3
+
+
 
 # this is the maximum number of hits (points) per batch,
 # not the number of events (samples). This is safer w.r.t. 
 # memory
 nbatch = 170000
 
+# this turns on hgcal-toy specific pre-pooling
+# needs to be turned off when not running on hgcal-toy data
+# or if data is already pre-pooled
+do_presel = True
+PRESELECTION_PATH = os.getenv("HGCALML")+'/models/tiny_pc_pool/model.h5'
 
 #iterations of gravnet blocks
 n_neighbours=[64,64]
@@ -78,9 +85,6 @@ n_neighbours=[64,64]
 # 3 is a bit low but nice in the beginning since it can be plotted
 n_cluster_space_coordinates = 3
 n_gravnet_dims = 3
-
-do_presel = True
-PRESELECTION_PATH = os.getenv("HGCALML")+'/models/tiny_pc_pool/model.h5'
 
 def gravnet_model(Inputs,
                   td,
