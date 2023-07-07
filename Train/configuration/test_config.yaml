@@ -1,9 +1,11 @@
 General:
-  pre-model-type: "noise-filter"
-  pre-model-path: "/mnt/home/pzehetner/Models_Good/NoiseTraining0/KERAS_check_best_model.h5"
+  # 'noise-filter' or 'pre-pooling'
+  pre-model-type: "pre-pooling"
+  # pre-model-path: "/mnt/home/pzehetner/Models_Good/NoiseTraining0/KERAS_check_best_model.h5"
+  pre-model-path: "/mnt/home/pzehetner/ML4Reco/models/tiny_pc_pool/model.h5"
   description-string: ""
-  use_fill_space: True
-  use_layer_normalization: True
+  use_fill_space: False
+  use_layer_normalization: False
 
 Architecture:
   gravnet:
@@ -56,18 +58,18 @@ Training:
   - stage_1:
     batch_size: 120000
     learning_rate: 0.01
-    epochs: 2
+    epochs: 1
 
   - stage_2:
     batch_size: 120000
-    learning_rate: 0.001
-    epochs: 1
+    learning_rate: 0.01
+    epochs: 2
 
   - stage_3:
     batch_size: 120000
-    learning_rate: 0.0002
-    epochs: 1
+    learning_rate: 0.001
+    epochs: 5
 
 Plotting:
-  record_frequency: 2
-  plot_frequency: 5
+  record_frequency: 20
+  plot_frequency: 50

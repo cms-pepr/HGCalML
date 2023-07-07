@@ -2,9 +2,11 @@
 Flexible training script that should be mostly configured with a yaml config file
 """
 
+import os
+import sys
 import yaml
+import mlflow
 import tensorflow as tf
-
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
@@ -33,10 +35,21 @@ from callbacks import NanSweeper, DebugPlotRunner
 ### Load Configuration ########################################################
 ###############################################################################
 
-CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/test_config.yaml"
+CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/noise_config.yaml"
+os.environ['MLFLOW_ARTIFACT_URI'] = sys.argv[2]
 
 with open(CONFIGFILE, 'r') as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
+
+mlflow.start_run()
+mlflow.tensorflow.autolog()
+
+for key, value in config.items():
+    if isinstance(value, dict):
+        for key2, value2 in value.items():
+            mlflow.log_param(key2, value2)
+    else:
+        mlflow.log_param(key, value)
 
 N_CLUSTER_SPACE_COORDINATES = config['Architecture']['n_cluster_space_coordinates']
 N_GRAVNET_SPACE_COORDINATES = config['Architecture']['n_gravnet_space_coordinates']
@@ -137,7 +150,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                       name=f"dense_pre_gravnet{j}_iteration_{i}",
                       activation=DENSE_ACTIVATION,
                       kernel_regularizer=DENSE_REGULARIZER)(x)
-            x = Dropout(DROPOUT, name=f"droput_pre_gravnet_{j}_iteration_{i}")(x)
+            if not j == PRE_GRAVNET_DENSE_ITERATIONS - 1:
+                x = Dropout(DROPOUT, name=f"droput_pre_gravnet_{j}_iteration_{i}")(x)
 
         x = ScaledGooeyBatchNorm2(
             name=f"batchnorm_1_iteration_{i}",
@@ -189,7 +203,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                       name=f"dense_post_gravnet_{j}_iteration_{i}",
                       activation=DENSE_ACTIVATION,
                       kernel_regularizer=DENSE_REGULARIZER)(x)
-            x = Dropout(DROPOUT, name=f"droput_{j}_iteration_{i}")(x)
+            if not j == POST_MESSAGE_PASSING_DENSE_ITERATIONS -1:
+                x = Dropout(DROPOUT, name=f"droput_{j}_iteration_{i}")(x)
 
         x = ScaledGooeyBatchNorm2(
             name=f"batchnorm_3_iteration_{i}",
@@ -207,7 +222,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                   name=f"dense_final_{j}",
                   activation=DENSE_ACTIVATION,
                   kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dropout(DROPOUT, name=f"droput_final_{j}")(x)
+        if not j == FINAL_DENSE_ITERATIONS -1:
+            x = Dropout(DROPOUT, name=f"droput_final_{j}")(x)
 
     x = ScaledGooeyBatchNorm2(
         name=f"batchnorm_final",
@@ -252,19 +268,19 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         'pred_dist': pred_dist,
         'rechit_energy': energy,
         'row_splits': pre_processed['row_splits'],
-        'no_noise_sel': pre_processed['no_noise_sel'],
-        'no_noise_rs': pre_processed['no_noise_rs'],
+        # 'no_noise_sel': pre_processed['no_noise_sel'],
+        # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
 
     if config['General']['pre-model-type'] == 'noise-filter':
-        model_outputs['no_noise_sel']: pre_processed['no_noise_sel']
-        model_outputs['no_noise_rs']: pre_processed['no_noise_rs']
+        model_outputs['no_noise_sel'] = pre_processed['no_noise_sel']
+        model_outputs['no_noise_rs'] = pre_processed['no_noise_rs']
 
     if config['General']['pre-model-type'] == 'pre-pooling':
-        model_outputs['no_noise_sel']: trans['sel_idx_up']
-        model_outputs['no_noise_rs']: trans['rs_down']
-        model_outputs['sel_idx']: trans['sel_idx_up']
-        model_outputs['sel_t_idx']: pre_processed['t_idx']
+        model_outputs['no_noise_sel'] = trans['sel_idx_up']
+        model_outputs['no_noise_rs'] = trans['rs_down']
+        model_outputs['sel_idx'] = trans['sel_idx_up']
+        model_outputs['sel_t_idx'] = pre_processed['t_idx']
 
     return DictModel(inputs=Inputs, outputs=model_outputs)
 
