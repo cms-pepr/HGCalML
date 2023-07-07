@@ -2202,8 +2202,8 @@ def tiny_pc_pool(
     This function needs pre-processed input (from condition_input)
     '''
 
-    if pass_through:
-        return orig_inputs
+    # if pass_through:
+        # return orig_inputs
 
     edge_dense = [16]
     edge_pre_nodes = 32
