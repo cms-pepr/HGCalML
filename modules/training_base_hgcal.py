@@ -3,12 +3,14 @@ from argparse import ArgumentParser
 
 class HGCalTraining(training_base):
     def __init__(self, *args, 
+                 parser = None,
                  **kwargs):
         '''
         Adds file logging
         '''
         #use the DJC training base option to pass a parser
-        parser = ArgumentParser('Run the training')
+        if parser is None:
+            parser = ArgumentParser('Run the training')
         parser.add_argument("--interactive",   help="prints output to screen", default=False, action="store_true")
         
         #no reason for a lot of validation samples usually

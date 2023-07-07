@@ -1605,7 +1605,7 @@ def intermediate_condensation(
 
 from GravNetLayersRagged import SelfAttention, ScaledGooeyBatchNorm2, EdgeConvStatic, SplitOffTracks, ConcatRaggedTensors, ConditionalScaledGooeyBatchNorm
 from Layers import RaggedGlobalExchange
-from GraphCondensationLayers import CreateGraphCondensation, PushUp, SelectUp, PullDown, LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
+from GraphCondensationLayers import GraphCondensation,CreateGraphCondensation, PushUp, SelectUp, PullDown, LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
 from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, LLGraphCondensationEdges
 from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
 from LossLayers import LLValuePenalty
@@ -1973,12 +1973,7 @@ def mini_pre_graph_condensation(
         )(trans_a, orig_inputs['t_idx'], orig_inputs['t_energy'])
 
     #these also act as a fractional noise filter
-    x_e = CreateGraphCondensationEdges(
-                 edge_dense=[8,8],#[64,32,32],
-                 pre_nodes=8,#12,
-                 K=5,
-                                       trainable=trainable,
-                                       name=name+'_gc_edges')(x, trans_a)
+    x_e = CreateGraphCondensationEdges2(name=name+'_gc_edges')(x, trans_a)
 
     x_e = LLGraphCondensationEdges(
         active=trainable,
@@ -2183,6 +2178,7 @@ def tiny_pc_pool(
         orig_inputs,
         debug_outdir='',
         trainable=False,
+        pass_through=False,
         name='pre_graph_pool',
         debugplots_after=-1,
         record_metrics=True,
@@ -2203,7 +2199,15 @@ def tiny_pc_pool(
     '''
 
     if pass_through:
-        return orig_inputs
+        trans = GraphCondensation()
+        trans['rs_down'] = orig_inputs['row_splits']
+        trans['rs_up'] = orig_inputs['row_splits']
+        trans['nidx_down'] = None
+        trans['distsq_down'] = None
+        trans['sel_idx_up'] = None
+        trans['weights_down'] = None
+        
+        return orig_inputs, trans
 
     edge_dense = [16]
     edge_pre_nodes = 32
@@ -2219,7 +2223,6 @@ def tiny_pc_pool(
         edge_dense = [32,24,16]
         edge_pre_nodes = 64
         dwmp_activation = 'tanh' #more smooth
-
 
     ## gather inputs and norm
 
@@ -2268,7 +2271,7 @@ def tiny_pc_pool(
                                   orig_inputs['row_splits']])#hard code it here, this is optimised given our datasets
 
     dist,nidx = SortAndSelectNeighbours(-1)([dist,nidx])#make it easy for edges
-    dist_orig = dist
+    
     dist = Sqrt()(dist)#make a stronger distance gradient for message passing
 
     #each is a simple attention head
@@ -2297,7 +2300,7 @@ def tiny_pc_pool(
         name=name+'_ll_graph_condensation_score',
         record_metrics = record_metrics,
         K=K_loss,
-        penalty_fraction = 1. - reduction_target,
+        penalty_fraction = 0.5 + 0.3*(0.5 - reduction_target),
                 active=trainable,
             low_energy_cut = low_energy_cut_target #allow everything below 2 GeV to be removed (other than tracks)
             )([score, coords, orig_inputs['t_idx'], orig_inputs['t_energy'], rs])
@@ -2310,25 +2313,24 @@ def tiny_pc_pool(
             )(score,coords,rs, #nidx,dist_orig, #do not use nidx here yet.
               always_promote = is_track)
 
-
-
     x_e = Concatenate()([x,x_in])#skip
+    x_e = Dense(16, activation='elu')(x_e)
+    
+    from GraphCondensationLayers import GetNeighbourMask, CreateGraphCondensationEdges2
 
-    x_e = CreateGraphCondensationEdges(
-                     edge_dense=edge_dense,
-                     pre_nodes=edge_pre_nodes,
-                     K=K_gp,
-                     trainable=trainable,
-                     name=name+'_gc_edges')(x_e, trans_a)
+    #this will determine how much feature / energy is pushed to 'up' vertices (or to /dev/null in case of noise)
+    x_e = CreateGraphCondensationEdges2(name=name+'_gc_edges')(x_e, trans_a)# V x 5+1 x 15
 
-    if new_format:
-        dist = StopGradient()(dist)
-        #add non orderinvariant info
-        x_e = Concatenate()([dist,x_e,x])
-        x_e = Dense(32,name=name+'_graphn_edges_d1',
-            trainable=trainable, activation='elu')(x_e)
-        x_e = Dense(K_gp+1, name=name+'_graphn_edges_d2',
-            trainable=trainable, activation='softmax')(x_e)#one more for noise
+    x_e = Dense(dmp_compress//2, name=name+'_graphn_edges_d1', activation = 'elu', trainable=trainable)(x_e)
+    x_e = Dense(8, name=name+'_graphn_edges_d2', activation = 'elu', trainable=trainable)(x_e)
+    # mix, they are distance ordered
+    x_e = Flatten()(x_e)
+    x_e = Concatenate()([x, x_e, trans_a['distsq_down']])
+    x_e = Dense(12*(K_gp+1),name=name+'_graphn_edges_d3', activation = 'elu', trainable=trainable)(x_e)
+    x_e = Dense(8*(K_gp+1),name=name+'_graphn_edges_d4', activation = 'elu', trainable=trainable)(x_e)
+    x_e = Reshape([K_gp+1,8])(x_e)
+    x_e = Dense(1, name=name+'_graphn_edges_final', activation = 'sigmoid', trainable=trainable)(x_e)
+    x_e = Multiply()([x_e, GetNeighbourMask()(trans_a)]) #mask out non existing ones right away
 
     x_e = LLGraphCondensationEdges(
         name=name+'_ll_graph_condensation_edges',
@@ -2337,9 +2339,8 @@ def tiny_pc_pool(
         record_metrics=record_metrics
         )(x_e, trans_a, orig_inputs['t_idx'])
 
-
+    #this normalises the edges
     trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
-
 
     trans_a = MLGraphCondensationMetrics(
         name = name + '_graphcondensation_metrics',

@@ -53,7 +53,8 @@ class GraphCondensation(RestrictedDict):
             'nidx_down',
             'distsq_down', #in case it's needed
             'sel_idx_up', # -> can also be used to scatter
-            'weights_down'
+            'weights_down',
+            #'is_up'
             ]
         
         super().__init__(*args,**kwargs)
@@ -169,6 +170,7 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
             threshold = tf.reduce_min( tf.concat( [ tf.reduce_min(mrss)[tf.newaxis]*0.98, 
                                                 self.dyn_score_threshold ], axis=0))
         
+        #trans['is_up'] = tf.cast(score >= threshold, 'float32')
         rsel = tf.ragged.boolean_mask(rsel, rscore[...,0]  >= threshold)
         #use ragged to select
         trans['rs_up'] = tf.cast(rsel.row_splits,'int32')#for whatever reason
@@ -191,17 +193,16 @@ class CreateGraphCondensation(tf.keras.layers.Layer):
                 
             nidx = tf.reshape(nidx, [-1, self.K+1]) #to define shape for later
             dist = tf.reshape(dist, [-1, self.K+1])
-            dist = tf.where(nidx<0,0.,dist)#needed?
             dist = tf.stop_gradient(dist)
+            dist = tf.where(nidx<0 , 0., dist)
         
-        trans['nidx_down'] = nidx[:,1:] #remove the self reference
-        trans['distsq_down'] = dist[:,1:]
+        nidx = nidx[:,1:] #remove the self reference
+        dist = dist[:,1:]
         
         #always sort by distance
-        ssc = tf.where(trans['nidx_down']<0, 1e9, trans['distsq_down'])
-        ssc = tf.argsort(ssc, axis=1)[:,:,tf.newaxis]
-        trans['nidx_down'] = tf.gather_nd(trans['nidx_down'],ssc,batch_dims=1)
-        trans['distsq_down'] = tf.gather_nd(trans['distsq_down'],ssc,batch_dims=1)
+        ssc = tf.argsort(tf.where(nidx<0 , 1e9, dist), axis=1)[:,:,tf.newaxis]
+        trans['nidx_down'] = tf.gather_nd(nidx,ssc,batch_dims=1)
+        trans['distsq_down'] = tf.gather_nd(dist,ssc,batch_dims=1)
         
         #set defined shape
         trans['nidx_down'] = tf.reshape(trans['nidx_down'], [-1, self.K])
@@ -321,8 +322,10 @@ class PushUp(tf.keras.layers.Layer):
         
         if self.add_self:
             snidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx[:,1:]*0 -1 ],axis=1)
-            is_up = nidx[:,0:1] < 0
+            is_up = nidx[:,0:1] < 0 #could also have no neighbours but then select would kill it anyway
             nidx = tf.where(is_up, snidx, nidx)
+            sweight = tf.ones_like(nweights)
+            nweights = tf.where(is_up, sweight, nweights)
             
         up_f = push_sum(nweights, up_f, nidx)
         up_f = tf.gather_nd(up_f, transition['sel_idx_up'])
@@ -713,6 +716,26 @@ class CreateGraphCondensationEdges(tf.keras.layers.Layer):
         
     
 graph_condensation_layers['CreateGraphCondensationEdges'] =   CreateGraphCondensationEdges          
+
+
+       
+class CreateGraphCondensationEdges2(tf.keras.layers.Layer): 
+    
+    
+    def call(self, x, transition : GraphCondensation):
+        nidx = transition['nidx_down']
+        x_nn = select(nidx, x, 0.)
+        x_n = x[:, tf.newaxis, :] - x_nn # V x K x F
+        
+        #add one for noise
+        x_n = tf.concat([x[:, tf.newaxis, :] - tf.reduce_mean(x_nn, axis=1, keepdims=True) , 
+                         x_n], axis=1)
+        
+        return x_n
+        
+    
+graph_condensation_layers['CreateGraphCondensationEdges2'] =   CreateGraphCondensationEdges2          
+        
         
 class CreateMultiAttentionGraphTransitions(tf.keras.layers.Layer): 
     
@@ -798,19 +821,63 @@ class CreateMultiAttentionGraphTransitions(tf.keras.layers.Layer):
 graph_condensation_layers['CreateMultiAttentionGraphTransitions'] =   CreateMultiAttentionGraphTransitions       
         
 
-class InsertEdgesIntoTransition(tf.keras.layers.Layer): 
+class InsertEdgesIntoTransition(tf.keras.layers.Layer):
+    
+    def __init__(self, exponent = 2, **kwargs):
+        self.exponent = exponent
+        super(InsertEdgesIntoTransition, self).__init__(**kwargs)
+        
+    def get_config(self):
+        config = {'exponent': self.exponent}
+        base_config = super(InsertEdgesIntoTransition, self).get_config()
+        return dict(list(base_config.items()) + list(config.items())) 
     
     def call(self, x_e, transition : GraphCondensation):
         trans = transition.copy()
+        
+        if len(x_e.shape) > 2:
+            x_e = tf.squeeze(x_e, axis=2)
+            
         if x_e.shape[1] == trans['weights_down'].shape[1]:
             trans['weights_down'] = x_e
         elif x_e.shape[1] == trans['weights_down'].shape[1] + 1:#these have noise edges
             trans['weights_down'] = x_e[:,1:]
         else:
             raise ValueError("Edges don't match graph transition")
+        
+        if self.exponent != 1:
+            trans['weights_down'] = trans['weights_down']**self.exponent
+        #normalise always
+        trans['weights_down'] /= tf.reduce_sum(trans['weights_down'], axis=1, keepdims=True) + 1e-6
+        
         return trans
         
-graph_condensation_layers['InsertEdgesIntoTransition'] =   InsertEdgesIntoTransition     
+graph_condensation_layers['InsertEdgesIntoTransition'] =   InsertEdgesIntoTransition  
+
+class GetNeighbourMask(tf.keras.layers.Layer): 
+    
+    def __init__(self, add_left = True, add_dim = True, **kwargs):
+        self.add_left = add_left
+        self.add_dim = add_dim
+        super(GetNeighbourMask, self).__init__(**kwargs)
+        
+    def get_config(self):
+        config = {'add_left': self.add_left, 'add_dim': self.add_dim}
+        base_config = super(GetNeighbourMask, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    def call(self, trans : GraphCondensation):
+        nidx = trans['nidx_down']
+        ones = tf.ones_like(nidx, dtype='float32')
+        out = tf.where(nidx<0, 0., ones)
+        if self.add_left:
+            out = tf.concat([ones[:,0:1],out], axis=1)#noise always possible
+        if self.add_dim:
+            out = out[...,tf.newaxis]
+        return out
+        
+graph_condensation_layers['GetNeighbourMask'] =   GetNeighbourMask  
+   
                  
 ###################### Only losses for building the hypergraph #######################
 
@@ -1077,53 +1144,81 @@ class LLGraphCondensationEdges(LossLayerBase):
         '''
         Inputs:
         - edge score (V x (K + 1) x 1 ), the noise fraction is represented by the *first* entry in K+1
-        - distances (V x K)
-        - neighbour index (V x K)
+        - distances (V x K) (all undefined in case of an 'up' vertex)
+        - neighbour index (V x K) (all -1 in case of an 'up' vertex)
         - truth index (V x 1)
         '''
         
         super(LLGraphCondensationEdges, self).__init__(**kwargs)
-        self.cce = tf.keras.losses.CategoricalCrossentropy(reduction = tf.keras.losses.Reduction.NONE)
+        self.bce = tf.keras.losses.BinaryCrossentropy(reduction = tf.keras.losses.Reduction.NONE)
         
     def call(self, x_e, trans, t_idx):  
         
         nidx = trans['nidx_down']
-        dist = trans['distsq_down']
             
-        return super(LLGraphCondensationEdges, self).call([x_e, dist, nidx, t_idx])  
+        return super(LLGraphCondensationEdges, self).call([x_e, nidx, t_idx])  
         
     def loss(self, inputs):
-        assert len(inputs) == 4
-        e_score, dist, nidx, t_idx = inputs
+        assert len(inputs) == 3
+        e_score, nidx, t_idx = inputs
         
-        dist = tf.stop_gradient(dist) #important
+        n_t_idx = select(nidx, t_idx, -2)[:,:,0]
         
-        K = nidx.shape[1]
-        def one_hot_default():
-            ones = tf.ones_like(t_idx, dtype='float32') # V x 1
-            zeros = tf.zeros_like(nidx, dtype='float32') # V x K
-            return tf.concat([ones,zeros],axis=1) # V x K + 1
+        def create_encoding():
+            
+            ones_nidx = tf.ones_like(nidx, dtype='float32')
+            
+            noise_encoding = tf.concat([tf.ones_like(ones_nidx[:,0:1]),
+                                        tf.zeros_like(ones_nidx)], axis=-1)
+            
+            #now the non-noise encoding
+            # nidx does not have self !
+            n_same = t_idx == n_t_idx  #V x K 
+            
+            no_noise_encoding = tf.concat([tf.zeros_like(ones_nidx[:,0:1]),
+                                        tf.cast(n_same, 'float32')], axis=-1)
+            
+            none_same = tf.reduce_all( n_same == False ,axis=1, keepdims=True ) #also treat as noise
+            
+            like_noise = tf.logical_or(t_idx < 0, none_same)
+            return tf.where(like_noise,  noise_encoding, no_noise_encoding)[:,:,tf.newaxis]#match score
+
+        is_up = nidx[:,0] < 0
+        prob = create_encoding()
+        is_down_f = 1. - tf.cast(is_up,'float32')
+        bce = self.bce(prob, e_score)
         
-        n_t_idx = select(nidx, t_idx, -2)
-        n_same = t_idx[:,:,tf.newaxis] == n_t_idx  #V x K x 1
-        #all_same = tf.logi
-        no_n_mask = nidx < 0
-        dist = tf.where(no_n_mask, 1e6, dist)
-        dist = tf.where(n_same[:,:,0], dist, 1e6)
-        closest_and_same = tf.argmin( dist, axis=1) #no noise treatment yet
-        #needs noise
-        one_hot = tf.one_hot(closest_and_same + 1, K+1)
-        one_hot = tf.where(t_idx < 0, one_hot_default(), one_hot)
+        bce = tf.where( is_up[..., tf.newaxis], 0., bce )
         
-        #now where all are the same, and distances similar, don't apply loss
-        all_same = tf.reduce_all(n_same, axis=1)#all the same
-        distance_similar = (tf.reduce_max(dist, axis=1) - tf.reduce_min(dist, axis=1)) < 0.1 # assumes all normed to 1
+        if False: #just debug printing
+            print_offset = 30000
+            
+            tf.print('\n\nnidx\n',
+                     nidx[print_offset:print_offset+6] ,'\nnt_idx\n',
+                     tf.concat([t_idx, n_t_idx],axis=1)[print_offset:print_offset+6],'\nprob\n',
+                     prob[print_offset:print_offset+6,...,0],'\nscore\n',
+                     e_score[print_offset:print_offset+6,...,0],'\nbce\n',
+                     bce[print_offset:print_offset+6],'\nis_up\n',
+                     is_up[print_offset:print_offset+6])
+            
+        bce = tf.reduce_mean(bce, axis=1)
         
-        lossval = self.cce(one_hot, e_score)
-        #if it doesn't matter anyway don't apply hard loss
-        lossval = tf.where( tf.logical_and(all_same, distance_similar), 0., lossval ) #tbi
+        lossval = tf.reduce_sum(is_down_f * bce) / (tf.reduce_sum(is_down_f) + 1.)
         
-        return tf.reduce_mean(lossval)
+        #just for metrics
+        def calc_acc(accscore):
+            acc_score = 1. - tf.abs(accscore - prob)[:,:,0] #V x K
+            acc_score = tf.reduce_mean(acc_score, axis=1)# V
+            acc_score = tf.reduce_sum(is_down_f * acc_score) / tf.reduce_sum(is_down_f)
+            return acc_score
+        
+        self.add_prompt_metric(calc_acc(e_score), self.name+'_accuracy')
+        self.add_prompt_metric(calc_acc(tf.where(e_score>0.5, 1., tf.zeros_like(e_score))), self.name+'_bin_accuracy')
+        
+        
+        return lossval  
+        
+        
         
 graph_condensation_layers['LLGraphCondensationEdges'] =   LLGraphCondensationEdges  
 
