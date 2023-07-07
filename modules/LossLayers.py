@@ -2447,12 +2447,12 @@ class LLFullObjectCondensation(LossLayerBase):
         energy_unc_loss  = payload[4]
 
         nan_unc = tf.reduce_any(tf.math.is_nan(energy_unc_loss))
-        print("Att: ", nan_att)
-        print("Rep: ", nan_rep)
-        print("Min: ", nan_min)
-        print("Noise: ", nan_noise)
-        print("Excee: ", nan_exce)
-        print("Unc: ", nan_unc)
+        # print("Att: ", nan_att)
+        # print("Rep: ", nan_rep)
+        # print("Min: ", nan_min)
+        # print("Noise: ", nan_noise)
+        # print("Excee: ", nan_exce)
+        # print("Unc: ", nan_unc)
 
         #explicit cc damping
         ccdamp = self.cc_damping_strength * (0.02*tf.reduce_mean(pred_ccoords))**4# gently keep them around 0
@@ -2475,6 +2475,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.add_prompt_metric(class_loss,self.name+'_class_loss')
         self.add_prompt_metric(exceed_beta,self.name+'_exceed_beta_loss')
         self.add_prompt_metric(bpush,self.name+'_beta_push_loss')
+        self.add_prompt_metric(ccdamp,self.name+'_cc_damp_loss')
 
         self.add_prompt_metric(tf.reduce_mean(pred_distscale),self.name+'_avg_dist')
 
