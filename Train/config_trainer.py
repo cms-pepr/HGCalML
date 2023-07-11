@@ -41,15 +41,6 @@ os.environ['MLFLOW_ARTIFACT_URI'] = sys.argv[2]
 with open(CONFIGFILE, 'r') as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
-mlflow.start_run()
-mlflow.tensorflow.autolog()
-
-for key, value in config.items():
-    if isinstance(value, dict):
-        for key2, value2 in value.items():
-            mlflow.log_param(key2, value2)
-    else:
-        mlflow.log_param(key, value)
 
 N_CLUSTER_SPACE_COORDINATES = config['Architecture']['n_cluster_space_coordinates']
 N_GRAVNET_SPACE_COORDINATES = config['Architecture']['n_gravnet_space_coordinates']
@@ -394,18 +385,28 @@ cb += [
 ### Actual Training ###########################################################
 ###############################################################################
 
-N_TRAINING_STAGES = len(config['Training'])
-for i in range(N_TRAINING_STAGES):
-    print(f"Starting training stage {i}")
-    learning_rate = config['Training'][i]['learning_rate']
-    epochs = config['Training'][i]['epochs']
-    batch_size = config['Training'][i]['batch_size']
-    train.change_learning_rate(learning_rate)
-    print(f"Training for {epochs} epochs")
-    print(f"Learning rate set to {learning_rate}")
-    print(f"Batch size: {batch_size}")
-    model, history = train.trainModel(
-        nepochs=epochs,
-        batchsize=batch_size,
-        additional_callbacks=cb
-        )
+with mlflow.start_run():
+    mlflow.tensorflow.autolog()
+
+    for key, value in config.items():
+        if isinstance(value, dict):
+            for key2, value2 in value.items():
+                mlflow.log_param(key2, value2)
+        else:
+            mlflow.log_param(key, value)
+
+    N_TRAINING_STAGES = len(config['Training'])
+    for i in range(N_TRAINING_STAGES):
+        print(f"Starting training stage {i}")
+        learning_rate = config['Training'][i]['learning_rate']
+        epochs = config['Training'][i]['epochs']
+        batch_size = config['Training'][i]['batch_size']
+        train.change_learning_rate(learning_rate)
+        print(f"Training for {epochs} epochs")
+        print(f"Learning rate set to {learning_rate}")
+        print(f"Batch size: {batch_size}")
+        model, history = train.trainModel(
+            nepochs=epochs,
+            batchsize=batch_size,
+            additional_callbacks=cb
+            )
