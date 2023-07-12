@@ -1,5 +1,7 @@
 import sys
 import os
+import numpy as np
+import matplotlib.pyplot as plt
 from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
 
@@ -11,13 +13,31 @@ dataDir = dc.dataDir
 samples = dc.samples
 
 
+def closest_integer_product_larger_than(interger_input):
+    """
+    find two integers a and b such that
+        a*b >= interger_inpu
+        a*b is minimal
+        |a - b| is minimal
+    """
+
+    sqrt = int(np.sqrt(interger_input))
+    a = sqrt
+    b = a + 1
+    if a * b >= interger_input:
+        return a, b
+    else:
+        return a + 1, b
+
+
+
+
 for i, sample in enumerate(samples):
     if i > 0:
         break
     td = dc.dataclass()
     td.readFromFile(os.path.join(dataDir, sample))
     gen = TrainDataGenerator()
-    gen.setj/gen
     gen.setBatchSize(1)
     gen.setSquaredElementsLimit(False)
     gen.setSkipTooLargeBatches(False)
@@ -26,8 +46,21 @@ for i, sample in enumerate(samples):
     generator = gen.feedNumpyData()
 
     for j in range(num_steps):
-        data = next(generator)
-        print(len(data))
-        print(len(data[0]))
-        break
+        if j > 0:
+            break
+        data = next(generator)[0]
+        allFeatures = td.interpretAllModelInputs(data)
+        features = allFeatures['features']
+        nrows, ncols = closest_integer_product_larger_than(features.shape[1])
+
+        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * 4, nrows * 4))
+        axs = axs.flatten()
+        for k in range(features.shape[1]):
+            axs[k].hist(features[:, k], bins=100, density=True)
+            axs[k].set_title(str(k))
+
+        plt.savefig(os.path.join(dataDir, f"file_{i}_event_{j}_features.png"))
+        # save figure
+
+
 
