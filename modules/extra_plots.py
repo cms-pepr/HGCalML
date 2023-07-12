@@ -510,9 +510,13 @@ def noise_performance(noise_df):
     ax.boxplot(
         [noise_reduction_hit, noise_reduction_energy, hit_retention_hit, hit_retention_energy],
         labels=['Noise Reduction (Hits)', 'Noise Reduction (Energy)', 'Hit Retention (Hits)', 'Hit Retention (Energy)'])
-    ax.set_ylabel("Fraction", fontsize=20)
+    ax.set_ylabel("Fraction", fontsize=40)
     # set label size to 20
     ax.tick_params(axis='both', which='major', labelsize=20)
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(45)
+    fig.tight_layout()
+    fig.subplots_adjust(bottom=0.3)
     return fig
 
 
