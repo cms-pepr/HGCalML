@@ -33,9 +33,11 @@ filtered_clo=[]
 TRIGGERED=False
 TRIGGERED_NAME=False
 TRIGGERED_CONSTRAINT=False
+TRIGGERED_TIME=False
 NAME="batchscript"
 # constraint="a100"
 CONSTRAINT="a100-80gb"
+TIME="7-0"
 
 for clo in sys.argv:
 
@@ -61,6 +63,14 @@ for clo in sys.argv:
     if TRIGGERED_CONSTRAINT:
         CONSTRAINT=clo
         TRIGGERED_CONSTRAINT=False
+        continue
+    
+    if clo == '---t':
+        TRIGGERED_TIME=True
+        continue
+    if TRIGGERED_TIME:
+        TIME=clo
+        TRIGGERED_TIME=False
         continue
 
     filtered_clo.append(clo)

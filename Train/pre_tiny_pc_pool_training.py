@@ -34,14 +34,14 @@ plot_frequency= 40  # 150 #150 # 1000 #every 20 minutes approx
 record_frequency = 20
 
 reduction_target = 0.05
-lr_factor = 1.
+lr_factor = .2
 nbatch = 170000 
 
 no_publish = False
 
-train_second = True
+train_second = False
 if train_second:
-    lr_factor = reduction_target/5.
+    lr_factor *= reduction_target
     nbatch = 170000
     
 train_all = False
@@ -134,6 +134,7 @@ def pretrain_model(Inputs,
     #presel.pop('row_splits')
     return DictModel(inputs=Inputs, outputs=presel)
 
+
 import training_base_hgcal
 train = training_base_hgcal.HGCalTraining()
 
@@ -203,7 +204,7 @@ cb = [
         output_file=train.outputDir+'/losses.html',
         record_frequency = record_frequency ,
         plot_frequency = plot_frequency,
-        select_metrics='*_loss',
+        select_metrics=['*_loss','*_accuracy'],
         publish=publishpath #no additional directory here (scp cannot create one)
         ),
     
@@ -228,8 +229,8 @@ cb = [
 
 #cb=[]
 
-train.change_learning_rate(lr_factor*2e-3)
-train.trainModel(nepochs=1, batchsize=nbatch,additional_callbacks=cb)
+train.change_learning_rate(lr_factor*1e-2)
+train.trainModel(nepochs=2, batchsize=nbatch,additional_callbacks=cb)
 
 train.change_learning_rate(lr_factor*1e-3)
 train.trainModel(nepochs=10, batchsize=nbatch,additional_callbacks=cb)
