@@ -31,6 +31,10 @@ def _getkeys(file):
     del tmp_model #close tf
     return output_keys
 
+def calc_theta(x, y, z):
+    r = np.sqrt(x**2 + y**2)
+    return np.arctan(r/z)
+
 
 def calc_eta(x, y, z):
     rsq = np.sqrt(x ** 2 + y ** 2)
@@ -172,35 +176,44 @@ class TrainData_PrepoolNanoML(TrainData):
             return pickle.load(mypicklefile)
 
 
-    def createFeatureDict(self,infeat,addxycomb=True):
+    def createFeatureDict(self, infeat, addxycomb=True):
         '''
         infeat is the full list of features, including truth
         '''
 
         #small compatibility layer with old usage.
-        feat = infeat
-        if (isinstance(feat, tuple)) and (len(feat) == 2):
-            feat = feat[0]
-        if not isinstance(feat, list) or not len(feat) == 30:
-            raise ValueError('Expected first entry of features to be a list of length 30')
-        if not isinstance(feat[26], np.ndarray) or not feat[26].shape[1] == 10:
-            raise ValueError('Expected to find Nx10 array in features[0][26]')
-        feat = feat[26] # This is not very elegant, but that's where the features are stored.
+        feat = self.interpretAllModelInputs(infeat)
+        # keys: ['row_splits', 't_idx', 't_energy',
+        #        't_pos', 't_time', 't_pid', 't_spectator',
+        #        't_fully_contained', 't_rec_energy', 't_is_unique',
+        #        't_spectator_weight', 'prime_coords', 'rechit_energy',
+        #        'is_track', 'coords', 'cond_coords', 'up_features',
+        #        'select_prime_coords', 'features', 'sel_idx_up']
+        coords = feat['coords']
+        x = coords[:,0:1]
+        y = coords[:,1:2]
+        z = coords[:,2:3]
+
+        # create pseudorapidity from x,y,z
+        r = np.sqrt(x**2 + y**2)
+        eta = calc_eta(x, y, z)
+        theta = calc_theta(x, y, z)
+        phi = calc_phi(x, y, z)
 
         d = {
-        'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
-        'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
-        'recHitID'    : feat[:,2:3] ,          #recHitID, #indicator if it is track or not
-        'recHitTheta' : feat[:,3:4] ,          #recHitTheta ,
-        'recHitR'     : feat[:,4:5] ,          #recHitR   ,
-        'recHitX'     : feat[:,5:6] ,          #recHitX     ,
-        'recHitY'     : feat[:,6:7] ,          #recHitY     ,
-        'recHitZ'     : feat[:,7:8] ,          #recHitZ     ,
-        'recHitTime'  : feat[:,8:9] ,            #recHitTime
-        'recHitHitR'  : feat[:,9:10] ,            #recHitTime
+        'recHitEnergy': feat['rechit_energy'],
+        'recHitEta'   : eta,                        #recHitEta
+        'recHitID'    : feat['is_track'],           #recHitID #indicator if it is track or not
+        'recHitTheta' : theta,                      #recHitTheta
+        'recHitR'     : r,                          #recHitR
+        'recHitX'     : x,                          #recHitX
+        'recHitY'     : y,                          #recHitY
+        'recHitZ'     : z,                          #recHitZ
+        'recHitTime'  : np.zeros_like(x),           #recHitTime
+        'recHitHitR'  : np.zeros_like(x),           #What is this?
         }
         if addxycomb:
-            d['recHitXY']  = feat[:,5:7]
+            d['recHitXY']  = np.concatenate([x,y], axis=1)
 
         return d
 
