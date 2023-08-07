@@ -1934,6 +1934,7 @@ class LLBasicObjectCondensation(LossLayerBase):
                  s_b=1.,
                  use_average_cc_pos=0.5,
                  implementation = 'std',
+                 global_weight=False,
                  **kwargs):
 
         assert implementation == 'std' or \
@@ -1954,9 +1955,10 @@ class LLBasicObjectCondensation(LossLayerBase):
         self.oc_loss_object = OC_loss(
             loss_impl = impl,
             q_min= q_min,
-                 s_b=s_b,
-                 use_mean_x=use_average_cc_pos,
-                 spect_supp=1.
+            s_b=s_b,
+            use_mean_x=use_average_cc_pos,
+            spect_supp=1.,
+            global_weight=global_weight, 
             )
 
 
@@ -2051,6 +2053,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  dynamic_payload_scaling_onset=-0.005,
                  beta_push=0.,
                  implementation = '',
+                 global_weight=False,
                  **kwargs):
         """
         Read carefully before changing parameters

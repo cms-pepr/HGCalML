@@ -66,16 +66,17 @@ def mean_N_K(x, N, K):
 
 class Basic_OC_per_sample(object):
     def __init__(self, 
-                 
                  q_min,
                  s_b,
                  use_mean_x,
-                 spect_supp=None #None means same as noise
+                 spect_supp=None, #None means same as noise
+                 global_weight=False
                  ):
         
         self.q_min = q_min
         self.s_b = s_b
         self.use_mean_x = use_mean_x
+        self.global_weight = global_weight
         if spect_supp is None:
             spect_supp = s_b
         self.spect_supp = spect_supp
@@ -161,17 +162,16 @@ class Basic_OC_per_sample(object):
         '''
         '''
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
-        
         dsq_k_m = self.calc_dsq_att() #K x V-obj x 1
-        
         sigma = self.weighted_d_k_m(dsq_k_m) #create gradients for all
-        
         dsq_k_m = tf.math.divide_no_nan(dsq_k_m, sigma + 1e-4)
-            
         V_att = self.att_func(dsq_k_m) * self.q_k_m * self.mask_k_m  #K x V-obj x 1
-    
         V_att = self.q_k * tf.reduce_sum( V_att ,axis=1)  #K x 1
-        V_att = tf.math.divide_no_nan(V_att, N_k+1e-3)  #K x 1
+        if self.global_weight:
+            N_full = tf.reduce_sum(tf.ones_like(self.beta_v))
+            V_att = N_k * tf.math.divide_no_nan(V_att, N_full+1e-3)  #K x 1
+        else:
+            V_att = tf.math.divide_no_nan(V_att, N_k+1e-3)  #K x 1
         
         #print(tf.reduce_mean(self.d_v),tf.reduce_max(self.d_v))
         
@@ -196,7 +196,7 @@ class Basic_OC_per_sample(object):
     def V_rep_k(self):
         
         
-        N_k = tf.reduce_sum(self.Mnot, axis=1)
+        N_notk = tf.reduce_sum(self.Mnot, axis=1)
         #future remark: if this gets too large, one could use a kNN here
         
         dsq = self.calc_dsq_rep()
@@ -206,14 +206,20 @@ class Basic_OC_per_sample(object):
         sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
         
         dsq = tf.math.divide_no_nan(dsq, sigma + 1e-4) #K x V x 1
-        
+
         V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
-        
+
         V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
-        V_rep = tf.math.divide_no_nan(V_rep, N_k+1e-3)  #K x 1
-        
+        if self.global_weight:
+            N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
+            N_full = tf.reduce_sum(tf.ones_like(self.beta_v))
+            V_rep = N_k * tf.math.divide_no_nan(V_rep, N_full+1e-3)  #K x 1
+        else:
+            V_rep = tf.math.divide_no_nan(V_rep, N_notk+1e-3)  #K x 1
+
         return V_rep
-    
+
+
     def Pll_k(self):
         
         tanhsqbeta = self.beta_v**2 #softer here
