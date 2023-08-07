@@ -181,38 +181,62 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     ###############################################################################################
 
     ### Noise Filter Performance ##################################################################
-    fig = ep.noise_performance(noise_df)
-    fig.savefig(os.path.join('.', 'noise_performance.jpg'))
+    try:
+        fig = ep.noise_performance(noise_df)
+        fig.savefig(os.path.join('.', 'noise_performance.jpg'))
+    except:
+        print("Noise overview failed")
 
     ### Prediction overview #######################################################################
-    fig = ep.prediction_overview(prediction)
-    fig.savefig(os.path.join('.', 'prediction_overview.jpg'))
+    try:
+        fig = ep.prediction_overview(prediction)
+        fig.savefig(os.path.join('.', 'prediction_overview.jpg'))
+    except:
+        print("Overview failed")
 
     ### Classification ############################################################################
-    fig = ep.classification_plot(showers_dataframe)
-    fig.savefig(os.path.join('.', 'classification_plot.jpg'))
+    try:
+        fig = ep.classification_plot(showers_dataframe)
+        fig.savefig(os.path.join('.', 'classification_plot.jpg'))
+    except:
+        print("Classification failed")
 
     ### Tracks versus hits ########################################################################
-    fig = ep.tracks_vs_hits(showers_dataframe)
-    fig.savefig(os.path.join('.', 'median_ratios.jpg'))
+    try:
+        fig = ep.tracks_vs_hits(showers_dataframe)
+        fig.savefig(os.path.join('.', 'median_ratios.jpg'))
+    except:
+        print("Tracks-vs-hits failed")
 
     ### Efficiency plots ##########################################################################
-    fig_eff = ep.efficiency_plot(showers_dataframe)
-    fig_eff.savefig(os.path.join('.', 'efficiency.jpg'))
+    try:
+        fig_eff = ep.efficiency_plot(showers_dataframe)
+        fig_eff.savefig(os.path.join('.', 'efficiency.jpg'))
+    except:
+        print("Efficiency failed")
 
     ### Resolution plots ##########################################################################
-    fig_res = ep.energy_resolution(showers_dataframe)
-    fig_res.savefig(os.path.join('.', 'energy_resolution.jpg'))
+    try:
+        fig_res = ep.energy_resolution(showers_dataframe)
+        fig_res.savefig(os.path.join('.', 'energy_resolution.jpg'))
+    except:
+        print("Resolution plot failed")
 
     ### Energy uncertainty plot ###################################################################
-    fig_unc = ep.within_uncertainty(showers_dataframe)
-    fig_unc.savefig(os.path.join('.', 'within_uncertainty.jpg'))
+    try:
+        fig_unc = ep.within_uncertainty(showers_dataframe)
+        fig_unc.savefig(os.path.join('.', 'within_uncertainty.jpg'))
+    except:
+        print("Uncertainty plot failed")
 
 
     ### low-high difference plot ##################################################################
 
-    fig_low_high = ep.plot_high_low_difference(prediction)
-    fig_low_high.savefig(os.path.join('.', 'low_high_difference.jpg'))
+    try:
+        fig_low_high = ep.plot_high_low_difference(prediction)
+        fig_low_high.savefig(os.path.join('.', 'low_high_difference.jpg'))
+    except:
+        print("low-high difference plot failed")
 
     # This is only to write to pdf files
     scalar_variables = {

@@ -491,6 +491,9 @@ def prediction_overview(prediction_dictlist):
     for i, key in enumerate(prediction.keys()):
         if key in skip:
             continue
+        if i == len(ax):
+            print("Not enough space in histogram")
+            break
         N = len(prediction[key])
         ax[i].set_yscale('log')
         ax[i].hist(prediction[key], bins=100)

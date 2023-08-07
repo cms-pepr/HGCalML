@@ -1,3 +1,4 @@
+import pdb
 import gzip
 import pickle
 import numpy as np
@@ -56,6 +57,7 @@ class HGCalPredictor():
             self.dc = DataCollection(input_source_files_list)
         else:
             self.dc = DataCollection(training_data_collection)
+        print("Data class: ", type(self.dc.dataclass()))
 
         if inputdir is not None:
             self.inputdir = inputdir
@@ -142,8 +144,19 @@ class HGCalPredictor():
                 for k in predictions_dict.keys():
                     # predictions_dict[k] = predictions_dict[k].numpy()
                     predictions_dict[k] = np.array(predictions_dict[k])
-                features_dict = td.createFeatureDict(data_in[0])
-                truth_dict = td.createTruthDict(data_in[0])
+
+                features_dict = None
+                truth_dict = None
+                try:
+                    features_dict = td.createFeatureDict(data_in[0])
+                except:
+                    print("features_dict not created")
+
+                try: 
+                    truth_dict = td.createTruthDict(data_in[0])
+                except:
+                    print("truth dict not create")
+                    success_truth = False
                 
                 dumping_data.append([features_dict, truth_dict, predictions_dict])
                 

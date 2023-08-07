@@ -58,6 +58,7 @@ for i, sample in enumerate(samples):
         for k in range(features.shape[1]):
             axs[k].hist(features[:, k], bins=100, density=True)
             axs[k].set_title(str(k))
+            axs[k].set_yscale('log')
 
         plt.savefig(os.path.join(dataDir, f"file_{i}_event_{j}_features.png"))
         # save figure
