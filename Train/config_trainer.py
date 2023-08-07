@@ -5,6 +5,8 @@ Flexible training script that should be mostly configured with a yaml config fil
 import os
 import sys
 import yaml
+import shutil
+from argparse import ArgumentParser
 import mlflow
 import tensorflow as tf
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
@@ -35,8 +37,19 @@ from callbacks import NanSweeper, DebugPlotRunner
 ### Load Configuration ########################################################
 ###############################################################################
 
+parser = ArgumentParser('training')
+parser.add_argument('configFile')
+# args = parser.parse_args()
+
+CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/pre-pooled_config.yaml"
+CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/pre-pooled.yaml"
+CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/pooling_config.yaml"
 CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/noise_config.yaml"
-os.environ['MLFLOW_ARTIFACT_URI'] = sys.argv[2]
+# CONFIGFILE = args.configFile
+CONFIGFILE = sys.argv[1]
+
+print(f"Using config File: \n{CONFIGFILE}")
+os.environ['MLFLOW_ARTIFACT_URI'] = sys.argv[3]
 
 with open(CONFIGFILE, 'r') as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
@@ -280,7 +293,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 ### Set up training ###########################################################
 ###############################################################################
 
-train = training_base_hgcal.HGCalTraining()
+
+train = training_base_hgcal.HGCalTraining(parser=parser)
 
 if not train.modelSet():
     train.setModel(
@@ -384,6 +398,8 @@ cb += [
 ###############################################################################
 ### Actual Training ###########################################################
 ###############################################################################
+
+shutil.copyfile(CONFIGFILE, os.path.join(sys.argv[3], "config.yaml"))
 
 with mlflow.start_run():
     mlflow.tensorflow.autolog()
