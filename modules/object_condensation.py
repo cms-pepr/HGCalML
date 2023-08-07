@@ -302,10 +302,20 @@ class Hinge_OC_per_sample(Basic_OC_per_sample):
     This is the classic repulsive hinge loss
     '''
     def __init__(self, **kwargs):
+        self.condensation_damping = 1.0 # Fuly stop gradients for condensation points by default
         super(Hinge_OC_per_sample, self).__init__(**kwargs)
+
+
+    def calc_dsq_att(self):
+        x_k_e = tf.expand_dims(self.x_k,axis=1)
+        x_k_e = self.condensation_damping * tf.stop_gradient(x_k_e) + (1. - self.condensation_damping)*x_k_e
+        dsq_k_m = tf.reduce_sum((self.x_k_m - x_k_e)**2, axis=-1, keepdims=True) #K x V-obj x 1
+        return dsq_k_m
+
         
     def rep_func(self,dsq_k_v):
         return tf.nn.relu(1. - tf.sqrt(dsq_k_v + 1e-6))
+    
     
 class Hinge_Manhatten_OC_per_sample(Hinge_OC_per_sample):   
 
