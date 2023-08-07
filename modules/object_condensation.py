@@ -161,6 +161,7 @@ class Basic_OC_per_sample(object):
     def V_att_k(self):
         '''
         '''
+        K = tf.reduce_sum(tf.ones_like(self.q_k))
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
         dsq_k_m = self.calc_dsq_att() #K x V-obj x 1
         sigma = self.weighted_d_k_m(dsq_k_m) #create gradients for all
@@ -169,7 +170,7 @@ class Basic_OC_per_sample(object):
         V_att = self.q_k * tf.reduce_sum( V_att ,axis=1)  #K x 1
         if self.global_weight:
             N_full = tf.reduce_sum(tf.ones_like(self.beta_v))
-            V_att = N_k * tf.math.divide_no_nan(V_att, N_full+1e-3)  #K x 1
+            V_att = K * tf.math.divide_no_nan(V_att, N_full+1e-3)  #K x 1
         else:
             V_att = tf.math.divide_no_nan(V_att, N_k+1e-3)  #K x 1
         
@@ -196,6 +197,7 @@ class Basic_OC_per_sample(object):
     def V_rep_k(self):
         
         
+        K = tf.reduce_sum(tf.ones_like(self.q_k))
         N_notk = tf.reduce_sum(self.Mnot, axis=1)
         #future remark: if this gets too large, one could use a kNN here
         
@@ -211,9 +213,8 @@ class Basic_OC_per_sample(object):
 
         V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
         if self.global_weight:
-            N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
             N_full = tf.reduce_sum(tf.ones_like(self.beta_v))
-            V_rep = N_k * tf.math.divide_no_nan(V_rep, N_full+1e-3)  #K x 1
+            V_rep = K * tf.math.divide_no_nan(V_rep, N_full+1e-3)  #K x 1
         else:
             V_rep = tf.math.divide_no_nan(V_rep, N_notk+1e-3)  #K x 1
 
