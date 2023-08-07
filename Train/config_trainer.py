@@ -12,6 +12,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
+from DeepJetCore.DJCLayers import StopGradient
 
 import training_base_hgcal
 from Layers import ScaledGooeyBatchNorm2
@@ -22,6 +23,10 @@ from Layers import DistanceWeightedMessagePassing
 from Layers import LLFillSpace
 from Layers import LLExtendedObjectCondensation
 from Layers import DictModel
+from Layers import RaggedGlobalExchange
+from Layers import SphereActivation
+from Layers import Multi
+from Layers import ShiftDistance
 from Regularizers import AverageDistanceRegularizer
 from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import extent_coords_if_needed
@@ -74,6 +79,7 @@ else:
 DROPOUT = config['DenseOptions']['dropout']
 USE_FILL_SPACE = config['General']['use_fill_space']
 USE_LAYER_NORMALIZATION = config['General']['use_layer_normalization']
+SPHERE_ACTIVATION = config['General']['use_layer_normalization']
 
 ###############################################################################
 ### Define Model ##############################################################
@@ -100,7 +106,18 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         embedded = True # Tracks and hits are already embedded after pre-pooling
         pre_processed = condition_input(orig_input, no_scaling=True)
         trans, pre_processed = tiny_pc_pool(pre_processed,
-                                            record_metrics=True)
+                                            record_metrics=True,
+                                            trainable=False)
+        x_in = Concatenate(name='concat_pre_pooling')(
+            [pre_processed['prime_coords'],
+             pre_processed['features']])
+    elif config['General']['pre-model-type'] == 'pre-pooled':
+        print("Assuming dataset is already pre-pooled")
+        embedded = True
+        pre_processed = condition_input(orig_input, no_scaling=True)
+        trans, pre_processed = tiny_pc_pool(pre_processed,
+                                            record_metrics=True,
+                                            pass_through=True)
         x_in = Concatenate(name='concat_pre_pooling')(
             [pre_processed['prime_coords'],
              pre_processed['features']])
@@ -109,6 +126,14 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         raise NotImplementedError
     elif config['General']['pre-model-type'] == 'none':
         pre_processed = orig_input
+    elif config['General']['pre-model-type'] == 'pass-through':
+        pre_processed = orig_input
+        pre_processed = noise_filter(orig_input,
+                                     trainable=False,
+                                     pass_through=True)
+        x_in = Concatenate(name='concat_noise_filter')(
+            [pre_processed['coords'],
+             pre_processed['features']])
     else:
         print("Unknown pre-model-type")
         raise ValueError
@@ -118,6 +143,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     rs = pre_processed['row_splits']
     energy = pre_processed['rechit_energy']
     t_idx = pre_processed['t_idx']
+
+    if SPHERE_ACTIVATION:
+        x_in = Concatenate()([x_in, is_track, SphereActivation()(x_in)])
 
     c_coords = extent_coords_if_needed(c_coords, x_in, N_CLUSTER_SPACE_COORDINATES)
     c_coords = ScaledGooeyBatchNorm2(
@@ -139,6 +167,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         x = x_in
 
     x = ScaledGooeyBatchNorm2(name="batchnorm_0", **BATCHNORM_OPTIONS)(x)
+    x = Dense(128, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x_in)
     allfeat = []
     print("Available keys: ", pre_processed.keys())
 
@@ -147,6 +176,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ###########################################################################
 
     for i in range(GRAVNET_ITERATIONS):
+        
+        x = RaggedGlobalExchange()([x, rs])
+        x, norm = SphereActivation(return_norm=True)(x)
 
         for j in range(PRE_GRAVNET_DENSE_ITERATIONS):
             n = config['Architecture']['dense_pre_gravnet'][j]['n']
@@ -175,11 +207,13 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         x = Concatenate(name=f"concat_xgn_iteration_{i}")([x, xgn])
 
         gndist = AverageDistanceRegularizer(
-            strength=1e-4,
+            strength=1e-3,
             record_metrics=True
             )(gndist)
 
-        tf.stop_gradient(gncoords)
+        gndist = StopGradient()(gndist)
+
+        gncoords = StopGradient()(gncoords)
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
             outdir=debug_outdir,
@@ -192,14 +226,19 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
         for j in range(MESSAGE_PASSING_ITERATIONS):
             n = config['Architecture']['message_passing'][j]['n']
+            shift = config['Architecture']['message_passing'][j]['shift']
+            gndist = ShiftDistance(shift=shift)(gndist)
             x = DistanceWeightedMessagePassing(
                 name=f"message_passing_{j}_iteration_{i}",
                 n_feature_transformation = [n],
                 activation=DENSE_ACTIVATION,
             )([x, gnnidx, gndist])
-            x = ScaledGooeyBatchNorm2(
-                name=f"batchnorm_message_passing_{j}_iteration_{i}",
-                **BATCHNORM_OPTIONS)(x)
+            if SPHERE_ACTIVATION:
+                x = SphereActivation()(x)
+            else:
+                x = ScaledGooeyBatchNorm2(
+                    name=f"batchnorm_message_passing_{j}_iteration_{i}",
+                    **BATCHNORM_OPTIONS)(x)
 
         for j in range(POST_MESSAGE_PASSING_DENSE_ITERATIONS):
             n = config['Architecture']['dense_post_message_passing'][j]['n']
@@ -210,6 +249,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             if not j == POST_MESSAGE_PASSING_DENSE_ITERATIONS -1:
                 x = Dropout(DROPOUT, name=f"droput_{j}_iteration_{i}")(x)
 
+        x = Multi()([x,norm])
         x = ScaledGooeyBatchNorm2(
             name=f"batchnorm_3_iteration_{i}",
             **BATCHNORM_OPTIONS)(x)
@@ -220,6 +260,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Create output of model and define loss ################################
     ###########################################################################
 
+    x = Concatenate()(allfeat)
+
     for j in range(FINAL_DENSE_ITERATIONS):
         n = config['Architecture']['dense_final'][j]['n']
         x = Dense(n,
@@ -229,6 +271,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         if not j == FINAL_DENSE_ITERATIONS -1:
             x = Dropout(DROPOUT, name=f"droput_final_{j}")(x)
 
+    x = Dense(64, name='dense_very_final', activation=DENSE_ACTIVATION)(x)
     x = ScaledGooeyBatchNorm2(
         name=f"batchnorm_final",
         **BATCHNORM_OPTIONS)(x)
@@ -239,7 +282,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         create_outputs(x, n_ccoords=N_CLUSTER_SPACE_COORDINATES, fix_distance_scale=True)
 
     if USE_FILL_SPACE:
-        pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
+        pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)(
+                [pred_ccoords, rs, t_idx])
+
 
     pred_beta = LLExtendedObjectCondensation(scale=1.,
                                              use_energy_weights=True,
@@ -280,7 +325,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         model_outputs['no_noise_sel'] = pre_processed['no_noise_sel']
         model_outputs['no_noise_rs'] = pre_processed['no_noise_rs']
 
-    if config['General']['pre-model-type'] == 'pre-pooling':
+    if (config['General']['pre-model-type'] == 'pre-pooling') or (config['General']['pre-model-type'] == 'pre-pooled'):
         model_outputs['no_noise_sel'] = trans['sel_idx_up']
         model_outputs['no_noise_rs'] = trans['rs_down']
         model_outputs['sel_idx'] = trans['sel_idx_up']
@@ -421,6 +466,13 @@ with mlflow.start_run():
         print(f"Training for {epochs} epochs")
         print(f"Learning rate set to {learning_rate}")
         print(f"Batch size: {batch_size}")
+
+        if i == 1:
+            # change batchnorm
+            for layer in train.keras_model.layers:
+                if 'batchnorm' in layer.name:
+                    layer.max_viscosity = 0.999
+                    layer.fluidity_decay = 0.1
         model, history = train.trainModel(
             nepochs=epochs,
             batchsize=batch_size,

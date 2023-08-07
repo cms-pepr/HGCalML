@@ -285,6 +285,36 @@ class MixWhere(tf.keras.layers.Layer):
         return out
 
 
+class ShiftDistance(tf.keras.layers.Layer):
+    '''
+    Shifts distance to smaller values
+    '''
+    def __init__(self,
+                 shift=0.1,
+                 **kwargs):
+        '''
+        Inputs:
+        - Square of distance
+
+        Outputs:
+        - Square of distances shifted by -shift
+        '''
+        super(ShiftDistance, self).__init__(**kwargs)
+        self.shift = shift
+
+
+    def get_config(self):
+        base_config = super(ShiftDistance, self).get_config()
+        return dict(list(base_config.items()) + list({'shift': self.shift}.items())) 
+
+
+    def call(self, inputs):
+        dist = inputs
+        dist = tf.sqrt(dist + 1e-6)     # dist is the square
+        dist -= self.shift + 1e-3       # shif by e.g. 0.2, recover eps
+        return dist**2
+
+
 class ValAndSign(tf.keras.layers.Layer):
     '''
     Returns the absolute value and sign independently

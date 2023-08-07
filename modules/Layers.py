@@ -56,6 +56,9 @@ global_layers_list['RaggedGlobalExchange']=RaggedGlobalExchange
 ##GravNet...
 
 
+from GravNetLayersRagged import ShiftDistance
+global_layers_list['ShiftDistance']=ShiftDistance
+
 from GravNetLayersRagged import Abs
 global_layers_list['Abs']=Abs
 
