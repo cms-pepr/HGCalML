@@ -27,6 +27,7 @@ from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
 from Layers import Multi
 from Layers import ShiftDistance
+from Layers import LLRegulariseGravNetSpace
 from Regularizers import AverageDistanceRegularizer
 from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import extent_coords_if_needed
@@ -98,7 +99,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     if config['General']['pre-model-type'] == 'noise-filter':
         pre_processed = noise_filter(orig_input,
                                      trainable=False,
-                                     pass_through=False)
+                                     pass_through=False,
+                                     )
+        prime_coords = pre_processed['coords']
         x_in = Concatenate(name='concat_noise_filter')(
             [pre_processed['coords'],
              pre_processed['features']])
@@ -108,6 +111,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         trans, pre_processed = tiny_pc_pool(pre_processed,
                                             record_metrics=True,
                                             trainable=False)
+        prime_coords = pre_processed['prime_coords']
         x_in = Concatenate(name='concat_pre_pooling')(
             [pre_processed['prime_coords'],
              pre_processed['features']])
@@ -118,6 +122,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         trans, pre_processed = tiny_pc_pool(pre_processed,
                                             record_metrics=True,
                                             pass_through=True)
+        prime_coords = pre_processed['prime_coords']
         x_in = Concatenate(name='concat_pre_pooling')(
             [pre_processed['prime_coords'],
              pre_processed['features']])
@@ -126,6 +131,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         raise NotImplementedError
     elif config['General']['pre-model-type'] == 'none':
         pre_processed = orig_input
+        prime_coords = pre_processed['coords']
     elif config['General']['pre-model-type'] == 'pass-through':
         pre_processed = orig_input
         pre_processed = noise_filter(orig_input,
@@ -134,6 +140,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         x_in = Concatenate(name='concat_noise_filter')(
             [pre_processed['coords'],
              pre_processed['features']])
+        prime_coords = pre_processed['coords']
     else:
         print("Unknown pre-model-type")
         raise ValueError
@@ -204,6 +211,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             coord_initialiser_noise=1e-2,
             use_approximate_knn=False
             )([x, rs])
+        if float(config['General']['regulariseGravNet']) > 0.0:
+            gndist = LLRegulariseGravNetSpace()([gndist, prime_coords, gnnidx])
         x = Concatenate(name=f"concat_xgn_iteration_{i}")([x, xgn])
 
         gndist = AverageDistanceRegularizer(

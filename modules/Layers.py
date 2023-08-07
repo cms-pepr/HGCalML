@@ -306,6 +306,7 @@ from LossLayers import LLFullObjectCondensationUncertainty, LLFullObjectCondensa
 from LossLayers import LLExtendedObjectCondensation
 from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator, LLGoodNeighbourHood, LLKnnPushPullObjectCondensation
 from LossLayers import LLEnergySums,LLKnnSimpleObjectCondensation, LLPushTracks, LLFullOCThresholds, LLLocalEnergyConservation
+from LossLayers import LLRegulariseGravNetSpace
 import traceback
 import os
 
@@ -345,6 +346,7 @@ global_layers_list['LLPFCondensates']=LLPFCondensates
 global_layers_list['LLNeighbourhoodClassifier']=LLNeighbourhoodClassifier
 global_layers_list['LLEdgeClassifier']=LLEdgeClassifier
 global_layers_list['LLGoodNeighbourHood']=LLGoodNeighbourHood
+global_layers_list['LLRegulariseGravNetSpace']=LLRegulariseGravNetSpace
 
 
 
