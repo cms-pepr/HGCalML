@@ -41,7 +41,9 @@ void push_knn_kernel(
 
         int n_vert,
         int n_neigh,
-        int n_feat) {
+        int n_feat,
+
+        bool atomic = true) { //switch off with care!
 
     //parallelise over neighbours and features - no race conditions
 
@@ -53,12 +55,16 @@ void push_knn_kernel(
 
     int nidx = d_idxs[I2D(i_v,i_n,n_neigh)];
     if(nidx<0) return;
+    if(nidx>=n_vert) asm("trap;"); //throw error
 
 
     float f = d_feat[I2D(i_v,i_f,n_feat)];
     float w = d_weights[I2D(i_v,i_n,n_neigh)];
 
-    atomicAdd(&d_out_feat[I2D(nidx,i_f,n_feat)] , f*w);
+    if(atomic)
+        atomicAdd(&d_out_feat[I2D(nidx,i_f,n_feat)] , f*w);
+    else
+        d_out_feat[I2D(nidx,i_f,n_feat)] += f*w;
 
 }
 
@@ -87,6 +93,8 @@ struct PushKnnOpFunctor<GPUDevice, dummy> {
 
         cudaDeviceSynchronize();
 
+        bool atomic = true;
+
         //this should keep the atomic reasonably ok
         grid_and_block par(
                         n_feat, 32,
@@ -98,6 +106,7 @@ struct PushKnnOpFunctor<GPUDevice, dummy> {
                 par = grid_and_block(n_feat, 128,
                                      n_vert, 1,
                                      n_neigh, 1);//no atomic *within* one block, still can be globally!
+                atomic = false;
             }
             else if(n_feat >= 64){ //32 and 64 are also rather standard
                 par = grid_and_block(
@@ -111,12 +120,12 @@ struct PushKnnOpFunctor<GPUDevice, dummy> {
                         n_vert, 4,
                         n_neigh, 2);
             }
-            if(n_feat < 2){ //this is for energy push, also standard
+            else if(n_feat < 2){ //this is for energy push, also standard
                 par = grid_and_block(n_feat, 1,
                                      n_vert, 128,
                                      n_neigh, 2);
             }
-            if(n_feat <32){ //this is for energy push, also standard
+            else if(n_feat <32){ //this is for energy push, also standard
                 par = grid_and_block(n_feat, 8,
                                      n_vert, 12,
                                      n_neigh, 2);
@@ -132,7 +141,8 @@ struct PushKnnOpFunctor<GPUDevice, dummy> {
 
                 n_vert,
                 n_neigh,
-                n_feat);
+                n_feat,
+                atomic);
 
         cudaDeviceSynchronize();
     }

@@ -74,13 +74,15 @@ def _CreateMidxGrad(op, sel_dxs, m_not):
     return None
 
 
-def SelectWithDefault(indices, tensor, default=0):
+def SelectWithDefault(indices, tensor, default=0, no_check=False):
     
     expidxs = tf.expand_dims(indices,axis=2)
     tfidxs = tf.where(expidxs<0,0,expidxs)
     gtens = tf.gather_nd(tensor,tfidxs)
     out = tf.where(expidxs<0, default, gtens)
     
+    if no_check:
+        return out
     #check if the size ends up as we might want
     with tf.control_dependencies([
         tf.assert_equal(tf.shape(tf.shape(out)), tf.shape(tf.shape(indices)) + 1),

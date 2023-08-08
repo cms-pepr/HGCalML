@@ -6,7 +6,7 @@ from tensorflow.keras.layers import Lambda
 import tensorflow as tf
 from Initializers import EyeInitializer
 from GravNetLayersRagged import CondensateToIdxs, EdgeCreator
-from Layers import SplitFeatures
+from Layers import SplitFeatures, FlatNeighbourFeatures, Sqrt
 
 from datastructures.TrainData_NanoML import n_id_classes
 
@@ -36,8 +36,6 @@ def create_outputs(x, n_ccoords=3,
     
     pred_beta = Dense(1, activation='sigmoid',name = name_prefix+'_beta')(x)
     pred_ccoords = Dense(n_ccoords,
-                         #this initialisation is much better than standard glorot
-                         kernel_initializer=EyeInitializer(stddev=0.001),
                          use_bias=False,
                          name = name_prefix+'_clustercoords'
                          )(x) #bias has no effect
@@ -1577,7 +1575,7 @@ from GraphCondensationLayers import CreateGraphCondensation, PushUp, SelectUp, P
 from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, LLGraphCondensationEdges
 from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
 from LossLayers import LLValuePenalty
-from Layers import CheckNaN
+from Layers import CheckNaN, SphereActivation
 
 def pre_graph_condensation(
         orig_inputs,
@@ -1610,8 +1608,14 @@ def pre_graph_condensation(
     energy = orig_inputs['rechit_energy']
     is_track = orig_inputs['is_track']
     
-    x = ConditionalScaledGooeyBatchNorm(
-            name=name+'_cond_batchnorm',
+    
+    x = ScaledGooeyBatchNorm2(
+            name=name+'_cond_batchnorm_a',
+            record_metrics = record_metrics)([x, is_track])
+            
+    x = ScaledGooeyBatchNorm2(
+            name=name+'_cond_batchnorm_b',
+            invert_condition = True,
             record_metrics = record_metrics)([x, is_track])
             
     x_in = x
@@ -1819,6 +1823,7 @@ def mini_pre_graph_condensation(
         low_energy_cut = 2.,
         publish=None,
         dynamic_spectators=True,
+        coords = None,
         first_call=True):
     
     activation = 'elu'
@@ -1834,7 +1839,8 @@ def mini_pre_graph_condensation(
                 orig_inputs[k] = CheckNaN(name=name+'_pre_check_'+k)(orig_inputs[k])
     
     x = orig_inputs['features'] # coords
-    coords = orig_inputs['prime_coords']
+    if coords is None:
+        coords = orig_inputs['prime_coords']
     rs = orig_inputs['row_splits']
     energy = orig_inputs['rechit_energy']
     is_track = orig_inputs['is_track']
@@ -2139,6 +2145,210 @@ def intermediate_graph_condensation(
     return trans_a, out_truth, sum_energy
 
 
+def tiny_pc_pool(
+        orig_inputs,
+        debug_outdir='',
+        trainable=False,
+        name='pre_graph_pool',
+        debugplots_after=-1,
+        record_metrics=True,
+        reduction_target = 0.05,
+        K_loss = 48,
+        low_energy_cut_target = 1.0,
+        first_embed = True,
+        coords = None,
+        publish=None,
+        dmp_steps=[8,8,8,8],
+        dmp_compress = 32,
+        K_nn = 16,
+        K_gp = 5,
+        is_second=False,
+        new_format=True):
+    '''
+    This function needs pre-processed input (from condition_input)
+    '''
+    
+    edge_dense = [16]
+    edge_pre_nodes = 32
+    dwmp_activation = 'elu'
+    
+    if is_second:
+        dmp_steps = [32,32,32,32]
+        dmp_compress = 64
+        low_energy_cut_target = 0.5 
+        K_nn = 32
+        K_gp = 8
+        first_embed = False
+        edge_dense = [32,24,16]
+        edge_pre_nodes = 64
+        dwmp_activation = 'tanh' #more smooth
+    
+    
+    ## gather inputs and norm
+    
+    x = orig_inputs['features'] # coords
+    if coords is None:
+        coords = orig_inputs['prime_coords']
+        coords = ScaledGooeyBatchNorm2(
+            name = name+'_coords_batchnorm', trainable=trainable,
+            fluidity_decay=1e-2,#can freeze quickly
+            )(coords)
+           
+        coords = PlotCoordinates(plot_every=debugplots_after,
+                                        outdir=debug_outdir,name=name+'_coords',
+                                        publish=publish)(
+                                            [coords,
+                                             orig_inputs['rechit_energy'], 
+                                             orig_inputs['t_idx'],orig_inputs['row_splits']])
+        
+    rs = orig_inputs['row_splits']
+    energy = orig_inputs['rechit_energy']
+    is_track = orig_inputs['is_track']
+    
+    
+    x = ScaledGooeyBatchNorm2(
+            name=name+'_cond_batchnorm_a', trainable=trainable)([x, is_track])
+            
+    x = ScaledGooeyBatchNorm2(
+            name=name+'_cond_batchnorm_b', trainable=trainable,
+            invert_condition = True)([x, is_track])
+            
+    x_in = x
+    x_emb = x
+    #create different embeddings for tracks and hits
+    if first_embed:
+    
+        x_track = Dense(16, activation='elu', name=name+'emb_xtrack',trainable=trainable)(x)
+        x_hit = Dense(16, activation='elu', name=name+'emb_xhit',trainable=trainable)(x)
+        x = MixWhere()([is_track, x_track, x_hit]) 
+        x = ScaledGooeyBatchNorm2(name = name+'_emb_batchnorm', trainable=trainable, 
+                                  )(x) 
+        x_emb = x
+        
+    #simple gravnet       
+    nidx,dist = KNN(K=K_nn,record_metrics=record_metrics,name=name+'_np_knn',
+                    min_bins=20)([coords, #stop gradient here as it's given explicitly below
+                                  orig_inputs['row_splits']])#hard code it here, this is optimised given our datasets
+    
+    dist,nidx = SortAndSelectNeighbours(-1)([dist,nidx])#make it easy for edges
+    dist_orig = dist
+    dist = Sqrt()(dist)#make a stronger distance gradient for message passing
+    
+    
+    #each is a simple attention head
+    for i,n in enumerate(dmp_steps):
+        #this is a super lightweight 'guess' attention; coords get explicit gradient down there
+        
+        x = DistanceWeightedMessagePassing([n],name=name+'np_dmp'+str(i),
+                                        activation=dwmp_activation,#keep output in check
+                                        exp_distances = True, 
+                                        trainable=trainable)([x,nidx,dist])# hops are rather light 
+        
+        x = Dense(dmp_compress, activation='elu', name=name+'_pcp_x_out'+str(i),trainable=trainable)(x)
+        
+        x = ScaledGooeyBatchNorm2(
+            name = name+'_dmp_batchnorm'+str(i),
+            trainable=trainable,
+            )(x)
+        x = Concatenate()([x, x_emb])#skip connect
+                        
+                                        
+    score = Dense(1, activation='sigmoid', 
+                  name=name+'_pcp_score',
+                  trainable=trainable)(x)
+    
+    score = LLGraphCondensationScore(
+        name=name+'_ll_graph_condensation_score',
+        record_metrics = record_metrics,
+        K=K_loss,
+        penalty_fraction = 1. - reduction_target,
+                active=trainable,
+            low_energy_cut = low_energy_cut_target #allow everything below 2 GeV to be removed (other than tracks)
+            )([score, coords, orig_inputs['t_idx'], orig_inputs['t_energy'], rs])
+     
+    trans_a = CreateGraphCondensation(
+        trainable = trainable,
+            reduction_target = reduction_target,
+            K=K_gp,
+            name=name+'_pcp_create',
+            )(score,coords,rs, #nidx,dist_orig, #do not use nidx here yet.
+              always_promote = is_track)
+    
+    
+    
+    x_e = Concatenate()([x,x_in])#skip
+    
+    x_e = CreateGraphCondensationEdges(
+                     edge_dense=edge_dense,
+                     pre_nodes=edge_pre_nodes,
+                     K=K_gp, 
+                     trainable=trainable, 
+                     name=name+'_gc_edges')(x_e, trans_a)
+    
+    if new_format:
+        dist = StopGradient()(dist)
+        #add non orderinvariant info               
+        x_e = Concatenate()([dist,x_e,x]) 
+        x_e = Dense(32,name=name+'_graphn_edges_d1',
+            trainable=trainable, activation='elu')(x_e)
+        x_e = Dense(K_gp+1, name=name+'_graphn_edges_d2',
+            trainable=trainable, activation='softmax')(x_e)#one more for noise
+    
+    x_e = LLGraphCondensationEdges(
+        name=name+'_ll_graph_condensation_edges',
+        active=trainable,
+        print_loss = trainable,
+        record_metrics=record_metrics
+        )(x_e, trans_a, orig_inputs['t_idx'])
+        
+        
+    trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
+    
+    
+    trans_a = MLGraphCondensationMetrics(
+        name = name + '_graphcondensation_metrics',
+        record_metrics = record_metrics,
+        )(trans_a, orig_inputs['t_idx'], orig_inputs['t_energy'],is_track=is_track)
+    
+    orig_inputs['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = debugplots_after,
+                     outdir= debug_outdir ,
+                     name = name + '_efficiency',
+                     publish = publish)(orig_inputs['t_energy'], orig_inputs['t_idx'], trans_a)
+                     
+    out={}
+    
+    for k in orig_inputs.keys():
+        if 't_' == k[0:2]:
+            out[k] = SelectUp()(orig_inputs[k],trans_a)
+            
+    
+    out['prime_coords'] = PushUp(add_self=True)(orig_inputs['prime_coords'], 
+                                                trans_a, weight = energy)
+    
+    out['rechit_energy'] = PushUp(mode='sum', add_self=True)(energy, trans_a)
+    out['is_track'] = SelectUp()(is_track, trans_a)
+    out['row_splits'] = trans_a['rs_up']
+    
+    out['coords'] = PushUp(add_self=True)(orig_inputs['coords'], trans_a, weight = energy)
+    out['cond_coords'] = PushUp(add_self=True)(coords, trans_a, weight = energy)
+    
+    x_o = Concatenate()([x,x_in])
+    out['down_features'] = x_o # this is for further "bouncing"
+    out['up_features'] = SelectUp()(x_o, trans_a)
+    
+    out['select_prime_coords'] = SelectUp()(orig_inputs['prime_coords'], trans_a)
+    
+    x_of = PushUp()(x_o, trans_a)
+    x_of2 = PushUp()(x_o, trans_a, weight = energy)
+    out['features'] = Concatenate()([out['prime_coords'],out['up_features'],x_of, x_of2])
+    
+    out['cond_coords_down'] = coords #mostly for reference
+    
+    
+        
+    return trans_a, out
 
+    
     
     

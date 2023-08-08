@@ -12,7 +12,7 @@ import pickle
 import gzip
 import pandas as pd
 
-from datastructures import TrainData_NanoML
+from datastructures.TrainData_NanoML import TrainData_NanoML
 
 class TrainData_crilin(TrainData_NanoML):
    

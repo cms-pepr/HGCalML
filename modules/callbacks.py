@@ -2,6 +2,7 @@
 from DeepJetCore.training.DeepJet_callbacks import PredictCallback
 from multiprocessing import Process
 import numpy as np
+import tensorflow as tf
 
 from OCHits2Showers import process_endcap, OCGatherEnergyCorrFac
 from datastructures import TrainData_NanoML
@@ -12,6 +13,9 @@ import pandas as pd
 from Layers import DictModel
 
 from plotting_tools import publish, shuffle_truth_colors
+from DebugLayers import _DebugPlotBase
+from DeepJetCore import TrainData
+from DeepJetCore.dataPipeline import TrainDataGenerator
        
        
 class plotDuringTrainingBase(PredictCallback):
@@ -341,12 +345,16 @@ class plotClusterSummary(PredictCallback):
         
         td = TrainData_NanoML()
         preddict=predicted
+        rs = feat[-1]
+        
+        if 'sel_idx' in predicted.keys():
+            feat = [tf.gather_nd(f, predicted['sel_idx']).numpy() for f in feat if len(f.shape)>1]
         
         cdata=td.createTruthDict(feat)
         cdata['predBeta'] = preddict['pred_beta']
         cdata['predCCoords'] = preddict['pred_ccoords']
         cdata['predD'] = preddict['pred_dist']
-        rs = feat[-1]#last one has to be row splits
+        #last one has to be row splits
         # this will not work, since it will be adapted by batch, and not anymore the right tow splits
         #rs = preddict['row_splits']
         
@@ -603,6 +611,111 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
 
         print('finished full validation callback, proceeding with training.')
         
+        
+        
+        
+class NanSweeper(tf.keras.callbacks.Callback):
+    '''
+    Slight extension of the normal checkpoint to multiple checkpoints per epoch
+    '''
+    
+    def __init__(self):
+        super().__init__()
+        self.saved_weights = None
+        
+    def on_batch_end(self,batch,logs={}):
+        
+        mw = self.model.get_weights()
+        
+        if self.saved_weights is None:
+            self.saved_weights = []
+            for w in mw:
+                w = tf.where(tf.math.is_finite(w),w,tf.random.normal(w.shape, stddev=1e-3))
+                self.saved_weights.append(w)
+            return  
+        nw = []
+        n_nans = 0
+        for w,sw in zip(mw, self.saved_weights):
+            nw.append( tf.where( tf.math.is_finite(w), w, sw ).numpy())
+            n_nans += tf.reduce_sum(
+                tf.cast(tf.logical_not(tf.math.is_finite(w)),'int32')
+                        ).numpy()
+        
+        if n_nans>0:  
+            print("NanSweeper: removed", n_nans, "NaNs or Infs")
+            #find them:
+            for w in self.model.weights:
+                if np.all(np.isfinite(w.numpy())):
+                    continue
+                print(w.name, 'had NaNs')
+            
+            self.model.set_weights(nw)
+            
+            
+        self.saved_weights = nw
+        
+        
+        
+        
+class DebugPlotRunner(tf.keras.callbacks.Callback):
+    '''
+    Slight extension of the normal checkpoint to multiple checkpoints per epoch
+    '''
+    
+    def __init__(self, 
+                 sample : str,
+                 plot_frequency=500,
+                 adapt_outname = '',
+                 use_event=0):
+        
+        super().__init__()
+        self.plot_frequency = plot_frequency
+        self.sample = sample
+        self.changed_layers=[]
+        self.adapt_outname = adapt_outname
+        self.counter = 0
+        
+        #load the sample
+        assert sample[-6:] == '.djctd'
+        
+        #load on event
+        td = TrainData()
+        td.readFromFile(sample)
+        td.skim(use_event)
+        self.data = td.transferFeatureListToNumpy(False)
+        
+        
+    def _trigger_plots(self):
+        
+        self.changed_layers=[{}]
+        for l in self.model.layers:
+            if isinstance(l, _DebugPlotBase):
+                self.changed_layers.append(
+                    {'l': l, 'o':l.outdir }
+                    )
+                l.triggered = True
+                l.outdir = l.outdir + self.adapt_outname
+        
+    def _set_model_back(self):
+        for l in self.changed_layers:
+            l['l'].triggered = False
+            l['l'].outdir = l['o']
+        
+    def on_batch_end(self,batch,logs={}):
+        
+        #check if it should run
+        if self.counter < self.plot_frequency:
+            self.counter += 1
+            return
+        
+        self.counter = 0
+    
+        self._trigger_plots()
+        
+        #run model
+        _ = self.model(self.data)
+        
+        self._set_model_back()     
         
         
         

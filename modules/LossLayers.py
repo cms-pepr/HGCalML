@@ -265,7 +265,7 @@ class LossLayerBase(LayerWithMetrics):
                 
             self.maybe_print_loss(lossval,now)
             
-            lossval = tf.debugging.check_numerics(lossval, self.name+" produced inf or nan.")
+            #lossval = tf.debugging.check_numerics(lossval, self.name+" produced inf or nan.")
             #this can happen for empty batches. If there are deeper problems, check in the losses themselves
             #lossval = tf.where(tf.math.is_finite(lossval), lossval ,0.)
             if not self.return_lossval:
@@ -289,10 +289,11 @@ class LossLayerBase(LayerWithMetrics):
         if self.print_loss:
             if hasattr(lossval, 'numpy'):
                 print(self.name, 'loss', lossval.numpy())
+                tf.print(self.name, 'loss', lossval.numpy())
             else:
                 tf.print(self.name, 'loss', lossval)
+                print(self.name, 'loss', lossval)
                 
-        
         if self.print_batch_time or self.record_metrics:
             now = tf.timestamp() 
             prev = self.time
@@ -352,6 +353,52 @@ class LLValuePenalty(LossLayerBase):
         return tf.where(tf.math.is_finite(lossval), lossval, 0.)#DEBUG
 
 
+
+class LLObjectValuePenalty(LLValuePenalty):
+    
+    def __init__(self, 
+                 noise_scale = 10.,
+                 **kwargs):
+        '''
+        Simple value penalty loss, tries to keep values around default using simple
+        L2 regularisation; normalises per object
+        
+        inputs:
+        - value to penalise
+        - t_idx
+        
+        returns input
+        '''
+        self.noise_scale = noise_scale
+        super(LLObjectValuePenalty, self).__init__(**kwargs)
+
+    def get_config(self):
+        config = {'noise_scale': self.noise_scale}
+        base_config = super(LLObjectValuePenalty, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def loss(self, inputs):
+        assert len(inputs) == 2
+        val, tidx = inputs
+        
+        Msel,_,_ = CreateMidx(tidx, calc_m_not=False)
+        
+        if Msel is None or tf.shape(Msel)[0] == None:
+            return 0.
+        
+        val_k_m = SelectWithDefault(Msel, val, self.default) #K x V-obj x 1
+        mask_k_m = SelectWithDefault(Msel, tf.ones_like(val), 0.) #K x V-obj x 1
+        vloss = (self.default - val_k_m) ** 2
+        vloss = tf.math.divide_no_nan(tf.reduce_sum(vloss, axis=1), 
+                                      tf.reduce_sum(mask_k_m, axis=1) + 1e-6)
+        vloss = tf.reduce_mean(vloss)
+        
+        #now the noise
+        is_noise = tf.cast( tidx < 0, dtype='float32' )
+        vloss += self.noise_scale * tf.math.divide_no_nan(tf.reduce_sum(is_noise * (self.default - val)**2), 
+                                                          tf.reduce_sum(is_noise) + 1e-6)
+        return vloss
+        
 
 
 class CreateTruthSpectatorWeights(tf.keras.layers.Layer):
@@ -1141,7 +1188,7 @@ class LLClusterCoordinates(LossLayerBase):
         return distloss+reploss, distloss, reploss
     
     
-    def raw_loss(self,acoords, atidx, aspecw, aenergy, rs, downsample):
+    def raw_loss(self,acoords, atidx, aspecw, aenergy, rs):
         
         lossval = tf.zeros_like(acoords[0,0])
         reploss = tf.zeros_like(acoords[0,0])
@@ -1157,8 +1204,14 @@ class LLClusterCoordinates(LossLayerBase):
             specw = aspecw[rs[i]:rs[i+1]]
             energy = aenergy[rs[i]:rs[i+1]]
             
-            if downsample>0 and downsample < coords.shape[0]:
-                sel = tf.random.uniform(shape=(downsample,), minval=0, maxval=coords.shape[0]-1, dtype=tf.int32)
+            if self.downsample > 0:# and self.downsample < coords.shape[0]:
+                sel = tf.range(coords.shape[0])
+                sel = tf.random.shuffle(sel)
+                
+                length = tf.reduce_min([tf.constant(self.downsample), tf.shape(coords)[0]])
+                
+                sel = sel[:length]
+                #sel = tf.random.uniform(shape=(self.downsample,), minval=0, maxval=coords.shape[0]-1, dtype=tf.int32)
                 sel = tf.expand_dims(sel,axis=1)
                 coords = tf.gather_nd(coords, sel)
                 tidx = tf.gather_nd(tidx, sel)
@@ -1195,7 +1248,7 @@ class LLClusterCoordinates(LossLayerBase):
         #    return zero_loss
             
         lossval,distloss, reploss = self.raw_loss(
-            coords, tidx, specw, energy, rs, self.downsample)
+            coords, tidx, specw, energy, rs)
         
         lossval = tf.where(tf.math.is_finite(lossval), lossval, 0.)#DEBUG
         
@@ -1824,12 +1877,14 @@ class LLBasicObjectCondensation(LossLayerBase):
         
         super(LLBasicObjectCondensation, self).__init__(**kwargs)
         
-        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_kNNOC_per_sample, PreCond_OC_per_sample
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, Hinge_OC_per_sample, PreCond_OC_per_sample
         impl = Basic_OC_per_sample
         if implementation == 'pushpull':
             impl = PushPull_OC_per_sample
         if implementation == 'precond':
             impl = PreCond_OC_per_sample
+        if implementation == 'hinge':
+            impl = Hinge_OC_per_sample
         
         self.oc_loss_object = OC_loss(
             loss_impl = impl,
@@ -1915,6 +1970,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  div_repulsion=False,
                  dynamic_payload_scaling_onset=-0.005,
                  beta_push=0.,
+                 implementation = '',
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -1967,9 +2023,24 @@ class LLFullObjectCondensation(LossLayerBase):
         if huber_energy_scale>0 and alt_energy_loss:
             raise ValueError("huber_energy_scale>0 and alt_energy_loss exclude each other")
         
+        
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, Hinge_OC_per_sample, Hinge_Manhatten_OC_per_sample, PreCond_OC_per_sample
+        impl = Basic_OC_per_sample
+        if implementation == 'pushpull':
+            impl = PushPull_OC_per_sample
+        if implementation == 'precond':
+            impl = PreCond_OC_per_sample
+        if implementation == 'hinge':
+            impl = Hinge_OC_per_sample
+        if implementation == 'hinge_manhatten':
+            impl = Hinge_Manhatten_OC_per_sample
+        self.implementation = implementation
+            
+            
         #configuration here, no need for all that stuff below 
         #as far as the OC part is concerned (still config for payload though)
         self.oc_loss_object = OC_loss(
+            loss_impl = impl,
             q_min= q_min,
                  s_b=s_b,
                  use_mean_x=use_average_cc_pos,
@@ -2049,6 +2120,9 @@ class LLFullObjectCondensation(LossLayerBase):
     def calc_energy_correction_factor_loss(self, t_energy, t_dep_energies, 
                                            pred_energy,pred_energy_low_quantile,pred_energy_high_quantile,
                                            return_concat=False): 
+        
+        if self.energy_loss_weight == 0.:
+            return pred_energy**2 + pred_energy_low_quantile**2 + pred_energy_high_quantile**2
         
         ediff = (t_energy - pred_energy*t_dep_energies)/tf.sqrt(tf.abs(t_energy)+1e-3)
         
@@ -2245,10 +2319,11 @@ class LLFullObjectCondensation(LossLayerBase):
         if is_spectator is None:
             is_spectator = tf.zeros_like(pred_beta)
         
-        full_payload = tf.debugging.check_numerics(full_payload,"full_payload has nans of infs")
-        pred_ccoords = tf.debugging.check_numerics(pred_ccoords,"pred_ccoords has nans of infs")
-        energy_weights = tf.debugging.check_numerics(energy_weights,"energy_weights has nans of infs")
-        pred_beta = tf.debugging.check_numerics(pred_beta,"beta has nans of infs")
+        #just go with it
+        #full_payload = tf.debugging.check_numerics(full_payload,"full_payload has nans of infs")
+        #pred_ccoords = tf.debugging.check_numerics(pred_ccoords,"pred_ccoords has nans of infs")
+        #energy_weights = tf.debugging.check_numerics(energy_weights,"energy_weights has nans of infs")
+        #pred_beta = tf.debugging.check_numerics(pred_beta,"beta has nans of infs")
         #safe guards
         with tf.control_dependencies(
             [tf.assert_equal(rowsplits[-1], pred_beta.shape[0]),
@@ -2395,7 +2470,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'super_attraction':self.super_attraction,
             'div_repulsion' : self.div_repulsion,
             'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset,
-            'beta_push': self.beta_push
+            'beta_push': self.beta_push,
+            'implementation': self.implementation
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
