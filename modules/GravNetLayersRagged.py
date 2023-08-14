@@ -33,6 +33,82 @@ from baseModules import LayerWithMetrics
 #        outshape *= 2
 #    return tf.reshape(out, [-1, outshape]),midx
 
+
+class RandomSampling(tf.keras.layers.Layer):
+    """
+    Random sampling layer for ragged tensors
+
+    :param reduction: float, reduction factor
+    :param epsilon: float, small number to counter machine precision errors
+    :param **kwargs: other arguments
+
+    :return: selected points, row_splits, [old_size, indices_selected]
+
+    Layer that randomly samples points from a ragged point cloud.
+    On average it reduces the number of points by `reduction` factor.
+    If the reduction factor is chosen to be very high it is possible to
+    lose all points in a single event. In this case the reduction factor
+    will be changed on the fly to the hightes value that still leaves at
+    least one event in every point cloud.
+    """
+
+
+    def __init__(self, reduction=10., **kwargs):
+        super(RandomSampling, self).__init__(**kwargs)
+        self.reduction = reduction
+        self.epsilon = 1e-7
+
+
+    def get_config(self):
+        config = super(RandomSampling, self).get_config()
+        config.update({"reduction": self.reduction,
+                       "epsilon": self.epsilon})
+        return config
+
+
+    def call(self, inputs):
+        """
+        We keep score <= 1/reduction points and discard the rest.
+        """
+        x, is_track, row_splits = inputs
+        assert len(row_splits.shape) == 1, "row_splits must be 1D"
+        assert len(is_track.shape) == 2, "is_track must be 2D"
+        assert len(x.shape) == 2, "x must be 2D"
+        assert is_track.shape[0] == x.shape[0], "x and is_track don't match"
+        assert row_splits[-1] == x.shape[0], "row_splits and x don't match"
+        is_track = tf.cast(is_track, tf.bool)
+
+        N = row_splits[-1]
+        ragged = tf.RaggedTensor.from_row_splits(x, row_splits)
+
+        score = tf.random.uniform(shape=(N, 1), minval=0, maxval=1)
+        score = tf.where(is_track, 0., score)
+        score_ragged = tf.RaggedTensor.from_row_splits(score, row_splits)
+
+        min_event_score = tf.reduce_min(score_ragged, axis=1) # events x 1
+        highest_min_event_score = tf.reduce_max(min_event_score)
+        threshold = tf.where(highest_min_event_score < 1./self.reduction,
+                             1./self.reduction,
+                             highest_min_event_score + self.epsilon)
+        if threshold != 1./self.reduction:
+            print("WARNING: reduction threshold had to be adapted")
+
+        mask = score_ragged <= threshold
+        mask = tf.squeeze(score_ragged <= threshold, axis=-1)
+        selected = tf.ragged.boolean_mask(ragged, mask)
+        new_rs = selected.row_splits
+        full_indices = tf.range(score.shape[0])[...,tf.newaxis]
+        indices_selected = full_indices[score <= threshold]
+        old_size = row_splits[-1]
+        old_size = tf.cast(old_size, tf.int32)
+        indices_selected = tf.cast(indices_selected, tf.int32)
+
+        x = tf.gather(x, indices_selected, axis=0)
+
+        return x, new_rs, [old_size, indices_selected[...,tf.newaxis]]
+
+
+
 def AccumulateKnnSumw(distances,  features, indices, mean_and_max=False):
 
     origshape = features.shape[1]
@@ -305,7 +381,7 @@ class ShiftDistance(tf.keras.layers.Layer):
 
     def get_config(self):
         base_config = super(ShiftDistance, self).get_config()
-        return dict(list(base_config.items()) + list({'shift': self.shift}.items())) 
+        return dict(list(base_config.items()) + list({'shift': self.shift}.items()))
 
 
     def call(self, inputs):
