@@ -5,10 +5,15 @@ from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply, StopGradient
 from tensorflow.keras.layers import Lambda
 import tensorflow as tf
 from Initializers import EyeInitializer
-from GravNetLayersRagged import CondensateToIdxs, EdgeCreator
+from GravNetLayersRagged import CondensateToIdxs, EdgeCreator, Where, SplitOffTracks
+from GravNetLayersRagged import RaggedGravNet
 from Layers import SplitFeatures, FlatNeighbourFeatures, Sqrt
 
 from datastructures.TrainData_NanoML import n_id_classes
+from oc_helper_ops import SelectWithDefault
+
+
+
 
 def extent_coords_if_needed(coords, x, n_cluster_space_coordinates,name='coord_extend'):
     if n_cluster_space_coordinates > 3:
@@ -219,6 +224,10 @@ from GravNetLayersRagged import XYZtoXYZPrime, CondensatesToPseudoRS, ReversePse
 from LossLayers import LLGoodNeighbourHood, LLOCThresholds, LLKnnPushPullObjectCondensation, LLKnnSimpleObjectCondensation
 from LossLayers import NormaliseTruthIdxs
 #also move this to the standard pre-selection  model
+
+
+
+"""
 def condition_input(orig_inputs, no_scaling=False):
 
     if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
@@ -252,6 +261,49 @@ def condition_input(orig_inputs, no_scaling=False):
 
         #create starting point for cluster coords
         orig_inputs['prime_coords'] = XYZtoXYZPrime()(SelectFeatures(5, 8)(orig_inputs['orig_features']))
+
+    return orig_inputs
+"""
+
+
+def condition_input(orig_inputs,
+                    no_scaling=False,
+                    no_prime=False):
+
+    if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
+        orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,minimum=1e-1,active=True
+                                                         )([orig_inputs['t_spectator'],
+                                                            orig_inputs['t_idx']])
+        orig_inputs['t_spectator_weight'] = orig_t_spectator_weight
+
+
+    if not 'is_track' in orig_inputs.keys():
+        is_track = SelectFeatures(2,3)(orig_inputs['features'])
+        orig_inputs['is_track'] =  Where(outputval=1.,condition='!=0')([is_track, ZerosLike()(is_track)])
+
+    if not 'rechit_energy' in orig_inputs.keys():
+        orig_inputs['rechit_energy'] = SelectFeatures(0, 1)(orig_inputs['features'])
+
+    processed_features =  orig_inputs['features']
+    orig_inputs['orig_features'] = orig_inputs['features']
+
+    #get some things to work with
+    orig_inputs['row_splits'] = CastRowSplits()(orig_inputs['row_splits'])
+    orig_inputs['orig_row_splits'] = orig_inputs['row_splits']
+
+    #coords have not been built so features not processed, so this is the first time this is called
+    if not 'coords' in orig_inputs.keys():
+        if not no_scaling:
+            processed_features = ProcessFeatures(name='precondition_process_features')(orig_inputs['features'])
+
+        orig_inputs['coords'] = SelectFeatures(5, 8)(processed_features)
+        orig_inputs['features'] = processed_features
+
+        #create starting point for cluster coords
+        if no_prime:
+            orig_inputs['prime_coords'] = SelectFeatures(5, 8)(orig_inputs['orig_features'])
+        else:
+            orig_inputs['prime_coords'] = XYZtoXYZPrime()(SelectFeatures(5, 8)(orig_inputs['orig_features']))
 
     return orig_inputs
 
