@@ -1,16 +1,43 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply, LeakyReLU
-from tensorflow.keras.layers import Lambda
+from tensorflow.keras.layers import Dense, Concatenate, Add, Multiply
+from tensorflow.keras.layers import Flatten, Reshape
 
 from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply, StopGradient
 
-from Layers import OnesLike, ZerosLike
-from LossLayers import LLRegulariseGravNetSpace
+from LossLayers import LLEnergySums
+from LossLayers import LLRegulariseGravNetSpace, LLEdgeClassifier
+from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier
+from LossLayers import LLFullOCThresholds, LLBasicObjectCondensation, LLFillSpace
+from LossLayers import LLOCThresholds, LLKnnPushPullObjectCondensation, LLKnnSimpleObjectCondensation
+
+from RaggedLayers import RaggedCollapseHitInfo, RaggedDense, RaggedToFlatRS, FlatRSToRagged, ForceExec
+from RaggedLayers import RaggedCreateCondensatesIdxs, RaggedSelectFromIndices, RaggedMixHitAndCondInfo
+
+from GravNetLayersRagged import MixWhere, ValAndSign
+from GravNetLayersRagged import MultiBackScatterOrGather
+from GravNetLayersRagged import RaggedGravNet
+from GravNetLayersRagged import EdgeCreator, RandomSampling, MultiBackScatter
+from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
+from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
+from GravNetLayersRagged import CastRowSplits, ProcessFeatures
+from GravNetLayersRagged import ScaledGooeyBatchNorm, GooeyBatchNorm, Where, MaskTracksAsNoise
+from GravNetLayersRagged import Abs,RaggedGravNet,AttentionMP , LocalDistanceScaling, LocalGravNetAttention
+from GravNetLayersRagged import NeighbourGroups, GroupScoreFromEdgeScores, ElementScaling, EdgeSelector, KNN
+from GravNetLayersRagged import XYZtoXYZPrime, CreateMask, DistanceWeightedMessagePassing
+from GravNetLayersRagged import SelfAttention, ScaledGooeyBatchNorm2, ConditionalScaledGooeyBatchNorm
+
+from Layers import OnesLike, ZerosLike, Sqrt, CreateTruthSpectatorWeights
+from Layers import RaggedGlobalExchang, CheckNaN, SphereActivatione
+
+from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics, OCReductionMetrics
+from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
+from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
+from GraphCondensationLayers import GraphCondensation, CreateGraphCondensation, PushUp, SelectUp, PullDown
+from GraphCondensationLayers import LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
+from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore
+
 from Initializers import EyeInitiklizer
-from GravNetLayersRagged import CondensateToIdxs, EdgeCreator, RandomSampling, MultiBackScatter
-from Layers import SplitFeatures, FlatNeighbourFeatures, Sqrt
 from datastructures.TrainData_NanoML import n_id_classes
-from binned_select_knn_op import BinnedSelectKnn
 
 
 def random_sampling_unit(x, rs, is_track, physical_coords, reductions, config=None):
@@ -56,7 +83,9 @@ def random_sampling_unit(x, rs, is_track, physical_coords, reductions, config=No
     x_reduced_1, rs_reduced_1, (size_0, indices_selected_0) = RandomSampling(reductions[0])([x_top_level, is_track, rs])
     gravnetcoords_reduced_1 = SelectFromIndices()([indices_selected_0, gncoords])
 
-    gnnidx_reduced_1, gndist_reduced_1 = BinnedSelectKnn(config['n_gravnet_neighbours']+1, gravnetcoords_reduced_1,  rs_reduced_1, max_radius= -1.0, tf_compatible=False, n_bins=None, name='RSU_binned_select_knn_1')
+    gnnidx_reduced_1, gndist_reduced_1 = KNN(
+        K=config['n_gravnet_neighbours'], record_metrics=True,
+        name="RSU_knn_reduction1", min_bins=20)([gravnetcoords_reduced_1, rs]) #TODO: the hardcoded part here might not be optimal
     gnnidx_reduced_1 = tf.reshape(gnnidx_reduced_1, [-1, config['n_gravnet_neighbours']+1])
     gndist_reduced_1 = tf.reshape(gndist_reduced_1, [-1, config['n_gravnet_neighbours']+1])
 
@@ -192,7 +221,6 @@ def create_outputs(x, n_ccoords=3,
 
 
 
-from GravNetLayersRagged import MultiBackScatterOrGather
 def re_integrate_to_full_hits(
         pre_selection,
         pred_ccoords,
@@ -278,22 +306,6 @@ def re_integrate_to_full_hits(
 
 
 
-from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
-from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
-from GravNetLayersRagged import CastRowSplits, ProcessFeatures
-from GravNetLayersRagged import ScaledGooeyBatchNorm, GooeyBatchNorm, Where, MaskTracksAsNoise
-from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLBasicObjectCondensation, LLFillSpace, LLEdgeClassifier
-from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics, OCReductionMetrics
-from Layers import CreateTruthSpectatorWeights
-
-from tensorflow.keras.layers import Flatten, Reshape
-
-from GravNetLayersRagged import NeighbourGroups,GroupScoreFromEdgeScores,ElementScaling, EdgeSelector, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
-from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
-
-from GravNetLayersRagged import XYZtoXYZPrime, CondensatesToPseudoRS, ReversePseudoRS, AssertEqual, CleanCondensations, CreateMask
-from LossLayers import LLGoodNeighbourHood, LLOCThresholds, LLKnnPushPullObjectCondensation, LLKnnSimpleObjectCondensation
-from LossLayers import NormaliseTruthIdxs
 #also move this to the standard pre-selection  model
 def condition_input(orig_inputs, no_scaling=False):
 
@@ -1127,11 +1139,6 @@ def pre_selection_model(
     return out
 
 
-from RaggedLayers import RaggedCreateCondensatesIdxs, RaggedSelectFromIndices, RaggedMixHitAndCondInfo
-from RaggedLayers import RaggedCollapseHitInfo, RaggedDense, RaggedToFlatRS, FlatRSToRagged, ForceExec
-
-from GravNetLayersRagged import Abs,RaggedGravNet,AttentionMP ,DistanceWeightedAttentionMP  , EdgeContractAndMix, LocalDistanceScaling, LocalGravNetAttention
-from LossLayers import LLFullOCThresholds
 
 def noise_filter_block(orig_inputs, x, name, trainable,
                        record_metrics, noise_threshold, rs,
@@ -1191,8 +1198,6 @@ def noise_filter_block(orig_inputs, x, name, trainable,
 
     return out
 
-from LossLayers import LLEnergySums
-from GravNetLayersRagged import MixWhere, ValAndSign
 #make this much simpler
 def pre_selection_model2(
         orig_inputs,
@@ -1539,13 +1544,6 @@ def pre_selection_model2(
 
 
 
-from RaggedLayers import RaggedCreateCondensatesIdxs, RaggedSelectFromIndices, RaggedMixHitAndCondInfo
-from RaggedLayers import RaggedCollapseHitInfo, RaggedDense, RaggedToFlatRS, FlatRSToRagged, ForceExec
-
-from GravNetLayersRagged import RaggedGravNet
-from LossLayers import LLFullOCThresholds
-
-
 def tiny_intermediate_condensation(
         x, rs, energy, t_specweight, t_idx,
         trainable=True,
@@ -1679,13 +1677,6 @@ def intermediate_condensation(
     return x #RaggedToFlatRS()(c_x)
 
 
-from GravNetLayersRagged import SelfAttention, ScaledGooeyBatchNorm2, EdgeConvStatic, SplitOffTracks, ConcatRaggedTensors, ConditionalScaledGooeyBatchNorm
-from Layers import RaggedGlobalExchange
-from GraphCondensationLayers import GraphCondensation,CreateGraphCondensation, PushUp, SelectUp, PullDown, LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
-from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, LLGraphCondensationEdges
-from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
-from LossLayers import LLValuePenalty
-from Layers import CheckNaN, SphereActivation
 
 def pre_graph_condensation(
         orig_inputs,
