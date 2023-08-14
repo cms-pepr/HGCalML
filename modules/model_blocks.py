@@ -1,89 +1,125 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dropout, Dense, Concatenate, BatchNormalization, Add, Multiply, LeakyReLU
-from tensorflow.keras.layers import Lambda
+from tensorflow.keras.layers import Dense, Concatenate, Add, Multiply
+from tensorflow.keras.layers import Flatten, Reshape
 
 from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply, StopGradient
 from GravNetLayersRagged import RaggedGravNet
 
-from Layers import OnesLike, ZerosLike
-from LossLayers import LLRegulariseGravNetSpace
+from LossLayers import LLEnergySums
+from LossLayers import LLRegulariseGravNetSpace, LLEdgeClassifier
+from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier
+from LossLayers import LLFullOCThresholds, LLBasicObjectCondensation, LLFillSpace
+from LossLayers import LLOCThresholds, LLKnnPushPullObjectCondensation, LLKnnSimpleObjectCondensation
+
+from RaggedLayers import RaggedCollapseHitInfo, RaggedDense, RaggedToFlatRS, FlatRSToRagged, ForceExec
+from RaggedLayers import RaggedCreateCondensatesIdxs, RaggedSelectFromIndices, RaggedMixHitAndCondInfo
+
+from GravNetLayersRagged import MixWhere, ValAndSign
+from GravNetLayersRagged import MultiBackScatterOrGather
+from GravNetLayersRagged import RaggedGravNet
+from GravNetLayersRagged import EdgeCreator, RandomSampling, MultiBackScatter
+from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
+from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
+from GravNetLayersRagged import CastRowSplits, ProcessFeatures
+from GravNetLayersRagged import ScaledGooeyBatchNorm, GooeyBatchNorm, Where, MaskTracksAsNoise
+from GravNetLayersRagged import Abs,RaggedGravNet,AttentionMP , LocalDistanceScaling, LocalGravNetAttention
+from GravNetLayersRagged import NeighbourGroups, GroupScoreFromEdgeScores, ElementScaling, EdgeSelector, KNN
+from GravNetLayersRagged import XYZtoXYZPrime, CreateMask, DistanceWeightedMessagePassing
+from GravNetLayersRagged import SelfAttention, ScaledGooeyBatchNorm2, ConditionalScaledGooeyBatchNorm
+
+from Layers import OnesLike, ZerosLike, Sqrt, CreateTruthSpectatorWeights
+from Layers import RaggedGlobalExchang, CheckNaN, SphereActivation
+
+from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics, OCReductionMetrics
+from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
+from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
+from GraphCondensationLayers import GraphCondensation, CreateGraphCondensation, PushUp, SelectUp, PullDown
+from GraphCondensationLayers import LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
+from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore
 from Initializers import EyeInitiklizer
-from GravNetLayersRagged import CondensateToIdxs, EdgeCreator, RandomSampling, MultiBackScatter
-from Layers import SplitFeatures, FlatNeighbourFeatures, Sqrt
+
 from datastructures.TrainData_NanoML import n_id_classes
 from oc_helper_ops import SelectWithDefault
 
 from binned_select_knn_op import BinnedSelectKnn
 
 
-def random_sampling_unit(x, rs, is_track, physical_coords, reductions, config=None):
+def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reductions, gravnet_neighbours, gravnet_d):
     """
     Unit that reduces the number of hits by random sampling in potentially multiple steps
     and backgatheres the information afterwards to the original shape
     """
 
-    default_config = {
-        'n_gravnet_dimensions': 3,
-        'n_gravnet_neighbours': 256,
-        'regularise_gravnet': 0.1,
-        'message_passing': [[64, 32, 16], [32, 16, 16], [32, 32, 32]],
-        'concat': True
-    }
-    if config is None:
-        config = default_config
-
-    xgn, gncoords, gnnidx, gndist = RaggedGravNet(
-        name = f"RSU_gravnet",
-        n_neighbours=config['n_gravnet_neighbours'],
-        n_dimensions=config['n_gravnet_dimensions'],
-        n_filters=64,
-        n_propagate=64,
-        record_metrics=True,
-        coord_initialiser_noise=1e-2,
-        use_approximate_knn=False,
-        feature_activation='elu',
-        )([x, rs])
-    gndist = LLRegulariseGravNetSpace(config['regularise_gravnet'])([gndist, physical_coords, gnnidx])
     x_top_level = Concatenate()(x, xgn, gncoords)
+    x_top_level = DistanceWeightedMessagePassing(
+        name=f"RSU_message_passing_toplevel_iteration",
+        n_feature_transformation = 64,
+        activation='elu',
+    )([x, gnnidx, gndist])
+    x_top_level = SphereActivation()(x_top_level)
 
-    # Top level message passing
-    for i, message in enumerate(config['message_passing'][0]):
-        x_top_level = DistanceWeightedMessagePassing(
-            name=f"RSU_message_passing_toplevel_iteration_{i}",
-            n_feature_transformation = message,
-            activation='elu',
-        )([x, gnnidx, gndist])
-        x_top_level = SphereActivation()(x_top_level)
-
-    # First reduction
+    # First reduction block
     x_reduced_1, rs_reduced_1, (size_0, indices_selected_0) = RandomSampling(reductions[0])([x_top_level, is_track, rs])
     gravnetcoords_reduced_1 = SelectFromIndices()([indices_selected_0, gncoords])
+    is_track_1 = SelectFromIndices()([indices_selected_0, is_track])
+    gnnidx_reduced_1, gndist_reduced_1 = KNN(
+        K=gravnet_neighbours, record_metrics=True,
+        name="RSU_knn_reduction1", min_bins=20)([gravnetcoords_reduced_1, rs]) #TODO: the hardcoded part here might not be optimal
 
-    gnnidx_reduced_1, gndist_reduced_1 = BinnedSelectKnn(config['n_gravnet_neighbours']+1, gravnetcoords_reduced_1,  rs_reduced_1, max_radius= -1.0, tf_compatible=False, n_bins=None, name='RSU_binned_select_knn_1')
-    gnnidx_reduced_1 = tf.reshape(gnnidx_reduced_1, [-1, config['n_gravnet_neighbours']+1])
-    gndist_reduced_1 = tf.reshape(gndist_reduced_1, [-1, config['n_gravnet_neighbours']+1])
-
-    gndist_reduced_1 = tf.where(gnnidx_reduced_1<0,0.,gndist_reduced_1)
-    gndist_reduced_1 = gndist_reduced_1[:,1:]
-    gndist_reduced_1 = gndist_reduced_1 / reductions[0] #TODO: check if this has to be scaled differently
-    gnnidx_reduced_1 = gnnidx_reduced_1[:,1:]
+    gndist_reduced_1 = gndist_reduced_1 / (reductions[0]**gravnet_d) #TODO: verify this
 
     # Message passing on reduction level
     x_level_1 = x_reduced_1
-    for i, message in enumerate(config['message_passing'][1]):
-        x_level_1 = DistanceWeightedMessagePassing(
-            name=f"RSU_message_passing_reduction1_iteration_{i}",
-            n_feature_transformation = message,
-            activation='elu',
-        )([x_level_1, gnnidx_reduced_1, gndist_reduced_1])
-        x_level_1 = SphereActivation()(x_level_1)
-
+    x_level_1 = DistanceWeightedMessagePassing(
+        name=f"RSU_message_passing_reduction1_iteration",
+        n_feature_transformation = 64,
+        activation='elu',
+    )([x_level_1, gnnidx_reduced_1, gndist_reduced_1])
+    x_level_1 = SphereActivation()(x_level_1)
     back_scattered_level1 = MultiBackScatter()([x_level_1, [(size_0, indices_selected_0)]])
 
-    if config['concat']:
-        x_out = Concatenate()([x_top_level, back_scattered_level1])
-    else:
-        raise NotImplementedError
+    # Second reduction block
+    x_reduced_2, rs_reduced_2, (size_1, indices_selected_1) = RandomSampling(reductions[1])([x_level_1, is_track_1, rs_reduced_1])
+    gravnetcoords_reduced_2 = SelectFromIndices()([indices_selected_1, gncoords])
+    gnnidx_reduced_2, gndist_reduced_2 = KNN(
+        K=gravnet_neighbours, record_metrics=True,
+        name="RSU_knn_reduction1", min_bins=20)([gravnetcoords_reduced_2, rs_reduced_1]) #TODO: the hardcoded part here might not be optimal
+
+    gndist_reduced_2 = gndist_reduced_2 / (reductions[1]**gravnet_d) #TODO: verify this
+
+    # Message passing on reduction level
+    x_level_2 = x_reduced_2
+    x_level_2 = DistanceWeightedMessagePassing(
+        name=f"RSU_message_passing_reduction1_iteration",
+        n_feature_transformation = 64,
+        activation='elu',
+    )([x_level_2, gnnidx_reduced_2, gndist_reduced_2])
+    x_level_2 = SphereActivation()(x_level_2)
+    back_scattered_level21 = MultiBackScatter()([x_level_2, [(size_1, indices_selected_1)]])
+    back_scattered_level22 = MultiBackScatter()([back_scattered_level21, [(size_0, indices_selected_0)]])
+
+    # Third reduction block
+    x_reduced_3, rs_reduced_3, (size_2, indices_selected_2) = RandomSampling(reductions[2])([x_level_2, is_track_2, rs_reduced_2])
+    gravnetcoords_reduced_3 = SelectFromIndices()([indices_selected_2, gncoords])
+    gnnidx_reduced_3, gndist_reduced_3 = KNN(
+        K=gravnet_neighbours, record_metrics=True,
+        name="RSU_knn_reduction1", min_bins=20)([gravnetcoords_reduced_3, rs_reduced_2]) #TODO: the hardcoded part here might not be optimal
+
+    gndist_reduced_3 = gndist_reduced_3 / (reductions[2]**gravnet_d) #TODO: verify this
+
+    # Message passing on reduction level
+    x_level_3 = x_reduced_3
+    x_level_3 = DistanceWeightedMessagePassing(
+        name=f"RSU_message_passing_reduction1_iteration",
+        n_feature_transformation = 64,
+        activation='elu',
+    )([x_level_3, gnnidx_reduced_3, gndist_reduced_3])
+    x_level_3 = SphereActivation()(x_level_3)
+    back_scattered_level31 = MultiBackScatter()([x_level_3, [(size_2, indices_selected_2)]])
+    back_scattered_level32 = MultiBackScatter()([back_scattered_level31, [(size_1, indices_selected_1)]])
+    back_scattered_level33 = MultiBackScatter()([back_scattered_level32, [(size_0, indices_selected_0)]])
+
+    x_out = Concatenate()([x_top_level, back_scattered_level1, back_scattered_level22, back_scattered_level33])
 
     return x_out
 
@@ -194,7 +230,6 @@ def create_outputs(x, n_ccoords=3,
 
 
 
-from GravNetLayersRagged import MultiBackScatterOrGather
 def re_integrate_to_full_hits(
         pre_selection,
         pred_ccoords,
@@ -280,22 +315,6 @@ def re_integrate_to_full_hits(
 
 
 
-from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectFromIndicesWithPad
-from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
-from GravNetLayersRagged import CastRowSplits, ProcessFeatures
-from GravNetLayersRagged import ScaledGooeyBatchNorm, GooeyBatchNorm, Where, MaskTracksAsNoise
-from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier, LLBasicObjectCondensation, LLFillSpace, LLEdgeClassifier
-from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics, OCReductionMetrics
-from Layers import CreateTruthSpectatorWeights
-
-from tensorflow.keras.layers import Flatten, Reshape
-
-from GravNetLayersRagged import NeighbourGroups,GroupScoreFromEdgeScores,ElementScaling, EdgeSelector, KNN, DistanceWeightedMessagePassing, RecalcDistances, MultiAttentionGravNetAdd
-from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
-
-from GravNetLayersRagged import XYZtoXYZPrime, CondensatesToPseudoRS, ReversePseudoRS, AssertEqual, CleanCondensations, CreateMask
-from LossLayers import LLGoodNeighbourHood, LLOCThresholds, LLKnnPushPullObjectCondensation, LLKnnSimpleObjectCondensation
-from LossLayers import NormaliseTruthIdxs
 #also move this to the standard pre-selection  model
 
 
@@ -1176,11 +1195,6 @@ def pre_selection_model(
     return out
 
 
-from RaggedLayers import RaggedCreateCondensatesIdxs, RaggedSelectFromIndices, RaggedMixHitAndCondInfo
-from RaggedLayers import RaggedCollapseHitInfo, RaggedDense, RaggedToFlatRS, FlatRSToRagged, ForceExec
-
-from GravNetLayersRagged import Abs,RaggedGravNet,AttentionMP ,DistanceWeightedAttentionMP  , EdgeContractAndMix, LocalDistanceScaling, LocalGravNetAttention
-from LossLayers import LLFullOCThresholds
 
 def noise_filter_block(orig_inputs, x, name, trainable,
                        record_metrics, noise_threshold, rs,
@@ -1240,8 +1254,6 @@ def noise_filter_block(orig_inputs, x, name, trainable,
 
     return out
 
-from LossLayers import LLEnergySums
-from GravNetLayersRagged import MixWhere, ValAndSign
 #make this much simpler
 def pre_selection_model2(
         orig_inputs,
@@ -1588,13 +1600,6 @@ def pre_selection_model2(
 
 
 
-from RaggedLayers import RaggedCreateCondensatesIdxs, RaggedSelectFromIndices, RaggedMixHitAndCondInfo
-from RaggedLayers import RaggedCollapseHitInfo, RaggedDense, RaggedToFlatRS, FlatRSToRagged, ForceExec
-
-from GravNetLayersRagged import RaggedGravNet
-from LossLayers import LLFullOCThresholds
-
-
 def tiny_intermediate_condensation(
         x, rs, energy, t_specweight, t_idx,
         trainable=True,
@@ -1728,13 +1733,6 @@ def intermediate_condensation(
     return x #RaggedToFlatRS()(c_x)
 
 
-from GravNetLayersRagged import SelfAttention, ScaledGooeyBatchNorm2, EdgeConvStatic, SplitOffTracks, ConcatRaggedTensors, ConditionalScaledGooeyBatchNorm
-from Layers import RaggedGlobalExchange
-from GraphCondensationLayers import GraphCondensation,CreateGraphCondensation, PushUp, SelectUp, PullDown, LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
-from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, LLGraphCondensationEdges
-from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
-from LossLayers import LLValuePenalty
-from Layers import CheckNaN, SphereActivation
 
 def pre_graph_condensation(
         orig_inputs,

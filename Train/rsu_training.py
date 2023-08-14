@@ -33,6 +33,7 @@ from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import extent_coords_if_needed
 from model_blocks import create_outputs
 from model_tools import apply_weights_from_path
+from model_tools import random_sampling_unit
 from noise_filter import noise_filter
 from callbacks import plotClusteringDuringTraining
 from callbacks import plotClusterSummary
@@ -182,73 +183,43 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
-    for i in range(GRAVNET_ITERATIONS):
 
+    gravnet_regs = [0.1, 0.01, 0.01]
+    reductions = [10., 5., 5.]
+
+    for i in range(GRAVNET_ITERATIONS):
         x = RaggedGlobalExchange()([x, rs])
         x, norm = SphereActivation(return_norm=True)(x)
 
-        for j in range(PRE_GRAVNET_DENSE_ITERATIONS):
-            n = config['Architecture']['dense_pre_gravnet'][j]['n']
-            x = Dense(n,
-                      name=f"dense_pre_gravnet{j}_iteration_{i}",
-                      activation=DENSE_ACTIVATION,
-                      kernel_regularizer=DENSE_REGULARIZER)(x)
-            if not j == PRE_GRAVNET_DENSE_ITERATIONS - 1:
-                x = Dropout(DROPOUT, name=f"droput_pre_gravnet_{j}_iteration_{i}")(x)
-
-        x = ScaledGooeyBatchNorm2(
-            name=f"batchnorm_1_iteration_{i}",
-            **BATCHNORM_OPTIONS)(x)
-        x = Concatenate(name=f"concat_ccoords_iteration_{i}")([c_coords,x])
-
         xgn, gncoords, gnnidx, gndist = RaggedGravNet(
-            name = f"gravnet_{i}",
+            name = f"RSU_gravnet_{i}",
             n_neighbours=config['Architecture']['gravnet'][i]['n'],
             n_dimensions=N_GRAVNET_SPACE_COORDINATES,
             n_filters=64,
             n_propagate=64,
             record_metrics=True,
             coord_initialiser_noise=1e-2,
-            use_approximate_knn=False
+            use_approximate_knn=False,
+            feature_activation='elu',
             )([x, rs])
-        if float(config['General']['regulariseGravNet']) > 0.0:
-            scale = float(config['General']['regulariseGravNet'])
-            gndist = LLRegulariseGravNetSpace(scale=scale)([gndist, prime_coords, gnnidx])
-        x = Concatenate(name=f"concat_xgn_iteration_{i}")([x, xgn])
+
+        gndist = LLRegulariseGravNetSpace(scale=gravnet_regs[i])([gndist, prime_coords, gnnidx])
+
+        x = random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduction=reductions[i],
+                                     n_gravnet_neigbours=config['Architecture']['gravnet'][i]['n'],
+                                     n_gravnet_dimensions=N_GRAVNET_SPACE_COORDINATES)
 
         gndist = AverageDistanceRegularizer(
             strength=1e-3,
             record_metrics=True
             )(gndist)
-
         gndist = StopGradient()(gndist)
-
         gncoords = StopGradient()(gncoords)
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
             outdir=debug_outdir,
             name='gn_coords_'+str(i)
             )([gncoords, energy, t_idx, rs])
-        x = Concatenate()([gncoords,x])
-        x = ScaledGooeyBatchNorm2(
-            name=f"batchnorm_2_iteration_{i}",
-            **BATCHNORM_OPTIONS)(x)
-
-        for j in range(MESSAGE_PASSING_ITERATIONS):
-            n = config['Architecture']['message_passing'][j]['n']
-            shift = config['Architecture']['message_passing'][j]['shift']
-            gndist = ShiftDistance(shift=shift)(gndist)
-            x = DistanceWeightedMessagePassing(
-                name=f"message_passing_{j}_iteration_{i}",
-                n_feature_transformation = [n],
-                activation=DENSE_ACTIVATION,
-            )([x, gnnidx, gndist])
-            if SPHERE_ACTIVATION:
-                x = SphereActivation()(x)
-            else:
-                x = ScaledGooeyBatchNorm2(
-                    name=f"batchnorm_message_passing_{j}_iteration_{i}",
-                    **BATCHNORM_OPTIONS)(x)
 
         for j in range(POST_MESSAGE_PASSING_DENSE_ITERATIONS):
             n = config['Architecture']['dense_post_message_passing'][j]['n']
@@ -265,6 +236,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             **BATCHNORM_OPTIONS)(x)
 
         allfeat.append(x)
+
 
     ###########################################################################
     ### Create output of model and define loss ################################
