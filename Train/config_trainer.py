@@ -183,7 +183,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ###########################################################################
 
     for i in range(GRAVNET_ITERATIONS):
-        
+
         x = RaggedGlobalExchange()([x, rs])
         x, norm = SphereActivation(return_norm=True)(x)
 
@@ -212,7 +212,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             use_approximate_knn=False
             )([x, rs])
         if float(config['General']['regulariseGravNet']) > 0.0:
-            gndist = LLRegulariseGravNetSpace()([gndist, prime_coords, gnnidx])
+            scale = float(config['General']['regulariseGravNet'])
+            gndist = LLRegulariseGravNetSpace(scale=scale)([gndist, prime_coords, gnnidx])
         x = Concatenate(name=f"concat_xgn_iteration_{i}")([x, xgn])
 
         gndist = AverageDistanceRegularizer(
