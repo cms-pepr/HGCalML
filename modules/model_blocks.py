@@ -37,11 +37,125 @@ from GraphCondensationLayers import GraphCondensation, CreateGraphCondensation, 
 from GraphCondensationLayers import LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
 from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore
 from Initializers import EyeInitializer
+from Regularizers import AverageDistanceRegularizer
 
 from datastructures.TrainData_NanoML import n_id_classes
 from oc_helper_ops import SelectWithDefault
 
 from binned_select_knn_op import BinnedSelectKnn
+
+
+def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduction=8., n_reduction=3, name='RSU'):
+    """
+    Unit that randomly samples vertices and backgatheres the information afterwards to the original shape
+    In the reduced space, the vertices are connected by KNN and message passing is performed.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        Input features of shape (N, F)
+    rs : tf.Tensor
+        Row splits of shape (B,)
+    xgn : tf.Tensor
+        Input features of shape (N, F')
+    gncoords : tf.Tensor
+        Coordinates of shape (N, D)
+    gnnidx : tf.Tensor
+        Indices of shape (N, K)
+    gndist : tf.Tensor
+        Distances of shape (N, K)
+    is_track : tf.Tensor
+        Boolean tensor of shape (N,1)
+    reduction : float, optional
+        Reduction factor of each step, by default 8
+    n_reduction : int, optional
+        Number of reduction steps, by default 3
+
+    Example calculation with default parameters:
+        If a large shower has 2048 hits and we we use 64 neighbours in the gravnet space,
+        most vertices would only be connected within the shower.
+        After two reduction steps we would typically have 32 vertices left, meaning that vertices
+        are also connected to vertices from other showers. After the third reduction step on
+        average only 4 hits would remain for a large shower and vertices would be connected
+        over a large part of the calorimter.
+
+        A full event with ~100k hits would be reduced to only 200 vertices after three reduction steps.
+        Using 64 neighbours we can connect about 1/3 of the entire detector.
+    """
+    D = tf.cast(gncoords.shape[-1], tf.int32)
+    K = tf.cast(gnnidx.shape[-1], tf.int32)
+    # N_Dense = 64
+    N_Dense = tf.cast(x.shape[-1], tf.int32)
+
+    x0 = Concatenate()([x, xgn, gncoords])
+    x_left0 = Dense(N_Dense, activation='elu', name=name + '_dense0')(x0)
+
+    xleft_list = [x_left0]  # left-sided features after message passing
+    row_splits_list = [rs]
+    gncoords_list = [gncoords]
+    gnnidx_list = [gnnidx]
+    gndist_list = [gndist]
+    is_track_list = [is_track]
+    size_list = []      # this list will stay one entry shorter than the others
+    indices_list = []   # this list will stay one entry shorter than the others
+
+    # Left side of the RSU
+    for i in range(n_reduction):
+        # Sampling and KNN
+        x_temp, rs_temp, (size_tmp, indices_selected_tmp) = RandomSampling(
+            reduction,
+            name=name + f"_RSU_random_sampling{i}",
+        )([xleft_list[-1], is_track_list[-1], row_splits_list[-1]])
+
+        gravnetcoords_tmp = SelectFromIndices()([indices_selected_tmp, gncoords])
+        gnnidx_tmp, gndist_tmp = KNN(K=K, record_metrics=True, name=name + f"_RSU_KNN_{i}", min_bins=20)([gravnetcoords_tmp, rs_temp])
+        gndist_tmp = gndist_tmp * (r**(2/D))    #TOOD: Double or triple check that this makes sense
+        gndist_tmp = AverageDistanceRegularizer(strength=1e-6, record_metrics=True)(gndist_tmp)
+
+        # Message Passing
+        x_temp = DistanceWeightedMessagePassing(
+            name=name + f"_RSU_message_passing_left_{i}",
+            n_feature_transformation = [64],
+            activation='elu',
+        )([x_temp, gnnidx_tmp, gndist_tmp])
+        x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_postMP_{i}')(x_temp)
+
+        # Bookkeeping
+        xleft_list.append(x_temp)
+        row_splits_list.append(rs_temp)
+        gncoords_list.append(gravnetcoords_tmp)
+        gnnidx_list.append(gnnidx_tmp)
+        gndist_list.append(gndist_tmp)
+        is_track_tmp = SelectFromIndices()([indices_selected_tmp, is_track_list[-1]])
+        is_track_list.append(is_track_tmp)
+        size_list.append(size_tmp)
+        indices_list.append(indices_selected_tmp)
+
+
+    # Right side of the RSU
+    x_right_list = [xleft_list[-1]] # right-sided features after message passing
+    for j in range(n_reduction):
+        scatter_tmp = (size_list[-1-j], indices_list[-1-j]) # go backwards through the lists
+        gnnidx_tmp = gnnidx_list[-1-j]
+        gndist_tmp = gndist_list[-1-j]
+
+        x_temp = MultiBackScatter()([x_right_list[j], [scatter_tmp]])
+
+        # Message Passing
+        x_temp = DistanceWeightedMessagePassing(
+            name=name + f"_RSU_message_passing_right_{j}",
+            n_feature_transformation = [64],
+            activation='elu',
+        )([x_temp, gnnidx_tmp, gndist_tmp])
+        x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_postMP_{i}')(x_temp)
+
+        # Skip connection
+        x_temp = Add()([x_temp, xleft_list[-2-j]])
+
+        x_right_list.append(x_temp)
+
+    x_out = x_right_list[-1]
+    return x_out
 
 
 def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reductions, gravnet_neighbours, gravnet_d, name='RSU'):
