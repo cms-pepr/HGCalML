@@ -28,7 +28,7 @@ from GravNetLayersRagged import XYZtoXYZPrime, CreateMask, DistanceWeightedMessa
 from GravNetLayersRagged import SelfAttention, ScaledGooeyBatchNorm2, ConditionalScaledGooeyBatchNorm
 
 from Layers import OnesLike, ZerosLike, Sqrt, CreateTruthSpectatorWeights
-from Layers import RaggedGlobalExchang, CheckNaN, SphereActivation
+from Layers import RaggedGlobalExchange, CheckNaN, SphereActivation
 
 from MetricsLayers import MLReductionMetrics, SimpleReductionMetrics, OCReductionMetrics
 from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscriminator
@@ -36,7 +36,7 @@ from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
 from GraphCondensationLayers import GraphCondensation, CreateGraphCondensation, PushUp, SelectUp, PullDown
 from GraphCondensationLayers import LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
 from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore
-from Initializers import EyeInitiklizer
+from Initializers import EyeInitializer
 
 from datastructures.TrainData_NanoML import n_id_classes
 from oc_helper_ops import SelectWithDefault
@@ -44,16 +44,19 @@ from oc_helper_ops import SelectWithDefault
 from binned_select_knn_op import BinnedSelectKnn
 
 
-def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reductions, gravnet_neighbours, gravnet_d):
+def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reductions, gravnet_neighbours, gravnet_d, name='RSU'):
     """
     Unit that reduces the number of hits by random sampling in potentially multiple steps
     and backgatheres the information afterwards to the original shape
     """
 
-    x_top_level = Concatenate()(x, xgn, gncoords)
+    assert len(reductions) == 3
+    assert isinstance(reductions[0], float)
+
+    x_top_level = Concatenate()([x, xgn, gncoords])
     x_top_level = DistanceWeightedMessagePassing(
-        name=f"RSU_message_passing_toplevel_iteration",
-        n_feature_transformation = 64,
+        name=name + f"_RSU_message_passing_toplevel_iteration",
+        n_feature_transformation = [64],
         activation='elu',
     )([x, gnnidx, gndist])
     x_top_level = SphereActivation()(x_top_level)
@@ -64,15 +67,15 @@ def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reducti
     is_track_1 = SelectFromIndices()([indices_selected_0, is_track])
     gnnidx_reduced_1, gndist_reduced_1 = KNN(
         K=gravnet_neighbours, record_metrics=True,
-        name="RSU_knn_reduction1", min_bins=20)([gravnetcoords_reduced_1, rs]) #TODO: the hardcoded part here might not be optimal
+        name=name + "_RSU_knn_reduction1", min_bins=20)([gravnetcoords_reduced_1, rs_reduced_1]) #TODO: the hardcoded part here might not be optimal
 
     gndist_reduced_1 = gndist_reduced_1 / (reductions[0]**gravnet_d) #TODO: verify this
 
     # Message passing on reduction level
     x_level_1 = x_reduced_1
     x_level_1 = DistanceWeightedMessagePassing(
-        name=f"RSU_message_passing_reduction1_iteration",
-        n_feature_transformation = 64,
+        name=name + f"_RSU_message_passing_reduction1_iteration",
+        n_feature_transformation = [64],
         activation='elu',
     )([x_level_1, gnnidx_reduced_1, gndist_reduced_1])
     x_level_1 = SphereActivation()(x_level_1)
@@ -81,17 +84,18 @@ def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reducti
     # Second reduction block
     x_reduced_2, rs_reduced_2, (size_1, indices_selected_1) = RandomSampling(reductions[1])([x_level_1, is_track_1, rs_reduced_1])
     gravnetcoords_reduced_2 = SelectFromIndices()([indices_selected_1, gncoords])
+    is_track_2 = SelectFromIndices()([indices_selected_1, is_track_1])
     gnnidx_reduced_2, gndist_reduced_2 = KNN(
         K=gravnet_neighbours, record_metrics=True,
-        name="RSU_knn_reduction1", min_bins=20)([gravnetcoords_reduced_2, rs_reduced_1]) #TODO: the hardcoded part here might not be optimal
+        name=name + "_RSU_knn_reduction2", min_bins=20)([gravnetcoords_reduced_2, rs_reduced_2]) #TODO: the hardcoded part here might not be optimal
 
-    gndist_reduced_2 = gndist_reduced_2 / (reductions[1]**gravnet_d) #TODO: verify this
+    gndist_reduced_2 = gndist_reduced_2 / ((reductions[0] * reductions[1])**gravnet_d) #TODO: verify this
 
     # Message passing on reduction level
     x_level_2 = x_reduced_2
     x_level_2 = DistanceWeightedMessagePassing(
-        name=f"RSU_message_passing_reduction1_iteration",
-        n_feature_transformation = 64,
+        name=name + f"_RSU_message_passing_reduction2_iteration",
+        n_feature_transformation = [64],
         activation='elu',
     )([x_level_2, gnnidx_reduced_2, gndist_reduced_2])
     x_level_2 = SphereActivation()(x_level_2)
@@ -103,15 +107,15 @@ def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reducti
     gravnetcoords_reduced_3 = SelectFromIndices()([indices_selected_2, gncoords])
     gnnidx_reduced_3, gndist_reduced_3 = KNN(
         K=gravnet_neighbours, record_metrics=True,
-        name="RSU_knn_reduction1", min_bins=20)([gravnetcoords_reduced_3, rs_reduced_2]) #TODO: the hardcoded part here might not be optimal
+        name=name + "_RSU_knn_reduction3", min_bins=20)([gravnetcoords_reduced_3, rs_reduced_3]) #TODO: the hardcoded part here might not be optimal
 
-    gndist_reduced_3 = gndist_reduced_3 / (reductions[2]**gravnet_d) #TODO: verify this
+    gndist_reduced_3 = gndist_reduced_3 / ((reductions[0] * reductions[1] * reductions[2])**gravnet_d) #TODO: verify this
 
     # Message passing on reduction level
     x_level_3 = x_reduced_3
     x_level_3 = DistanceWeightedMessagePassing(
-        name=f"RSU_message_passing_reduction1_iteration",
-        n_feature_transformation = 64,
+        name=name + f"_RSU_message_passing_reduction3_iteration",
+        n_feature_transformation = [64],
         activation='elu',
     )([x_level_3, gnnidx_reduced_3, gndist_reduced_3])
     x_level_3 = SphereActivation()(x_level_3)

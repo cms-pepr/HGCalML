@@ -33,7 +33,7 @@ from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import extent_coords_if_needed
 from model_blocks import create_outputs
 from model_tools import apply_weights_from_path
-from model_tools import random_sampling_unit
+from model_blocks import random_sampling_unit
 from noise_filter import noise_filter
 from callbacks import plotClusteringDuringTraining
 from callbacks import plotClusterSummary
@@ -205,9 +205,12 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
         gndist = LLRegulariseGravNetSpace(scale=gravnet_regs[i])([gndist, prime_coords, gnnidx])
 
-        x = random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduction=reductions[i],
-                                     n_gravnet_neigbours=config['Architecture']['gravnet'][i]['n'],
-                                     n_gravnet_dimensions=N_GRAVNET_SPACE_COORDINATES)
+        red = reductions[i]
+        K = config['Architecture']['gravnet'][i]['n']
+        x = random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reductions=reductions,
+                                     gravnet_neighbours=K,
+                                     gravnet_d=N_GRAVNET_SPACE_COORDINATES,
+                                     name = f"RSU_{i}")
 
         gndist = AverageDistanceRegularizer(
             strength=1e-3,

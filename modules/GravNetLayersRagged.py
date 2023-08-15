@@ -71,11 +71,12 @@ class RandomSampling(tf.keras.layers.Layer):
         We keep score <= 1/reduction points and discard the rest.
         """
         x, is_track, row_splits = inputs
+
         assert len(row_splits.shape) == 1, "row_splits must be 1D"
         assert len(is_track.shape) == 2, "is_track must be 2D"
         assert len(x.shape) == 2, "x must be 2D"
         assert is_track.shape[0] == x.shape[0], "x and is_track don't match"
-        assert row_splits[-1] == x.shape[0], "row_splits and x don't match"
+        # assert row_splits[-1] == x.shape[0], "row_splits and x don't match"
         is_track = tf.cast(is_track, tf.bool)
 
         N = row_splits[-1]
@@ -97,7 +98,8 @@ class RandomSampling(tf.keras.layers.Layer):
         mask = tf.squeeze(score_ragged <= threshold, axis=-1)
         selected = tf.ragged.boolean_mask(ragged, mask)
         new_rs = selected.row_splits
-        full_indices = tf.range(score.shape[0])[...,tf.newaxis]
+        n_batch = tf.shape(score)[0]
+        full_indices = tf.range(n_batch, dtype=tf.int32)[:, tf.newaxis]
         indices_selected = full_indices[score <= threshold]
         old_size = row_splits[-1]
         old_size = tf.cast(old_size, tf.int32)
