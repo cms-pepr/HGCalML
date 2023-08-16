@@ -50,8 +50,8 @@ def djcdc_to_dataframe(input_path, n_events):
     for i in range(n_steps):
         if i >= n_events: break
         data = next(generator)[0]
-        print(len(data))
-        print(td.createFeatureDict(data)['recHitX'].shape)
+        # print(len(data))
+        # print(td.createFeatureDict(data)['recHitX'].shape)
         truth_list.append(td.createTruthDict(data))
         feature_list.append(td.createFeatureDict(data))
 
