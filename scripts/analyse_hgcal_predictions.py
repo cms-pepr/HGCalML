@@ -86,7 +86,12 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
             prediction.append(predictions_dict)
             truth.append(truth_dict)
 
-            noise_mask = predictions_dict['no_noise_sel']
+            try:
+                noise_mask = predictions_dict['no_noise_sel']
+                includes_mask = True
+            except:
+                includes_mask = False
+                noise_mask = np.ones_like(features_dict['recHitX']).astype(int)
             noise_masks.append(noise_mask)
             truth_df = ep.dictlist_to_dataframe([truth_dict], add_event_id=False)
             features_df = ep.dictlist_to_dataframe([features_dict], add_event_id=False)
@@ -144,8 +149,8 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 s_processed = processed_dataframe.shape
                 if s_processed[0] != s_feat[0]:
                     pdb.set_trace()
-                print("tmp_feat: ", tmp_feat.shape, "\ntmp_truth: ", tmp_truth.shape)
-                print("processed: ", processed_dataframe.shape)
+                # print("tmp_feat: ", tmp_feat.shape, "\ntmp_truth: ", tmp_truth.shape)
+                # print("processed: ", processed_dataframe.shape)
                 tmp_predbeta = pd.DataFrame(predictions_dict['pred_beta'], columns=['pred_beta'])
                 full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe, tmp_predbeta), axis=1)
                 fig_truth = dataframe_to_plot(full_df, truth=True)
