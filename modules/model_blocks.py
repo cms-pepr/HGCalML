@@ -82,10 +82,13 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
         A full event with ~100k hits would be reduced to only 200 vertices after three reduction steps.
         Using 64 neighbours we can connect about 1/3 of the entire detector.
     """
-    D = tf.cast(gncoords.shape[-1], tf.int32)
-    K = tf.cast(gnnidx.shape[-1], tf.int32)
+    # D = tf.cast(gncoords.shape[-1], tf.int32)
+    D = gncoords.shape[-1]
+    # K = tf.cast(gnnidx.shape[-1], tf.int32)
+    K = gnnidx.shape[-1]
     # N_Dense = 64
-    N_Dense = tf.cast(x.shape[-1], tf.int32)
+    # N_Dense = tf.cast(x.shape[-1], tf.int32)
+    N_Dense = x.shape[-1]
 
     x0 = Concatenate()([x, xgn, gncoords])
     x_left0 = Dense(N_Dense, activation='elu', name=name + '_dense0')(x0)
@@ -109,7 +112,7 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
 
         gravnetcoords_tmp = SelectFromIndices()([indices_selected_tmp, gncoords])
         gnnidx_tmp, gndist_tmp = KNN(K=K, record_metrics=True, name=name + f"_RSU_KNN_{i}", min_bins=20)([gravnetcoords_tmp, rs_temp])
-        gndist_tmp = gndist_tmp * (r**(2/D))    #TOOD: Double or triple check that this makes sense
+        gndist_tmp = gndist_tmp * (reduction**(2/D))    #TOOD: Double or triple check that this makes sense
         gndist_tmp = AverageDistanceRegularizer(strength=1e-6, record_metrics=True)(gndist_tmp)
 
         # Message Passing
@@ -118,7 +121,7 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
             n_feature_transformation = [64],
             activation='elu',
         )([x_temp, gnnidx_tmp, gndist_tmp])
-        x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_postMP_{i}')(x_temp)
+        x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_left_postMP_{i}')(x_temp)
 
         # Bookkeeping
         xleft_list.append(x_temp)
@@ -131,13 +134,13 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
         size_list.append(size_tmp)
         indices_list.append(indices_selected_tmp)
 
-
     # Right side of the RSU
     x_right_list = [xleft_list[-1]] # right-sided features after message passing
     for j in range(n_reduction):
         scatter_tmp = (size_list[-1-j], indices_list[-1-j]) # go backwards through the lists
-        gnnidx_tmp = gnnidx_list[-1-j]
-        gndist_tmp = gndist_list[-1-j]
+        gnnidx_tmp = gnnidx_list[-2-j]  # We need to start with the second to last entry here
+        gndist_tmp = gndist_list[-2-j]  # as the last entry is fully reduced and in this block 
+        #                               # we start with the first 'back-scattered' level.
 
         x_temp = MultiBackScatter()([x_right_list[j], [scatter_tmp]])
 
@@ -147,7 +150,7 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
             n_feature_transformation = [64],
             activation='elu',
         )([x_temp, gnnidx_tmp, gndist_tmp])
-        x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_postMP_{i}')(x_temp)
+        x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_right_postMP_{j}')(x_temp)
 
         # Skip connection
         x_temp = Add()([x_temp, xleft_list[-2-j]])
