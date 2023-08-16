@@ -307,7 +307,13 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
     summing over the energies.
     As we don't have the `is_track` variable included in the features or
     predictions we currently identify tracks over their z-position (Z==315)
+
+    If there is no `no_noise_sel` in the predictions dict, it will be assumed
+    that no noise filtering has been done/is necessary.
     """
+    if not 'no_noise_sel' in predictions_dict.keys():
+        N_pred = len(predictions_dict['pred_beta'])
+        predictions_dict['no_noise_sel'] = np.arange(N_pred).reshape((N_pred,1)).astype(int)
     is_track = np.abs(features_dict['recHitZ']) == 315
     pred_sid, _, alpha_idx, _, ncond = hits2showers_layer(
             predictions_dict['pred_ccoords'],
