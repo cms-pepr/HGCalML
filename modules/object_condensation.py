@@ -304,13 +304,13 @@ class Basic_OC_per_sample(object):
         return V_att, V_rep, Noise_pen, B_pen, pll, high_B_pen
         
         
-class Hinge_OC_per_sample(Basic_OC_per_sample):
+class Hinge_OC_per_sample_damped(Basic_OC_per_sample):
     '''
     This is the classic repulsive hinge loss
     '''
     def __init__(self, **kwargs):
         self.condensation_damping = 1.0 # Fuly stop gradients for condensation points by default
-        super(Hinge_OC_per_sample, self).__init__(**kwargs)
+        super(Hinge_OC_per_sample_damped, self).__init__(**kwargs)
 
 
     def calc_dsq_att(self):
@@ -323,7 +323,16 @@ class Hinge_OC_per_sample(Basic_OC_per_sample):
     def rep_func(self,dsq_k_v):
         return tf.nn.relu(1. - tf.sqrt(dsq_k_v + 1e-6))
     
-    
+        
+class Hinge_OC_per_sample(Hinge_OC_per_sample_damped):
+    '''
+    This is the classic repulsive hinge loss
+    '''
+    def __init__(self, **kwargs):
+        self.condensation_damping = 0.0 # Fuly stop gradients for condensation points by default
+        super(Hinge_OC_per_sample, self).__init__(**kwargs)
+
+
 class Hinge_Manhatten_OC_per_sample(Hinge_OC_per_sample):   
 
     def calc_dsq_att(self):
