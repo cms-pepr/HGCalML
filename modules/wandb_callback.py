@@ -3,7 +3,6 @@ from tensorflow.keras.callbacks import Callback, EarlyStopping,History,ModelChec
 # loss per epoch
 from time import time
 from pdb import set_trace
-from keras import backend as K
 import matplotlib
 matplotlib.use('Agg') 
 import wandb
