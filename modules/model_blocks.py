@@ -46,7 +46,7 @@ from oc_helper_ops import SelectWithDefault
 from binned_select_knn_op import BinnedSelectKnn
 
 
-def random_sampling_block(x, rs, gncoords, gnnidx, gndist, is_track, reduction=8., n_reduction=3, name='RSU'):
+def random_sampling_block(x, rs, gncoords, gnnidx, gndist, is_track, reduction=8., n_reduction=3, layer_norm=False, name='RSU'):
     """
     Unit that randomly samples vertices and backgatheres the information afterwards to the original shape
     In the reduced space, the vertices are connected by KNN and message passing is performed.
@@ -69,6 +69,8 @@ def random_sampling_block(x, rs, gncoords, gnnidx, gndist, is_track, reduction=8
         Reduction factor of each step, by default 8
     n_reduction : int, optional
         Number of reduction steps, by default 3
+    layer_norm : bool
+        Use `SphereActivation` instead of Batchnorm
 
     Example calculation with default parameters:
         If a large shower has 2048 hits and we we use 64 neighbours in the gravnet space,
@@ -125,10 +127,14 @@ def random_sampling_block(x, rs, gncoords, gnnidx, gndist, is_track, reduction=8
             activation='elu',
         )([x_temp, gnnidx_tmp, gndist_tmp])
         x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_left_postMP_{i}')(x_temp)
-        x_temp = ScaledGooeyBatchNorm2(
-                fluidity_decay = 1e-1,
-                max_viscosity=0.1,
-                name=name+f'_gooey_left_{i}')(x_temp)
+
+        if not layer_norm:
+            x_temp = ScaledGooeyBatchNorm2(
+                    fluidity_decay = 1e-1,
+                    max_viscosity=0.1,
+                    name=name+f'_gooey_left_{i}')(x_temp)
+        else:
+            x_temp = SphereActivation()(x_temp)
 
         # Bookkeeping
         xleft_list.append(x_temp)
@@ -158,10 +164,13 @@ def random_sampling_block(x, rs, gncoords, gnnidx, gndist, is_track, reduction=8
             activation='elu',
         )([x_temp, gnnidx_tmp, gndist_tmp])
         x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_right_postMP_{j}')(x_temp)
-        x_temp = ScaledGooeyBatchNorm2(
-                fluidity_decay = 1e-1,
-                max_viscosity=0.1,
-                name=name+f'_gooey_right_{j}')(x_temp)
+        if not layer_norm:
+            x_temp = ScaledGooeyBatchNorm2(
+                    fluidity_decay = 1e-1,
+                    max_viscosity=0.1,
+                    name=name+f'_gooey_right_{j}')(x_temp)
+        else:
+            x_temp = SphereActivation()(x_temp)
 
         # Skip connection
         x_temp = Add()([x_temp, xleft_list[-2-j]])

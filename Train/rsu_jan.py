@@ -196,7 +196,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 record_metrics=True,
                 name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
-        x_rand = random_sampling_block(xgn, rs, gncoords, gnnidx, gndist, is_track, reduction=6, name=f"RSU_{i}")
+        x_rand = random_sampling_block(
+                xgn, rs, gncoords, gnnidx, gndist, is_track,
+                reduction=6, layer_norm=True, name=f"RSU_{i}")
         x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
 
         gndist = AverageDistanceRegularizer(
