@@ -22,6 +22,7 @@ from GravNetLayersRagged import AccumulateNeighbours, SelectFromIndices, SelectF
 from GravNetLayersRagged import SortAndSelectNeighbours, NoiseFilter
 from GravNetLayersRagged import CastRowSplits, ProcessFeatures
 from GravNetLayersRagged import ScaledGooeyBatchNorm, GooeyBatchNorm, Where, MaskTracksAsNoise
+from GravNetLayersRagged import ScaledGooeyBatchNorm2
 from GravNetLayersRagged import Abs,RaggedGravNet,AttentionMP , LocalDistanceScaling, LocalGravNetAttention
 from GravNetLayersRagged import NeighbourGroups, GroupScoreFromEdgeScores, ElementScaling, EdgeSelector, KNN
 from GravNetLayersRagged import XYZtoXYZPrime, CreateMask, DistanceWeightedMessagePassing
@@ -45,7 +46,7 @@ from oc_helper_ops import SelectWithDefault
 from binned_select_knn_op import BinnedSelectKnn
 
 
-def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduction=8., n_reduction=3, name='RSU'):
+def random_sampling_block(x, rs, gncoords, gnnidx, gndist, is_track, reduction=8., n_reduction=3, name='RSU'):
     """
     Unit that randomly samples vertices and backgatheres the information afterwards to the original shape
     In the reduced space, the vertices are connected by KNN and message passing is performed.
@@ -56,8 +57,6 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
         Input features of shape (N, F)
     rs : tf.Tensor
         Row splits of shape (B,)
-    xgn : tf.Tensor
-        Input features of shape (N, F')
     gncoords : tf.Tensor
         Coordinates of shape (N, D)
     gnnidx : tf.Tensor
@@ -90,8 +89,9 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
     # N_Dense = tf.cast(x.shape[-1], tf.int32)
     N_Dense = x.shape[-1]
 
-    x0 = Concatenate()([x, xgn, gncoords])
-    x_left0 = Dense(N_Dense, activation='elu', name=name + '_dense0')(x0)
+    # x0 = Concatenate()([x, gncoords])
+    # x_left0 = Dense(N_Dense, activation='elu', name=name + '_dense0')(x0)
+    x_left0 = x
 
     xleft_list = [x_left0]  # left-sided features after message passing
     row_splits_list = [rs]
@@ -113,7 +113,10 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
         gravnetcoords_tmp = SelectFromIndices()([indices_selected_tmp, gncoords])
         gnnidx_tmp, gndist_tmp = KNN(K=K, record_metrics=True, name=name + f"_RSU_KNN_{i}", min_bins=20)([gravnetcoords_tmp, rs_temp])
         gndist_tmp = gndist_tmp * (reduction**(2/D))    #TOOD: Double or triple check that this makes sense
-        gndist_tmp = AverageDistanceRegularizer(strength=1e-6, record_metrics=True)(gndist_tmp)
+        gndist_tmp = AverageDistanceRegularizer(
+                strength=1e-8,
+                record_metrics=True,
+                name=name+f"_dist_regularizer_{i}")(gndist_tmp)
 
         # Message Passing
         x_temp = DistanceWeightedMessagePassing(
@@ -122,6 +125,10 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
             activation='elu',
         )([x_temp, gnnidx_tmp, gndist_tmp])
         x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_left_postMP_{i}')(x_temp)
+        x_temp = ScaledGooeyBatchNorm2(
+                fluidity_decay = 1e-1,
+                max_viscosity=0.1,
+                name=name+f'_gooey_left_{i}')(x_temp)
 
         # Bookkeeping
         xleft_list.append(x_temp)
@@ -151,6 +158,10 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
             activation='elu',
         )([x_temp, gnnidx_tmp, gndist_tmp])
         x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_right_postMP_{j}')(x_temp)
+        x_temp = ScaledGooeyBatchNorm2(
+                fluidity_decay = 1e-1,
+                max_viscosity=0.1,
+                name=name+f'_gooey_right_{j}')(x_temp)
 
         # Skip connection
         x_temp = Add()([x_temp, xleft_list[-2-j]])
@@ -161,7 +172,7 @@ def random_sampling_block(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reduct
     return x_out
 
 
-def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reductions, gravnet_neighbours, gravnet_d, name='RSU'):
+def random_sampling_unit(x, rs, gncoords, gnnidx, gndist, is_track, reductions, gravnet_neighbours, gravnet_d, name='RSU'):
     """
     Unit that reduces the number of hits by random sampling in potentially multiple steps
     and backgatheres the information afterwards to the original shape
@@ -170,7 +181,7 @@ def random_sampling_unit(x, rs, xgn, gncoords, gnnidx, gndist, is_track, reducti
     assert len(reductions) == 3
     assert isinstance(reductions[0], float)
 
-    x_top_level = Concatenate()([x, xgn, gncoords])
+    x_top_level = Concatenate()([x, gncoords])
     x_top_level = DistanceWeightedMessagePassing(
         name=name + f"_RSU_message_passing_toplevel_iteration",
         n_feature_transformation = [64],

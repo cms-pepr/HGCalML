@@ -339,7 +339,7 @@ class Where(tf.keras.layers.Layer):
         else:
             assert len(inputs)==3
             left = inputs[1]
-            right = inputs[1]
+            right = inputs[2]
 
         izero = tf.constant(0,dtype=inputs[0].dtype)
         if self.condition == '>0':

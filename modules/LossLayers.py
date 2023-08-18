@@ -330,70 +330,6 @@ class LLDummy(LossLayerBase):
         return tf.reduce_mean(inputs)
 
 
-class LLRegulariseGravNetSpace(LossLayerBase):
-    '''
-    Regularisation layer (not truth dependent)
-    Regularises the GravNet space to have similar distances than the physical space
-
-    Inputs:
-    - GravNet Distances
-    - physical coordinates (prime_coords)
-    - neighbour indices
-
-    Outputs:
-    - GravNet Distances (unchanged)
-    '''
-
-
-    def __init__(self, **kwargs):
-
-        super(LLRegulariseGravNetSpace, self).__init__(**kwargs)
-        print('INFO: LLRegulariseGravNetSpace: this is actually a regulariser: move to right file soon.')
-
-    def loss(self, inputs):
-        assert len(inputs) == 3
-        gndist, in_coords, nidx = inputs
-
-
-        if self.project:
-            in_coords = in_coords / tf.sqrt( tf.reduce_sum(in_coords**2, axis=1, keepdims=True) + 1e-6)
-        else:
-            # this is prime-coords, so x', y', z', where z is projected towards the beamspot
-            # so we can just remove it
-            in_coords = in_coords[:,:,1:]
-
-        ncoords = SelectWithDefault(nidx, in_coords, -1e6)
-        dist = tf.reduce_sum( (in_coords[:,tf.newaxis,:] - ncoords)**2, axis=2 ) # V x K+1
-        dist = tf.where(ncoords[:,:,0] < -1e5, 0., dist)#mask masked again
-        dist = tf.sqrt(dist + 1e-6)
-        dist = dist / (tf.reduce_mean(dist, axis=1, keepdims=True)+1e-4)
-        gndist = tf.sqrt(gndist + 1e-6)
-        gndist = gndist / (tf.reduce_mean(gndist, axis=1, keepdims=True)+1e-4)
-        lossval = tf.reduce_mean((dist - gndist)**2)
-
-        return lossval
-
-
-    def loss(self, inputs):
-        assert len(inputs) == 3
-        gndist, in_coords, nidx = inputs
-
-        # this is prime-coords, so x', y', z', where z is projected towards the beamspot
-        # so we can just remove it
-        in_coords = in_coords[:,:2]
-
-        ncoords = SelectWithDefault(nidx, in_coords, -1e6)
-        dist = tf.reduce_sum( (in_coords[:,tf.newaxis,:] - ncoords)**2 , axis = 2) # V x K+1
-
-        dist = tf.where(ncoords[:,:,0] < -1e5, 0., dist)#mask masked again
-        dist = dist / (tf.reduce_mean(dist, axis=1, keepdims=True)+1e-4)
-
-        gndist = gndist / (tf.reduce_mean(gndist, axis=1, keepdims=True)+1e-4)
-
-        lossval = tf.reduce_mean((dist - gndist)**2)
-
-        return lossval
-
 
 class LLValuePenalty(LossLayerBase):
 
@@ -1026,6 +962,67 @@ class LLOCThresholds(LossLayerBase):
 
 
 
+class LLRegulariseGravNetSpace(LossLayerBase):
+    
+    def __init__(self, 
+                 project = False,
+                 **kwargs):
+        '''
+        Regularisation layer (not truth dependent)
+        Regularises the GravNet space to have similar distances than the physical space
+        
+        Inputs:
+        - GravNet Distances
+        - physical coordinates (prime_coords)
+        - neighbour indices
+        
+        Outputs:
+        - GravNet Distances (unchanged)
+        
+        Options:
+        - project: projects the physical inputs to a one-sphere (not useful when using HGCAL 'prime coordinates')
+        
+        '''
+        super(LLRegulariseGravNetSpace, self).__init__(**kwargs)
+        self.project = project
+        print('INFO: LLRegulariseGravNetSpace: this is actually a regulariser: move to right file soon.')
+        
+        
+    def get_config(self):
+        config={'project': self.project}
+        base_config = super(LLRegulariseGravNetSpace, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+        
+    def loss(self, inputs):
+        assert len(inputs) == 3
+        gndist, in_coords, nidx = inputs
+        
+        
+        if self.project:
+            in_coords = in_coords / tf.sqrt( tf.reduce_sum(in_coords**2, axis=1, keepdims=True) + 1e-6)
+        else:
+            # this is prime-coords, so x', y', z', where z is projected towards the beamspot
+            # so we can just remove it
+            in_coords = in_coords[:,:,1:]
+        
+        ncoords = SelectWithDefault(nidx, in_coords, -1e6)
+        dist = tf.reduce_sum( (in_coords[:,tf.newaxis,:] - ncoords)**2, axis=2 ) # V x K+1
+        
+        dist = tf.where(ncoords[:,:,0] < -1e5, 0., dist)#mask masked again
+        
+        dist = tf.sqrt(dist + 1e-6)
+        
+        dist = dist / (tf.reduce_mean(dist, axis=1, keepdims=True)+1e-4)
+        
+        gndist = tf.sqrt(gndist + 1e-6)
+        
+        gndist = gndist / (tf.reduce_mean(gndist, axis=1, keepdims=True)+1e-4)
+        
+        lossval = tf.reduce_mean((dist - gndist)**2)
+
+        return lossval    
+        
+        
 class LLFillSpace(LossLayerBase):
     def __init__(self,
                  maxhits: int=1000,
