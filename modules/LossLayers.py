@@ -1003,7 +1003,7 @@ class LLRegulariseGravNetSpace(LossLayerBase):
         else:
             # this is prime-coords, so x', y', z', where z is projected towards the beamspot
             # so we can just remove it
-            in_coords = in_coords[:,:,1:]
+            in_coords = in_coords[:,:2]
         
         ncoords = SelectWithDefault(nidx, in_coords, -1e6)
         dist = tf.reduce_sum( (in_coords[:,tf.newaxis,:] - ncoords)**2, axis=2 ) # V x K+1
