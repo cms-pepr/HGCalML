@@ -126,12 +126,12 @@ def random_sampling_block(x, rs, gncoords, gnnidx, gndist, is_track, reduction=8
             n_feature_transformation = [64],
             activation='elu',
         )([x_temp, gnnidx_tmp, gndist_tmp])
-        x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_left_postMP_{i}')(x_temp)
+        x_temp = Dense(N_Dense, activation='tanh', name=name + f'_dense_left_postMP_{i}')(x_temp)
 
         if not layer_norm:
             x_temp = ScaledGooeyBatchNorm2(
-                    fluidity_decay = 1e-1,
-                    max_viscosity=0.1,
+                    fluidity_decay = 0.1,
+                    max_viscosity=0.99999,
                     name=name+f'_gooey_left_{i}')(x_temp)
         else:
             x_temp = SphereActivation()(x_temp)
@@ -163,11 +163,11 @@ def random_sampling_block(x, rs, gncoords, gnnidx, gndist, is_track, reduction=8
             n_feature_transformation = [64],
             activation='elu',
         )([x_temp, gnnidx_tmp, gndist_tmp])
-        x_temp = Dense(N_Dense, activation='elu', name=name + f'_dense_right_postMP_{j}')(x_temp)
+        x_temp = Dense(N_Dense, activation='tanh', name=name + f'_dense_right_postMP_{j}')(x_temp)
         if not layer_norm:
             x_temp = ScaledGooeyBatchNorm2(
-                    fluidity_decay = 1e-1,
-                    max_viscosity=0.1,
+                    fluidity_decay = 0.1,
+                    max_viscosity=0.9999,
                     name=name+f'_gooey_right_{j}')(x_temp)
         else:
             x_temp = SphereActivation()(x_temp)
