@@ -329,8 +329,8 @@ class Hinge_OC_per_sample(Hinge_OC_per_sample_damped):
     This is the classic repulsive hinge loss
     '''
     def __init__(self, **kwargs):
-        self.condensation_damping = 0.0 # Fuly stop gradients for condensation points by default
         super(Hinge_OC_per_sample, self).__init__(**kwargs)
+        self.condensation_damping = 0.0 # Don't stop any gradients
 
 
 class Hinge_Manhatten_OC_per_sample(Hinge_OC_per_sample):   

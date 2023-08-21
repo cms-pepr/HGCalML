@@ -2104,7 +2104,8 @@ class LLFullObjectCondensation(LossLayerBase):
             raise ValueError("huber_energy_scale>0 and alt_energy_loss exclude each other")
 
 
-        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, Hinge_OC_per_sample, Hinge_Manhatten_OC_per_sample, PreCond_OC_per_sample
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_OC_per_sample
+        from object_condensation import Hinge_OC_per_sample_damped, Hinge_OC_per_sample, Hinge_Manhatten_OC_per_sample
         impl = Basic_OC_per_sample
         if implementation == 'pushpull':
             impl = PushPull_OC_per_sample
@@ -2112,6 +2113,12 @@ class LLFullObjectCondensation(LossLayerBase):
             impl = PreCond_OC_per_sample
         if implementation == 'hinge':
             impl = Hinge_OC_per_sample
+        if implementation == 'hinge_full_grad':
+            # same as`hinge`
+            impl = Hinge_OC_per_sample
+        if implementation == 'hinge_damped':
+            # `hinge` but gradients for condensation points are maximally damped
+            impl = Hinge_OC_per_sample_damped
         if implementation == 'hinge_manhatten':
             impl = Hinge_Manhatten_OC_per_sample
         self.implementation = implementation
