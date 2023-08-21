@@ -7,13 +7,20 @@ from GravNetLayersRagged import RandomSampling, MultiBackScatter
 
 def create_random_data(n_events, n_features, n_points_min, n_points_max, track_frequency=0.1, seed=None):
     if seed is not None:
-        np.random.seed(seed=seed) 
+        np.random.seed(seed=seed)
 
     n_points = np.random.randint(n_points_min, n_points_max, n_events)
     n_total = np.sum(n_points)
     row_splits = np.cumsum(n_points)
     row_splits = np.insert(row_splits, 0, 0)
+    index = []
+    for i in range(len(row_splits)-1):
+        start = row_splits[i]
+        stop = row_splits[i+1]
+        index.append(np.arange(start, stop))
+    index = index.flatten()
     data = np.random.normal(size=(n_total, n_features))
+    data = np.concatenate((data, index), axis=1)
     is_track = np.random.uniform(size=(n_total, 1)) < track_frequency
     return data, is_track, row_splits
 
@@ -39,7 +46,7 @@ hits are treated as tracks. All hits have {N_FEATURES} features")
 
     reductions = np.arange(2., 20., 2.)
     print(f"Testing `RandomSampling` for reduction factors between 2 and 18")
-    
+
     fig, ax = plt.subplots(nrows=3, ncols=3, figsize=(15,15))
     ax = ax.flatten()
     passed = True
@@ -67,8 +74,18 @@ hits are treated as tracks. All hits have {N_FEATURES} features")
     else:
         print("Failed some tests")
 
+    print()
+    print("Testing row splits")
+    for i in range(len(row_splits)-1):
+        start = row_splits[i]
+        stop = row_splits[i+1]
+
+        if not data[start] == 0:
+            print("Some error with row splits")
+
+
     fig.savefig("reductions.png")
 
 
 
-    
+
