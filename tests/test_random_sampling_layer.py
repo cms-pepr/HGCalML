@@ -1,3 +1,4 @@
+import pdb
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -13,12 +14,14 @@ def create_random_data(n_events, n_features, n_points_min, n_points_max, track_f
     n_total = np.sum(n_points)
     row_splits = np.cumsum(n_points)
     row_splits = np.insert(row_splits, 0, 0)
-    index = []
+    index = np.array([])
     for i in range(len(row_splits)-1):
         start = row_splits[i]
         stop = row_splits[i+1]
-        index.append(np.arange(start, stop))
-    index = index.flatten()
+        index = np.concatenate((index, np.arange(0, stop-start)))
+        # index.append(np.arange(start, stop))
+    # index = np.flatten(np.array(index))
+    index = index.reshape((-1, 1))
     data = np.random.normal(size=(n_total, n_features))
     data = np.concatenate((data, index), axis=1)
     is_track = np.random.uniform(size=(n_total, 1)) < track_frequency
@@ -80,7 +83,17 @@ hits are treated as tracks. All hits have {N_FEATURES} features")
         start = row_splits[i]
         stop = row_splits[i+1]
 
-        if not data[start] == 0:
+        if not data[start][-1] == 0:
+            pdb.set_trace()
+            print("Some error with row splits")
+
+        is_zero = backgathered[start:stop, -1] == 0
+        is_offset = backgathered[start:stop, -1] - np.arange(0, stop-start) == 0
+        is_either = np.logical_or(is_zero, is_offset)
+        pdb.set_trace()
+        if not np.all(is_either):
+            pdb.set_trace()
+            print(i)
             print("Some error with row splits")
 
 
