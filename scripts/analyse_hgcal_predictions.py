@@ -73,14 +73,13 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     ###############################################################################################
 
     for i, file in enumerate(files_to_be_tested):
-        print(f"Analysing file {i}/{len(files_to_be_tested)}")
+        print(f"Analysing file {i+1}/{len(files_to_be_tested)}")
         with mgzip.open(file, 'rb') as analysis_file:
             file_data = pickle.load(analysis_file)
         for j, endcap_data in enumerate(file_data):
-            print(f"Event {j} out of {len(file_data)}")
             if (nevents != -1) and (j > nevents):
                 continue
-            print(f"Analysing endcap {j}/{len(file_data)}")
+            print(f"Analysing endcap {j+1}/{len(file_data)}")
             features_dict, truth_dict, predictions_dict = endcap_data
             features.append(features_dict)
             prediction.append(predictions_dict)

@@ -403,7 +403,7 @@ def dictlist_to_dataframe(dictlist, masks=None, add_event_id=True):
     for i in range(len(dictlist)):
         df = pd.DataFrame()
         for key, value in dictlist[i].items():
-            print(key)
+            # print(key)
             if key in ['row_splits', 'recHitXY']:
                 continue
             if len(value.shape) == 1:
@@ -487,7 +487,7 @@ def prediction_overview(prediction_dictlist):
     fig, ax = plt.subplots(nrows=7, ncols=3, figsize=(40, 50))
     ax = ax.flatten()
     skip = ['row_splits']
-    print(prediction.keys())
+    # print(prediction.keys())
     for i, key in enumerate(prediction.keys()):
         if key in skip:
             continue
@@ -540,6 +540,12 @@ def map_pid_to_classes(truth_pids):
         22: 2,
         211: 3,
         -211: 3,
+        312: 3,
+        -312: 3,
+        2212: 3,
+        -2212: 3,
+        130: 4,
+        2112: 4,
     }
 
     mapped = truth_pids.map(map_dict)
