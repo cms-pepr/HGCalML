@@ -10,6 +10,7 @@ not compatible with datasets before end of Jan 2022
 
 '''
 
+import sys
 import wandb
 from wandb_callback import wandbCallback
 
@@ -65,9 +66,11 @@ wandb_config = {
         }
 
 wandb.init(
-    project="August_test",
+    project="Connecting-The-Dots",
     config=wandb_config,
 )
+
+wandb.save(sys.argv[0]) # Save python file
         
 
 import tensorflow as tf
