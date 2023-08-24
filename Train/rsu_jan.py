@@ -35,7 +35,7 @@ from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import extent_coords_if_needed
 from model_blocks import create_outputs
 from model_tools import apply_weights_from_path
-from model_blocks import random_sampling_unit, random_sampling_block
+from model_blocks import random_sampling_unit, random_sampling_block, random_sampling_block2
 from noise_filter import noise_filter
 from callbacks import plotClusteringDuringTraining
 from callbacks import plotClusterSummary
@@ -49,8 +49,11 @@ from callbacks import NanSweeper, DebugPlotRunner
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
 parser.add_argument('--run_name', help="wandb run name")
-CONFIGFILE = sys.argv[1]
+train = training_base_hgcal.HGCalTraining(parser=parser) #this calls the parser and provides the args
+
+CONFIGFILE = train.args.configFile # this is how you use the parser!
 print(f"Using config File: \n{CONFIGFILE}")
+shutil.copyfile(CONFIGFILE, os.path.join(train.args.outputDir, "config.yaml"))
 
 with open(CONFIGFILE, 'r') as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
@@ -102,28 +105,23 @@ wandb.init(
 ###############################################################################
 
 
-def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
+def config_model(Inputs, td, debug_outdir=None, plot_debug_every=600):
     """
     Function that defines the model to train
     """
     orig_input = td.interpretAllModelInputs(Inputs)
-    embedded = False
-
+   
     ###########################################################################
     ### Pre-processing step ###################################################
     ###########################################################################
 
-    pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False)
+    pre_processed = condition_input(orig_input, no_scaling=True, no_prime=True)
     """
     pre_processed = noise_filter(orig_input,
                                  trainable=False,
                                  pass_through=True)
     """
-    x_in = Concatenate(name='concat_filter')(
-        [pre_processed['coords'],
-         pre_processed['features'],
-         pre_processed['is_track'],
-         ])
+    
     prime_coords = pre_processed['prime_coords']
     # tf.print(prime_coords.shape)
 
@@ -136,29 +134,37 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     c_coords = ScaledGooeyBatchNorm2(
         name='batchnorm_ccoords',
         fluidity_decay=0.01,
-        max_viscosity=0.9999)(c_coords)
-
-    # Embed hits and track features
-    x = ScaledGooeyBatchNorm2(
-            fluidity_decay=0.01,
-            max_viscosity=0.9999)([pre_processed['features'], is_track])
-
-    x = ScaledGooeyBatchNorm2(
-            fluidity_decay=0.01,
-            max_viscosity=0.9999,
-            invert_condition=True)([x, is_track])
-
+        no_gaus=False,
+        max_viscosity=0.9999999)(c_coords)
+        
     c_coords = PlotCoordinates(
         plot_every=plot_debug_every,
         outdir=debug_outdir,
         name='input_c_coords',
         # publish = publishpath
         )([c_coords, energy, t_idx, rs])
-    c_coords = extent_coords_if_needed(prime_coords, x_in, N_CLUSTER_SPACE_COORDINATES)
 
-    x_in = Concatenate()([x, c_coords])
+    x = pre_processed['features']
+    # Embed hits and track features
+    x = ScaledGooeyBatchNorm2(
+            fluidity_decay=0.01,
+            max_viscosity=0.9999999,
+            no_gaus=False)([x, is_track])
 
-    x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x_in) 
+    x = ScaledGooeyBatchNorm2(
+            fluidity_decay=0.01,
+            max_viscosity=0.9999999,
+            invert_condition=True,
+            no_gaus=False)([x, is_track])
+    
+    # re-add info, coordinates important here too!
+    # *all* inputs here are normalised (well, is_track is 0 or 1 so that counts)        
+    x = Concatenate()([x, pre_processed['is_track'], c_coords])
+
+    x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x) 
+    x = ScaledGooeyBatchNorm2(
+            fluidity_decay=0.01,
+            max_viscosity=0.9999999)(x)
 
     allfeat = []
     print("Available keys: ", pre_processed.keys())
@@ -167,7 +173,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
-    gravnet_regs = [0.01, 0.01, 0.01]
+    gravnet_regs = GRAVNET_ITERATIONS * [0.01] 
 
     for i in range(GRAVNET_ITERATIONS):
         d_shape = x.shape[1]//2
@@ -188,18 +194,31 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             n_propagate=2*d_shape,
             coord_initialiser_noise=None,
             feature_activation='elu',
-            sumwnorm=True,
+            #sumwnorm=True,
             )([x, rs])
+            
+        xgn = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(xgn)
 
         gndist = LLRegulariseGravNetSpace(
                 scale=gravnet_regs[i],
+                project=True,
                 record_metrics=True,
                 name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
-        x_rand = random_sampling_block(
-                xgn, rs, gncoords, gnnidx, gndist, is_track,
-                reduction=6, layer_norm=True, name=f"RSU_{i}")
-        x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
+        xgn_nograd = (Concatenate()([x_pre,xgn])) #StopGradient()
+        gndist_nograd = (gndist) #StopGradient()
+        
+        x_rand = x
+        
+        if True:
+            x_rand = random_sampling_block2(
+                xgn_nograd, 
+                rs, gncoords, gnnidx, 
+                gndist_nograd, 
+                is_track,
+                reduction=8, name=f"RSU_{i}")
+        # not critical anymore
+        #x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
 
         gndist = AverageDistanceRegularizer(
             strength=1e-3,
@@ -214,9 +233,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             )([gncoords, energy, t_idx, rs])
 
         # x = Concatenate()([x_pre, xgn, 0.1 * x_rand, gndist, gncoords])
-        x_rand = ScalarMultiply(0.1)(x_rand)
-        gndist = ScalarMultiply(0.01)(gndist)
-        gncoords = ScalarMultiply(0.01)(gncoords)
+        x_rand = ScalarMultiply(0.1)(x_rand) #small corrections for now
+        gndist = ScalarMultiply(0.0001)(gndist)
+        gncoords = ScalarMultiply(0.00001)(gncoords)
         x = Concatenate()([x_pre, xgn, x_rand, gndist, gncoords])
         x = Dense(d_shape,
                   name=f"dense_post_gravnet_1_iteration_{i}",
@@ -241,7 +260,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ###########################################################################
     ### Create output of model and define loss ################################
     ###########################################################################
-
 
     x = Dense(64,
               name=f"dense_final_{1}",
@@ -272,7 +290,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         loss_implementation = ''
 
     pred_beta = LLExtendedObjectCondensation(scale=1.,
-                                             use_energy_weights=True,
+                                             use_energy_weights=False,
                                              record_metrics=True,
                                              print_loss=True,
                                              name="ExtendedOCLoss",
@@ -315,7 +333,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 ###############################################################################
 
 
-train = training_base_hgcal.HGCalTraining(parser=parser)
 
 if not train.modelSet():
     train.setModel(
@@ -323,6 +340,7 @@ if not train.modelSet():
         td=train.train_data.dataclass(),
         debug_outdir=train.outputDir+'/intplots',
         )
+    
     train.setCustomOptimizer(tf.keras.optimizers.Nadam(clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
@@ -401,7 +419,8 @@ cb += [wandbCallback()]
 ### Actual Training ###########################################################
 ###############################################################################
 
-shutil.copyfile(CONFIGFILE, os.path.join(sys.argv[3], "config.yaml"))
+
+os.system('cat '+__file__) #just to have it in the log 
 
 N_TRAINING_STAGES = len(config['Training'])
 for i in range(N_TRAINING_STAGES):
@@ -414,12 +433,13 @@ for i in range(N_TRAINING_STAGES):
     print(f"Learning rate set to {learning_rate}")
     print(f"Batch size: {batch_size}")
 
-    if i == 1:
-        # change batchnorm
-        for layer in train.keras_model.layers:
-            if 'batchnorm' in layer.name:
-                layer.max_viscosity = 0.999
-                layer.fluidity_decay = 0.01
+    #if i == 1:
+    #    # change batchnorm
+    #    for layer in train.keras_model.layers:
+    #        if 'batchnorm' in layer.name:
+    #            layer.max_viscosity = 0.9999
+    #            layer.fluidity_decay = 0.01
+                
     model, history = train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,
