@@ -1,4 +1,6 @@
 *.pyc
+*.png
+*.swp
 
 .vscode
 docker.sh
