@@ -1,0 +1,8 @@
+Model that can be used as a baseline. 
+This version has been trained with the added classification loss. 
+It has been trained for about 2 days. The performance is not yet ideal, 
+but it is doing reasonable things.
+
+Dataset: 
+
+/mnt/ceph/users/pzehetner/Paper/Train/train_NoPU_klong/dataCollection.djcdc

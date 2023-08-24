@@ -1,0 +1,4 @@
+Dataset: 
+/mnt/ceph/users/pzehetner/Paper/Train/train_NoPU_klong/dataCollection.djcdc
+
+Model has been trained for only ~2 days so there should be room for improvement.

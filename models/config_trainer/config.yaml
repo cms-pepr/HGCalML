@@ -1,0 +1,44 @@
+General:
+  oc_implementation: 'hinge'
+  gravnet:
+    - n: 32
+    - n: 128
+    - n: 64
+  n_cluster_space_coordinates: 3
+  n_gravnet_space_coordinates: 3
+
+DenseOptions:
+  activation: "elu"
+  kernel_regularizer_rate: 0.001
+  dropout: 0.000001
+
+BatchNormOptions:
+  max_viscosity: 0.5
+
+LossOptions:
+  energy_loss_weight: .00
+  q_min: 5.0
+  use_average_cc_pos: 0.99
+  classification_loss_weight: 0.0
+  too_much_beta_scale: 0.0
+  position_loss_weight: 0.0
+  timing_loss_weight: 0.0
+  beta_loss_scale: 1.0
+
+
+Training:
+  - stage_1:
+    batch_size: 120000
+    learning_rate: 0.0003
+    epochs: 1
+
+  - stage_2:
+    batch_size: 120000
+    learning_rate: 0.0001
+    epochs: 10
+
+  - stage_3:
+    batch_size: 120000
+    learning_rate: 0.00001
+    epochs: 20
+
