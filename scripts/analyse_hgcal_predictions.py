@@ -95,8 +95,13 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
             noise_masks.append(noise_mask)
             truth_df = ep.dictlist_to_dataframe([truth_dict], add_event_id=False)
             features_df = ep.dictlist_to_dataframe([features_dict], add_event_id=False)
-            filtered_features = ep.filter_features_dict(features_dict, noise_mask)
-            filtered_truth = ep.filter_truth_dict(truth_dict, noise_mask)
+            if includes_mask:
+                filtered_features = ep.filter_features_dict(features_dict, noise_mask)
+                filtered_truth = ep.filter_truth_dict(truth_dict, noise_mask)
+            else:
+                filtered_features = features_dict
+                filtered_truth = truth_dict
+
             filtered_truth_df = ep.dictlist_to_dataframe([filtered_truth], add_event_id=False)
             filtered_features_df = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
             n_hits_orig.append(np.sum(truth_df.truthHitAssignementIdx != -1))
@@ -140,6 +145,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
             if not os.path.isdir(eventsdir):
                 os.mkdir(eventsdir)
             if event_id < 10:
+                # pdb.set_trace()
                 # make 3d plot of the event and save it
                 tmp_feat = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
                 tmp_truth = ep.dictlist_to_dataframe([filtered_truth], add_event_id=False)
