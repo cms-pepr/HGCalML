@@ -7,12 +7,14 @@ import sys
 import yaml
 import shutil
 from argparse import ArgumentParser
-import mlflow
+
+import wandb
+from wandb_callback import wandbCallback
 import tensorflow as tf
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
-from DeepJetCore.DJCLayers import StopGradient
+from DeepJetCore.DJCLayers import StopGradient, ScalarMultiply
 
 import training_base_hgcal
 from Layers import ScaledGooeyBatchNorm2
@@ -33,148 +35,121 @@ from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import extent_coords_if_needed
 from model_blocks import create_outputs
 from model_tools import apply_weights_from_path
+from model_blocks import random_sampling_unit, random_sampling_block, random_sampling_block2
 from noise_filter import noise_filter
 from callbacks import plotClusteringDuringTraining
 from callbacks import plotClusterSummary
 from callbacks import NanSweeper, DebugPlotRunner
 
 
-###############################################################################
-### Load Configuration ########################################################
-###############################################################################
+####################################################################################################
+### Load Configuration #############################################################################
+####################################################################################################
 
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
-# args = parser.parse_args()
-
-CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/pre-pooled_config.yaml"
-CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/pre-pooled.yaml"
-CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/pooling_config.yaml"
-CONFIGFILE = "/mnt/home/pzehetner/ML4Reco/Train/configuration/noise_config.yaml"
-# CONFIGFILE = args.configFile
+parser.add_argument('--run_name', help="wandb run name")
 CONFIGFILE = sys.argv[1]
-
 print(f"Using config File: \n{CONFIGFILE}")
-os.environ['MLFLOW_ARTIFACT_URI'] = sys.argv[3]
 
 with open(CONFIGFILE, 'r') as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
-
-N_CLUSTER_SPACE_COORDINATES = config['Architecture']['n_cluster_space_coordinates']
-N_GRAVNET_SPACE_COORDINATES = config['Architecture']['n_gravnet_space_coordinates']
-GRAVNET_ITERATIONS = len(config['Architecture']['gravnet'])
-MESSAGE_PASSING_ITERATIONS = len(config['Architecture']['message_passing'])
-PRE_GRAVNET_DENSE_ITERATIONS = len(config['Architecture']['dense_pre_gravnet'])
-POST_MESSAGE_PASSING_DENSE_ITERATIONS = len(config['Architecture']['dense_post_message_passing'])
-FINAL_DENSE_ITERATIONS = len(config['Architecture']['dense_final'])
+N_CLUSTER_SPACE_COORDINATES = config['General']['n_cluster_space_coordinates']
+N_GRAVNET_SPACE_COORDINATES = config['General']['n_gravnet_space_coordinates']
+GRAVNET_ITERATIONS = len(config['General']['gravnet'])
 LOSS_OPTIONS = config['LossOptions']
 BATCHNORM_OPTIONS = config['BatchNormOptions']
 DENSE_ACTIVATION = config['DenseOptions']['activation']
-if config['DenseOptions']['kernel_regularizer'].lower() == 'l2':
-    DENSE_REGULARIZER = tf.keras.regularizers.l2(config['DenseOptions']['kernel_regularizer_rate'])
-elif config['DenseOptions']['kernel_regularizer'].lower() == 'l1':
-    DENSE_REGULARIZER = tf.keras.regularizers.l1(config['DenseOptions']['kernel_regularizer_rate'])
-else:
-    DENSE_REGULARIZER = None
+DENSE_REGULARIZER = tf.keras.regularizers.l2(config['DenseOptions']['kernel_regularizer_rate'])
 DROPOUT = config['DenseOptions']['dropout']
-USE_FILL_SPACE = config['General']['use_fill_space']
-USE_LAYER_NORMALIZATION = config['General']['use_layer_normalization']
-SPHERE_ACTIVATION = config['General']['use_layer_normalization']
+
+wandb_config = {
+    "loss_implementation"           :   config['General']['oc_implementation'],
+    "gravnet_iterations"            :   GRAVNET_ITERATIONS,
+    "gravnet_space_coordinates"     :   N_GRAVNET_SPACE_COORDINATES,
+    "cluster_space_coordinates"     :   N_CLUSTER_SPACE_COORDINATES,
+    "loss_energy_weight"            :   config['LossOptions']['energy_loss_weight'],
+    "loss_classification_weight"    :   config['LossOptions']['classification_loss_weight'],
+    "loss_qmin"                     :   config['LossOptions']['q_min'],
+    "loss_use_average_cc_pos"       :   config['LossOptions']['use_average_cc_pos'],
+    "loss_too_much_beta_scale"      :   config['LossOptions']['too_much_beta_scale'],
+    "loss_beta_scale"               :   config['LossOptions']['beta_loss_scale'],
+    "batch_max_viscosity"           :   config['BatchNormOptions']['max_viscosity'],
+    "dense_activation"              :   config['DenseOptions']['activation'],
+    "dense_kernel_reg"              :   config['DenseOptions']['kernel_regularizer_rate'] ,
+    "dense_dropout"                 :   config['DenseOptions']['dropout'],
+}
+
+for i in range(GRAVNET_ITERATIONS):
+    wandb_config[f"gravnet_{i}_neighbours"] =config['General']['gravnet'][i]['n']
+for i in range(len(config['Training'])):
+    wandb_config[f"train_{i}_lr"] = config['Training'][i]['learning_rate']
+    wandb_config[f"train_{i}_epochs"] = config['Training'][i]['epochs']
+    wandb_config[f"train_{i}_batchsize"] = config['Training'][i]['batch_size']
+    if i == 1:
+        wandb_config[f"train_{i}+_max_visc"] = 0.999
+        wandb_config[f"train_{i}+_fluidity_decay"] = 0.1
+
+wandb.init(
+    project="August_test",
+    config=wandb_config,
+)
+
 
 ###############################################################################
 ### Define Model ##############################################################
 ###############################################################################
 
+
 def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     """
     Function that defines the model to train
     """
-    orig_input = td.interpretAllModelInputs(Inputs)
-    embedded = False
 
     ###########################################################################
     ### Pre-processing step ###################################################
     ###########################################################################
-    if config['General']['pre-model-type'] == 'noise-filter':
-        pre_processed = noise_filter(orig_input,
-                                     trainable=False,
-                                     pass_through=False,
-                                     )
-        prime_coords = pre_processed['coords']
-        x_in = Concatenate(name='concat_noise_filter')(
-            [pre_processed['coords'],
-             pre_processed['features']])
-    elif config['General']['pre-model-type'] == 'pre-pooling':
-        embedded = True # Tracks and hits are already embedded after pre-pooling
-        pre_processed = condition_input(orig_input, no_scaling=True)
-        trans, pre_processed = tiny_pc_pool(pre_processed,
-                                            record_metrics=True,
-                                            trainable=False)
-        prime_coords = pre_processed['prime_coords']
-        x_in = Concatenate(name='concat_pre_pooling')(
-            [pre_processed['prime_coords'],
-             pre_processed['features']])
-    elif config['General']['pre-model-type'] == 'pre-pooled':
-        print("Assuming dataset is already pre-pooled")
-        embedded = True
-        pre_processed = condition_input(orig_input, no_scaling=True)
-        trans, pre_processed = tiny_pc_pool(pre_processed,
-                                            record_metrics=True,
-                                            pass_through=True)
-        prime_coords = pre_processed['prime_coords']
-        x_in = Concatenate(name='concat_pre_pooling')(
-            [pre_processed['prime_coords'],
-             pre_processed['features']])
-    elif config['General']['pre-model-type'] == 'pre-clustering':
-        print("Not yet implemented")
-        raise NotImplementedError
-    elif config['General']['pre-model-type'] == 'none':
-        pre_processed = orig_input
-        prime_coords = pre_processed['coords']
-    elif config['General']['pre-model-type'] == 'pass-through':
-        pre_processed = orig_input
-        pre_processed = noise_filter(orig_input,
-                                     trainable=False,
-                                     pass_through=True)
-        x_in = Concatenate(name='concat_noise_filter')(
-            [pre_processed['coords'],
-             pre_processed['features']])
-        prime_coords = pre_processed['coords']
-    else:
-        print("Unknown pre-model-type")
-        raise ValueError
 
-    c_coords = pre_processed['coords']
+    orig_input = td.interpretAllModelInputs(Inputs)
+    pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False)
+
+    prime_coords = pre_processed['prime_coords']
     is_track = pre_processed['is_track']
     rs = pre_processed['row_splits']
     energy = pre_processed['rechit_energy']
     t_idx = pre_processed['t_idx']
+    x = pre_processed['features']
 
-    if SPHERE_ACTIVATION:
-        x_in = Concatenate()([x_in, is_track, SphereActivation()(x_in)])
 
-    c_coords = extent_coords_if_needed(c_coords, x_in, N_CLUSTER_SPACE_COORDINATES)
+    # Embed hits and track features
+    x = ScaledGooeyBatchNorm2(
+            fluidity_decay=0.01,
+            max_viscosity=0.999999,
+            no_gaus=False)([x, is_track])
+
+    x = ScaledGooeyBatchNorm2(
+            fluidity_decay=0.01,
+            max_viscosity=0.999999,
+            invert_condition=True,
+            no_gaus=False)([x, is_track])
+
+    c_coords = prime_coords
     c_coords = ScaledGooeyBatchNorm2(
-        name='batchnorm_ccoords', **BATCHNORM_OPTIONS)(c_coords)
+        name='batchnorm_ccoords',
+        fluidity_decay=0.01,
+        max_viscosity=0.999999)(c_coords)
+    c_coords = PlotCoordinates(
+        plot_every=plot_debug_every,
+        outdir=debug_outdir,
+        name='input_c_coords',
+        # publish = publishpath
+        )([c_coords, energy, t_idx, rs])
+    c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
 
-    if not embedded:
-        x_hit = Dense(64,
-                    name='dense_embedding_hit',
-                    activation=DENSE_ACTIVATION,
-                    kernel_regularizer=DENSE_REGULARIZER)(x_in)
-        x_hit = Dropout(DROPOUT)(x_hit)
-        x_track = Dense(64,
-                        name='dense_embedding_track',
-                        activation=DENSE_ACTIVATION,
-                        kernel_regularizer=DENSE_REGULARIZER)(x_in)
-        x_track = Dropout(DROPOUT)(x_track)
-        x = MixWhere(name='mix_hits_tracks')([is_track, x_hit, x_track])
-    else:
-        x = x_in
+    x = Concatenate()([x, c_coords, is_track])
+    x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x) 
 
-    x = ScaledGooeyBatchNorm2(name="batchnorm_0", **BATCHNORM_OPTIONS)(x)
-    x = Dense(128, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x_in)
     allfeat = []
     print("Available keys: ", pre_processed.keys())
 
@@ -182,106 +157,95 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
+    gravnet_regs = [0.01, 0.01, 0.01]
+
     for i in range(GRAVNET_ITERATIONS):
 
-        x = RaggedGlobalExchange()([x, rs])
-        x, norm = SphereActivation(return_norm=True)(x)
+        d_shape = x.shape[1]//2
 
-        for j in range(PRE_GRAVNET_DENSE_ITERATIONS):
-            n = config['Architecture']['dense_pre_gravnet'][j]['n']
-            x = Dense(n,
-                      name=f"dense_pre_gravnet{j}_iteration_{i}",
-                      activation=DENSE_ACTIVATION,
-                      kernel_regularizer=DENSE_REGULARIZER)(x)
-            if not j == PRE_GRAVNET_DENSE_ITERATIONS - 1:
-                x = Dropout(DROPOUT, name=f"droput_pre_gravnet_{j}_iteration_{i}")(x)
+        x = Dense(d_shape,activation=DENSE_ACTIVATION,
+            kernel_regularizer=DENSE_REGULARIZER)(x)
+        x = Dense(d_shape,activation=DENSE_ACTIVATION,
+            kernel_regularizer=DENSE_REGULARIZER)(x)
 
-        x = ScaledGooeyBatchNorm2(
-            name=f"batchnorm_1_iteration_{i}",
-            **BATCHNORM_OPTIONS)(x)
-        x = Concatenate(name=f"concat_ccoords_iteration_{i}")([c_coords,x])
+        x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
+        x_pre = x
 
         xgn, gncoords, gnnidx, gndist = RaggedGravNet(
-            name = f"gravnet_{i}",
-            n_neighbours=config['Architecture']['gravnet'][i]['n'],
+                name = f"RSU_gravnet_{i}", # 76929, 42625, 42625 
+            n_neighbours=config['General']['gravnet'][i]['n'],
             n_dimensions=N_GRAVNET_SPACE_COORDINATES,
-            n_filters=64,
-            n_propagate=64,
-            record_metrics=True,
-            coord_initialiser_noise=1e-2,
-            use_approximate_knn=False
+            n_filters=d_shape,
+            n_propagate=2*d_shape,
+            coord_initialiser_noise=None,
+            feature_activation='elu',
+            # sumwnorm=True,
             )([x, rs])
-        if float(config['General']['regulariseGravNet']) > 0.0:
-            scale = float(config['General']['regulariseGravNet'])
-            gndist = LLRegulariseGravNetSpace(scale=scale)([gndist, prime_coords, gnnidx])
-        x = Concatenate(name=f"concat_xgn_iteration_{i}")([x, xgn])
+
+        gndist = LLRegulariseGravNetSpace(
+                scale=gravnet_regs[i],
+                record_metrics=True,
+                name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
+
+        x_rand = random_sampling_block(
+                xgn, rs, gncoords, gnnidx, gndist, is_track,
+                reduction=6, layer_norm=True, name=f"RSU_{i}")
+        x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
 
         gndist = AverageDistanceRegularizer(
             strength=1e-3,
             record_metrics=True
             )(gndist)
-
-        gndist = StopGradient()(gndist)
-
+        # gndist = StopGradient()(gndist)
         gncoords = StopGradient()(gncoords)
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
             outdir=debug_outdir,
             name='gn_coords_'+str(i)
             )([gncoords, energy, t_idx, rs])
-        x = Concatenate()([gncoords,x])
+
+        # x = Concatenate()([x_pre, xgn, 0.1 * x_rand, gndist, gncoords])
+        # x_rand = ScalarMultiply(0.1)(x_rand)
+        # gndist = ScalarMultiply(0.01)(gndist)
+        # gncoords = ScalarMultiply(0.01)(gncoords)
+        x = Concatenate()([x_pre, xgn, x_rand, gndist, gncoords])
+        x = Dense(d_shape,
+                  name=f"dense_post_gravnet_1_iteration_{i}",
+                  activation=DENSE_ACTIVATION,
+                  kernel_regularizer=DENSE_REGULARIZER)(x)
+        x = Dense(d_shape,
+                  name=f"dense_post_gravnet_2_iteration_{i}",
+                  activation=DENSE_ACTIVATION,
+                  kernel_regularizer=DENSE_REGULARIZER)(x)
+
         x = ScaledGooeyBatchNorm2(
-            name=f"batchnorm_2_iteration_{i}",
-            **BATCHNORM_OPTIONS)(x)
-
-        for j in range(MESSAGE_PASSING_ITERATIONS):
-            n = config['Architecture']['message_passing'][j]['n']
-            shift = config['Architecture']['message_passing'][j]['shift']
-            gndist = ShiftDistance(shift=shift)(gndist)
-            x = DistanceWeightedMessagePassing(
-                name=f"message_passing_{j}_iteration_{i}",
-                n_feature_transformation = [n],
-                activation=DENSE_ACTIVATION,
-            )([x, gnnidx, gndist])
-            if SPHERE_ACTIVATION:
-                x = SphereActivation()(x)
-            else:
-                x = ScaledGooeyBatchNorm2(
-                    name=f"batchnorm_message_passing_{j}_iteration_{i}",
-                    **BATCHNORM_OPTIONS)(x)
-
-        for j in range(POST_MESSAGE_PASSING_DENSE_ITERATIONS):
-            n = config['Architecture']['dense_post_message_passing'][j]['n']
-            x = Dense(n,
-                      name=f"dense_post_gravnet_{j}_iteration_{i}",
-                      activation=DENSE_ACTIVATION,
-                      kernel_regularizer=DENSE_REGULARIZER)(x)
-            if not j == POST_MESSAGE_PASSING_DENSE_ITERATIONS -1:
-                x = Dropout(DROPOUT, name=f"droput_{j}_iteration_{i}")(x)
-
-        x = Multi()([x,norm])
-        x = ScaledGooeyBatchNorm2(
-            name=f"batchnorm_3_iteration_{i}",
+            name=f"batchnorm_loop1_iteration_{i}",
             **BATCHNORM_OPTIONS)(x)
 
         allfeat.append(x)
+
+        if len(allfeat) > 1:
+            x = Concatenate()(allfeat)
+        else:
+            x = allfeat[0]
 
     ###########################################################################
     ### Create output of model and define loss ################################
     ###########################################################################
 
-    x = Concatenate()(allfeat)
 
-    for j in range(FINAL_DENSE_ITERATIONS):
-        n = config['Architecture']['dense_final'][j]['n']
-        x = Dense(n,
-                  name=f"dense_final_{j}",
-                  activation=DENSE_ACTIVATION,
-                  kernel_regularizer=DENSE_REGULARIZER)(x)
-        if not j == FINAL_DENSE_ITERATIONS -1:
-            x = Dropout(DROPOUT, name=f"droput_final_{j}")(x)
-
-    x = Dense(64, name='dense_very_final', activation=DENSE_ACTIVATION)(x)
+    x = Dense(64,
+              name=f"dense_final_{1}",
+              activation=DENSE_ACTIVATION,
+              kernel_regularizer=DENSE_REGULARIZER)(x)
+    x = Dense(64,
+              name=f"dense_final_{2}",
+              activation=DENSE_ACTIVATION,
+              kernel_regularizer=DENSE_REGULARIZER)(x)
+    x = Dense(64,
+              name=f"dense_final_{3}",
+              activation=DENSE_ACTIVATION,
+              kernel_regularizer=DENSE_REGULARIZER)(x)
     x = ScaledGooeyBatchNorm2(
         name=f"batchnorm_final",
         **BATCHNORM_OPTIONS)(x)
@@ -291,9 +255,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         pred_pos, pred_time, pred_time_unc, pred_id = \
         create_outputs(x, n_ccoords=N_CLUSTER_SPACE_COORDINATES, fix_distance_scale=True)
 
-    if USE_FILL_SPACE:
-        pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)(
-                [pred_ccoords, rs, t_idx])
+    # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
 
     if config['General']['oc_implementation'] == 'hinge':
         loss_implementation = 'hinge'
@@ -336,16 +298,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
 
-    if config['General']['pre-model-type'] == 'noise-filter':
-        model_outputs['no_noise_sel'] = pre_processed['no_noise_sel']
-        model_outputs['no_noise_rs'] = pre_processed['no_noise_rs']
-
-    if (config['General']['pre-model-type'] == 'pre-pooling') or (config['General']['pre-model-type'] == 'pre-pooled'):
-        model_outputs['no_noise_sel'] = trans['sel_idx_up']
-        model_outputs['no_noise_rs'] = trans['rs_down']
-        model_outputs['sel_idx'] = trans['sel_idx_up']
-        model_outputs['sel_t_idx'] = pre_processed['t_idx']
-
     return DictModel(inputs=Inputs, outputs=model_outputs)
 
 
@@ -362,17 +314,9 @@ if not train.modelSet():
         td=train.train_data.dataclass(),
         debug_outdir=train.outputDir+'/intplots',
         )
-    train.setCustomOptimizer(tf.keras.optimizers.Nadam(clipnorm=1.,epsilon=1e-2))
+    train.setCustomOptimizer(tf.keras.optimizers.Nadam(clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
-
-    use_noise_filter = config['General']['pre-model-type'] == 'noise-filter'
-    use_pre_pooling = config['General']['pre-model-type'] == 'pre-pooling'
-    model_path = config['General']['pre-model-path']
-
-    if use_noise_filter or use_pre_pooling:
-        apply_weights_from_path(model_path, train.keras_model)
-
 
 ###############################################################################
 ### Callbacks #################################################################
@@ -382,8 +326,8 @@ if not train.modelSet():
 samplepath = train.val_data.getSamplePath(train.val_data.samples[0])
 PUBLISHPATH = ""
 PUBLISHPATH += [d  for d in train.outputDir.split('/') if len(d)][-1]
-RECORD_FREQUENCY = config['Plotting']['record_frequency']
-PLOT_FREQUENCY = config['Plotting']['plot_frequency']
+RECORD_FREQUENCY = 10
+PLOT_FREQUENCY = 40
 
 cb = [NanSweeper()] #this takes a bit of time checking each batch but could be worth it
 cb += [
@@ -404,40 +348,27 @@ cb += [
         output_file=train.outputDir+'/metrics.html',
         record_frequency= RECORD_FREQUENCY,
         plot_frequency = PLOT_FREQUENCY,
-        select_metrics=['ExtendedOCLoss*','FullOCLoss_*loss'],
+        select_metrics=[
+            'ExtendedOCLoss_loss',
+            'ExtendedOCLoss_dynamic_payload_scaling',
+            'ExtendedOCLoss_attractive_loss',
+            'ExtendedOCLoss_repulsive_loss',
+            'ExtendedOCLoss_min_beta_loss',
+            'ExtendedOCLoss_noise_loss',
+            'ExtendedOCLoss_class_loss',
+            'ExtendedOCLoss_energy_loss',
+            'ExtendedOCLoss_energy_unc_loss',
+            # 'ExtendedOCLoss_time_std',
+            # 'ExtendedOCLoss_time_pred_std',
+            '*regularise_gravnet_*',
+            '*_gravReg*',
+            ],
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
+    ]
 
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/time_pred.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics=['FullOCLoss_*time_std','FullOCLoss_*time_pred_std'],
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
+cb += [
 
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/gooey_metrics.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics='*gooey_*',
-        publish=PUBLISHPATH
-        ),
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/latent_space_metrics.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics='average_distance_*',
-        publish=PUBLISHPATH
-        ),
-
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/non_amb_truth_fraction.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics='*_non_amb_truth_fraction',
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
 
     simpleMetricsCallback(
         output_file=train.outputDir+'/val_metrics.html',
@@ -455,41 +386,33 @@ cb += [
         )
     ]
 
+cb += [wandbCallback()]
+
 ###############################################################################
 ### Actual Training ###########################################################
 ###############################################################################
 
 shutil.copyfile(CONFIGFILE, os.path.join(sys.argv[3], "config.yaml"))
 
-with mlflow.start_run():
-    mlflow.tensorflow.autolog()
+N_TRAINING_STAGES = len(config['Training'])
+for i in range(N_TRAINING_STAGES):
+    print(f"Starting training stage {i}")
+    learning_rate = config['Training'][i]['learning_rate']
+    epochs = config['Training'][i]['epochs']
+    batch_size = config['Training'][i]['batch_size']
+    train.change_learning_rate(learning_rate)
+    print(f"Training for {epochs} epochs")
+    print(f"Learning rate set to {learning_rate}")
+    print(f"Batch size: {batch_size}")
 
-    for key, value in config.items():
-        if isinstance(value, dict):
-            for key2, value2 in value.items():
-                mlflow.log_param(key2, value2)
-        else:
-            mlflow.log_param(key, value)
-
-    N_TRAINING_STAGES = len(config['Training'])
-    for i in range(N_TRAINING_STAGES):
-        print(f"Starting training stage {i}")
-        learning_rate = config['Training'][i]['learning_rate']
-        epochs = config['Training'][i]['epochs']
-        batch_size = config['Training'][i]['batch_size']
-        train.change_learning_rate(learning_rate)
-        print(f"Training for {epochs} epochs")
-        print(f"Learning rate set to {learning_rate}")
-        print(f"Batch size: {batch_size}")
-
-        if i == 1:
-            # change batchnorm
-            for layer in train.keras_model.layers:
-                if 'batchnorm' in layer.name:
-                    layer.max_viscosity = 0.999
-                    layer.fluidity_decay = 0.1
-        model, history = train.trainModel(
-            nepochs=epochs,
-            batchsize=batch_size,
-            additional_callbacks=cb
-            )
+    if i == 1:
+        # change batchnorm
+        for layer in train.keras_model.layers:
+            if 'batchnorm' in layer.name:
+                layer.max_viscosity = 0.999
+                layer.fluidity_decay = 0.01
+    model, history = train.trainModel(
+        nepochs=epochs,
+        batchsize=batch_size,
+        additional_callbacks=cb
+        )
