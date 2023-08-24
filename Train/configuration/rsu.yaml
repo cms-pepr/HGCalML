@@ -3,7 +3,7 @@ General:
   gravnet:
     - n: 32
     - n: 128
-    - n: 32
+    - n: 64
   n_cluster_space_coordinates: 3
   n_gravnet_space_coordinates: 3
 
