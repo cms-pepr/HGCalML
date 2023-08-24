@@ -53,10 +53,10 @@ class RandomSampling(tf.keras.layers.Layer):
     """
 
 
-    def __init__(self, reduction=10., **kwargs):
+    def __init__(self, reduction=10., epsilon=1e-7, **kwargs):
         super(RandomSampling, self).__init__(**kwargs)
         self.reduction = reduction
-        self.epsilon = 1e-7
+        self.epsilon = epsilon
 
 
     def get_config(self):
