@@ -746,3 +746,201 @@ def plot_high_low_difference(prediction):
     ax.set_title("Difference between high and low quantile", fontsize=20)
     return fig
 
+
+def get_energy_summary(path, prefix=''):
+    """
+    Given a path to a pickled analysis file which includes the showers_dataframe
+    this function returns a pandas dataframe that includes response and resolution
+    at different energies for the raw and corrected energy predictions, both for
+    hits and tracks (if available).
+    """
+    assert os.path.exists(path)
+    with gzip.open(path, "rb") as file:
+        df = pickle.load(file)['showers_dataframe']
+    df_matched = df[np.logical_and(
+        ~np.isnan(df['pred_energy']),
+        ~np.isnan(df['t_rec_energy']))]
+    true_energies = df_matched.truthHitAssignedEnergies
+    energy_track_raw = df_matched.pred_energy_tracks_raw
+    energy_track_cor = df_matched.pred_energy_tracks
+    energy_hits_raw = df_matched.pred_energy_hits_raw
+    energy_hits_cor = df_matched.pred_energy_hits
+
+    centers = np.arange(10, 210, 10)
+    summary = {
+        prefix + "hits_raw_response": [],
+        prefix + "hits_raw_response_filtered": [],
+        prefix + "hits_raw_resolution": [],
+        prefix + "hits_raw_resolution_filtered": [],
+        prefix + "hits_cor_response": [],
+        prefix + "hits_cor_response_filtered": [],
+        prefix + "hits_cor_resolution": [],
+        prefix + "hits_cor_resolution_filtered": [],
+        prefix + "tracks_raw_response": [],
+        prefix + "tracks_raw_response_filtered": [],
+        prefix + "tracks_raw_resolution": [],
+        prefix + "tracks_raw_resolution_filtered": [],
+        prefix + "tracks_cor_response": [],
+        prefix + "tracks_cor_response_filtered": [],
+        prefix + "tracks_cor_resolution": [],
+        prefix + "tracks_cor_resolution_filtered": [],
+    }
+    for i, center in enumerate(centers):
+        mask = np.logical_and(
+            center - 0.1 < true_energies,
+            true_energies < center + 0.1)
+        predictions_hits_raw = energy_hits_raw[mask]
+        predictions_hits_cor = energy_hits_cor[mask]
+        predictions_tracks_raw = energy_track_raw[mask]
+        predictions_tracks_cor = energy_track_cor[mask]
+        mask_filter = predictions_hits_raw > 0.2 * center
+        mask_filter_tracks = predictions_tracks_raw > 0.2 * center
+
+        summary[prefix + 'hits_raw_response'].append(
+            np.mean(predictions_hits_raw/true_energies[mask]))
+        summary[prefix + 'hits_raw_resolution'].append(
+            np.std(predictions_hits_raw)/center)
+        summary[prefix + 'hits_raw_response_filtered'].append(
+            np.mean(predictions_hits_raw[mask_filter]/true_energies[mask][mask_filter]))
+        summary[prefix + 'hits_raw_resolution_filtered'].append(
+            np.std(predictions_hits_raw[mask_filter])/center)
+
+        summary[prefix + 'hits_cor_response'].append(
+            np.mean(predictions_hits_cor/true_energies[mask]))
+        summary[prefix + 'hits_cor_resolution'].append(
+            np.std(predictions_hits_cor)/center)
+        summary[prefix + 'hits_cor_response_filtered'].append(
+            np.mean(predictions_hits_cor[mask_filter]/true_energies[mask][mask_filter]))
+        summary[prefix + 'hits_cor_resolution_filtered'].append(
+            np.std(predictions_hits_cor[mask_filter])/center)
+
+        summary[prefix + 'tracks_raw_response'].append(
+            np.mean(predictions_tracks_raw/true_energies[mask]))
+        summary[prefix + 'tracks_raw_resolution'].append(
+            np.std(predictions_tracks_raw)/center)
+        summary[prefix + 'tracks_raw_response_filtered'].append(
+            np.mean(predictions_tracks_raw[mask_filter_tracks]/
+                    true_energies[mask][mask_filter_tracks]))
+        summary[prefix + 'tracks_raw_resolution_filtered'].append(
+            np.std(predictions_tracks_raw[mask_filter_tracks])/center)
+        
+        summary[prefix + 'tracks_cor_response'].append(
+            np.mean(predictions_tracks_cor/true_energies[mask]))
+        summary[prefix + 'tracks_cor_resolution'].append(
+            np.std(predictions_tracks_cor)/center)
+        summary[prefix + 'tracks_cor_response_filtered'].append(
+            np.mean(predictions_tracks_cor[mask_filter_tracks]/
+                    true_energies[mask][mask_filter_tracks]))
+        summary[prefix + 'tracks_cor_resolution_filtered'].append(
+            np.std(predictions_tracks_cor[mask_filter_tracks])/center)
+
+    return pd.DataFrame(summary, index=centers)
+
+
+def plot_energy_summary(summary, prefix, title_prefix='',
+                 hits=True, tracks=True,
+                 raw=True, corrected=True,
+                 unfiltered=False, filtered=True):
+
+    centers = np.arange(10, 210, 10)
+
+    fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(20, 20))
+    fig.suptitle(title_prefix + " - Energy Response and Resolution", fontsize=40)
+    ax[0].axhline(1.0, color='black', linestyle='--')
+    if hits:
+        if unfiltered:
+            if raw:
+                ax[0].scatter(centers, summary[prefix+'hits_raw_response'],
+                    marker=r'$\diamondsuit$', sizes=500*np.ones_like(centers),
+                    label="hits - raw", color='blue')
+            if corrected:
+                ax[0].scatter(centers, summary[prefix+'hits_cor_response'],
+                    marker=r'$\diamondsuit$', sizes=500*np.ones_like(centers),
+                    label="hits - corrected", color='green')
+        if filtered:
+            if raw:
+                ax[0].scatter(centers, summary[prefix+'hits_raw_response_filtered'],
+                    marker=r'$\bigtriangleup$', sizes=500*np.ones_like(centers),
+                    label="hits - raw - filtered", color='blue')
+            if corrected:
+                ax[0].scatter(centers, summary[prefix+'hits_cor_response_filtered'], 
+                    marker=r'$\bigtriangleup$', sizes=500*np.ones_like(centers),
+                    label="hits - corrected - filtered", color='green')
+
+    if tracks:
+        if unfiltered:
+            if raw:
+                ax[0].scatter(centers, summary[prefix+'tracks_raw_response'],
+                    marker=r'$\circ$', sizes=500*np.ones_like(centers),
+                    label="tracks - raw", color='blue')
+            if corrected:
+                ax[0].scatter(centers, summary[prefix+'tracks_cor_response'],
+                    marker=r'$\circ$', sizes=500*np.ones_like(centers),
+                    label="tracks - corrected", color='green')
+        if filtered:
+            if raw:
+                ax[0].scatter(centers, summary[prefix+'tracks_raw_response_filtered'],
+                    marker=r'$\triangledown$', sizes=500*np.ones_like(centers),
+                    label="tracks - raw - filtered", color='blue')
+            if corrected:
+                ax[0].scatter(centers, summary[prefix+'tracks_cor_response_filtered'],
+                    marker=r'$\triangledown$', sizes=500*np.ones_like(centers),
+                    label="tracks - corrected - filtered", color='green')
+
+    ax[0].grid()
+    ax[0].legend(fontsize=20)
+    ax[0].tick_params(axis='both', which='major', labelsize=20)
+    ax[0].set_xticks(np.arange(0, 210, 20))
+    ax[0].set_ylabel("Predicted / True (mean)", fontsize=30)
+
+    if hits:
+        if unfiltered:
+            if raw:
+                ax[1].scatter(centers, summary[prefix+'hits_raw_resolution'],
+                    marker=r'$\diamondsuit$', sizes=np.ones_like(centers)*500,
+                    label="hits - raw", color='blue')
+            if corrected:
+                ax[1].scatter(centers, summary[prefix+'hits_cor_resolution'],
+                    marker=r'$\diamondsuit$', sizes=np.ones_like(centers)*500,
+                    label="hits - corrected", color='green')
+        if filtered:
+            if raw:
+                ax[1].scatter(centers, summary[prefix+'hits_raw_resolution_filtered'],
+                    marker=r'$\bigtriangleup$', sizes=np.ones_like(centers)*500,
+                    label="hits - raw - filtered", color='blue')
+            if corrected:
+                ax[1].scatter(centers, summary[prefix+'hits_cor_resolution_filtered'],
+                    marker=r'$\bigtriangleup$', sizes=np.ones_like(centers)*500,
+                    label="hits - corrected - filtered", color='green')
+
+    if tracks:
+        if unfiltered:
+            if raw:
+                ax[1].scatter(centers, summary[prefix+'tracks_raw_resolution'],
+                    marker=r'$\circ$', sizes=np.ones_like(centers)*500,
+                    label="tracks - raw", color='blue')
+            if corrected:
+                ax[1].scatter(centers, summary[prefix+'tracks_cor_resolution'],
+                    marker=r'$\circ$', sizes=np.ones_like(centers)*500,
+                    label="tracks - corrected", color='green')
+        if filtered:
+            if raw:
+                ax[1].scatter(centers, summary[prefix+'tracks_raw_resolution_filtered'],
+                    marker=r'$\triangledown$', sizes=np.ones_like(centers)*500,
+                    label="tracks - raw - filtered", color='blue')
+            if corrected:
+                ax[1].scatter(centers, summary[prefix+'tracks_cor_resolution_filtered'],
+                    marker=r'$\triangledown$', sizes=np.ones_like(centers)*500,
+                    label="tracks - corrected - filtered", color='green')
+
+    ax[1].grid()
+    ax[1].legend(fontsize=20)
+    ax[1].tick_params(axis='both', which='major', labelsize=20)
+    ax[1].set_xticks(np.arange(0, 210, 20))
+    ax[1].set_xlabel("True Energy [GeV]", fontsize=30)
+    ax[1].set_ylabel(r"$\sigma (E)$ / E", fontsize=30)
+    ax[1].set_ylim((0, ax[1].get_ylim()[1]))
+
+    fig.tight_layout()
+    return fig, ax
+
