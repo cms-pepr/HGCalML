@@ -1,5 +1,6 @@
 # Plotting tools used when analysing model predictions
 import pdb
+import os
 import numpy as np
 import pandas as pd
 import seaborn as sns

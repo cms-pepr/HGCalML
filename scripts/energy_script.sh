@@ -73,13 +73,18 @@ ANALYSIS_PHOTONS=$OUTPUT_PHOTONS/analysis.bin.gz
 ANALYSIS_PIONS=$OUTPUT_PIONS/analysis.bin.gz
 
 echo "Starting analysis of electrons" >> $LOGFILE
+cd $OUTPUT_ELECTRONS
 analyse_hgcal_predictions.py $OUTPUT_ELECTRONS --analysisoutpath $ANALYSIS_ELECTRONS --slim
 echo "Starting analysis of kaons" >> $LOGFILE
+cd $OUTPUT_KAONS
 analyse_hgcal_predictions.py $OUTPUT_KAONS --analysisoutpath $ANALYSIS_KAONS --slim
 echo "Starting analysis of photons" >> $LOGFILE
+cd $OUTPUT_PHOTONS
 analyse_hgcal_predictions.py $OUTPUT_PHOTONS --analysisoutpath $ANALYSIS_PHOTONS --slim
 echo "Starting analysis of pions" >> $LOGFILE
+cd $OUTPUT_PIONS
 analyse_hgcal_predictions.py $OUTPUT_PIONS --analysisoutpath $ANALYSIS_PIONS --slim
+cd
 
 echo "Starting plotting of electrons" >> $LOGFILE
 python3 $HGCALML/scripts/resolution.py $ANALYSIS_ELECTRONS $OUTPUT_DIR
