@@ -172,6 +172,10 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 fig_cluster_first_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_first_truth.html'))
                 fig_matched = matched_plot(filtered_truth, filtered_features, processed_dataframe, dataframe)
                 fig_matched.write_html(os.path.join('.', 'events', f'event_{event_id}_matched.html'))
+                fig_class_hit = ep.classification_hitbased(
+                        filtered_truth, predictions_dict,
+                        weighted=True, normalize='true')
+                fig_class_hit.savefig(os.path.join('.', 'events', f'event_{event_id}_classification_plot_hits.jpg'))
 
             event_id += 1
 
@@ -206,8 +210,14 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
     ### Classification ############################################################################
     try:
-        fig = ep.classification_plot(showers_dataframe)
-        fig.savefig(os.path.join('.', 'classification_plot.jpg'))
+        fig = ep.classification_plot(showers_dataframe, normalize=None)
+        fig.savefig(os.path.join('.', 'classification_plot_counts.jpg'))
+        fig = ep.classification_plot(showers_dataframe, normalize='true')
+        fig.savefig(os.path.join('.', 'classification_plot_true.jpg'))
+        fig = ep.classification_plot(showers_dataframe, normalize='pred')
+        fig.savefig(os.path.join('.', 'classification_plot_pred.jpg'))
+        fig = ep.classification_plot(showers_dataframe, normalize='all')
+        fig.savefig(os.path.join('.', 'classification_plot_all.jpg'))
     except:
         print("Classification failed")
 

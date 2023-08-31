@@ -33,8 +33,8 @@ class OCGatherEnergyCorrFac3(tf.keras.layers.Layer):
         super(OCGatherEnergyCorrFac2, self).__init__(**kwargs)
 
     def call(self, pred_sid,pred_corr_factor, rechit_energy, no_noise_idx,
-            pred_beta, is_track=None, return_track_if_possible=False, row_splits=None,
-            return_tracks_where_possible=True, return_tracks=False, raw=False):
+            pred_beta, is_track=None, row_splits=None,
+            return_tracks_where_possible=False, return_tracks=False, raw=False):
         """
         Same as `OCGatherEnergyCorrFac` with the addition that one can chose if the energy
         reconstructed with the tracks or the enery reconstructed by the calorimeter should be used.
@@ -136,7 +136,7 @@ class OCGatherEnergyCorrFac2(tf.keras.layers.Layer):
         super(OCGatherEnergyCorrFac2, self).__init__(**kwargs)
 
     def call(self, pred_sid,pred_corr_factor, rechit_energy, no_noise_idx,
-            pred_beta, is_track=None, return_track_if_possible=False, row_splits=None,
+            pred_beta, is_track=None, row_splits=None,
             return_tracks_where_possible=True, return_tracks=False, raw=False):
         """
         Same as `OCGatherEnergyCorrFac` with the addition that one can chose if the energy
