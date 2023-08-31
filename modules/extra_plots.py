@@ -322,7 +322,7 @@ def energy_resolution(df, bins=None, binwidth=10., addfit=False):
     return fig
 
 
-def efficiency_plot(df, bins=None, binwidth=10):
+def efficiency_plot(df, bins=None, binwidth=10, return_summary=False):
     if bins is None:
         binmax = df['truthHitAssignedEnergies'].max()
         bins = calc_energy_bins(binmax, binwidth)
@@ -379,7 +379,20 @@ def efficiency_plot(df, bins=None, binwidth=10):
     # make the legend's background transparent and position it precisely
 
     legend = ax1.legend(handles, labels, loc=(0.8, 0.6), fontsize=20, framealpha=0.8)
-    return fig
+
+    summary = {
+            "energy": x_pos,
+            "energy_error": x_err,
+            "efficiency": y_eff,
+            "efficiency_error": yerr_eff
+            "fake_rate": y_fake,
+            "fake_rate_error": yerr_fake,
+            }
+
+    if return_summary:
+        return fig, summary
+    else:
+        return fig
 
 
 def calc_energy_bins(binmax, binwidth):

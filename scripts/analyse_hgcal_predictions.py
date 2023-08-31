@@ -160,22 +160,22 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe, tmp_predbeta), axis=1)
                 fig_truth = dataframe_to_plot(full_df, truth=True)
                 fig_pred = dataframe_to_plot(full_df, truth=False)
-                fig_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_truth.html'))
-                fig_pred.write_html(os.path.join('.', 'events', f'event_{event_id}_pred.html'))
+                fig_truth.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_truth.html'))
+                fig_pred.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_pred.html'))
                 fig_cluster_pca = dataframe_to_plot(full_df, truth=False, clusterspace='pca')
                 fig_cluster_first = dataframe_to_plot(full_df, truth=False, clusterspace=(0,1,2))
-                fig_cluster_pca.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_pca.html'))
-                fig_cluster_first.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_first.html'))
+                fig_cluster_pca.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_pca.html'))
+                fig_cluster_first.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_first.html'))
                 fig_cluster_pca_truth = dataframe_to_plot(full_df, truth=True, clusterspace='pca')
                 fig_cluster_first_truth = dataframe_to_plot(full_df, truth=True, clusterspace=(0,1,2))
-                fig_cluster_pca_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_pca_truth.html'))
-                fig_cluster_first_truth.write_html(os.path.join('.', 'events', f'event_{event_id}_cluster_first_truth.html'))
+                fig_cluster_pca_truth.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_pca_truth.html'))
+                fig_cluster_first_truth.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_first_truth.html'))
                 fig_matched = matched_plot(filtered_truth, filtered_features, processed_dataframe, dataframe)
-                fig_matched.write_html(os.path.join('.', 'events', f'event_{event_id}_matched.html'))
+                fig_matched.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_matched.html'))
                 fig_class_hit = ep.classification_hitbased(
                         filtered_truth, predictions_dict,
                         weighted=True, normalize='true')
-                fig_class_hit.savefig(os.path.join('.', 'events', f'event_{event_id}_classification_plot_hits.jpg'))
+                fig_class_hit.savefig(os.path.join(args.picturepath, 'events', f'event_{event_id}_classification_plot_hits.jpg'))
 
             event_id += 1
 
@@ -197,55 +197,58 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     ### Noise Filter Performance ##################################################################
     try:
         fig = ep.noise_performance(noise_df)
-        fig.savefig(os.path.join('.', 'noise_performance.jpg'))
+        fig.savefig(os.path.join(args.picturepath, 'noise_performance.jpg'))
     except:
         print("Noise overview failed")
 
     ### Prediction overview #######################################################################
     try:
         fig = ep.prediction_overview(prediction)
-        fig.savefig(os.path.join('.', 'prediction_overview.jpg'))
+        fig.savefig(os.path.join(args.picturepath, 'prediction_overview.jpg'))
     except:
         print("Overview failed")
 
     ### Classification ############################################################################
     try:
         fig = ep.classification_plot(showers_dataframe, normalize=None)
-        fig.savefig(os.path.join('.', 'classification_plot_counts.jpg'))
+        fig.savefig(os.path.join(args.picturepath, 'classification_plot_counts.jpg'))
         fig = ep.classification_plot(showers_dataframe, normalize='true')
-        fig.savefig(os.path.join('.', 'classification_plot_true.jpg'))
+        fig.savefig(os.path.join(args.picturepath, 'classification_plot_true.jpg'))
         fig = ep.classification_plot(showers_dataframe, normalize='pred')
-        fig.savefig(os.path.join('.', 'classification_plot_pred.jpg'))
+        fig.savefig(os.path.join(args.picturepath, 'classification_plot_pred.jpg'))
         fig = ep.classification_plot(showers_dataframe, normalize='all')
-        fig.savefig(os.path.join('.', 'classification_plot_all.jpg'))
+        fig.savefig(os.path.join(args.picturepath, 'classification_plot_all.jpg'))
     except:
         print("Classification failed")
 
     ### Tracks versus hits ########################################################################
     try:
         fig = ep.tracks_vs_hits(showers_dataframe)
-        fig.savefig(os.path.join('.', 'median_ratios.jpg'))
+        fig.savefig(os.path.join(args.picturepath, 'median_ratios.jpg'))
     except:
         print("Tracks-vs-hits failed")
 
     ### Efficiency plots ##########################################################################
     try:
-        fig_eff = ep.efficiency_plot(showers_dataframe)
-        fig_eff.savefig(os.path.join('.', 'efficiency.jpg'))
+        fig_eff, eff_summary = ep.efficiency_plot(showers_dataframe, return_summary=True)
+        fig_eff.savefig(os.path.join(args.picturepath, 'efficiency.jpg'))
+        with open(os.path.join(args.picturepath, 'efficiency.pkl'), 'wb') as f:
+            pickle.dump(eff_summary, f)
+
     except:
         print("Efficiency failed")
 
     ### Resolution plots ##########################################################################
     try:
         fig_res = ep.energy_resolution(showers_dataframe)
-        fig_res.savefig(os.path.join('.', 'energy_resolution.jpg'))
+        fig_res.savefig(os.path.join(args.picturepath, 'energy_resolution.jpg'))
     except:
         print("Resolution plot failed")
 
     ### Energy uncertainty plot ###################################################################
     try:
         fig_unc = ep.within_uncertainty(showers_dataframe)
-        fig_unc.savefig(os.path.join('.', 'within_uncertainty.jpg'))
+        fig_unc.savefig(os.path.join(args.picturepath, 'within_uncertainty.jpg'))
     except:
         print("Uncertainty plot failed")
 
@@ -254,7 +257,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
 
     try:
         fig_low_high = ep.plot_high_low_difference(prediction)
-        fig_low_high.savefig(os.path.join('.', 'low_high_difference.jpg'))
+        fig_low_high.savefig(os.path.join(args.picturepath, 'low_high_difference.jpg'))
     except:
         print("low-high difference plot failed")
 
@@ -308,6 +311,9 @@ if __name__ == '__main__':
     parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
     parser.add_argument('-m', help='Matching mode', default='iou_max')
+    parser.add_argument('--picturepath',
+        help='Will dump pictures in this directory, creates it if does not exist yet',
+        default='.')
     parser.add_argument('--analysisoutpath',
         help='Will dump analysis data to a file to remake plots without re-running everything.',
         default='')
