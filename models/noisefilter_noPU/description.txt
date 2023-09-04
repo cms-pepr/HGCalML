@@ -1,0 +1,2 @@
+Model trained End of August to beginning of September. 
+Trained for 100 epochs and could probably be trained a bit more, but already performs great

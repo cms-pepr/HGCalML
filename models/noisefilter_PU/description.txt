@@ -1,0 +1,2 @@
+Model trained end of August to beginning of september. 
+Currently trained for 70 epochs and is still improving, but performance is alread more than good enough.
