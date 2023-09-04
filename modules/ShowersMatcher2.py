@@ -245,6 +245,8 @@ class ShowersMatcher:
         pred_shower_energy = np.array([self.graph.nodes[x]['pred_energy'] for x in pred_shower_sid])
         truth_shower_energy = np.array([self.graph.nodes[x]['truthHitAssignedEnergies'] for x in truth_shower_sid])
         weight = self.features_dict['recHitEnergy'][:, 0]
+        is_track = np.abs(self.features_dict['recHitZ'][:,0]) == 315 # TODO: This works for now, but is very hacky
+        weight[is_track] = 0
 
 
         iou_matrix = calculate_iou_serial_fast(self.truth_dict['truthHitAssignementIdx'][:, 0],
