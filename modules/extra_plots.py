@@ -384,9 +384,10 @@ def efficiency_plot(df, bins=None, binwidth=10, return_summary=False):
             "energy": x_pos,
             "energy_error": x_err,
             "efficiency": y_eff,
-            "efficiency_error": yerr_eff
+            "efficiency_error": yerr_eff,
             "fake_rate": y_fake,
             "fake_rate_error": yerr_fake,
+            "benchmark": np.sum(y_eff),
             }
 
     if return_summary:

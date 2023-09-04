@@ -160,22 +160,26 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                 full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe, tmp_predbeta), axis=1)
                 fig_truth = dataframe_to_plot(full_df, truth=True)
                 fig_pred = dataframe_to_plot(full_df, truth=False)
-                fig_truth.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_truth.html'))
-                fig_pred.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_pred.html'))
+                event_dir = os.path.join(args.picturepath, 'events')
+                print(f"Saving to {event_dir}")
+                if not os.path.exists(event_dir):
+                    os.mkdir(event_dir)
+                fig_truth.write_html(os.path.join(event_dir, f'event_{event_id}_truth.html'))
+                fig_pred.write_html(os.path.join(event_dir, f'event_{event_id}_pred.html'))
                 fig_cluster_pca = dataframe_to_plot(full_df, truth=False, clusterspace='pca')
                 fig_cluster_first = dataframe_to_plot(full_df, truth=False, clusterspace=(0,1,2))
-                fig_cluster_pca.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_pca.html'))
+                fig_cluster_pca.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_pca.html'))
                 fig_cluster_first.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_first.html'))
                 fig_cluster_pca_truth = dataframe_to_plot(full_df, truth=True, clusterspace='pca')
                 fig_cluster_first_truth = dataframe_to_plot(full_df, truth=True, clusterspace=(0,1,2))
-                fig_cluster_pca_truth.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_pca_truth.html'))
-                fig_cluster_first_truth.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_first_truth.html'))
+                fig_cluster_pca_truth.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_pca_truth.html'))
+                fig_cluster_first_truth.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_first_truth.html'))
                 fig_matched = matched_plot(filtered_truth, filtered_features, processed_dataframe, dataframe)
-                fig_matched.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_matched.html'))
+                fig_matched.write_html(os.path.join(event_dir, f'event_{event_id}_matched.html'))
                 fig_class_hit = ep.classification_hitbased(
                         filtered_truth, predictions_dict,
                         weighted=True, normalize='true')
-                fig_class_hit.savefig(os.path.join(args.picturepath, 'events', f'event_{event_id}_classification_plot_hits.jpg'))
+                fig_class_hit.savefig(os.path.join(event_dir, f'event_{event_id}_classification_plot_hits.jpg'))
 
             event_id += 1
 
@@ -334,6 +338,8 @@ if __name__ == '__main__':
 
 
     args = parser.parse_args()
+    if not os.path.exists(args.picturepath):
+        os.mkdir(args.picturepath)
 
     analyse(preddir=args.preddir,
             pdfpath=args.p,
