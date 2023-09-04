@@ -11,6 +11,7 @@
 
 PREDICTION_DIR=$1
 OUTPUT_BASE=$2
+CURRENT_DIR=`pwd`
 
 if [ -d "$OUTPUT_BASE" ]; then
     echo "Output base folder already exists, exiting"
@@ -28,16 +29,19 @@ echo "Testing parameters b=0.1,0.3,0.5" >> $LOGFILE
 echo "Testing parameters d=0.3,0.5,0.7" >> $LOGFILE
 echo "Testing parameters i=0.1,0.2,0.5" >> $LOGFILE
 
-cd $OUTPUT_BASE
 
-for b in 0.1 0.3 0.5
+# for b in 0.1
+for b in 0.1 0.3 0.5 0.6
 do
-    for d in 0.3 0.5 0.7
+    # for d in 0.3
+    for d in 0.2 0.3 0.4 0.5
     do
-        for i in 0.1 0.2 0.5
+        for i in 0.1 0.2
+        # for i in 0.1
         do
+            directory=${OUTPUT_BASE}/b${b}_d${d}_i${i}
             echo "Running analysis with b=$b, d=$d, i=$i" >> $LOGFILE
-            directory=b${b}_d${d}_i${i}
+	    echo "Saving to directory $directory" >> $LOGFILE
             mkdir $directory
             analyse_hgcal_predictions.py $PREDICTION_DIR -b $b -d $d -i $i \
                 --analysisoutpath $directory/analysis.bin.gz --picturepath $directory --slim
