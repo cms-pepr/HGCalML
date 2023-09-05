@@ -1021,6 +1021,52 @@ class LLRegulariseGravNetSpace(LossLayerBase):
         lossval = tf.reduce_mean((dist - gndist)**2)
 
         return lossval    
+
+
+class LLSpectatorPenalty(LossLayerBase):
+    """
+    Regularizer to make sure that spectator weights stay reasonably low
+    per shower.
+    """
+    def __init__(self, **kwargs):
+        super(LLSpectatorPenalty, self).__init__(**kwargs)
+
+
+    def get_config(self):
+        base_config = super(LLSpectatorPenalty, self).get_config()
+        return base_config
+
+
+    @staticmethod
+    def _rs_loop(spectator_weights, truth_idx):
+        Msel, _, _ = CreateMidx(truth_idx, calc_m_not=False)
+        mask_k_m = SelectWithDefault(Msel, tf.zeros_like(spectator_weights)+1., 0.)         # K x V-obj x 1
+        spectators_k_m = SelectWithDefault(Msel, tf.zeros_like(spectator_weights)+1., 0.)   # K x V-obj x 1
+        spectators_k_m_squared = spectators_k_m**2
+        sum_k = tf.reduce_sum(spectators_k_m_squared, axis=-1)
+        mean = sum_k / tf.reduce_sum(mask_k_m, axis=1)
+        return mean
+
+
+    @staticmethod
+    def raw_loss(spectator_weights, truth_idx, rs):
+        loss = tf.zeros([], dtype='float32')
+        for i in range(len(rs)-1):
+            spectator_weights_rs = spectator_weights[rs[i]:rs[i+1]]
+            truth_idx_rs = truth_idx[rs[i]:rs[i+1]]
+            loss += LLSpectatorPenalty._rs_loop(spectator_weights_rs, truth_idx_rs)
+
+        return loss
+
+
+    def loss(self, inputs):
+        assert len(inputs) == 3
+        spectator_weights, truth_idx, rs = inputs
+        lossval = LLSpectatorPenalty.raw_loss(spectator_weights, truth_idx, rs)
+
+        return lossval
+
+
         
         
 class LLFillSpace(LossLayerBase):
@@ -2764,7 +2810,6 @@ class LLExtendedObjectCondensation(LLFullObjectCondensation):
             return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
         else:
             return prediction_loss, uncertainty_loss + matching_loss
-
 
 
 

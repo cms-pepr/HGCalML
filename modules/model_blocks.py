@@ -409,7 +409,8 @@ def create_outputs(x, n_ccoords=3,
                    name_prefix="output_module",
                    trainable=True,
                    is_track=None,
-                   set_track_betas_to_one=False):
+                   set_track_betas_to_one=False,
+                   predict_spectator_weights=False):
     '''
     returns
         * pred_beta                     Dense(1)
@@ -422,6 +423,8 @@ def create_outputs(x, n_ccoords=3,
         * pred_time                     10 + Dense(1)
         * pred_time_unc                 1 + Dense(1)
         * pred_id                       Dense(n_classes)
+        if predict_specator_weights:
+            * pred_spectator_weights    Dense(1) with relu and L2 regularization
     '''
     if not fix_distance_scale:
         print("warning: fix_distance_scale=False can lead to issues.")
@@ -433,6 +436,15 @@ def create_outputs(x, n_ccoords=3,
     if set_track_betas_to_one:
         assert is_track is not None
         pred_beta = Where()([is_track, 0.9999, pred_beta])
+
+
+    if predict_spectator_weights:
+        pred_spectator_weights = Dense(1,
+                activation='sigmoid',
+                name = name_prefix+'_spectator_weight',
+                trainable=trainable)(x)
+
+
 
     pred_ccoords = Dense(n_ccoords,
                          use_bias=False,
@@ -496,7 +508,10 @@ def create_outputs(x, n_ccoords=3,
             name = name_prefix+'_dist',
             trainable=trainable)(x))
         #this needs to be bound otherwise fully anti-correlated with coordates scale
-    return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id
+    if predict_spectator_weights:
+        return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, pred_spectator_weights
+    else:
+        return pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id
 
 
 
