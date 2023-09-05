@@ -407,7 +407,9 @@ def create_outputs(x, n_ccoords=3,
                    fix_distance_scale=True,
                    energy_factor=True,
                    name_prefix="output_module",
-                   trainable=True):
+                   trainable=True,
+                   is_track=None,
+                   set_track_betas_to_one=False):
     '''
     returns
         * pred_beta                     Dense(1)
@@ -428,6 +430,10 @@ def create_outputs(x, n_ccoords=3,
         activation='sigmoid',
         name = name_prefix+'_beta',
         trainable=trainable)(x)
+    if set_track_betas_to_one:
+        assert is_track is not None
+        pred_beta = Where()([is_track, 0.9999, pred_beta])
+
     pred_ccoords = Dense(n_ccoords,
                          use_bias=False,
                          name = name_prefix+'_clustercoords',
