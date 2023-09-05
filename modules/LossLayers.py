@@ -1044,7 +1044,8 @@ class LLSpectatorPenalty(LossLayerBase):
         spectators_k_m = SelectWithDefault(Msel, tf.zeros_like(spectator_weights)+1., 0.)   # K x V-obj x 1
         spectators_k_m_squared = spectators_k_m**2
         sum_k = tf.reduce_sum(spectators_k_m_squared, axis=-1)
-        mean = sum_k / tf.reduce_sum(mask_k_m, axis=1)
+        mean_k = sum_k / tf.reduce_sum(mask_k_m, axis=1)
+        mean = tf.reduce_mean(mean_k)
         return mean
 
 
