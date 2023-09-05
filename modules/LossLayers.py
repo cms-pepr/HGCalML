@@ -1057,6 +1057,8 @@ class LLSpectatorPenalty(LossLayerBase):
             truth_idx_rs = truth_idx[rs[i]:rs[i+1]]
             loss += LLSpectatorPenalty._rs_loop(spectator_weights_rs, truth_idx_rs)
 
+        loss /= tf.cast(rs.shape[0]-1,'float32')
+
         return loss
 
 
