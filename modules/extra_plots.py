@@ -569,6 +569,33 @@ def noise_performance(noise_df):
     fig.subplots_adjust(bottom=0.3)
     return fig
 
+MAP_DICT = {
+    0: 5,       # Whatever
+    13: 0,      # Muon
+    -13: 0,
+    11: 1,      # Electron
+    -11: 1,
+    22: 2,      # Photon
+    211: 3,     # Charged Pion
+    -211: 3,
+    # 312: 3,
+    # -312: 3,
+    321: 3,     # Charged Kaon
+    -321: 3,
+    2212: 3,    # Proton
+    -2212: 3,
+    3312: 3,    # Xi
+    -3312: 3,
+    130: 4,     # Klong
+    -130: 4,
+    310: 4,     # Kshort
+    -310: 4,
+    2112: 4,    # Neutron
+    -2112: 4,
+    3322: 4,    # Xi
+    -3322: 4,
+}
+
 
 def map_pid_to_classes(truth_pids):
     """
@@ -576,26 +603,15 @@ def map_pid_to_classes(truth_pids):
     1.  Electron
     2.  Photon
     3.  Charged Hadron
+        pion (211), kaon (321), proton (2212)
+        Xi (3312)
     4.  Neutral Hadron
+        klong (130), kshort (310), neutron (2112),
+        Xi (3322)
     5.  Ambiguous
     """
-    map_dict = {
-        13: 0,
-        -13: 0,
-        11: 1,
-        -11: 1,
-        22: 2,
-        211: 3,
-        -211: 3,
-        312: 3,
-        -312: 3,
-        2212: 3,
-        -2212: 3,
-        130: 4,
-        2112: 4,
-    }
 
-    mapped = truth_pids.map(map_dict)
+    mapped = truth_pids.map(MAP_DICT)
     return mapped
 
 
@@ -625,11 +641,11 @@ def classification_hitbased(truth, prediction, weighted=False, normalize=None):
 
     # truth_class = map_pid_to_classes(truth['truthHitAssignedPIDs'])
     truth_class = []
-    map_dict = {13: 0, -13: 0, 11: 1, -11: 1, 22: 2, 211: 3, -211: 3,
-            312: 3, -312: 3, 2212: 3, -2212: 3, 130: 4, 2112: 4, 0:5}
+    # map_dict = {13: 0, -13: 0, 11: 1, -11: 1, 22: 2, 211: 3, -211: 3,
+            # 321: 3, -321: 3, 2212: 3, -2212: 3, 130: 4, -2112: 4, 2112: 4, 0:5}
     for t in truth['truthHitAssignedPIDs']:
         t = int(t)
-        truth_class.append(map_dict[t])
+        truth_class.append(MAP_DICT[t])
     pred_class = np.argmax(prediction['pred_id'], axis=-1)
 
     cm = confusion_matrix(
