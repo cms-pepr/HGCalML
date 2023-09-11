@@ -12,7 +12,7 @@ import mgzip
 import pandas as pd
 import numpy as np
 
-from OCHits2Showers import OCHits2ShowersLayer
+from OCHits2Showers import OCHits2ShowersLayer, OCHits2ShowersLayer_HDBSCAN
 from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
 from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
@@ -20,10 +20,25 @@ import extra_plots as ep
 from visualize_event import dataframe_to_plot, matched_plot
 
 
-def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
-        matching_mode, analysisoutpath, nfiles, nevents,
-        local_distance_scaling, is_soft, de_e_cut, angle_cut,
-        energy_mode='hits'):
+def analyse(preddir,
+            pdfpath,
+            beta_threshold,
+            distance_threshold,
+            iou_threshold,
+            matching_mode,
+            analysisoutpath,
+            nfiles,
+            nevents,
+            local_distance_scaling,
+            is_soft,
+            de_e_cut,
+            angle_cut,
+            energy_mode='hits',
+            slim=True,
+            use_hdbscan=False,
+            min_cluster_size=50,
+            min_samples=100,
+        ):
     """
     Analyse model predictions
     This includes:
@@ -35,10 +50,13 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
     * plotting all of the above
     """
 
-    hits2showers = OCHits2ShowersLayer(
-        beta_threshold,
-        distance_threshold,
-        local_distance_scaling)
+    if use_hdbscan:
+        hits2showers = OCHits2ShowersLayer_HDBSCAN
+    else:
+        hits2showers = OCHits2ShowersLayer(
+            beta_threshold,
+            distance_threshold,
+            local_distance_scaling)
     showers_matcher = ShowersMatcher(matching_mode, iou_threshold, de_e_cut, angle_cut)
 
     energy_gatherer = OCGatherEnergyCorrFac2()
@@ -121,7 +139,10 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
                     energy_gatherer,
                     filtered_features,
                     predictions_dict,
-                    energy_mode=energy_mode)
+                    energy_mode=energy_mode,
+                    hdbscan=use_hdbscan,
+                    min_cluster_size=min_cluster_size,
+                    min_samples=min_samples,)
 
             alpha_ids.append(pred_shower_alpha_idx)
             processed.append(processed_pred_dict)
@@ -285,7 +306,7 @@ def analyse(preddir, pdfpath, beta_threshold, distance_threshold, iou_threshold,
             'noise_masks': noise_masks,
             'matched': matched,
         }
-        if not args.slim:
+        if not slim:
             analysis_data['processed_dataframe'] = ep.dictlist_to_dataframe(processed)
             analysis_data['features'] = features
             analysis_data['truth'] = truth
@@ -331,6 +352,15 @@ if __name__ == '__main__':
     parser.add_argument('--no_soft', help='Use condensate op', action='store_true')
     parser.add_argument('--nevents', help='Maximum number of events (per file)', default=-1)
     parser.add_argument('--emode', help='Mode how energy is calculated', default='hits')
+    parser.add_argument('--min_cluster_size',
+                        help='parameter used for HDBSCAN (only relevant if option --hdbscan is active)',
+                        default=50)
+    parser.add_argument('--min_samples',
+                        help='parameter used for HDBSCAN (only relevant if option --hdbscan is active)',
+                        default=100)
+    parser.add_argument('--hdbscan',
+        help="Do not use the default clustering algorightm but use HDBSCAN instead",
+        action='store_true')
     parser.add_argument('--slim',
         help="Produce only a small analysis.bin.gz file. \
             Only applicable if --analysisoutpath is set",
@@ -355,4 +385,8 @@ if __name__ == '__main__':
             angle_cut=float(args.angle_cut),
             nevents=int(args.nevents),
             energy_mode=str(args.emode),
+            slim=args.slim,
+            use_hdbscan=args.hdbscan,
+            min_cluster_size=int(args.min_cluster_size),
+            min_samples=int(args.min_samples),
             )

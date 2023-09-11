@@ -1,7 +1,9 @@
+import sys
 import time
 
 import numpy as np
 import tensorflow as tf
+import hdbscan
 
 class OCHits2Showers():
     pass
@@ -42,7 +44,7 @@ class OCGatherEnergyCorrFac3(tf.keras.layers.Layer):
             * rechit_energy, is_track:      [N_orig, 1]     (before noise filter)
             * pred_sid, pred_corr_factor:   [N_filtered, 1] (after noise filter)
             * no_noise_idx:                 [N_filtered, 1] (with indices up to N_orig as entries)
-        Returns: 
+        Returns:
             Will always return only one value:
                 return_tracks_where_possible overrides `return_tracks`
             By default returns hit energy
@@ -85,7 +87,7 @@ class OCGatherEnergyCorrFac3(tf.keras.layers.Layer):
                 )
         beta_check = tf.where(duplicate_tensor, beta_exp, tf.zeros_like(beta_exp))
         # beta_check: shape (Nbatch, 1, n_duplicates)
-        # all values are zero except for 
+        # all values are zero except for
         track_select = tf.argmax(beta_check, axis=0)
         # track_select now includes the information of which index to chose for the pred_sid
         # that are listed in `track_duplicates`
@@ -120,7 +122,7 @@ class OCGatherEnergyCorrFac3(tf.keras.layers.Layer):
 
         if return_tracks_where_possible:
             pred_energy = tf.where(
-                    pred_energy_tracks!=0., 
+                    pred_energy_tracks!=0.,
                     pred_energy_tracks,
                     pred_energy_hits)
             return pred_energy[:, tf.newaxis]
@@ -145,7 +147,7 @@ class OCGatherEnergyCorrFac2(tf.keras.layers.Layer):
             * rechit_energy, is_track:      [N_orig, 1]     (before noise filter)
             * pred_sid, pred_corr_factor:   [N_filtered, 1] (after noise filter)
             * no_noise_idx:                 [N_filtered, 1] (with indices up to N_orig as entries)
-        Returns: 
+        Returns:
             Will always return only one value:
                 return_tracks_where_possible overrides `return_tracks`
             By default returns hit energy
@@ -188,7 +190,7 @@ class OCGatherEnergyCorrFac2(tf.keras.layers.Layer):
                 )
         beta_check = tf.where(duplicate_tensor, beta_exp, tf.zeros_like(beta_exp))
         # beta_check: shape (Nbatch, 1, n_duplicates)
-        # all values are zero except for 
+        # all values are zero except for
         track_select = tf.argmax(beta_check, axis=0)
         # track_select now includes the information of which index to chose for the pred_sid
         # that are listed in `track_duplicates`
@@ -238,7 +240,7 @@ class OCGatherEnergyCorrFac2(tf.keras.layers.Layer):
 
         if return_tracks_where_possible:
             pred_energy = tf.where(
-                    pred_energy_tracks!=0., 
+                    pred_energy_tracks!=0.,
                     pred_energy_tracks,
                     pred_energy_hits)
             return pred_energy[:, tf.newaxis]
@@ -298,11 +300,54 @@ class OCHits2ShowersLayer(tf.keras.layers.Layer):
         return x
 
 
-
-def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict, 
-        predictions_dict, energy_mode='comb', raw=False):
+def OCHits2ShowersLayer_HDBSCAN(pred_ccoords, pred_beta, pred_dist, min_cluster_size=5, min_samples=None):
     """
-    Almost identical to `process_endcap`. 
+    Functions that fills the same role as the class `OCHits2ShowersLayer` but uses HDBSCAN
+    instead of the simple clustering algorithm.
+    Inputs and outputs are supposed to be compatible with the inputs and outputs of the
+    `OCHits2ShowersLayer` class.
+    As I don't know all of the  outputs of the `OCHits2ShowersLayer` I will make sure that
+    only the outputs that are actually used are returned.
+    Inputs:
+        - predictions_dict['pred_ccoords']
+        - predictions_dict['pred_beta']
+        - predictions_dict['pred_dist']
+        - min_cluster_size                  to be passed to HDBSCAN algorithm
+        - min_samples                       to be passed to HDBSCAN algorithm
+    Outputs:
+        - pred_sid                      shower id
+        - _                             don't know what it is
+        - alpha_idx                     location of condensation points
+        - _                             don't know what it is
+        - _                             number of condensates?
+    """
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size = min_cluster_size,
+        min_samples = min_samples,
+        gen_min_span_tree=True)
+    clusterer.fit(pred_ccoords)
+    pred_sid = clusterer.labels_
+    index = np.arange(pred_beta.shape[0])
+
+    alpha_idx = []
+    for sid in np.unique(pred_sid):
+        mask = pred_sid == sid
+        if sid == -1:
+            continue
+        beta = pred_beta[mask]
+        shower_indices = index[mask]
+        alpha_idx.append(shower_indices[np.argmax(beta)])
+    alpha_idx = np.array(alpha_idx)
+    # turn pred_sid to int32
+    pred_sid = pred_sid.astype(np.int32)
+
+    return pred_sid[:, np.newaxis], None, alpha_idx, None, None
+
+
+def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
+        predictions_dict, energy_mode='comb', raw=False, hdbscan=False, min_cluster_size=None, min_samples=None):
+    """
+    Almost identical to `process_endcap`.
     Difference is that this takes into account the existence of tracks when
     summing over the energies.
     As we don't have the `is_track` variable included in the features or
@@ -315,20 +360,33 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
         N_pred = len(predictions_dict['pred_beta'])
         predictions_dict['no_noise_sel'] = np.arange(N_pred).reshape((N_pred,1)).astype(int)
     is_track = np.abs(features_dict['recHitZ']) == 315
-    pred_sid, _, alpha_idx, _, ncond = hits2showers_layer(
-            predictions_dict['pred_ccoords'],
-            predictions_dict['pred_beta'],
-            predictions_dict['pred_dist'])
-    pred_sid = pred_sid.numpy()
-    alpha_idx = alpha_idx.numpy()
+
+    if not hdbscan:
+        # Assume the we use the old clustering algorithm
+        pred_sid, _, alpha_idx, _, ncond = hits2showers_layer(
+                predictions_dict['pred_ccoords'],
+                predictions_dict['pred_beta'],
+                predictions_dict['pred_dist'])
+    else:
+        # Assume that we use the new clustering algorithm hdbscan
+        pred_sid, _, alpha_idx, _, ncond = hits2showers_layer(
+                predictions_dict['pred_ccoords'],
+                predictions_dict['pred_beta'],
+                predictions_dict['pred_dist'],
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples)
+    if not isinstance(pred_sid, np.ndarray):
+        pred_sid = pred_sid.numpy()
+    if not isinstance(alpha_idx, np.ndarray):
+        alpha_idx = alpha_idx.numpy()
 
     processed_pred_dict = dict()
     processed_pred_dict['pred_sid'] = pred_sid
 
 
     pred_energy_hits = energy_gather_layer(
-            pred_sid, 
-            predictions_dict['pred_energy_corr_factor'],  
+            pred_sid,
+            predictions_dict['pred_energy_corr_factor'],
             features_dict['recHitEnergy'],
             predictions_dict['no_noise_sel'],
             predictions_dict['pred_beta'],
@@ -339,8 +397,8 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             )
 
     pred_energy_tracks = energy_gather_layer(
-            pred_sid, 
-            predictions_dict['pred_energy_corr_factor'],  
+            pred_sid,
+            predictions_dict['pred_energy_corr_factor'],
             features_dict['recHitEnergy'],
             predictions_dict['no_noise_sel'],
             predictions_dict['pred_beta'],
@@ -351,8 +409,8 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             )
 
     pred_energy_comb = energy_gather_layer(
-            pred_sid, 
-            predictions_dict['pred_energy_corr_factor'],  
+            pred_sid,
+            predictions_dict['pred_energy_corr_factor'],
             features_dict['recHitEnergy'],
             predictions_dict['no_noise_sel'],
             predictions_dict['pred_beta'],
@@ -363,8 +421,8 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             )
 
     pred_energy_hits_raw = energy_gather_layer(
-            pred_sid, 
-            predictions_dict['pred_energy_corr_factor'],  
+            pred_sid,
+            predictions_dict['pred_energy_corr_factor'],
             features_dict['recHitEnergy'],
             predictions_dict['no_noise_sel'],
             predictions_dict['pred_beta'],
@@ -375,8 +433,8 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             )
 
     pred_energy_tracks_raw = energy_gather_layer(
-            pred_sid, 
-            predictions_dict['pred_energy_corr_factor'],  
+            pred_sid,
+            predictions_dict['pred_energy_corr_factor'],
             features_dict['recHitEnergy'],
             predictions_dict['no_noise_sel'],
             predictions_dict['pred_beta'],
@@ -387,8 +445,8 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             )
 
     pred_energy_comb_raw = energy_gather_layer(
-            pred_sid, 
-            predictions_dict['pred_energy_corr_factor'],  
+            pred_sid,
+            predictions_dict['pred_energy_corr_factor'],
             features_dict['recHitEnergy'],
             predictions_dict['no_noise_sel'],
             predictions_dict['pred_beta'],
@@ -415,7 +473,7 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             processed_pred_dict['pred_energy'] = pred_energy_comb.numpy()
     else:
         print("Unrecognized energy_mode")
-        exit(1)
+        sys.exit(1)
 
     processed_pred_dict['pred_energy_hits'] = pred_energy_hits.numpy()
     processed_pred_dict['pred_energy_tracks'] = pred_energy_tracks.numpy()
@@ -446,8 +504,8 @@ def process_endcap(hits2showers_layer, energy_gather_layer, features_dict, predi
     processed_pred_dict['pred_sid'] = pred_sid
 
     pred_energy = energy_gather_layer(
-            pred_sid, 
-            predictions_dict['pred_energy_corr_factor'],  
+            pred_sid,
+            predictions_dict['pred_energy_corr_factor'],
             features_dict['recHitEnergy'])
     processed_pred_dict['pred_energy'] = pred_energy.numpy()
 
@@ -457,7 +515,7 @@ def process_endcap(hits2showers_layer, energy_gather_layer, features_dict, predi
         processed_pred_dict.update(predictions_dict)
         processed_pred_dict.pop('pred_beta')
         processed_pred_dict['pred_id'] = np.argmax(
-                processed_pred_dict['pred_id'], 
+                processed_pred_dict['pred_id'],
                 axis=1)[:, np.newaxis]
 
     return processed_pred_dict, alpha_idx
