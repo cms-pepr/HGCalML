@@ -303,8 +303,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         'pred_dist': pred_dist,
         'rechit_energy': energy,
         'row_splits': pre_processed['row_splits'],
-        # 'no_noise_sel': pre_processed['no_noise_sel'],
-        # 'no_noise_rs': pre_processed['no_noise_rs'],
+        'no_noise_sel': pre_processed['no_noise_sel'],
+        'no_noise_rs': pre_processed['no_noise_rs'],
         }
 
     return DictModel(inputs=Inputs, outputs=model_outputs)
