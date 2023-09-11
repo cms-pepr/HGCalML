@@ -261,7 +261,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 predict_spectator_weights=True)
 
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
-    pred_spectator_weights = LLSpectatorPenalty()([
+    pred_spectator_weights = LLSpectatorPenalty(record_metrics=True)([
         pred_spectator_weights,
         pre_processed['t_idx'],
         pre_processed['row_splits'],
