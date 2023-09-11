@@ -261,6 +261,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     if config['General']['oc_implementation'] == 'hinge':
         loss_implementation = 'hinge'
+    elif config['General']['oc_implementation'] == 'hinge_qmin':
+        loss_implementation = 'hinge_qmin'
+    elif config['General']['oc_implementation'] == 'hinge_qmin_betascale_pos':
+        loss_implementation = 'hinge_qmin_betascale_pos'
     else:
         loss_implementation = ''
 
