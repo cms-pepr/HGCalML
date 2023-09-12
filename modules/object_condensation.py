@@ -399,7 +399,7 @@ class Hinge_OC_per_sample_learnable_qmin(Hinge_OC_per_sample):
         self.ow_k = tf.gather_nd(ow_k_m, self.alpha_k, batch_dims=1) # K x 1
 
 
-class Hinge_OC_per_sample_learnable_qmin_betascale_position(Hinge_OC_per_sample_learnable_qmin)
+class Hinge_OC_per_sample_learnable_qmin_betascale_position(Hinge_OC_per_sample_learnable_qmin):
     """
     Same as base class, but the average position is scaled with beta^2 instead of q
     """
