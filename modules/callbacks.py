@@ -16,8 +16,9 @@ from plotting_tools import publish, shuffle_truth_colors
 from DebugLayers import _DebugPlotBase
 from DeepJetCore import TrainData
 from DeepJetCore.dataPipeline import TrainDataGenerator
-       
-       
+
+
+
 class plotDuringTrainingBase(PredictCallback):
     def __init__(self,
                  outputfile="",
@@ -34,7 +35,7 @@ class plotDuringTrainingBase(PredictCallback):
 
         self.plot_process = None
         self.publish = publish
-        
+
         super(plotDuringTrainingBase, self).__init__(function_to_apply=self.make_plot, **kwargs)
         if self.td.nElements() > 1:
             raise ValueError("plotDuringTrainingBase: only one event allowed")
@@ -50,7 +51,7 @@ class plotDuringTrainingBase(PredictCallback):
         self.plot_process = Process(target=self._make_plot, args=(counter, feat, predicted, truth))
         self.plot_process.start()
         # self._make_plot(counter,feat,predicted,truth)
-     
+
     def _make_plot(self,counter, feat, predicted, truth):
         pass #implement in inheriting classes
 
@@ -58,11 +59,11 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
     def __init__(self,
                  use_backgather_idx=7,
                  **kwargs):
-        
+
         self.use_backgather_idx=use_backgather_idx
         super(plotClusteringDuringTraining, self).__init__(**kwargs)
-     
-     
+
+
     def _make_plot(self, counter, feat, predicted, truth):#all these are lists and also include row splits
         try:
             td = TrainData_NanoML()#contains all dicts
@@ -70,51 +71,51 @@ class plotClusteringDuringTraining(plotDuringTrainingBase):
             feats = td.createFeatureDict(feat,addxycomb=False)
             backgather = predicted[self.use_backgather_idx]
             truths = td.createTruthDict(feat)
-            
-            
-            
+
+
+
             data = {}
             data.update(feats)
             data.update(truths)
-            
+
             if len(backgather.shape)<2:
                 backgather = np.expand_dims(backgather,axis=1)
-            
+
             data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
             data['hitBackGatherIdx'] = backgather
-            
-            from globals import cluster_space as cs 
-            removednoise = np.logical_and(data["recHitX"] == cs.noise_coord, 
+
+            from globals import cluster_space as cs
+            removednoise = np.logical_and(data["recHitX"] == cs.noise_coord,
                                           data["recHitY"] == cs.noise_coord)
-            removednoise = np.logical_and(data["recHitZ"] == cs.noise_coord, 
+            removednoise = np.logical_and(data["recHitZ"] == cs.noise_coord,
                                           removednoise)
             #remove removed noise
             for k in data.keys():
                 data[k] = data[k][not removednoise]
-            
+
             df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
-            
+
             shuffle_truth_colors(df)
-            
-            fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", 
+
+            fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY",
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
                                 symbol = "recHitID",
                                 #template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
             fig.write_html(self.outputfile + str(self.keep_counter) + "_truth.html")
-            
+
             bgfile = self.outputfile + str(self.keep_counter) + "_backgather.html"
             #now the cluster indices
-            
+
             shuffle_truth_colors(df,"hitBackGatherIdx")
-            
+
             fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", color="hitBackGatherIdx", size="recHitLogEnergy",
                                 #template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
             fig.write_html(bgfile)
-            
+
             if self.publish is not None:
                 publish(bgfile, self.publish)
 
@@ -129,7 +130,7 @@ class plotEventDuringTraining(plotDuringTrainingBase):
                  **kwargs):
         self.beta_threshold=beta_threshold
         super(plotEventDuringTraining, self).__init__(**kwargs)
-        
+
         self.datastorage=None #keep this small
 
 
@@ -137,38 +138,38 @@ class plotEventDuringTraining(plotDuringTrainingBase):
 
         try:
             '''
-            [pred_beta, 
+            [pred_beta,
              pred_ccoords,
-             pred_energy, 
-             pred_pos, 
-             pred_time, 
+             pred_energy,
+             pred_pos,
+             pred_time,
              pred_id
             '''
             td = TrainData_NanoML()#contains all dicts
             #row splits not needed
             feats = td.createFeatureDict(feat,addxycomb=False)
             truths = td.createTruthDict(feat)
-            
+
             predBeta = predicted['pred_beta']
-            
-            print('>>>> plotting cluster coordinates... average beta',np.mean(predBeta), ' lowest beta ', 
+
+            print('>>>> plotting cluster coordinates... average beta',np.mean(predBeta), ' lowest beta ',
                   np.min(predBeta), 'highest beta', np.max(predBeta))
-            
-            
+
+
             #for later
             predEnergy = predicted['pred_energy_corr_factor']
             predX = predicted['pred_pos'][:,0:1]
             predY = predicted['pred_pos'][:,1:2]
             predT = predicted['pred_time']
             predD = predicted['pred_dist']
-            
+
             data = {}
             data.update(feats)
             data.update(truths)
-            
+
             predCCoords = predicted['pred_ccoords']
-            
-            
+
+
             data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
             data['predBeta'] = predBeta
             data['predBeta+0.05'] = predBeta+0.05 #so that the others don't disappear
@@ -179,42 +180,42 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             data['predD']=predD
             data['(predBeta+0.05)**2'] = data['predBeta+0.05']**2
             data['(thresh(predBeta)+0.05))**2'] = np.where(predBeta>self.beta_threshold ,data['(predBeta+0.05)**2'], 0.)
-            
+
             if not predCCoords.shape[-1] == 3:
                 self.projection_plot(data, predCCoords)
                 return
-            
-            
+
+
             data['predCCoordsX'] = predCCoords[:,0:1]
             data['predCCoordsY'] = predCCoords[:,1:2]
             data['predCCoordsZ'] = predCCoords[:,2:3]
-            
-            from globals import cluster_space as cs 
-            removednoise = np.logical_and(data["predCCoordsX"] == cs.noise_coord, 
+
+            from globals import cluster_space as cs
+            removednoise = np.logical_and(data["predCCoordsX"] == cs.noise_coord,
                                           data["predCCoordsY"] == cs.noise_coord)
-            removednoise = np.logical_and(data["predCCoordsZ"] == cs.noise_coord, 
+            removednoise = np.logical_and(data["predCCoordsZ"] == cs.noise_coord,
                                           removednoise)
             removednoise = np.where(removednoise[:,0],False,True)
             #remove removed noise
-            
+
             for k in data.keys():
                 data[k] = data[k][removednoise]
-            
-            
+
+
             df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
-            
+
             #fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY", color="truthHitAssignementIdx", size="recHitLogEnergy")
             #fig.write_html(self.outputfile + str(self.keep_counter) + "_truth.html")
             shuffle_truth_colors(df)
             #now the cluster indices
-            
+
             hover_data=['predBeta','predD','predEnergy','truthHitAssignedEnergies',
                         'predT','truthHitAssignedT',
                         'predX', 'truthHitAssignedX',
                         'predY', 'truthHitAssignedY',
                         'truthHitAssignementIdx']
-            
-            fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
+
+            fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ",
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
                                 symbol = "recHitID",
                                 hover_data=hover_data,
@@ -223,12 +224,12 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             fig.update_traces(marker=dict(line=dict(width=0)))
             ccfile = self.outputfile + str(self.keep_counter) + "_ccoords.html"
             fig.write_html(ccfile)
-            
-            
+
+
             if self.publish is not None:
                 publish(ccfile, self.publish)
-            
-            fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ", 
+
+            fig = px.scatter_3d(df, x="predCCoordsX", y="predCCoordsY", z="predCCoordsZ",
                                 color="truthHitAssignementIdx", size="(predBeta+0.05)**2",
                                 hover_data=hover_data,
                                 symbol = "recHitID",
@@ -237,59 +238,59 @@ class plotEventDuringTraining(plotDuringTrainingBase):
             fig.update_traces(marker=dict(line=dict(width=0)))
             ccfile = self.outputfile + str(self.keep_counter) + "_ccoords_betasize.html"
             fig.write_html(ccfile)
-            
-            
+
+
             if self.publish is not None:
                 publish(ccfile, self.publish)
-                
+
             # thresholded
             fig = px.scatter_3d(df, x="recHitX", y="recHitZ", z="recHitY",
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
                                 symbol = "recHitID",
-                                hover_data=['predBeta','predEnergy', 'predX', 'predY', 'truthHitAssignementIdx', 
+                                hover_data=['predBeta','predEnergy', 'predX', 'predY', 'truthHitAssignementIdx',
                                             'truthHitAssignedEnergies', 'truthHitAssignedX','truthHitAssignedY'],
                                 template='plotly_dark',
                     color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
             ccfile = self.outputfile + str(self.keep_counter) + "_truth.html"
             fig.write_html(ccfile)
-            
-            
+
+
             if self.publish is not None:
                 publish(ccfile, self.publish)
-            
-            
+
+
 
 
         except Exception as e:
             print(e)
             raise e
-        
+
     def projection_plot(self, data, predCCoords):
-        
+
         import time
         thistime = time.time()
         from sklearn.manifold import TSNE
         tsne = TSNE(verbose=1,n_iter=250)#try with lowest default
         coords2D = tsne.fit_transform(predCCoords)
-        
+
         #coords2D = predCCoords[:,0:2]
-        
-        
+
+
         data['predCCoordsX']=coords2D[:,0:1]
         data['predCCoordsY']=coords2D[:,1:2]
-        
-        
+
+
         df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
         shuffle_truth_colors(df)
-        
-        
+
+
         hover_data=['predBeta','predD','predEnergy','truthHitAssignedEnergies',
                         'predT','truthHitAssignedT',
                         'predX', 'truthHitAssignedX',
                         'predY', 'truthHitAssignedY',
                         'truthHitAssignementIdx']
-            
+
         fig = px.scatter(df, x="predCCoordsX", y="predCCoordsY",
                             color="truthHitAssignementIdx", size="(predBeta+0.05)**2",
                             symbol = "recHitID",
@@ -299,14 +300,14 @@ class plotEventDuringTraining(plotDuringTrainingBase):
         fig.update_traces(marker=dict(line=dict(width=0)))
         ccfile = self.outputfile + str(self.keep_counter) + "_proj_ccoords_betasize.html"
         fig.write_html(ccfile)
-        
-        
+
+
         if self.publish is not None:
             publish(ccfile, self.publish)
-        
-        
-            
-class plotClusterSummary(PredictCallback):        
+
+
+
+class plotClusterSummary(PredictCallback):
     def __init__(self,
                  outputfile="",
                  nevents=20,
@@ -316,11 +317,11 @@ class plotClusterSummary(PredictCallback):
         os.system('mkdir -p '+os.path.dirname(outputfile))
         self.publish = publish
         self.plot_process=None
-        super(plotClusterSummary, self).__init__(function_to_apply=self.make_plot, 
+        super(plotClusterSummary, self).__init__(function_to_apply=self.make_plot,
                                                  batchsize=1,
-                                                 use_event=-1, 
+                                                 use_event=-1,
                                                  **kwargs)
-        
+
         self.td=self.td.getSlice(0,min(nevents,self.td.nElements()))
 
 
@@ -329,7 +330,7 @@ class plotClusterSummary(PredictCallback):
         for k in d.keys():
             o[k] = d[k][sel]
         return o
-    
+
     def make_plot(self, counter, feat, predicted, truth):
         if self.plot_process is not None:
             self.plot_process.join(60)#safety margin to not block training if plotting took too long
@@ -340,16 +341,16 @@ class plotClusterSummary(PredictCallback):
 
         self.plot_process = Process(target=self._make_plot, args=(counter, feat, predicted, truth))
         self.plot_process.start()
-        
+
     def _make_plot(self, counter, feat, predicted, truth):
-        
+
         td = TrainData_NanoML()
         preddict=predicted
         rs = feat[-1]
-        
+
         if 'sel_idx' in predicted.keys():
             feat = [tf.gather_nd(f, predicted['sel_idx']).numpy() for f in feat if len(f.shape)>1]
-        
+
         cdata=td.createTruthDict(feat)
         cdata['predBeta'] = preddict['pred_beta']
         cdata['predCCoords'] = preddict['pred_ccoords']
@@ -357,7 +358,7 @@ class plotClusterSummary(PredictCallback):
         #last one has to be row splits
         # this will not work, since it will be adapted by batch, and not anymore the right tow splits
         #rs = preddict['row_splits']
-        
+
         eid=0
         eids=[]
         #make event id
@@ -365,7 +366,7 @@ class plotClusterSummary(PredictCallback):
             eids.append( np.zeros( (rs[i+1,0]-rs[i,0], ) ,dtype='int64') +eid )
             eid+=1
         cdata['eid'] = np.concatenate(eids, axis=0)
-        
+
         pids=[]
         vdtom=[]
         did=[]
@@ -374,7 +375,7 @@ class plotClusterSummary(PredictCallback):
             vdtom.append(a)
             did.append(b)
             pids.append(pid)
-            
+
         vdtom = np.concatenate(vdtom, axis=0)
         did = np.concatenate(did,axis=0)
         pids = np.concatenate(pids,axis=0)[:,0]
@@ -393,7 +394,7 @@ class plotClusterSummary(PredictCallback):
 
             if not len(svdtom):
                 continue
-            
+
             fig = plt.figure()
             plt.hist(svdtom,bins=51,color='tab:blue',alpha = 0.5,label='same')
             plt.hist(sdid,bins=51,color='tab:orange',alpha = 0.5,label='other')
@@ -409,14 +410,14 @@ class plotClusterSummary(PredictCallback):
             plt.close(fig)
             if self.publish is not None:
                 publish(ccfile, self.publish)
-     
+
     def run_per_event(self,data):
-            
+
         tidx = data['truthHitAssignementIdx'][:,0]# V x 1
         utidx = np.unique(tidx)
-        
+
         overflowat=6
-        
+
         vtpid=[]
         vdtom = []
         did = []
@@ -427,62 +428,62 @@ class plotClusterSummary(PredictCallback):
             ak = np.argmax(thisbeta)
             coords_ak = thiscoords[ak]
             dist_ak = thisdist[ak]
-            
+
             pid = np.abs(data['truthHitAssignedPIDs'][tidx==uidx])
-            
+
             dtom = np.sqrt(np.sum( (thiscoords-coords_ak)**2, axis=-1)) / (np.abs(dist_ak)+1e-3)
             dtom[dtom>overflowat]=overflowat
             #dtom = np.expand_dims(dtom,axis=1)
             dother =  np.sqrt(np.sum((data['predCCoords'][tidx!=uidx]-coords_ak )**2,axis=-1))/ (np.abs(dist_ak)+1e-3)
-            
+
             dother[dother>overflowat]=overflowat
             #dother = np.expand_dims(dother,axis=1)
             dother = dother[np.random.choice(len(dother), size=int(min(len(dother), len(dtom))), replace=False)]#restrict
-            
+
             vtpid.append(pid)
             vdtom.append(dtom)
             did.append(dother)
-        
+
         vtpid = np.concatenate(vtpid,axis=0)
         vdtom = np.concatenate(vdtom,axis=0)
         did = np.concatenate(did,axis=0)
         return vdtom,did,vtpid
-        
+
 
 
 class plotGravNetCoordsDuringTraining(plotDuringTrainingBase):
     def __init__(self,
                  use_prediction_idx=16,
                  **kwargs):
-        
+
         super(plotGravNetCoordsDuringTraining, self).__init__(**kwargs)
         self.use_prediction_idx=use_prediction_idx
-     
-     
+
+
     def _make_plot(self, counter, feat, predicted, truth):
         try:
             td = TrainData_NanoML()#contains all dicts
             truths = td.createTruthDict(feat)
             feats = td.createFeatureDict(feat,addxycomb=False)
-                                        
+
             data = {}
             data.update(truths)
             data.update(feats)
             data['recHitLogEnergy'] = np.log(data['recHitEnergy']+1)
-            
+
             coords = predicted[self.use_prediction_idx]
             if not coords.shape[-1] == 3:
                 print("plotGravNetCoordsDuringTraining only supports 3D coordinates") #2D and >3D TBI
                 return #not supported
-                
+
             data['coord A'] = coords[:,0:1]
             data['coord B'] = coords[:,1:2]
             data['coord C'] = coords[:,2:3]
-            
+
             df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
             shuffle_truth_colors(df)
-            
-            fig = px.scatter_3d(df, x="coord A", y="coord B", z="coord C", 
+
+            fig = px.scatter_3d(df, x="coord A", y="coord B", z="coord C",
                                 color="truthHitAssignementIdx", size="recHitLogEnergy",
                                 symbol = "recHitID",
                                 #hover_data=[],
@@ -491,16 +492,16 @@ class plotGravNetCoordsDuringTraining(plotDuringTrainingBase):
             fig.update_traces(marker=dict(line=dict(width=0)))
             ccfile = self.outputfile + str(self.keep_counter) + "_coords_"+ str(self.use_prediction_idx) +".html"
             fig.write_html(ccfile)
-            
-            
+
+
             if self.publish is not None:
                 publish(ccfile, self.publish)
-                
-            
+
+
         except Exception as e:
             print(e)
             raise e
-        
+
 
 
 import tensorflow as tf
@@ -540,9 +541,9 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
             print(e)
 
     def _on_train_batch_end(self, batch, logs=None):
-        
+
         runcallback = False
-        
+
         if self.trial_batch > 0:
             print('RunningFullValidation: trial run in...',self.trial_batch)
             self.trial_batch -= 1
@@ -551,14 +552,14 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
             self.trial_batch -= 1
             print("Running full validation test to see if it fits resource requirements.")
             runcallback = True
-            
+
         if self.batch_idx and (not self.batch_idx % self.after_n_batches):
             runcallback = True
-        
+
         self.batch_idx+=1
         if not runcallback:
             return
-            
+
         print("\n\nGonna run callback to do full validation...\n\n")
 
         try:
@@ -610,29 +611,29 @@ class RunningFullValidation(tf.keras.callbacks.Callback):
             plotter.process()
 
         print('finished full validation callback, proceeding with training.')
-        
-        
-        
-        
+
+
+
+
 class NanSweeper(tf.keras.callbacks.Callback):
     '''
     Slight extension of the normal checkpoint to multiple checkpoints per epoch
     '''
-    
+
     def __init__(self):
         super().__init__()
         self.saved_weights = None
-        
+
     def on_batch_end(self,batch,logs={}):
-        
+
         mw = self.model.get_weights()
-        
+
         if self.saved_weights is None:
             self.saved_weights = []
             for w in mw:
                 w = tf.where(tf.math.is_finite(w),w,tf.random.normal(w.shape, stddev=1e-3))
                 self.saved_weights.append(w)
-            return  
+            return
         nw = []
         n_nans = 0
         for w,sw in zip(mw, self.saved_weights):
@@ -640,53 +641,53 @@ class NanSweeper(tf.keras.callbacks.Callback):
             n_nans += tf.reduce_sum(
                 tf.cast(tf.logical_not(tf.math.is_finite(w)),'int32')
                         ).numpy()
-        
-        if n_nans>0:  
+
+        if n_nans>0:
             print("NanSweeper: removed", n_nans, "NaNs or Infs")
             #find them:
             for w in self.model.weights:
                 if np.all(np.isfinite(w.numpy())):
                     continue
                 print(w.name, 'had NaNs')
-            
+
             self.model.set_weights(nw)
-            
-            
+
+
         self.saved_weights = nw
-        
-        
-        
-        
+
+
+
+
 class DebugPlotRunner(tf.keras.callbacks.Callback):
     '''
     Slight extension of the normal checkpoint to multiple checkpoints per epoch
     '''
-    
-    def __init__(self, 
+
+    def __init__(self,
                  sample : str,
                  plot_frequency=500,
                  adapt_outname = '',
                  use_event=0):
-        
+
         super().__init__()
         self.plot_frequency = plot_frequency
         self.sample = sample
         self.changed_layers=[]
         self.adapt_outname = adapt_outname
         self.counter = 0
-        
+
         #load the sample
         assert sample[-6:] == '.djctd'
-        
+
         #load on event
         td = TrainData()
         td.readFromFile(sample)
         td.skim(use_event)
         self.data = td.transferFeatureListToNumpy(False)
-        
-        
+
+
     def _trigger_plots(self):
-        
+
         self.changed_layers=[{}]
         for l in self.model.layers:
             if isinstance(l, _DebugPlotBase):
@@ -695,30 +696,65 @@ class DebugPlotRunner(tf.keras.callbacks.Callback):
                     )
                 l.triggered = True
                 l.outdir = l.outdir + self.adapt_outname
-        
+
     def _set_model_back(self):
         for l in self.changed_layers:
             l['l'].triggered = False
             l['l'].outdir = l['o']
-        
+
     def on_batch_end(self,batch,logs={}):
-        
+
         #check if it should run
         if self.counter < self.plot_frequency:
             self.counter += 1
             return
-        
+
         self.counter = 0
-    
+
         self._trigger_plots()
-        
+
         #run model
         _ = self.model(self.data)
-        
-        self._set_model_back()     
-        
-        
-        
-        
-        
-        
+
+        self._set_model_back()
+
+
+
+class saveOften(tf.keras.callbacks.Callback):
+    '''
+    Callback to save a model as often as one wants.
+    This can be used to analyse the training progress
+    or make nice videos of the cluster space.
+    '''
+
+    def __init__(self, outputDir, frequencies, cutoffs):
+        self.outputDir = outputDir
+        if not os.path.isdir(outputDir):
+            os.makedirs(outputDir)
+
+        assert len(frequencies) == len(cutoffs) + 1
+        self.max_level = len(cutoffs)
+        self.frequencies = frequencies
+        self.cutoffs = cutoffs
+        self.level = 0
+        self.global_counter = 0
+        self.counter = 0
+
+
+    def on_batch_end(self, batch,logs={}):
+        self.global_counter += 1
+        self.counter += 1
+        if self.level < self.max_level:
+            if self.global_counter >= self.cutoffs[self.level]:
+                self.level += 1
+
+        frequency = self.frequencies[self.level]
+        if self.counter >= frequency:
+            self.counter = 0
+            name = self.outputDir + '/Model_batch_' + str(self.global_counter) + '.h5'
+            self.model.save(name)
+        return
+
+
+    def on_epoch_end(self,epoch, logs={}):
+        pass
