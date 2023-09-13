@@ -24,6 +24,7 @@ parser.add_argument("--unbuffered",
 parser.add_argument("--max_files", help="Limit number of files", default=-1)
 parser.add_argument("--toydata",
         help="Toy data has a different shape for now", default=False, action='store_true')
+parser.add_argument("--max_steps", help="Limit number of steps per file", default=-1)
 
 args = parser.parse_args()
 
@@ -36,4 +37,4 @@ HGCalPredictor(
         unbuffered=False,
         max_files=int(args.max_files),
         toydata=bool(args.toydata),
-        ).predict(model_path=args.inputModel)
+        ).predict(model_path=args.inputModel, max_steps=int(args.max_steps))

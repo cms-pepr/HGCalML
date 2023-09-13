@@ -14,13 +14,13 @@ from datastructures import TrainData_TrackML
 import time
 
 class HGCalPredictor():
-    def __init__(self, 
-            input_source_files_list, 
-            training_data_collection, 
-            predict_dir, 
-            unbuffered=False, 
-            model_path=None, 
-            max_files=4, 
+    def __init__(self,
+            input_source_files_list,
+            training_data_collection,
+            predict_dir,
+            unbuffered=False,
+            model_path=None,
+            max_files=4,
             inputdir=None,
             toydata=False
             ):
@@ -65,9 +65,9 @@ class HGCalPredictor():
         self.model_path = model_path
         if max_files > 0:
             self.input_data_files = self.input_data_files[0:min(max_files, len(self.input_data_files))]
-        
 
-    def predict(self, model=None, model_path=None, output_to_file=True):
+
+    def predict(self, model=None, model_path=None, output_to_file=True, max_steps=-1):
         if model_path==None:
             model_path = self.model_path
 
@@ -91,7 +91,7 @@ class HGCalPredictor():
             if inputfile[0] == "/":
                 use_inputdir = ""
             outfilename = "pred_" + os.path.basename(inputfile)
-            
+
             print('predicting ', use_inputdir +'/' + inputfile)
 
             td = self.dc.dataclass()
@@ -127,11 +127,14 @@ class HGCalPredictor():
             extra_data = [] # Only used for toy data test sets
 
             thistime = time.time()
-            for _ in range(num_steps):
+            for step in range(num_steps):
+                if max_steps > 0 and step > max_steps:
+                    break
+
                 data_in = next(generator)
                 if self.toydata:
                     # The toy data set has a different input shape
-                    # this is only true for the testing part of the 
+                    # this is only true for the testing part of the
                     # toy data set. If predicting the training set
                     # initialize the hgcal_predictor toydata set to False
                     # The last four entries contain PU and PID
@@ -152,14 +155,14 @@ class HGCalPredictor():
                 except:
                     print("features_dict not created")
 
-                try: 
+                try:
                     truth_dict = td.createTruthDict(data_in[0])
                 except:
                     print("truth dict not create")
                     success_truth = False
-                
+
                 dumping_data.append([features_dict, truth_dict, predictions_dict])
-                
+
             totaltime = time.time() - thistime
             print('took approx',totaltime/num_steps,'s per endcap (also includes dict building)')
 
