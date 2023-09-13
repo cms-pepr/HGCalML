@@ -1,3 +1,5 @@
+import os
+import time
 import pdb
 import gzip
 import pickle
@@ -5,13 +7,13 @@ import numpy as np
 
 from DeepJetCore.DataCollection import DataCollection
 from DeepJetCore.dataPipeline import TrainDataGenerator
+from DeepJetCore.modeltools import load_model
+
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from datastructures.TrainData_PreselectionNanoML import TrainData_PreselectionNanoML
-
-import os
-from DeepJetCore.modeltools import load_model
 from datastructures import TrainData_TrackML
-import time
+from LossLayers import LossLayerBase
+
 
 class HGCalPredictor():
     def __init__(self,
@@ -83,6 +85,11 @@ class HGCalPredictor():
 
         if model is None:
             model = load_model(model_path)
+
+        for l in model.layers:
+            if isinstance(l, LossLayerBase):
+                print('deactivating layer',l)
+                l.active=False
 
         all_data = []
         for inputfile in self.input_data_files:
