@@ -173,6 +173,20 @@ def analyse(preddir,
             dataframe['event_id'] = event_id
             showers_dataframe = pd.concat((showers_dataframe, dataframe))
             processed_dataframe = ep.dictlist_to_dataframe(processed[-1:])
+            matched_df = dataframe.dropna()
+            matched_df = matched_df[['truthHitAssignementIdx', 'pred_sid']]
+            map_truthkey = dict(zip(matched_df.truthHitAssignementIdx.values, matched_df.pred_sid.values))
+            map_predkey = dict(zip(matched_df.pred_sid.values, matched_df.truthHitAssignementIdx.values))
+            df = pd.DataFrame()
+            df['pred_sid'] = processed_pred_dict['pred_sid'][:,0]
+            df['no_noise_sel'] = processed_pred_dict['no_noise_sel'][:,0]
+
+            mapped_pred_sid = []
+            for sid in df.pred_sid.values:
+                if sid in map_predkey.keys():
+                    mapped_pred_sid.append(map_predkey[sid])
+                else:
+                    mapped_pred_sid.append(-1)
             pdb.set_trace()
 
             eventsdir = os.path.join('.', 'events')
