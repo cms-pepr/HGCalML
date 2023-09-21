@@ -38,6 +38,7 @@ def analyse(preddir,
             use_hdbscan=False,
             min_cluster_size=50,
             min_samples=100,
+            mask_radius=None,
         ):
     """
     Analyse model predictions
@@ -97,11 +98,13 @@ def analyse(preddir,
         for j, endcap_data in enumerate(file_data):
             if (nevents != -1) and (j > nevents):
                 continue
-            print(f"Analysing endcap {j+1}/{len(file_data)}")
+            # print(f"Analysing endcap {j+1}/{len(file_data)}")
             features_dict, truth_dict, predictions_dict = endcap_data
             features.append(features_dict)
             prediction.append(predictions_dict)
             truth.append(truth_dict)
+
+            print(f"Analyzing event {event_id}")
 
             try:
                 noise_mask = predictions_dict['no_noise_sel']
@@ -134,6 +137,14 @@ def analyse(preddir,
             e_noise_filtered.append(np.sum(
                 filtered_features_df[filtered_truth_df.truthHitAssignementIdx == -1].recHitEnergy))
 
+            if use_hdbscan:
+                shower0_mask = filtered_truth_df['truthHitAssignementIdx'] == 0
+                shower0_ccoords = predictions_dict['pred_ccoords'][shower0_mask]
+                n_cluster_space = shower0_ccoords.shape[1]
+                shower0_betas = predictions_dict['pred_beta'][shower0_mask]
+                mask_center = shower0_ccoords[np.argmax(shower0_betas)].reshape((n_cluster_space,))
+
+            mask_center = None
             processed_pred_dict, pred_shower_alpha_idx = process_endcap2(
                     hits2showers,
                     energy_gatherer,
@@ -142,7 +153,9 @@ def analyse(preddir,
                     energy_mode=energy_mode,
                     hdbscan=use_hdbscan,
                     min_cluster_size=min_cluster_size,
-                    min_samples=min_samples,)
+                    min_samples=min_samples,
+                    mask_center=mask_center,
+                    mask_radius=mask_radius)
 
             alpha_ids.append(pred_shower_alpha_idx)
             processed.append(processed_pred_dict)
@@ -160,6 +173,7 @@ def analyse(preddir,
             dataframe['event_id'] = event_id
             showers_dataframe = pd.concat((showers_dataframe, dataframe))
             processed_dataframe = ep.dictlist_to_dataframe(processed[-1:])
+            pdb.set_trace()
 
             eventsdir = os.path.join('.', 'events')
             if not os.path.isdir(eventsdir):
@@ -361,6 +375,7 @@ if __name__ == '__main__':
     parser.add_argument('--hdbscan',
         help="Do not use the default clustering algorightm but use HDBSCAN instead",
         action='store_true')
+    parser.add_argument('--mask_radius', help='Filter around first shower incluster space', default=None)
     parser.add_argument('--slim',
         help="Produce only a small analysis.bin.gz file. \
             Only applicable if --analysisoutpath is set",
@@ -389,4 +404,5 @@ if __name__ == '__main__':
             use_hdbscan=args.hdbscan,
             min_cluster_size=int(args.min_cluster_size),
             min_samples=int(args.min_samples),
+            mask_radius=args.mask_radius,
             )
