@@ -107,6 +107,7 @@ class Basic_OC_per_sample(object):
                          object_weight,
                          is_spectator_weight,
                          calc_Ms=True,
+                         noise_qmin : float =1.
                          ):
         self.valid=True
         #used for pll and q
@@ -124,6 +125,8 @@ class Basic_OC_per_sample(object):
         
         #spectators do not participate in the potential losses
         self.q_v = (self.tanhsqbeta + self.q_min)*tf.clip_by_value(1.-is_spectator_weight, 0., 1.)
+
+        self.q_v = tf.where(truth_idx < 0, noise_qmin, self.q_v) # set noise qmin
         
         if calc_Ms:
             self.create_Ms(truth_idx)
@@ -302,8 +305,52 @@ class Basic_OC_per_sample(object):
         high_B_pen += tf.reduce_sum(self.ow_k *self.high_B_pen_k())/K
         
         return V_att, V_rep, Noise_pen, B_pen, pll, high_B_pen
+
+
+    def calc_metrics(self, energies):
+        return self._calc_containment(energies), self._calc_contamination(energies)
+    # metrics functions that can be called at the end, first calc containment, then contamination
+    def _calc_containment(self, energies):
+        '''
+        energies as  V x 1
+        '''
+         
+        x_k_alpha = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) # K x C
+        #get mean minimum distance
+        d_x_k = (tf.expand_dims(x_k_alpha, axis=0) - tf.expand_dims(x_k_alpha, axis=1))**2  # K x K x C
+        d_x_k = tf.reduce_sum(d_x_k, axis=2) + 10000. * tf.eye(d_x_k.shape[0],d_x_k.shape[1])  # K x K , add large identity
+        d_m_x_k = tf.reduce_min(d_x_k, axis=1, keepdims=True)# K x 1
+        d_m_x_k = tf.sqrt(d_m_x_k)/self.d_k 
+        self.rel_metrics_radius = tf.reduce_mean(d_m_x_k) / 2. # ()
+
+        ##now metrics
+        dxk = tf.reduce_sum( (tf.expand_dims(x_k_alpha, axis=1) - self.x_k_m)**2 , axis= -1) #K x V'
         
+        in_radius = self.rel_metrics_radius > tf.sqrt(dxk)/self.d_k #K x V'
+        in_radius = in_radius[...,tf.newaxis]
+
+        energies_k_m = SelectWithDefault(self.Msel, energies, 0.) #K x V' x 1
+        self.energies_k  = tf.reduce_sum(energies_k_m, axis=1) #K x 1
         
+        in_radius_energy = tf.reduce_sum(tf.where( in_radius, energies_k_m, 0. ), axis=1) # K x 1
+        in_radius_energy /= self.energies_k
+        return tf.reduce_mean(in_radius_energy)
+
+    def _calc_contamination(self, energies):
+
+        x_k_alpha = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) 
+        dsq = tf.expand_dims(x_k_alpha, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
+        dsq = tf.reduce_sum(dsq**2, axis=-1)  #K x V 
+        in_radius = self.rel_metrics_radius > tf.sqrt(dsq) / self.d_k# K x V
+        
+        energies_k_v = tf.expand_dims(energies, axis=0) # K x V x 1
+        energies_ir_all_k_v = tf.where(in_radius[...,tf.newaxis], energies_k_v , 0.)
+        energies_ir_not_k_v = tf.where(in_radius[...,tf.newaxis], self.Mnot * energies_k_v , 0.)
+        
+        rel_cont = tf.reduce_sum(energies_ir_not_k_v, axis=1)/tf.reduce_sum(energies_ir_all_k_v, axis=1)
+        return tf.reduce_mean(rel_cont)
+    
+
 class Hinge_OC_per_sample_damped(Basic_OC_per_sample):
     '''
     This is the classic repulsive hinge loss
@@ -582,7 +629,8 @@ class OC_loss(object):
                          object_weight,
                          is_spectator_weight,
                          
-                         rs): #rs last
+                         rs,
+                         energies = None): #rs last
         
         tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = 6*[tf.constant(0., tf.float32)]
         #batch loop
@@ -590,6 +638,8 @@ class OC_loss(object):
         if rs.shape[0] is None or rs.shape[0] < 2:
             return tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
         batch_size = rs.shape[0] - 1
+
+        contai,contam = tf.constant(0,dtype='float32'),tf.constant(0,dtype='float32')
     
         for b in tf.range(batch_size):
             
@@ -606,11 +656,16 @@ class OC_loss(object):
             tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = self.loss_impl.add_to_terms(
                 tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
                 )
-            
+            if energies is not None: #just last batch is fine
+                ca,cm = self.loss_impl.calc_metrics(energies[rs[b]:rs[b + 1]])
+                contai += ca / float(batch_size)
+                contam += cm / float(batch_size)
+
         bs = tf.cast(batch_size, dtype='float32') + 1e-3
         out = [a/bs for a in [tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen]]
-        
-        return out
+        if energies is not None:
+            return out + [contai, contam]
+        return out, None, None
 
 
 #################################################
