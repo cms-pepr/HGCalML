@@ -2534,7 +2534,7 @@ class LLFullObjectCondensation(LossLayerBase):
             #                               div_repulsion = self.div_repulsion,
             #                               dynamic_payload_scaling_onset=self.dynamic_payload_scaling_onset
             #                               )
-            att, rep, noise, min_b, payload, exceed_beta = self.oc_loss_object(
+            att, rep, noise, min_b, payload, exceed_beta, containment, contamination = self.oc_loss_object(
                 beta=pred_beta,
                 x=pred_ccoords,
                 d=pred_distscale,
@@ -2542,9 +2542,15 @@ class LLFullObjectCondensation(LossLayerBase):
                 truth_idx=t_idx,
                 object_weight=energy_weights,
                 is_spectator_weight=is_spectator,
-                rs=rowsplits)
+                rs=rowsplits,
+                energies = rechit_energy)
 
         self.add_prompt_metric(att+rep,self.name+'_dynamic_payload_scaling')
+
+        if containment is not None:
+            self.add_prompt_metric(containment,self.name+'_containment')
+            self.add_prompt_metric(contamination,self.name+'_contamination')
+
 
         att *= self.potential_scaling
         rep *= self.potential_scaling * self.repulsion_scaling
