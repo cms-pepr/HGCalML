@@ -70,6 +70,7 @@ def analyse(preddir,
         files_to_be_tested = files_to_be_tested[0:min(nfiles, len(files_to_be_tested))]
 
     showers_dataframe = pd.DataFrame()
+    matched_showers = pd.DataFrame()
     features = []
     truth = []
     prediction = []
@@ -180,6 +181,7 @@ def analyse(preddir,
             df = pd.DataFrame()
             df['pred_sid'] = processed_pred_dict['pred_sid'][:,0]
             df['no_noise_sel'] = processed_pred_dict['no_noise_sel'][:,0]
+            df['truth_sid'] = truth_dict['truthHitAssignementIdx'][df['no_noise_sel']][:,0]
 
             mapped_pred_sid = []
             for sid in df.pred_sid.values:
@@ -187,12 +189,37 @@ def analyse(preddir,
                     mapped_pred_sid.append(map_predkey[sid])
                 else:
                     mapped_pred_sid.append(-1)
-            pdb.set_trace()
+            df['mapped_pred_sid'] = mapped_pred_sid
+            df['recHitEnergy'] = filtered_features['recHitEnergy']
+            matched_df.columns = ['truth_sid', 'pred_sid']
+
+            n_pred, n_truth, n_pred_and_truth, n_pred_not_truth = [], [], [], []
+            e_pred, e_truth, e_pred_and_truth, e_pred_not_truth = [], [], [], []
+            for sid in matched_df.truth_sid.values:
+                n_truth.append(df[df.truth_sid == sid].shape[0])
+                e_truth.append(df[df.truth_sid == sid]['recHitEnergy'].sum())
+                n_pred.append(df[df.mapped_pred_sid == sid].shape[0])
+                e_pred.append(df[df.mapped_pred_sid == sid]['recHitEnergy'].sum())
+                n_pred_and_truth.append(df[(df.truth_sid == sid) & (df.mapped_pred_sid == sid)].shape[0])
+                e_pred_and_truth.append(df[(df.truth_sid == sid) & (df.mapped_pred_sid == sid)]['recHitEnergy'].sum())
+                n_pred_not_truth.append(df[(df.truth_sid != sid) & (df.mapped_pred_sid == sid)].shape[0])
+                e_pred_not_truth.append(df[(df.truth_sid != sid) & (df.mapped_pred_sid == sid)]['recHitEnergy'].sum())
+            matched_df['n_truth'] = n_truth
+            matched_df['e_truth'] = e_truth
+            matched_df['n_pred'] = n_pred
+            matched_df['e_pred'] = e_pred
+            matched_df['n_pred_and_truth'] = n_pred_and_truth
+            matched_df['e_pred_and_truth'] = e_pred_and_truth
+            matched_df['n_pred_not_truth'] = n_pred_not_truth
+            matched_df['e_pred_not_truth'] = e_pred_not_truth
+            matched_df['event_id'] = event_id
+            matched_showers = pd.concat((matched_showers, matched_df))
+
 
             eventsdir = os.path.join('.', 'events')
             if not os.path.isdir(eventsdir):
                 os.mkdir(eventsdir)
-            if event_id < 10:
+            if event_id < 0:
                 # pdb.set_trace()
                 # make 3d plot of the event and save it
                 tmp_feat = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
@@ -210,7 +237,7 @@ def analyse(preddir,
                 fig_truth = dataframe_to_plot(full_df, truth=True)
                 fig_pred = dataframe_to_plot(full_df, truth=False)
                 event_dir = os.path.join(args.picturepath, 'events')
-                print(f"Saving to {event_dir}")
+                # print(f"Saving to {event_dir}")
                 if not os.path.exists(event_dir):
                     os.mkdir(event_dir)
                 fig_truth.write_html(os.path.join(event_dir, f'event_{event_id}_truth.html'))
@@ -333,6 +360,7 @@ def analyse(preddir,
             'alpha_ids'        : alpha_ids,
             'noise_masks': noise_masks,
             'matched': matched,
+            'matched_showers': matched_showers,
         }
         if not slim:
             analysis_data['processed_dataframe'] = ep.dictlist_to_dataframe(processed)
