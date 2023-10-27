@@ -92,6 +92,9 @@ class HGCalPredictor():
                 l.active=False
 
         all_data = []
+        predict_time = 0.
+        all_times = []
+        counter = 0
         for inputfile in self.input_data_files:
 
             use_inputdir = self.inputdir
@@ -146,11 +149,20 @@ class HGCalPredictor():
                     # initialize the hgcal_predictor toydata set to False
                     # The last four entries contain PU and PID
                     # we store them separately
+                    t0 = time.time()
                     predictions_dict = model(data_in[0][:-4])
+                    pred_time = time.time() - t0
+                    predict_time += pred_time
+                    counter += 1
                     truth_info = data_in[0][-4:]
                     extra_data.append([truth_info])
                 else:
+                    t0 = time.time()
                     predictions_dict = model(data_in[0])
+                    pred_time = time.time() - t0
+                    predict_time += pred_time
+                    n_pred = predictions_dict['pred_beta'].shape[0]
+                    counter += 1
                 for k in predictions_dict.keys():
                     # predictions_dict[k] = predictions_dict[k].numpy()
                     predictions_dict[k] = np.array(predictions_dict[k])
@@ -159,6 +171,8 @@ class HGCalPredictor():
                 truth_dict = None
                 try:
                     features_dict = td.createFeatureDict(data_in[0])
+                    n_inputs = features_dict['recHitX'].shape[0]
+                    all_times.append((n_inputs, n_pred, pred_time))
                 except:
                     print("features_dict not created")
 
@@ -172,6 +186,7 @@ class HGCalPredictor():
 
             totaltime = time.time() - thistime
             print('took approx',totaltime/num_steps,'s per endcap (also includes dict building)')
+            print("prediction time: ", predict_time, " n_events: ", counter)
 
             td.clear()
             gen.clear()
@@ -179,6 +194,8 @@ class HGCalPredictor():
             extrafile = os.path.splitext(outfilename)[0] + '_extra_' + '.pkl'
             if output_to_file:
                 td.writeOutPredictionDict(dumping_data, self.predict_dir + "/" + outfilename)
+                with open(os.path.join(self.predict_dir, 'time_statistics.pkl'), 'wb') as f:
+                    pickle.dump(all_times, f)
                 if self.toydata:
                     with open(os.path.join(self.predict_dir, extrafile), 'wb') as f:
                         pickle.dump(extra_data, f)
