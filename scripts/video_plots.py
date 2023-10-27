@@ -30,16 +30,16 @@ SELECTION = [    1,     2,     3,     4,     5,     6,     7,     8,     9,
 
 EVENT_ID = 0
 BASEPATH = "/mnt/ceph/users/pzehetner/Paper/predictions/0913_video_small/"
-IMAGEPATH = "/mnt/home/pzehetner/Connecting-The-Dots/Images"
+IMAGEPATH = "/mnt/home/pzehetner/Connecting-The-Dots/Images1"
 
 for i, sel in enumerate(SELECTION):
-    if i % 10 == 0:
-        print(f"Processing {i}/{len(SELECTION)}")
+    print(i)
 
-    path = os.path.join(BASEPATH, f"batch_{sel}/pred_00000.bin.gz"))
+    path = os.path.join(BASEPATH, f"batch_{sel}/pred_00000.bin.gz")
     if not os.path.exists(path):
         print(f"File {path} does not exist")
         continue
+    print("Loaded file")
 
     phi = 2 * np.pi * i / 100
 
@@ -55,9 +55,9 @@ for i, sel in enumerate(SELECTION):
 
 
     trace = go.Scatter3d(
-        x=beta_cluster[:, 2],
-        y=beta_cluster[:, 3],
-        z=beta_cluster[:, 4],
+        x=x,
+        y=y,
+        z=z,
         mode='markers',
         marker=dict(
             size=20*beta,
