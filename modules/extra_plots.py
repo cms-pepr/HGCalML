@@ -257,7 +257,7 @@ def energy_resolution(df, bins=None, binwidth=10., addfit=False):
     ax3.set_yticklabels(np.round(yticks, 3), fontsize=20)
     ax3.grid(alpha=0.5, linestyle='--')
     # fit resolution function to sigmaOverE
-    print(sigma_over_e)
+    # print(sigma_over_e)
     if addfit:
         popt, pcov = curve_fit(resolution_func, x[fit_mask], sigma_over_e[fit_mask], p0=[0.1, 0.1, 0.1])
         # plot fit
@@ -477,7 +477,8 @@ def filter_truth_dict(truth_dict, mask):
             item_filtered = item[mask]
             filtered[key] = item_filtered.reshape(-1, 1)
         else:
-            print(key, " untouched")
+            # print(key, " untouched")
+            pass
     return filtered
 
 
@@ -489,7 +490,8 @@ def filter_features_dict(features_dict, mask):
             item_filtered = item[mask]
             filtered[key] = item_filtered.reshape(-1,1)
         else:
-            print(key, " untouched")
+            # print(key, " untouched")
+            pass
     return filtered
 
 
@@ -594,6 +596,8 @@ MAP_DICT = {
     -2112: 4,
     3322: 4,    # Xi
     -3322: 4,
+    3122: 4,    # Lambda
+    -3122: 4,
 }
 
 
