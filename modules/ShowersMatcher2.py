@@ -1,4 +1,5 @@
 import pdb
+import time
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
@@ -305,6 +306,7 @@ class ShowersMatcher:
         if not self.match_mode == 'iou_max':
             raise NotImplementedError("Only use iou_max for now")
 
+
         C = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
 
         row_id, col_id = linear_sum_assignment(C, maximize=True)
@@ -329,7 +331,7 @@ class ShowersMatcher:
             self._match_single_pass()
         else:
             raise NotImplementedError('Match mode not found')
-        self._assign_additional_attr()
+        # self._assign_additional_attr()
 
 
     def get_matched_hit_sids(self):
@@ -400,7 +402,8 @@ class ShowersMatcher:
             assert len(N) == 0 or len(N) == 1
 
             if attr['type']==1 and len(N)==0:
-                print("X", attr)
+                # print("X", attr) # This caused everything to be very verbose
+                pass
 
             if len(N) == 1:
                 attr.update(my_calculated_graph.nodes[N[0]])
