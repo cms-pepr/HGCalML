@@ -94,15 +94,19 @@ def make_figure():
 
 def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
     df = df[df.event_id == id]
-    size = 100 * np.log(df.recHitEnergy + 1)
+    size = 10 * np.log(df.recHitEnergy + 1)
     # change sizes bigger than 5 to 5
-    size[size > 10] = 10
+    size[size > 5] = 5
     size[size < 0.1] = 0.1
 
     if verbose:
         print(np.min(size), np.median(size), np.mean(size), np.max(size))
 
-    fig = make_figure()
+    fig = go.Figure(
+        layout=go.Layout(
+            width=1200,
+            height=1200,)
+        )
 
     if truth:
         ids = np.unique(df.truthHitAssignementIdx)
@@ -127,7 +131,7 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
             df['pca_y'] = pca_y
             df['pca_z'] = pca_z
 
-    print(ids)
+    # print(ids)
     for i in ids:
         if truth:
             df_i = df[df.truthHitAssignementIdx == i]
@@ -189,6 +193,14 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
             hovertemplate += '<br><br><b>Prediction</b>' +\
                 '<br>sid: %{customdata[10]}<br>' +\
                 'energy: %{customdata[11]:.2f}'
+        camera = dict(
+            up=dict(x=0, y=0, z=1),
+            center=dict(x=0, y=0, z=0),
+            eye=dict(
+                x=-2.0,
+                y=0.3,
+                z=0.5)
+        )
 
         trace_i = go.Scatter3d(
             x = x,
@@ -205,6 +217,7 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
             hovertemplate = hovertemplate,
         )
         fig.add_trace(trace_i)
+        fig.update_layout(scene_camera=camera)
 
     return fig
 
@@ -320,7 +333,7 @@ if __name__ == '__main__':
     columns = df.columns
     for c in columns: print(c)
 
-    for i in range(10):
+    for i in range(2):
         fig = dataframe_to_plot(df, id=i)
         fig.write_html(os.path.join(OUTPUTDIR, f'event_{i}.html'))
 
