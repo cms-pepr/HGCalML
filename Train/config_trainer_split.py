@@ -196,10 +196,12 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             xgn = tf.zeros(shape=tf.concat([tf.shape(xgn_hits)[0:1] + tf.shape(xgn_track)[0:1], xgn_hits.shape[1:]], axis=0))
             xgn = tf.tensor_scatter_nd_update(tensor=xgn, indices=indices_tracks, updates=xgn_track)
             xgn = tf.tensor_scatter_nd_update(tensor=xgn, indices=indices_hits, updates=xgn_hits)
-            gncoords = tf.zeros(shape=([gncoords_hits.shape[0] + gncoords_track.shape[0]] + gncoords_hits.shape[1:]))
-            gnnidx = tf.zeros(shape=([gnnidx_hits.shape[0] + gnnidx_track.shape[0]] + gnnidx_hits.shape[1:]))
-            gndist = tf.zeros(shape=([gndist_hits.shape[0] + gndist_track.shape[0]] + gndist_hits.shape[1:]))
-
+            # gncoords = tf.zeros(shape=([gncoords_hits.shape[0] + gncoords_track.shape[0]] + gncoords_hits.shape[1:]))
+            # gnnidx = tf.zeros(shape=([gnnidx_hits.shape[0] + gnnidx_track.shape[0]] + gnnidx_hits.shape[1:]))
+            # gndist = tf.zeros(shape=([gndist_hits.shape[0] + gndist_track.shape[0]] + gndist_hits.shape[1:]))
+            gncoords = tf.zeros(shape=tf.concat([tf.shape(gncoords_hits)[0:1] + tf.shape(gncoords_track)[0:1], gncoords_hits.shape[1:]], axis=0))
+            gnnidx = tf.zeros(shape=tf.concat([tf.shape(gnnidx_hits)[0:1] + tf.shape(gnnidx_track)[0:1], gnnidx_hits.shape[1:]], axis=0))
+            gndist = tf.zeros(shape=tf.concat([tf.shape(gndist_hits)[0:1] + tf.shape(gndist_track)[0:1], gndist_hits.shape[1:]], axis=0)
 
             gncoords = tf.tensor_scatter_nd_update(tensor=gncoords, indices=indices_tracks, updates=gncoords_track)
             gncoords = tf.tensor_scatter_nd_update(tensor=gncoords, indices=indices_hits, updates=gncoords_hits)
