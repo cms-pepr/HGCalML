@@ -159,10 +159,11 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
         x_pre = x
         # get indices of x
-        x_indices = tf.
 
         if i == 0:
-            x_hit, x_track, rs_hit, rs_track = SplitOffTracks()([is_track, x, rs])
+            x_hit, x_track, rs_hit, rs_track = SplitOffTracks()([is_track, [x], rs])
+            x_hit = x_hit[0]
+            x_track = x_track[0]
             # x_ragged = tf.RaggedTensor.from_row_splits(x, rs)
             # # get original indices of x_ragged (to later use scatter_nd)
             # is_track_ragged = tf.expand_dims(tf.RaggedTensor.from_row_splits(tf.cast(is_track, tf.bool), rs), axis=-1)
@@ -191,9 +192,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 feature_activation='elu',
                 )([x_track, rs_track])
 
-            xgn, gncoords, gnnidx, gndist = ConcatRaggedTensors()([
-                [xgn_track, gncoords_track, gnnidx_track, gndist_track],
-                [xgn_hit, gncoords_hit, gnnidx_hit, gndist_hit],
+            [xgn, gncoords], rs  = ConcatRaggedTensors()([
+                [xgn_track, gncoords_track],
+                [xgn_hit, gncoords_hit],
                 rs_track, rs_hit])
 
             # indices_tracks = tf.where(tf.cast(is_track, tf.bool))
