@@ -164,14 +164,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             x_hit, x_track, rs_hit, rs_track = SplitOffTracks()([is_track, [x], rs])
             x_hit = x_hit[0]
             x_track = x_track[0]
-            # x_ragged = tf.RaggedTensor.from_row_splits(x, rs)
-            # # get original indices of x_ragged (to later use scatter_nd)
-            # is_track_ragged = tf.expand_dims(tf.RaggedTensor.from_row_splits(tf.cast(is_track, tf.bool), rs), axis=-1)
-            # is_track_ragged = tf.squeeze(tf.RaggedTensor.from_row_splits(tf.cast(is_track, tf.bool), rs), axis=-1)
-            # ragged_hits = tf.ragged.boolean_mask(x_ragged, ~is_track_ragged)
-            # ragged_tracks = tf.ragged.boolean_mask(x_ragged, is_track_ragged)
-            # rs_tracks = ragged_tracks.row_splits
-            # rs_hits = ragged_hits.row_splits
 
             xgn_hit, gncoords_hit, gnnidx_hit, gndist_hit = RaggedGravNet(
                     name = f"RSU_gravnet_{i}", # 76929, 42625, 42625
@@ -192,30 +184,14 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 feature_activation='elu',
                 )([x_track, rs_track])
 
+
+            x_hit = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
+            x_track = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
+
             [xgn, gncoords], rs  = ConcatRaggedTensors()([
                 [xgn_track, gncoords_track],
                 [xgn_hit, gncoords_hit],
                 rs_track, rs_hit])
-
-            # indices_tracks = tf.where(tf.cast(is_track, tf.bool))
-            # indices_hits = tf.where(~tf.cast(is_track, tf.bool))
-            # # xgn = tf.zeros(shape=([xgn_hits.shape[0] + xgn_track.shape[0]] + xgn_hits.shape[1:]))
-            # xgn = tf.zeros(shape=tf.concat([tf.shape(xgn_hits)[0:1] + tf.shape(xgn_track)[0:1], xgn_hits.shape[1:]], axis=0))
-            # xgn = tf.tensor_scatter_nd_update(tensor=xgn, indices=indices_tracks, updates=xgn_track)
-            # xgn = tf.tensor_scatter_nd_update(tensor=xgn, indices=indices_hits, updates=xgn_hits)
-            # gncoords = tf.zeros(shape=tf.concat([tf.shape(gncoords_hits)[0:1] + tf.shape(gncoords_track)[0:1], gncoords_hits.shape[1:]], axis=0))
-            # gnnidx = tf.zeros(shape=tf.concat([tf.shape(gnnidx_hits)[0:1] + tf.shape(gnnidx_track)[0:1], gnnidx_hits.shape[1:]], axis=0))
-            # gndist = tf.zeros(shape=tf.concat([tf.shape(gndist_hits)[0:1] + tf.shape(gndist_track)[0:1], gndist_hits.shape[1:]], axis=0)
-            # gncoords_shape = tf.concat([tf.shape(gncoords_hits)[0:1] + tf.shape(gncoords_track)[0:1], gncoords_hits.shape[1:]]
-            # gnnidx_shape = tf.concat([tf.shape(gnnidx_hits)[0:1] + tf.shape(gnnidx_track)[0:1], gnnidx_hits.shape[1:]]
-            # gndist_shape = tf.concat([tf.shape(gndist_hits)[0:1] + tf.shape(gndist_track)[0:1], gndist_hits.shape[1:]]
-
-            # gncoords = tf.tensor_scatter_nd_update(tensor=gncoords, indices=indices_tracks, updates=gncoords_track)
-            # gncoords = tf.tensor_scatter_nd_update(tensor=gncoords, indices=indices_hits, updates=gncoords_hits)
-            # gnnidx = tf.tensor_scatter_nd_update(tensor=gnnidx, indices=indices_tracks, updates=gnnidx_track)
-            # gnnidx = tf.tensor_scatter_nd_update(tensor=gnnidx, indices=indices_hits, updates=gnnidx_hits)
-            # gndist = tf.tensor_scatter_nd_update(tensor=gndist, indices=indices_tracks, updates=gndist_track)
-            # gndist = tf.tensor_scatter_nd_update(tensor=gndist, indices=indices_hits, updates=gndist_hits)
 
         else:
             xgn, gncoords, gnnidx, gndist = RaggedGravNet(
@@ -229,20 +205,20 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 # sumwnorm=True,
                 )([x, rs])
 
-        gndist = LLRegulariseGravNetSpace(
-                scale=gravnet_regs[i],
-                record_metrics=True,
-                name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
+            gndist = LLRegulariseGravNetSpace(
+                    scale=gravnet_regs[i],
+                    record_metrics=True,
+                    name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
-        x_rand = random_sampling_block(
-                xgn, rs, gncoords, gnnidx, gndist, is_track,
-                reduction=6, layer_norm=True, name=f"RSU_{i}")
-        x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
+            x_rand = random_sampling_block(
+                    xgn, rs, gncoords, gnnidx, gndist, is_track,
+                    reduction=6, layer_norm=True, name=f"RSU_{i}")
+            x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
 
-        gndist = AverageDistanceRegularizer(
-            strength=1e-3,
-            record_metrics=True
-            )(gndist)
+            gndist = AverageDistanceRegularizer(
+                strength=1e-3,
+                record_metrics=True
+                )(gndist)
         # gndist = StopGradient()(gndist)
         gncoords = StopGradient()(gncoords)
         gncoords = PlotCoordinates(
@@ -251,11 +227,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             name='gn_coords_'+str(i)
             )([gncoords, energy, t_idx, rs])
 
-        # x = Concatenate()([x_pre, xgn, 0.1 * x_rand, gndist, gncoords])
-        # x_rand = ScalarMultiply(0.1)(x_rand)
-        # gndist = ScalarMultiply(0.01)(gndist)
-        # gncoords = ScalarMultiply(0.01)(gncoords)
-        x = Concatenate()([x_pre, xgn, x_rand, gndist, gncoords])
+        if i == 0:
+            x = Concatenate()([xgn, gncoords])
+        else:
+            x = Concatenate()([x_pre, xgn, x_rand, gncoords])
         x = Dense(d_shape,
                   name=f"dense_post_gravnet_1_iteration_{i}",
                   activation=DENSE_ACTIVATION,
