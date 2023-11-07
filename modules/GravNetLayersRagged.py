@@ -48,7 +48,7 @@ class RandomSampling(tf.keras.layers.Layer):
     On average it reduces the number of points by `reduction` factor.
     If the reduction factor is chosen to be very high it is possible to
     lose all points in a single event. In this case the reduction factor
-    will be changed on the fly to the hightes value that still leaves at
+    will be changed on the fly to the highest value that still leaves at
     least one event in every point cloud.
     """
 
@@ -3729,6 +3729,82 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
             else:
                 f,_ = AccumulateLinKnn(distancesq,  features, neighbour_indices)
         return f
+
+    def call(self, inputs):
+        x, neighbor_indices, distancesq = inputs
+        return self.create_output_features(x, neighbor_indices, distancesq)
+
+class TranslationInvariantMP(tf.keras.layers.Layer):
+    def __init__(self,
+                 K : int,
+                 n_feature_transformation : list,
+                 activation : str='elu',
+                 **kwargs)
+        super(TranslationInvariantMP, self).__init__(**kwargs)
+
+        self.n_feature_transformation = n_feature_transformation
+        self.activation = activation
+        self.K = K
+        self.feature_tranformation_dense = []
+        for i in range(len(self.n_feature_transformation)):
+            with tf.name_scope(self.name + "/" + str(i)):
+                self.feature_tranformation_dense.append(
+                    tf.keras.layers.Dense(n_feature_transformation[i], activation=activation))
+
+
+    def build(self, input_shapes):
+        input_shape = input_shapes[0]
+
+        with tf.name_scope(self.name + "/" + str(0)):
+            self.feature_tranformation_dense[0].build(input_shape)
+
+        for i in range(1, len(self.feature_tranformation_dense)):
+            with tf.name_scope(self.name + "/" + str(i)):
+                self.feature_tranformation_dense[i].build((input_shape[0], self.n_feature_transformation[i - 1]))
+
+        super(TranslationInvariantMP, self).build(input_shapes)
+
+
+    def compute_output_shape(self, inputs_shapes):
+        fshape = inputs_shapes[0][-1]
+        return (None, fshape + sum(self.n_feature_transformation))
+
+
+    def get_config(self):
+        config = {'n_feature_transformation': self.n_feature_transformation,
+                  'activation': self.activation,
+                  'K': self.K
+        }
+        base_config = super(TranslationInvariantMP, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+    def create_output_features(self, x, neighbour_indices, distancesq):
+        allfeat = []
+        features = x
+
+        for i in range(len(self.n_feature_transformation)):
+            t = self.feature_tranformation_dense[i]
+            features = t(features)
+            prev_feat = features
+            # Standard Message Passing
+            features = AccumulateKnn(
+                10.*distancesq,
+                features,
+                neighbour_indices,
+                mean_and_max=False)[0]
+            # `self` is part of the neighbours, so we need to remove it
+            # Its distance weight is one as exp(0) = 1
+            features -= prev_feat
+            ones = tf.ones_like(features)
+            minus_xi = AccumulateKnn(10. * distancesq, ones, neighbour_indices, mean_and_max=False)[0]
+            # prev_feat * minus_xi -> x_i / K \Sum(d_ij * 1)
+            features -= prev_feat * minus_xi
+            allfeat.append(features)
+
+        features = tf.concat(allfeat + [x], axis=-1)
+        return features
+
 
     def call(self, inputs):
         x, neighbor_indices, distancesq = inputs
