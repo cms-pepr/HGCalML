@@ -49,7 +49,9 @@ from callbacks import NanSweeper, DebugPlotRunner
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
 parser.add_argument('--run_name', help="wandb run name")
-CONFIGFILE = sys.argv[1]
+parser.add_argument('--wandb_project', help="wandb project name", default="Autumn_2023")
+initargs,_ = parser.parse_known_args()
+CONFIGFILE = initargs.configFile
 print(f"Using config File: \n{CONFIGFILE}")
 
 with open(CONFIGFILE, 'r') as f:
@@ -92,7 +94,7 @@ for i in range(len(config['Training'])):
         wandb_config[f"train_{i}+_fluidity_decay"] = 0.1
 
 wandb.init(
-    project="Connecting-The-Dots",
+    project=initargs.wandb_project,
     config=wandb_config,
 )
 wandb.save(sys.argv[0]) # Save python file
