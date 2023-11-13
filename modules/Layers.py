@@ -248,6 +248,9 @@ global_layers_list['MessagePassing']=MessagePassing
 from GravNetLayersRagged import DistanceWeightedMessagePassing
 global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePassing
 
+from GravNetLayersRagged import TranslationInvariantMP
+global_layers_list['TranslationInvariantMP']=TranslationInvariantMP
+
 from GravNetLayersRagged import ApproxPCA
 global_layers_list['ApproxPCA']=ApproxPCA
 
