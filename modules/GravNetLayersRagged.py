@@ -3734,17 +3734,16 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         x, neighbor_indices, distancesq = inputs
         return self.create_output_features(x, neighbor_indices, distancesq)
 
+
 class TranslationInvariantMP(tf.keras.layers.Layer):
     def __init__(self,
-                 K : int,
-                 n_feature_transformation : list,
-                 activation : str='elu',
-                 **kwargs)
+                 n_feature_transformation,
+                 activation='elu',
+                 **kwargs):
         super(TranslationInvariantMP, self).__init__(**kwargs)
 
         self.n_feature_transformation = n_feature_transformation
         self.activation = activation
-        self.K = K
         self.feature_tranformation_dense = []
         for i in range(len(self.n_feature_transformation)):
             with tf.name_scope(self.name + "/" + str(i)):
@@ -3773,7 +3772,6 @@ class TranslationInvariantMP(tf.keras.layers.Layer):
     def get_config(self):
         config = {'n_feature_transformation': self.n_feature_transformation,
                   'activation': self.activation,
-                  'K': self.K
         }
         base_config = super(TranslationInvariantMP, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -3795,11 +3793,11 @@ class TranslationInvariantMP(tf.keras.layers.Layer):
                 mean_and_max=False)[0]
             # `self` is part of the neighbours, so we need to remove it
             # Its distance weight is one as exp(0) = 1
-            features -= prev_feat
+            # features -= prev_feat # Not needed as this is substracted three lines down
             ones = tf.ones_like(features)
             minus_xi = AccumulateKnn(10. * distancesq, ones, neighbour_indices, mean_and_max=False)[0]
             # prev_feat * minus_xi -> x_i / K \Sum(d_ij * 1)
-            features -= prev_feat * minus_xi
+            features -= neighbour_indices.shape[1] * prev_feat * minus_xi
             allfeat.append(features)
 
         features = tf.concat(allfeat + [x], axis=-1)

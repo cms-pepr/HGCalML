@@ -22,7 +22,7 @@ from Layers import ScaledGooeyBatchNorm2
 from Layers import MixWhere
 from Layers import RaggedGravNet
 from Layers import PlotCoordinates
-from Layers import DistanceWeightedMessagePassing
+from Layers import DistanceWeightedMessagePassing, TranslationInvariantMP
 from Layers import LLFillSpace
 from Layers import LLExtendedObjectCondensation
 from Layers import DictModel
@@ -144,13 +144,13 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
-    gravnet_regs = [0.01, 0.01, 0.01]
+    gravnet_regs = [0.01, 0.01, 0.01, 0.01, 0.01]
 
     for i in range(GRAVNET_ITERATIONS):
 
         d_shape = x.shape[1]//2
 
-        if i != 0:
+        if i in (0, 4):
             x = Dense(d_shape,activation=DENSE_ACTIVATION,
                 kernel_regularizer=DENSE_REGULARIZER)(x)
             x = Dense(d_shape,activation=DENSE_ACTIVATION,
@@ -185,8 +185,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 )([x_track, rs_track])
 
 
-            x_hit = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
-            x_track = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
+            # x_hit = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
+            # x_track = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
+            x_hit = TranslationInvariantMP([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
+            x_track = TranslationInvariantMP([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
 
             [xgn, gncoords], rs  = ConcatRaggedTensors()([
                 [xgn_track, gncoords_track],
