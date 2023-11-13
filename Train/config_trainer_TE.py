@@ -105,6 +105,16 @@ wandb.save(sys.argv[1]) # Save config file
 ### Define Model ##############################################################
 ###############################################################################
 
+def TEGN_block(x, rs, N_coords, K, messages):
+    x_pre = x
+    coords = Dense(N_coords)(x)
+    nidx, distsq = KNN(K=K)([coords, rs])
+    x = TranslationInvariantMP(messages, activation='elu')([x, nidx, distsq])
+    x = Dense(x_pre.shape[-1], activation='elu')(x)
+    # xgn, gncoords, gnnidx, gndist= RaggedGravNet...
+    out = Add()([x, x_pre])
+    return out, coords, nidx, distsq
+
 
 def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     """
@@ -144,7 +154,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
-    gravnet_regs = [0.01, 0.01, 0.01, 0.01, 0.01]
 
     for i in range(GRAVNET_ITERATIONS):
 
@@ -165,30 +174,41 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             x_hit = x_hit[0]
             x_track = x_track[0]
 
-            xgn_hit, gncoords_hit, gnnidx_hit, gndist_hit = RaggedGravNet(
-                    name = f"RSU_gravnet_{i}_hit", # 76929, 42625, 42625
-                n_neighbours=config['General']['gravnet'][i]['n'],
-                n_dimensions=N_GRAVNET_SPACE_COORDINATES,
-                n_filters=d_shape,
-                n_propagate=2*d_shape,
-                coord_initialiser_noise=None,
-                feature_activation='elu',
-                )([x_hit, rs_hit])
-            xgn_track, gncoords_track, gnnidx_track, gndist_track = RaggedGravNet(
-                    name = f"RSU_gravnet_{i}_track", # 76929, 42625, 42625
-                n_neighbours=16,
-                n_dimensions=N_GRAVNET_SPACE_COORDINATES,
-                n_filters=d_shape,
-                n_propagate=2*d_shape,
-                coord_initialiser_noise=None,
-                feature_activation='elu',
-                )([x_track, rs_track])
+
+            # def TEGN_block(x, rs, N_coords, K, messages):
+            xgn_hit, gncoords_hit, gnnidx_hit, gndist_hit = TEGN_block(
+                    x_hit, rs_hit,
+                    N_GRAVNET_SPACE_COORDINATES, config['General']['gravnet'][i]['n'],
+                    [64, 32, 16])
+            xgn_track, gncoords_track, gnnidx_track, gndist_track = TEGN_block(
+                    x_track, rs_track,
+                    N_GRAVNET_SPACE_COORDINATES, config['General']['gravnet'][i]['n'],
+                    [64, 32, 16])
+
+            # xgn_hit, gncoords_hit, gnnidx_hit, gndist_hit = RaggedGravNet(
+                    # name = f"RSU_gravnet_{i}_hit", # 76929, 42625, 42625
+                # n_neighbours=config['General']['gravnet'][i]['n'],
+                # n_dimensions=N_GRAVNET_SPACE_COORDINATES,
+                # n_filters=d_shape,
+                # n_propagate=2*d_shape,
+                # coord_initialiser_noise=None,
+                # feature_activation='elu',
+                # )([x_hit, rs_hit])
+            # xgn_track, gncoords_track, gnnidx_track, gndist_track = RaggedGravNet(
+                    # name = f"RSU_gravnet_{i}_track", # 76929, 42625, 42625
+                # n_neighbours=16,
+                # n_dimensions=N_GRAVNET_SPACE_COORDINATES,
+                # n_filters=d_shape,
+                # n_propagate=2*d_shape,
+                # coord_initialiser_noise=None,
+                # feature_activation='elu',
+                # )([x_track, rs_track])
 
 
             # x_hit = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
             # x_track = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
-            x_hit = TranslationInvariantMP([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
-            x_track = TranslationInvariantMP([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
+            # x_hit = TranslationInvariantMP([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
+            # x_track = TranslationInvariantMP([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
 
             [xgn, gncoords], rs  = ConcatRaggedTensors()([
                 [xgn_track, gncoords_track],
@@ -196,25 +216,29 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 rs_track, rs_hit])
 
         else:
-            xgn, gncoords, gnnidx, gndist = RaggedGravNet(
-                    name = f"RSU_gravnet_{i}", # 76929, 42625, 42625
-                n_neighbours=config['General']['gravnet'][i]['n'],
-                n_dimensions=N_GRAVNET_SPACE_COORDINATES,
-                n_filters=d_shape,
-                n_propagate=2*d_shape,
-                coord_initialiser_noise=None,
-                feature_activation='elu',
+            xgn, gncoords, gnnidx, gndist= TEGN_block(
+                    x, rs,
+                    N_GRAVNET_SPACE_COORDINATES, config['General']['gravnet'][i]['n'],
+                    [64, 32, 16])
+            # xgn, gncoords, gnnidx, gndist = RaggedGravNet(
+                    # name = f"RSU_gravnet_{i}", # 76929, 42625, 42625
+                # n_neighbours=config['General']['gravnet'][i]['n'],
+                # n_dimensions=N_GRAVNET_SPACE_COORDINATES,
+                # n_filters=d_shape,
+                # n_propagate=2*d_shape,
+                # coord_initialiser_noise=None,
+                # feature_activation='elu',
                 # sumwnorm=True,
-                )([x, rs])
+                # )([x, rs])
 
             gndist = LLRegulariseGravNetSpace(
-                    scale=gravnet_regs[i],
+                    scale=0.01,
                     record_metrics=True,
                     name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
-            x_rand = random_sampling_block(
-                    xgn, rs, gncoords, gnnidx, gndist, is_track,
-                    reduction=6, layer_norm=True, name=f"RSU_{i}")
+            # x_rand = random_sampling_block(
+                    # xgn, rs, gncoords, gnnidx, gndist, is_track,
+                    # reduction=6, layer_norm=True, name=f"RSU_{i}")
             x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
 
             gndist = AverageDistanceRegularizer(
