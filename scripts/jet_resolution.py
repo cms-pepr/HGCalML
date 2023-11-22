@@ -11,9 +11,6 @@ from scipy.optimize import curve_fit
 vector.register_awkward()
 jetdef = fastjet.JetDefinition(fastjet.antikt_algorithm, 0.6)
 
-path = '/home/philipp/Desktop/jets_40PU/full_classic_d025_i033_ext.bin.gz'
-with gzip.open(path, 'rb') as f:
-    data = pickle.load(f)
 
 
 def pred_to_4momentum(pred):
@@ -72,11 +69,14 @@ def awkardjets_to_pandas(jets):
     return jets_df
 
 
-def get_jets_from_event(showers_df, i=0, R=0.4, verbose=False):
+def get_jets_from_event(showers_df, i=0, R=0.4, verbose=False, filter_pu=False):
     truth_df = showers_df[~np.isnan(showers_df['truthHitAssignedEnergies'])]
     pred_df = showers_df[~np.isnan(showers_df['pred_energy_hits'])]
     truth_i = truth_df[truth_df['event_id'] == i]
     pred_i = pred_df[pred_df['event_id'] == i]
+    if filter_pu:
+        truth_i = truth_i[truth_i.t_only_minbias == 0]
+        pred_i = pred_i[pred_i.t_only_minbias == 0]
 
     pred_4momentum = pred_to_4momentum(pred_i)
     truth_4momentum = truth_to_4momentum(truth_i)
@@ -360,22 +360,38 @@ def response_resolution_plot(df, fig=None, ax=None, color='blue', label=None):
     return fig, ax
 
 
+if __name__ == "__main__":
+
+    import os
+    import sys
 
 
+    path = sys.argv[1]
+    dirname = os.path.dirname(path)
 
-showers_df = data['showers_dataframe']
-truth_jets_df, pred_jets_df = get_jets_from_event(showers_df, i=0, R=0.4)
+    with gzip.open(path, 'rb') as f:
+        data = pickle.load(f)
 
-matched_df = matched_df_loop(showers_df, n_max=100)
-fig = jet_efficiency_plot(matched_df, binwidth=20, pt_min=20)
-fig.savefig('jet_efficiency.png')
-fig = jet_resolution_hists(matched_df, binwidth=30, pt_min=20, return_figure=True)
-fig.savefig('jet_resolution.png')
+    showers_df = data['showers_dataframe']
+    truth_jets_df, pred_jets_df = get_jets_from_event(showers_df, i=0, R=0.4)
 
-data_true = jet_resolution_hists(matched_df, binwidth=30, pt_min=20, return_figure=False, use_truth=True)
-data_pred = jet_resolution_hists(matched_df, binwidth=30, pt_min=20, return_figure=False, use_truth=False)
+    matched_df = matched_df_loop(showers_df, n_max=100)
+    # save matched_df
+    matched_df.to_pickle(os.path.join(dirname, 'matched_df.pkl'))
 
-fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(20, 10))
-fig, ax = response_resolution_plot(data_pred, fig=fig, ax=ax, color='blue', label='Prediction')
-fig, ax = response_resolution_plot(data_true, fig=fig, ax=ax, color='green', label='Truth')
-fig.savefig('response_resolution.png')
+    try:
+        fig = jet_efficiency_plot(matched_df, binwidth=20, pt_min=20)
+        fig.savefig(os.path.join(dirname, 'jet_efficiency.png'))
+        fig = jet_resolution_hists(matched_df, binwidth=30, pt_min=20, return_figure=True)
+        fig.savefig(os.path.join(dirname, 'jet_resolution.png'))
+
+        data_true = jet_resolution_hists(matched_df, binwidth=30, pt_min=20, return_figure=False, use_truth=True)
+        data_pred = jet_resolution_hists(matched_df, binwidth=30, pt_min=20, return_figure=False, use_truth=False)
+
+        fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(20, 10))
+        fig, ax = response_resolution_plot(data_pred, fig=fig, ax=ax, color='blue', label='Prediction')
+        fig, ax = response_resolution_plot(data_true, fig=fig, ax=ax, color='green', label='Truth')
+        fig.savefig(os.path.join(dirname, 'response_resolution.png'))
+    except Exception as e:
+        print(e)
+        print("Could not make plots")
