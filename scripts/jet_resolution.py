@@ -109,7 +109,7 @@ def get_jets_from_event(showers_df, i=0, R=0.4, verbose=False, filter_pu=False):
 
 
 def calculate_matched_df(truth_jets_df, pred_jets_df, df=None,
-                         R_matching_cut=0.3, pt_matching_cut=0.5, pt_cut=10.,
+                         R_matching_cut=0.3, pt_matching_cut=0.5, pt_cut=0.,
                          event_id=0, verbose=False):
     matched_df = pd.DataFrame()
     matched_predicted_ids = []
@@ -184,7 +184,7 @@ def matched_df_loop(showers_df, n_max=-1):
     return matched_df
 
 
-def jet_efficiency_plot(matched_df, binwidth=20, pt_min=10, title=None, return_figure=True):
+def jet_efficiency_plot(matched_df, binwidth=20, pt_min=0, title=None, return_figure=True):
     pt_bin_mins = np.arange(pt_min, 150, binwidth)
 
     efficiencies = []
@@ -389,9 +389,9 @@ if __name__ == "__main__":
     matched_df.to_pickle(os.path.join(dirname, 'matched_df.pkl'))
 
     try:
-        fig = jet_efficiency_plot(matched_df, binwidth=20, pt_min=20)
+        fig = jet_efficiency_plot(matched_df, binwidth=20, pt_min=0)
         fig.savefig(os.path.join(dirname, 'jet_efficiency.png'))
-        fig = jet_resolution_hists(matched_df, binwidth=30, pt_min=20, return_figure=True)
+        fig = jet_resolution_hists(matched_df, binwidth=25, pt_min=0, return_figure=True)
         fig.savefig(os.path.join(dirname, 'jet_resolution.png'))
 
         data_true = jet_resolution_hists(matched_df, binwidth=30, pt_min=20, return_figure=False, use_truth=True)
