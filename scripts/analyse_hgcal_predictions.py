@@ -39,6 +39,7 @@ def analyse(preddir,
             min_cluster_size=50,
             min_samples=100,
             mask_radius=None,
+            extra=False,
         ):
     """
     Analyse model predictions
@@ -166,7 +167,7 @@ def analyse(preddir,
                 predictions_dict=processed_pred_dict,
                 pred_alpha_idx=pred_shower_alpha_idx
             )
-            showers_matcher.process()
+            showers_matcher.process(extra=extra)
             dataframe = showers_matcher.get_result_as_dataframe()
             matched_truth_sid, matched_pred_sid = showers_matcher.get_matched_hit_sids()
             matched.append((matched_truth_sid, matched_pred_sid))
@@ -422,6 +423,9 @@ if __name__ == '__main__':
         help="Produce only a small analysis.bin.gz file. \
             Only applicable if --analysisoutpath is set",
         action='store_true')
+    parser.add_argument('--extra',
+        help="Calculate more information for showers",
+        action='store_true')
 
 
     args = parser.parse_args()
@@ -447,4 +451,5 @@ if __name__ == '__main__':
             min_cluster_size=int(args.min_cluster_size),
             min_samples=int(args.min_samples),
             mask_radius=args.mask_radius,
+            extra=args.extra,
             )
