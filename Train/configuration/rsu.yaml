@@ -5,9 +5,10 @@ General:
     - n: 64
     - n: 64
     - n: 64
+    - n: 64
     - n: 128
-  n_cluster_space_coordinates: 3
-  n_gravnet_space_coordinates: 3
+  n_cluster_space_coordinates: 6
+  n_gravnet_space_coordinates: 6
 
 DenseOptions:
   activation: "elu"
@@ -15,13 +16,13 @@ DenseOptions:
   dropout: 0.000001
 
 BatchNormOptions:
-  max_viscosity: 0.5
+  max_viscosity: 0.99
 
 LossOptions:
-  energy_loss_weight: .00
-  q_min: 5.0
+  energy_loss_weight: .05
+  q_min: 1.0
   use_average_cc_pos: 0.99
-  classification_loss_weight: 0.0
+  classification_loss_weight: 0.05
   too_much_beta_scale: 0.0
   position_loss_weight: 0.0
   timing_loss_weight: 0.0
@@ -31,7 +32,7 @@ LossOptions:
 Training:
   - stage_1:
     batch_size: 120000
-    learning_rate: 0.0003
+    learning_rate: 0.001
     epochs: 1
 
   - stage_2:
