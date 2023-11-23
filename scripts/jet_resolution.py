@@ -18,6 +18,15 @@ def pred_to_4momentum(pred):
     pred_x = pred['pred_mean_x'].values
     pred_y = pred['pred_mean_y'].values
     pred_z = pred['pred_mean_z'].values
+    nan_mask = np.isnan(pred_x)
+    if np.any(nan_mask):
+        pred_x = pred_x[~nan_mask]
+        pred_y = pred_y[~nan_mask]
+        pred_z = pred_z[~nan_mask]
+        e_lost = np.sum(pred_energy[nan_mask])
+        pred_energy = pred_energy[~nan_mask]
+        print(f"Found {np.sum(nan_mask)} NaNs in predicted mean values")
+        print(f"Energy: {e_lost}")
     pred_px = pred_x * pred_energy / np.sqrt(pred_x**2 + pred_y**2 + pred_z**2)
     pred_py = pred_y * pred_energy / np.sqrt(pred_x**2 + pred_y**2 + pred_z**2)
     pred_pz = pred_z * pred_energy / np.sqrt(pred_x**2 + pred_y**2 + pred_z**2)

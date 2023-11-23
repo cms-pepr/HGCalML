@@ -4,9 +4,9 @@ MODEL="/mnt/home/pzehetner/Connecting-The-Dots/include_noisefilterPUContinue/KER
 MODEL_ID="OLD"
 BASEPATH="/mnt/ceph/users/pzehetner/Paper/Test/granular_pu_tests/pu_test_events"
 PREDDIR="/mnt/ceph/users/pzehetner/Paper/predictions/"
-PARTICLES=[ "electrons" "photons" "kaons" "pions"]
-ENERGIES=[ "10" "20" "50" "75" "100" "125" "150" "175" "200" "250" ]
-PU=[ "0" "40" "200" ]
+PARTICLES=( "electrons" "photons" "kaons" "pions")
+ENERGIES=( "10" "20" "50" "75" "100" "125" "150" "175" "200" "250" )
+PU=( "0" "40" "200" )
 COUNTER=0
 OUTPUTFILE=analysis.bin.gz
 
@@ -20,9 +20,12 @@ do
         do
             echo "particle: $particle, energy: $energy, pu: $pu"
             directory="$BASEPATH/${particle}_${energy}GeV_eta20_PU${pu}"
+            outputdir="${PREDDIR}/${MODEL_ID}_${particle}_${energy}GeV_eta20_PU${pu}"
+	    echo "Data: ${directory}"
+	    echo "Output: ${outputdir}"
 
             # if counter > 10: break
-            if [ $COUNTER -gt 10 ]; then
+            if [ $COUNTER -gt 0 ]; then
                 break
             fi
 
@@ -32,12 +35,16 @@ do
                 continue
             fi
 
-            # Skip if no dataCollection.djcdc file in directory
-            # (this should not happen)
-            datacollection = "$directory/dataCollection.djcdc"
+            # Check for dataCollection
+            datacollection="$directory/dataCollection.djcdc"
             if [ ! -f $datacollection ]; then
-                echo "Skipping $directory no dataCollection.djcdc"
-                continue
+		echo "Create DataCollection"
+		cd $directory
+		createDataCollectionFromTD.py -c TrainData_NanoML -o dataCollection.djcdc *.djctd
+		cd -
+		echo ""
+		echo ""
+		echo ""
             fi
 
             # Skip if output file already exists
@@ -46,13 +53,13 @@ do
                 continue
             fi
 
-            if [ -f $directory/pred.flag ]]; then
+            if [ -f $directory/pred.flag ]; then
                 echo "Other process already working on this"
                 continue
             fi
 
-            outputdir="${PREDDIR}/${MODEL_ID}_${particle}_${energy}GeV_eta20_PU${pu}"
-            if [ ! -f ${outputdir}/pred_00000.bin.gz]; then
+            if [ ! -f ${outputdir}/pred_00000.bin.gz ]; then
+		echo "Running prediction"
                 touch $directory/pred.flag
                 predict_hgcal.py $MODEL $datacollection $outputdir
                 rm $directory/pred.flag
