@@ -40,6 +40,7 @@ def analyse(preddir,
             min_samples=100,
             mask_radius=None,
             extra=False,
+            hdf=False,
         ):
     """
     Analyse model predictions
@@ -368,9 +369,14 @@ def analyse(preddir,
             analysis_data['features'] = features
             analysis_data['truth'] = truth
             analysis_data['prediction'] = prediction
-        with gzip.open(analysisoutpath, 'wb') as output_file:
-            print("Writing dataframes to pickled file",analysisoutpath)
-            pickle.dump(analysis_data, output_file)
+        if not hdf:
+            with gzip.open(analysisoutpath, 'wb') as output_file:
+                print("Writing dataframes to pickled file",analysisoutpath)
+                pickle.dump(analysis_data, output_file)
+        else:
+            showers_dataframe.to_hdf(analysisoutpath, key='showers')
+
+
 
     if len(pdfpath)>0:
         plotter = HGCalAnalysisPlotter()
@@ -415,6 +421,9 @@ if __name__ == '__main__':
     parser.add_argument('--min_samples',
                         help='parameter used for HDBSCAN (only relevant if option --hdbscan is active)',
                         default=100)
+    parser.add_argument('--hdf',
+        help="Save only shower datafram with in hdf format",
+        action='store_true')
     parser.add_argument('--hdbscan',
         help="Do not use the default clustering algorightm but use HDBSCAN instead",
         action='store_true')
@@ -452,4 +461,5 @@ if __name__ == '__main__':
             min_samples=int(args.min_samples),
             mask_radius=args.mask_radius,
             extra=args.extra,
+            hdf=args.hdf,
             )
