@@ -24,7 +24,7 @@ from Layers import PlotCoordinates
 from Layers import DistanceWeightedMessagePassing
 from Layers import LLFillSpace
 from Layers import LLExtendedObjectCondensation
-from Layers import DictModel
+from Layers import DictModel,RaggedDictModel
 from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
 from Layers import Multi
@@ -48,7 +48,8 @@ from callbacks import NanSweeper, DebugPlotRunner
 
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
-parser.add_argument('--run_name', help="wandb run name")
+parser.add_argument('--no-wandb', dest='wandb', help="Don't use wandb", action='store_true')
+parser.add_argument('--run_name', help="wandb run name", default='test')
 parser.add_argument('--wandb_project', help="wandb project name", default="Autumn_2023")
 initargs,_ = parser.parse_known_args()
 CONFIGFILE = initargs.configFile
@@ -93,12 +94,13 @@ for i in range(len(config['Training'])):
         wandb_config[f"train_{i}+_max_visc"] = 0.999
         wandb_config[f"train_{i}+_fluidity_decay"] = 0.1
 
-wandb.init(
-    project=initargs.wandb_project,
-    config=wandb_config,
-)
-wandb.save(sys.argv[0]) # Save python file
-wandb.save(sys.argv[1]) # Save config file
+if not initargs.wandb:
+    wandb.init(
+        project=initargs.wandb_project,
+        config=wandb_config,
+    )
+    wandb.save(sys.argv[0]) # Save python file
+    wandb.save(initargs.configFile) # Save config file
 
 
 ###############################################################################
@@ -188,7 +190,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
         gndist = LLRegulariseGravNetSpace(
                 scale=gravnet_regs[i],
-                record_metrics=True,
+                record_metrics=False,
                 name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
         x_rand = random_sampling_block(
@@ -198,7 +200,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
         gndist = AverageDistanceRegularizer(
             strength=1e-3,
-            record_metrics=True
+            record_metrics=False
             )(gndist)
         # gndist = StopGradient()(gndist)
         gncoords = StopGradient()(gncoords)
@@ -268,7 +270,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     pred_beta = LLExtendedObjectCondensation(scale=1.,
                                              use_energy_weights=True,
-                                             record_metrics=True,
+                                             record_metrics=False,
                                              print_loss=True,
                                              name="ExtendedOCLoss",
                                              implementation = loss_implementation,
@@ -302,7 +304,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
 
-    return DictModel(inputs=Inputs, outputs=model_outputs)
+    return RaggedDictModel(inputs=Inputs, outputs=model_outputs)
+    #return DictModel(inputs=Inputs, outputs=model_outputs)
 
 
 ###############################################################################
@@ -415,6 +418,7 @@ for i in range(N_TRAINING_STAGES):
             if 'batchnorm' in layer.name:
                 layer.max_viscosity = 0.999
                 layer.fluidity_decay = 0.01
+    print("Here we are")
     model, history = train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,
