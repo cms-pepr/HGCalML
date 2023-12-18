@@ -193,10 +193,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 record_metrics=False,
                 name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
-        x_rand = random_sampling_block(
-                xgn, rs, gncoords, gnnidx, gndist, is_track,
-                reduction=6, layer_norm=True, name=f"RSU_{i}")
-        x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
+        #x_rand = random_sampling_block(
+        #        xgn, rs, gncoords, gnnidx, gndist, is_track,
+        #        reduction=6, layer_norm=True, name=f"RSU_{i}")
+        #x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
 
         gndist = AverageDistanceRegularizer(
             strength=1e-3,
@@ -214,7 +214,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         # x_rand = ScalarMultiply(0.1)(x_rand)
         # gndist = ScalarMultiply(0.01)(gndist)
         # gncoords = ScalarMultiply(0.01)(gncoords)
-        x = Concatenate()([x_pre, xgn, x_rand, gndist, gncoords])
+        x = Concatenate()([x_pre, xgn, gndist, gncoords])
         x = Dense(d_shape,
                   name=f"dense_post_gravnet_1_iteration_{i}",
                   activation=DENSE_ACTIVATION,
@@ -304,7 +304,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
 
-    return RaggedDictModel(inputs=Inputs, outputs=model_outputs)
+    return DictModel(inputs=Inputs, outputs=model_outputs)
     #return DictModel(inputs=Inputs, outputs=model_outputs)
 
 

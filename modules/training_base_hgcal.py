@@ -2,6 +2,33 @@ from DeepJetCore.training.training_base import training_base
 from argparse import ArgumentParser
 import tensorflow as tf
 
+
+def unpack_ragged(inputs):
+    output = []
+    for i in inputs:
+        output += [i.values, i.row_splits]
+    return output
+
+
+class UnpackRaggedBatchLayer(tf.keras.layers.Layer):
+
+    def compute_output_shape(self, inputs):
+        o = []
+        for i in inputs:
+            o += [i[1:], (None, 1) ]
+        return o
+
+    def call(self, inputs):
+        return unpack_ragged(inputs)
+
+class DictModelWrapper(tf.keras.layers.Layer):
+    
+    def compute_output_shape(self, inputs):
+        return (None, )
+
+    def call(self, inputs):
+        return tf.reduce_mean( [inputs[k] for k in  inputs.keys() ])
+        
 class HGCalTraining(training_base):
     def __init__(self, *args, 
                  parser = None,
@@ -27,21 +54,22 @@ class HGCalTraining(training_base):
         from config_saver import copyModules
         copyModules(self.outputDir)#save the modules with indexing for overwrites
 
-    @tf.function
-    def compute_per_replica_loss(replica_data):
-        with tf.GradientTape() as tape:
-            logits = self.keras_model(replica_data)
-            primary_loss_value = loss_fn(replica_data, logits)
-            total_loss_value = primary_loss_value + tf.add_n(self.keras_model.losses)
-        grads = tape.gradient(total_loss_value, self.keras_model.trainable_variables)
-        optimizer.apply_gradients(zip(grads, self.keras_model.trainable_variables))
-        return total_loss_value
+    def pack_to_ragged_batch(self, data_list):
+        feat_list = data_list[0] #only features
+        truth_list = data_list[1]
 
-    def to_ragged_tensor(self, data_list):
-        for e in data_list:
-            rt = tf.RaggedTensor.from_row_splits(values=e[0][0], row_splits=e[0][1].flatten())
-            yield rt
+        def pack_list(mylist):
+            o=[]
+            for i in range(len(mylist)//2):
+                o.append(tf.RaggedTensor.from_row_splits(values=mylist[2*i], row_splits=mylist[2*i + 1][:,0]))
+            return o
+        fl = pack_list(feat_list)
+        return ( fl , truth_list ) #pass truth list, this is anyway a dummy for hgcal
 
+    def wrap_model_ragged(self, rin):
+        fin = unpack_ragged(rin)
+        return self.keras_model(fin)
+        
     def compileModel(self, **kwargs):
         super().compileModel(is_eager=True,
                     loss=None,
@@ -150,21 +178,33 @@ class HGCalTraining(training_base):
                 print('training batches: ',nbatches_train)
                 print('validation batches: ',nbatches_val)
 
-                data = self.to_ragged_tensor(traingen.feedNumpyData())
+                #data = self.to_ragged_tensor(traingen.feedNumpyData())
                 #data = traingen.feedNumpyData()
                 
-                self.keras_model.fit(data, 
-                                     steps_per_epoch=nbatches_train,
-                                     epochs=self.trainedepoches + 1,
-                                     initial_epoch=self.trainedepoches,
-                                     callbacks=self.callbacks.callbacks,
-                                     validation_data=valgen.feedNumpyData(),
-                                     validation_steps=nbatches_val,
-                                     max_queue_size=1,
-                                     use_multiprocessing=False,
-                                     workers=0,
-                                     **trainargs
-                )
+                for batch in traingen.feedNumpyData():
+                    
+                    with tf.GradientTape() as tape:
+                        rdata = self.pack_to_ragged_batch(batch) 
+                        o = self.wrap_model_ragged(rdata[0])
+                        
+                        losses =  self.keras_model.losses
+                        losses =  tf.add_n(losses) 
+
+                    grads = tape.gradient( losses , self.keras_model.trainable_variables)
+                    self.optimizer.apply_gradients(zip(grads, self.keras_model.trainable_variables))
+
+                #self.keras_model.fit(data, 
+                #                     steps_per_epoch=nbatches_train,
+                #                     epochs=self.trainedepoches + 1,
+                #                     initial_epoch=self.trainedepoches,
+                #                     callbacks=self.callbacks.callbacks,
+                #                     validation_data=valgen.feedNumpyData(),
+                #                     validation_steps=nbatches_val,
+                #                     max_queue_size=1,
+                #                     use_multiprocessing=False,
+                #                     workers=0,
+                #                     **trainargs
+                #)
                 self.trainedepoches += 1
                 traingen.shuffleFileList()
                 #

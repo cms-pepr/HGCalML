@@ -953,36 +953,4 @@ class DictModel(tf.keras.Model):
         
         super(DictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
 
-    
-class RaggedDictModel(tf.keras.Model):
-    def __init__(self, 
-                 inputs,
-                 outputs: dict, #force to be dict
-                 *args, **kwargs):
-        """
-        Just forces dictionary output
-        """
-        
-        super(RaggedDictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
-
-    def call(self, inputs, *args, **kwargs):
-        return super(RaggedDictModel, self).call(self.unpack_ragged(inputs), *args, **kwargs)
-
-    def train_step(self, inputs, *args, **kwargs):
-        return super(RaggedDictModel, self).train_step(self.unpack_ragged(inputs), *args, **kwargs)
-        #super(RaggedDictModel, self).train_step(inputs, *args, **kwargs)
-
-    def unpack_ragged(self, inputs):
-        output = []
-        for i in inputs:
-            print("Type of i is", type(i))
-            print("Hasattr", hasattr(i, "row_splits"))
-            if type(i) == tf.RaggedTensor:
-                print("Inside")
-                output.append((i.values, i.row_splts))
-            else:
-                output.append(i)
-
-        return output
-
 global_layers_list['DictModel']=DictModel
