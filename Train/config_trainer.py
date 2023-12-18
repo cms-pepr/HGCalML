@@ -24,7 +24,7 @@ from Layers import PlotCoordinates
 from Layers import DistanceWeightedMessagePassing
 from Layers import LLFillSpace
 from Layers import LLExtendedObjectCondensation
-from Layers import DictModel,RaggedDictModel
+from Layers import DictModel
 from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
 from Layers import Multi

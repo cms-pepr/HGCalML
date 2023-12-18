@@ -8,26 +8,6 @@ def unpack_ragged(inputs):
     for i in inputs:
         output += [i.values, i.row_splits]
     return output
-
-
-class UnpackRaggedBatchLayer(tf.keras.layers.Layer):
-
-    def compute_output_shape(self, inputs):
-        o = []
-        for i in inputs:
-            o += [i[1:], (None, 1) ]
-        return o
-
-    def call(self, inputs):
-        return unpack_ragged(inputs)
-
-class DictModelWrapper(tf.keras.layers.Layer):
-    
-    def compute_output_shape(self, inputs):
-        return (None, )
-
-    def call(self, inputs):
-        return tf.reduce_mean( [inputs[k] for k in  inputs.keys() ])
         
 class HGCalTraining(training_base):
     def __init__(self, *args, 
@@ -182,6 +162,7 @@ class HGCalTraining(training_base):
                 #data = traingen.feedNumpyData()
                 
                 for batch in traingen.feedNumpyData():
+                    #here we would need to aggregate N_gpu batches before passing them on
                     
                     with tf.GradientTape() as tape:
                         rdata = self.pack_to_ragged_batch(batch) 
