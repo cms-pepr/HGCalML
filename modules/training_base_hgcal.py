@@ -143,6 +143,26 @@ class HGCalTraining(training_base):
             traingen = self.train_data.invokeGenerator(fake_truth = use_fake_truth)
             valgen = self.val_data.invokeGenerator(fake_truth = use_fake_truth)
 
+            print('Training with number of devices: {}'.format(self.dist_strat_scope.num_replicas_in_sync))
+
+            def train_step(thisbatch):
+                with tf.GradientTape() as tape:
+                    #with distribute strategy...
+                    o = self.wrap_model_ragged(thisbatch)
+                    losses =  self.keras_model.losses
+                    losses =  tf.add_n(losses) 
+
+                grads = tape.gradient( losses , self.keras_model.trainable_variables)
+                self.optimizer.apply_gradients(zip(grads, self.keras_model.trainable_variables))
+
+            @tf.function
+            def distributed_train_step(dataset_inputs):
+                self.dist_strat_scope.run(train_step, args=(dataset_inputs,))
+                
+            # select what is needed
+            my_train_step = train_step
+            if self.ngpus > 1:
+                my_train_step = distributed_train_step
 
             while(self.trainedepoches < nepochs):
            
@@ -158,21 +178,36 @@ class HGCalTraining(training_base):
                 print('training batches: ',nbatches_train)
                 print('validation batches: ',nbatches_val)
 
-                #data = self.to_ragged_tensor(traingen.feedNumpyData())
-                #data = traingen.feedNumpyData()
-                
-                for batch in traingen.feedNumpyData():
-                    #here we would need to aggregate N_gpu batches before passing them on
-                    
-                    with tf.GradientTape() as tape:
-                        rdata = self.pack_to_ragged_batch(batch) 
-                        o = self.wrap_model_ragged(rdata[0])
-                        
-                        losses =  self.keras_model.losses
-                        losses =  tf.add_n(losses) 
+                if self.ngpus > 1:
+                    tf.config.experimental.set_synchronous_execution(False)
+                nbatches_in = 0
 
-                    grads = tape.gradient( losses , self.keras_model.trainable_variables)
-                    self.optimizer.apply_gradients(zip(grads, self.keras_model.trainable_variables))
+                while nbatches_in < nbatches_train:
+
+                    thisbatch = []
+                    while len(thisbatch) < self.ngpus and nbatches_in < nbatches_train:
+                        #only 'feature' part matters for HGCAL
+                        bdata = next(traingen.feedNumpyData())
+                        rdata = self.pack_to_ragged_batch(bdata) 
+                        thisbatch.append(rdata[0]) #only 'feature' inputs for HGCAL
+                        nbatches_in += 1
+                        
+                    #nested concat
+                    if len(thisbatch) > 1:
+                        # thisbatch = [ [data_0, .. ], [data_0, ...]]
+                        conc = [] #transpose
+                        for i in range(len(thisbatch[0])):#same for every i
+                            tc = []
+                            for j in range(len(thisbatch)):
+                                tc.append(thisbatch[j][i])
+                            conc.append(tc)
+
+                        thisbatch = [tf.concat(a, axis=0) for a in  conc]#now nGPU single batches
+                    else:
+                        thisbatch = thisbatch[0]
+
+                    my_train_step(thisbatch)
+
 
                 #self.keras_model.fit(data, 
                 #                     steps_per_epoch=nbatches_train,
