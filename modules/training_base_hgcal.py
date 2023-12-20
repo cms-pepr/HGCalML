@@ -14,7 +14,9 @@ import tensorflow.keras as keras
 import tensorflow as tf
 import copy
 from DeepJetCore.training.gpuTools import DJCSetGPUs
+from DeepJetCore.training import training_base as djc_training_base
 import time
+
 
 
 #for multi-gpu we need to overwrite a few things here
@@ -454,6 +456,44 @@ class training_base(object):
       
 
 class HGCalTraining(training_base):
+    def __init__(self, *args, 
+                 **kwargs):
+        '''
+        Adds file logging
+        '''
+        #no reason for a lot of validation samples usually
+        super().__init__(*args, resumeSilently=True,splittrainandtest=0.95,**kwargs)
+        
+        from config_saver import copyModules
+        copyModules(self.outputDir)#save the modules with indexing for overwrites
+
+    def compileModel(self, **kwargs):
+        super().compileModel(is_eager=True,
+                       loss=None,
+                       **kwargs)
+    
+    def trainModel(self,
+                   nepochs,
+                   batchsize,
+                   backup_after_batches=500,
+                   checkperiod=1, 
+                   **kwargs):
+        '''
+        Just implements some defaults
+        '''
+        return super().trainModel(nepochs=nepochs,
+                           batchsize=batchsize,
+                           run_eagerly=True,
+                           verbose=2,
+                           batchsize_use_sum_of_squares=False,
+                           fake_truth=True,
+                           backup_after_batches=backup_after_batches,
+                           checkperiod=checkperiod,
+                            **kwargs)
+
+
+
+class HGCalTraining_compat(training_base_djc):
     def __init__(self, *args, 
                  **kwargs):
         '''
