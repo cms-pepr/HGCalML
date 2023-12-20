@@ -14,7 +14,7 @@ import tensorflow.keras as keras
 import tensorflow as tf
 import copy
 from DeepJetCore.training.gpuTools import DJCSetGPUs
-from DeepJetCore.training import training_base as djc_training_base
+from DeepJetCore.training.training_base import training_base as training_base_djc
 import time
 
 
@@ -347,6 +347,7 @@ class training_base(object):
                    load_in_mem = False,
                    max_files = -1,
                    plot_batch_loss = False,
+                   verbose = 0,
                    **trainargs):
         
         for m in self.mgpu_keras_models:
@@ -382,6 +383,8 @@ class training_base(object):
                 additional_callbacks=[additional_callbacks]
             self.callbacks.callbacks.extend(additional_callbacks)
             
+        #create callbacks wrapper
+        
         
         
         #prepare generator 
@@ -399,7 +402,11 @@ class training_base(object):
 
         batch_time = 100
 
+
+        
+
         while(self.trainedepoches < nepochs):
+            
         
             #this can change from epoch to epoch
             #calculate steps for this epoch
@@ -413,7 +420,26 @@ class training_base(object):
             print('training batches: ',nbatches_train)
             print('validation batches: ',nbatches_val)
 
+
+            #this is in here because it needs steps count
+            callbacks = tf.keras.callbacks.CallbackList(
+                    self.callbacks.callbacks,
+                    add_history=True,
+                    add_progbar=verbose != 0,
+                    model=self.keras_model, #only run them on the main module!
+                    verbose=verbose,
+                    epochs=1,
+                    steps=nbatches_train,
+                )
+            if self.trainedepoches == 0:
+                callbacks.on_train_begin()
+
+            callbacks.on_epoch_begin(self.trainedepoches)
+
+            ### 
+
             nbatches_in = 0
+            single_counter = 0
             time_sum = 0
 
             while nbatches_in < nbatches_train:
@@ -430,6 +456,8 @@ class training_base(object):
                 if len(thisbatch) != self.ngpus: #last batch might not be enough
                     break
 
+                callbacks.on_train_batch_begin(single_counter)
+
                 self.trainstep_parallel(thisbatch)
                 
                 if batch_time > 0.1:
@@ -438,6 +466,13 @@ class training_base(object):
                     if not nbatches_in % int(20/(time_sum/nbatches_in)): # print less when it's faster
                         print('avg batch time', time_sum/nbatches_in, 's')
 
+                logs = { m.name: m.result() for m in self.keras_model.metrics } #only for main model
+
+                callbacks.on_train_batch_end(single_counter, logs)
+
+                single_counter += 1
+            
+            callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here
             self.trainedepoches += 1
             traingen.shuffleFileList()
             #

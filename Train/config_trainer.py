@@ -163,7 +163,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
-    gravnet_regs = [0.01, 0.01, 0.01]
+    gravnet_reg = 0.01
 
     for i in range(GRAVNET_ITERATIONS):
 
@@ -189,7 +189,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             )([x, rs])
 
         gndist = LLRegulariseGravNetSpace(
-                scale=gravnet_regs[i],
+                scale=gravnet_reg,
                 record_metrics=False,
                 name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
@@ -270,7 +270,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     pred_beta = LLExtendedObjectCondensation(scale=1.,
                                              use_energy_weights=True,
-                                             record_metrics=False,
+                                             record_metrics=True,
                                              print_loss=True,
                                              name="ExtendedOCLoss",
                                              implementation = loss_implementation,
