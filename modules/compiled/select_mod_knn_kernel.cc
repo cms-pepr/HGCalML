@@ -285,9 +285,7 @@ public:
         auto coorddimsok = d_coord_mod_tensor.dims() == 3
                 && d_coord_mod_tensor.dim_size(0) == n_vert
                 && d_coord_mod_tensor.dim_size(1) == n_coords
-                && d_coord_mod_tensor.dim_size(2) == n_coords
-                ? tensorflow::Status(): tensorflow::Status(tensorflow::error::INVALID_ARGUMENT,
-               "Coordinate modifier tensor needs to have 3 dimensions (V x C x C)");
+                && d_coord_mod_tensor.dim_size(2) == n_coords;
         OP_REQUIRES_OK(context,coorddimsok);
 
         TensorShape outputShape;

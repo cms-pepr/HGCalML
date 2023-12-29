@@ -67,9 +67,7 @@ public:
         auto coorddimsok = t_coord_mod.dims() == 3
                 && t_coord_mod.dim_size(0) == n_vert
                 && t_coord_mod.dim_size(1) == n_coords
-                && t_coord_mod.dim_size(2) == n_coords
-                ? tensorflow::Status(): tensorflow::Status(tensorflow::error::INVALID_ARGUMENT,
-                        "Coordinate modifier tensor needs to have 3 dimensions (V x C x C)");
+                && t_coord_mod.dim_size(2) == n_coords;
         OP_REQUIRES_OK(context,coorddimsok);
 
 
