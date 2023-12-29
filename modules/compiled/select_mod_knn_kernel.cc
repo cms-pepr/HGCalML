@@ -282,11 +282,12 @@ public:
         int n_coords = d_coord_tensor.dim_size(1);
         int n_rs = d_rs_tensor.dim_size(0);
 
-        auto coorddimsok = d_coord_mod_tensor.dims() == 3
-                && d_coord_mod_tensor.dim_size(0) == n_vert
-                && d_coord_mod_tensor.dim_size(1) == n_coords
-                && d_coord_mod_tensor.dim_size(2) == n_coords;
-        OP_REQUIRES_OK(context,coorddimsok);
+        //auto coorddimsok = d_coord_mod_tensor.dims() == 3
+        //        && d_coord_mod_tensor.dim_size(0) == n_vert
+        //        && d_coord_mod_tensor.dim_size(1) == n_coords
+        //        && d_coord_mod_tensor.dim_size(2) == n_coords 
+        //        ? OkStatus() : errors::FailedPrecondition("Coordinate modifier tensor needs to have 3 dimensions (V x C x C)");
+        //OP_REQUIRES_OK(context,coorddimsok);
 
         TensorShape outputShape;
         outputShape.AddDim(n_vert);
