@@ -1,8 +1,9 @@
 
 
 
-from DeepJetCore.TrainData import TrainData, fileTimeOut
-from DeepJetCore import SimpleArray
+from djcdata import TrainData
+from djcdata.TrainData import fileTimeOut
+from djcdata import SimpleArray
 import numpy as np
 import uproot3 as uproot
 import awkward as ak1

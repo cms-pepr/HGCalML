@@ -17,9 +17,9 @@ typedef Eigen::GpuDevice GPUDevice;
 
 __global__
 static void calc(
-        const int * to_be_replaced,
-        const int * replacements,
-        int * replaced,
+        const int32 * to_be_replaced,
+        const int32 * replacements,
+        int32 * replaced,
 
         const int n_to_be_replaced,
         const int n_replacements){
@@ -34,7 +34,8 @@ static void calc(
         return;
     }
     if(ridx>=n_replacements){
-        printf("IndexReplacerOpFunctor: index out of range\n");
+        replaced[i] = to_be_replaced[i]; //security measure but already screwed here
+        printf("IndexReplacerOpFunctor: Fatal error: index out of range %d of %d at %d of %d\n", ridx, n_replacements, i, n_to_be_replaced);
         return;
     }
     replaced[i] = replacements[ridx];
@@ -43,26 +44,28 @@ static void calc(
 
 
 
-template<typename dummy>
-struct IndexReplacerOpFunctor<GPUDevice, dummy> { //just because access needs to be different for GPU and CPU
+template<typename dtype>
+struct IndexReplacerOpFunctor<GPUDevice, dtype> { //just because access needs to be different for GPU and CPU
     void operator()(
             const GPUDevice &d,
-            const int * to_be_replaced,
-            const int * replacements,
-            int * replaced,
+            const dtype * to_be_replaced,
+            const dtype * replacements,
+            dtype * replaced,
 
-            const int n_to_be_replaced,
-            const int n_replacements
+            const dtype n_to_be_replaced,
+            const dtype n_replacements
             ){
             
 
-            grid_and_block gb(n_to_be_replaced,1024);
+            grid_and_block gb(n_to_be_replaced,512);
 
             calc<<<gb.grid(),gb.block()>>>(to_be_replaced,replacements,replaced,n_to_be_replaced,n_replacements);
+     
+            cudaDeviceSynchronize();
     }
 };
 
-template struct IndexReplacerOpFunctor<GPUDevice, int>;
+template struct IndexReplacerOpFunctor<GPUDevice, int32>;
 
 }//functor
 }//tensorflow

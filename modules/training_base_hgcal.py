@@ -262,6 +262,7 @@ class training_base(object):
                 model.compile(optimizer=self.optimizer,metrics=metrics,**compileargs)
                 if is_eager:
                     #call on one batch to fully build it
+                    print('Model being called once for device '+str(device))
                     model(self.train_data.getExampleFeatureBatch())
             
             if print_models:
@@ -463,7 +464,7 @@ class training_base(object):
                 if batch_time > 0.1:
                     batch_time = time.time() - st
                     time_sum += batch_time
-                    if not nbatches_in % int(20/(time_sum/nbatches_in)): # print less when it's faster
+                    if not nbatches_in % (int(20/(time_sum/nbatches_in))+1): # print less when it's faster
                         print('avg batch time', time_sum/nbatches_in, 's')
 
                 logs = { m.name: m.result() for m in self.keras_model.metrics } #only for main model

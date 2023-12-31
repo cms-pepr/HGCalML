@@ -197,7 +197,8 @@ struct CopyOutputSelectThresholdOpFunctor<GPUDevice, dummy> {
         grid_and_block gb(n_scatter_idxs, 512);
 
         copy_all_kernel<<<gb.grid(),gb.block(), 0, d.stream()>>>(d_scatter_idxs,d_tmp_scatter_idxs,n_scatter_idxs);
-
+        
+        cudaDeviceSynchronize();
 
     }
 };

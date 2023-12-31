@@ -113,6 +113,8 @@ struct MIndicesOpFunctor<GPUDevice, dummy> {
                 calc_m_not
         );
 
+        cudaDeviceSynchronize();
+
     }
 };
 

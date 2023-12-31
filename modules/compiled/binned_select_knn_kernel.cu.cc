@@ -284,6 +284,7 @@ struct BinnedSelectKnnOpFunctor<GPUDevice, dummy> { //just because access needs 
             select_knn_kernel<5><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_direction,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
                     d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
 
+        cudaDeviceSynchronize();
     }
 };
 

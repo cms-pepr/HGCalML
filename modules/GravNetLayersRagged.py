@@ -2405,6 +2405,8 @@ class KNN(LayerWithMetrics):
     def raw_call(coordinates, row_splits, K, radius, use_approximate_knn, min_bins, tfdist, myself):
         nbins=None
         if use_approximate_knn:
+            if min_bins is None:
+                min_bins = 11
             bin_width = radius # default value for SlicingKnn kernel
             idx,dist,nbins = SlicingKnn(K+1, coordinates,  row_splits,
                                   features_to_bin_on = (0,1),

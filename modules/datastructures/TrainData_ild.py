@@ -2,7 +2,7 @@
 
 
 
-from DeepJetCore.TrainData import TrainData, fileTimeOut
+from DeepJetCore import TrainData
 from DeepJetCore import SimpleArray
 import numpy as np
 import uproot3 as uproot
@@ -86,7 +86,7 @@ class TrainData_ild(TrainData):
     def fileIsValid(self, filename):
         import ROOT
         try:
-            fileTimeOut(filename, 2)
+            #fileTimeOut(filename, 2)
             tree = uproot.open(filename)["SLCIOConverted"]
             f=ROOT.TFile.Open(filename)
             t=f.Get("SLCIOConverted")
@@ -101,7 +101,7 @@ class TrainData_ild(TrainData):
     
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="SLCIOConverted"):
         
-        fileTimeOut(filename, 10)#10 seconds for eos to recover 
+        #fileTimeOut(filename, 10)#10 seconds for eos to recover 
         
         tree = uproot.open(filename)[treename]
         nevents = tree.numentries

@@ -14,13 +14,13 @@ typedef Eigen::GpuDevice GPUDevice;
 
 namespace functor {
 
-template<typename dummy>
-struct IndexReplacerOpFunctor<CPUDevice, dummy> { //just because access needs to be different for GPU and CPU
+template<typename dtype>
+struct IndexReplacerOpFunctor<CPUDevice, dtype> { //just because access needs to be different for GPU and CPU
     void operator()(
             const CPUDevice &d,
-            const int * to_be_replaced,
-            const int * replacements,
-            int * replaced,
+            const dtype * to_be_replaced,
+            const dtype * replacements,
+            dtype * replaced,
 
             const int n_to_be_replaced,
             const int n_replacements
@@ -63,12 +63,12 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(0,
                 t_to_be_replaced.shape(), &out));//same shape
 
-        IndexReplacerOpFunctor<Device, int>() (
+        IndexReplacerOpFunctor<Device, int32>() (
                 context->eigen_device<Device>(),
 
-                t_to_be_replaced.flat<int>().data(),
-                t_replacements.flat<int>().data(),
-                out->flat<int>().data(),
+                t_to_be_replaced.flat<int32>().data(),
+                t_replacements.flat<int32>().data(),
+                out->flat<int32>().data(),
                 n_to_be_replaced,
                 n_replacements
         );
@@ -82,7 +82,7 @@ public:
 REGISTER_KERNEL_BUILDER(Name("IndexReplacer").Device(DEVICE_CPU), IndexReplacerOp<CPUDevice>);
 
 #ifdef GOOGLE_CUDA
-extern template struct IndexReplacerOpFunctor<GPUDevice, int>;
+extern template struct IndexReplacerOpFunctor<GPUDevice, int32>;
 REGISTER_KERNEL_BUILDER(Name("IndexReplacer").Device(DEVICE_GPU), IndexReplacerOp<GPUDevice>);
 #endif  
 

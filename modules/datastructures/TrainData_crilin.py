@@ -2,7 +2,7 @@
 
 
 
-from DeepJetCore.TrainData import TrainData, fileTimeOut
+from DeepJetCore import TrainData
 from DeepJetCore import SimpleArray
 import numpy as np
 import uproot3 as uproot
@@ -34,7 +34,7 @@ class TrainData_crilin(TrainData_NanoML):
 
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename="converted_photons"):
         
-        fileTimeOut(filename, 10)#wait 10 seconds for file in case there are hiccups
+        #fileTimeOut(filename, 10)#wait 10 seconds for file in case there are hiccups
         tree = uproot.open(filename)[treename]
         
         '''

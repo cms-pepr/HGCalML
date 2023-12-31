@@ -15,7 +15,7 @@ from Layers import DictModel
 from plotting_tools import publish, shuffle_truth_colors
 from DebugLayers import _DebugPlotBase
 from DeepJetCore import TrainData
-from DeepJetCore.dataPipeline import TrainDataGenerator
+from djcdata.dataPipeline import TrainDataGenerator
 
 
 

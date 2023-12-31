@@ -161,6 +161,8 @@ struct BinByCoordinatesOpFunctor<GPUDevice, dummy> { //just because access needs
                     n_total_bins,
                     calc_n_per_bin);
 
+            cudaDeviceSynchronize();
+
     }
 };
 
