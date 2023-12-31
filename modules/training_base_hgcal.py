@@ -264,13 +264,18 @@ class training_base(object):
                     #call on one batch to fully build it
                     print('Model being called once for device '+str(device))
                     model(self.train_data.getExampleFeatureBatch())
-            
-            if print_models:
-                print(model.summary())
-        
+                    
         for i, m in enumerate(self.mgpu_keras_models):
             run_compile(m, f'/GPU:{i}')
+
+        from DebugLayers import switch_off_debug_plots
+        #run debug layers etc just for one model
+        for i, m in enumerate(self.mgpu_keras_models):
+            if i:
+                switch_off_debug_plots(m)
         
+        if print_models:
+            print(self.mgpu_keras_models[0].summary())
         self.compiled=True
 
         
@@ -472,15 +477,19 @@ class training_base(object):
                 callbacks.on_train_batch_end(single_counter, logs)
 
                 single_counter += 1
+            try:
+                callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here
+            except Exception as e:
+                print(e)
+                print('will continue training anyway')
             
-            callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here
             self.trainedepoches += 1
             traingen.shuffleFileList()
             #
     
         self.saveModel("KERAS_model.h5")
 
-        return self.keras_model, self.callbacks.history
+        return self.keras_model, callbacks.history
     
     
     
