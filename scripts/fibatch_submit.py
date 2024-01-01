@@ -24,7 +24,7 @@ if '-h' in sys.argv or '--help' in sys.argv:
     sys.exit()
 
 # can be used by others on FI
-DJCLOC='/mnt/ceph/users/jkieseler/containers/deepjetcore3_latest.sif'
+DJCLOC='/mnt/ceph/users/jkieseler/containers/deepjetcore4_latest.sif'
 UEXT = str(uuid.uuid4())
 
 WORKDIR=None
@@ -34,11 +34,13 @@ TRIGGERED=False
 TRIGGERED_NAME=False
 TRIGGERED_CONSTRAINT=False
 TRIGGERED_TIME=False
+TRIGGERED_GPU=False
 NAME="batchscript"
 # constraint="a100"
 CONSTRAINT="a100-80gb"
-CONSTRAINT="a100"
+#CONSTRAINT="a100"
 TIME="7-0"
+GPUS="4"
 
 for clo in sys.argv:
 
@@ -48,6 +50,14 @@ for clo in sys.argv:
     if TRIGGERED_NAME:
         NAME = clo
         TRIGGERED_NAME=False
+        continue
+
+    if clo == '---g':
+        TRIGGERED_GPU = True
+        continue
+    if TRIGGERED_GPU:
+        GPUS = clo
+        TRIGGERED_GPU=False
         continue
 
     if clo == '---d':
@@ -99,7 +109,7 @@ CWD = os.getcwd()
 
 bscript_temp=f'''#!/bin/bash
 
-#SBATCH  -p gpu --gres=gpu:1  --mincpus 4 -t 7-0 --constraint={CONSTRAINT}
+#SBATCH  -p gpu --gres=gpu:{GPUS}  --mincpus 4 -t 7-0 --constraint={CONSTRAINT}
 
 nvidia-smi
 singularity  run  -B /mnt --nv {DJCLOC} /bin/bash runscript_{UEXT}.sh

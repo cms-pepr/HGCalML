@@ -281,17 +281,13 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=1000):
 
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
 
-    if config['General']['oc_implementation'] == 'hinge':
-        loss_implementation = 'hinge'
-    else:
-        loss_implementation = ''
 
     pred_beta = LLExtendedObjectCondensation(scale=1.,
                                              use_energy_weights=True,
                                              record_metrics=True,
                                              print_loss=False,
                                              name="ExtendedOCLoss",
-                                             implementation = loss_implementation,
+                                             implementation = config['General']['oc_implementation'],
                                              **LOSS_OPTIONS)(
         [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
          pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,

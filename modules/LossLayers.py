@@ -2155,7 +2155,7 @@ class LLFullObjectCondensation(LossLayerBase):
 
         from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_OC_per_sample
         from object_condensation import Hinge_OC_per_sample_damped, Hinge_OC_per_sample, Hinge_Manhatten_OC_per_sample
-        from object_condensation import Hinge_OC_per_sample_learnable_qmin, Hinge_OC_per_sample_learnable_qmin_betascale_position
+        from object_condensation import Dead_Zone_Hinge_OC_per_sample,Hinge_OC_per_sample_learnable_qmin, Hinge_OC_per_sample_learnable_qmin_betascale_position
         impl = Basic_OC_per_sample
         if implementation == 'pushpull':
             impl = PushPull_OC_per_sample
@@ -2163,6 +2163,8 @@ class LLFullObjectCondensation(LossLayerBase):
             impl = PreCond_OC_per_sample
         if implementation == 'hinge':
             impl = Hinge_OC_per_sample
+        if implementation == 'hinge_deadzone':
+            impl = Dead_Zone_Hinge_OC_per_sample
         if implementation == 'hinge_full_grad':
             # same as`hinge`
             impl = Hinge_OC_per_sample

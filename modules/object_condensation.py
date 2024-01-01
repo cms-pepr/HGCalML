@@ -379,6 +379,16 @@ class Hinge_OC_per_sample(Hinge_OC_per_sample_damped):
         super(Hinge_OC_per_sample, self).__init__(**kwargs)
         self.condensation_damping = 0.0 # Don't stop any gradients
 
+
+        
+class Dead_Zone_Hinge_OC_per_sample(Hinge_OC_per_sample):
+    '''
+    This is the classic repulsive hinge loss plus a dead zone
+    '''
+    def att_func(self,dsq_k_m):
+        return 1. - tf.math.exp(-10. * dsq_k_m)
+    
+
         
 class Hinge_OC_per_sample_learnable_qmin(Hinge_OC_per_sample):
     '''
