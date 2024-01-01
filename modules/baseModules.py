@@ -39,6 +39,12 @@ class LayerWithMetrics(tf.keras.layers.Layer):
         self.add_metric(self.prompt_metrics[name](x))
 
 
+
+def switch_off_metrics_layers(m):
+    for l in m.layers:
+        if isinstance(l, LayerWithMetrics):
+            l.record_metrics=False
+
 #class LayerWithMetrics(tf.keras.layers.Layer):
 #    def __init__(self, _promptnames=None, **kwargs):
 #        super(LayerWithMetrics, self).__init__(**kwargs)
