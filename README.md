@@ -2,8 +2,8 @@ HGCalML
 ===============================================================================
 
 Requirements
-  * DeepJetCore 3.X (``https://github.com/DL4Jets/DeepJetCore``)
-  * DeepJetCore 3.X container (or latest version in general)
+  * DeepJetCore 4.X (``https://github.com/DL4Jets/DeepJetCore``)
+  * DeepJetCore 4.X container (or latest version in general)
   
 For CERN (or any machine with cvmfs mounted), a script to start the latest container use this script:
 ```
@@ -23,7 +23,7 @@ sing=`which singularity`
 unset PATH
 cd
 
-$sing run -B /eos -B /afs $gpuopt /cvmfs/unpacked.cern.ch/registry.hub.docker.com/cernml4reco/deepjetcore3:latest
+$sing run -B /eos -B /afs $gpuopt /cvmfs/unpacked.cern.ch/registry.hub.docker.com/cernml4reco/deepjetcore4:latest
 ```
 
 The package follows the structure and logic of all DeepJetCore subpackages (also the example in DeepJetCore). So as a fresh starting point, it can be a good idea to follow the DeepJetCore example first.
