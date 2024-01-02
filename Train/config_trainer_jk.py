@@ -8,13 +8,13 @@ import yaml
 import shutil
 from argparse import ArgumentParser
 
-import wandb
-from wandb_callback import wandbCallback
 import tensorflow as tf
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 from DeepJetCore.DJCLayers import StopGradient, ScalarMultiply
+
+from DeepJetCore.wandb_interface import wandb_wrapper as wandb
 
 import training_base_hgcal
 from Layers import ScaledGooeyBatchNorm2, DummyLayer
@@ -103,6 +103,8 @@ if not initargs.wandb:
     )
     wandb.save(sys.argv[0]) # Save python file
     wandb.save(initargs.configFile) # Save config file
+else:
+    wandb.active=False
 
 
 ###############################################################################
@@ -213,7 +215,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=1000):
                 name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
         x = DistanceWeightedMessagePassing(
-                        [32,32,32,32],
+                        [32,32],
                          activation='elu')([x,gnnidx,gndist])
 
 
@@ -256,8 +258,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=1000):
 
     
     # afew of those again
-    x = MessagePassing([32,32])([x, lw_nidx])
-    x = MessagePassing([32,32])([x, flat_nidx])
+    x = MessagePassing([16,16])([x, lw_nidx])
+    x = MessagePassing([16,16])([x, flat_nidx])
     x = Dense(64,
               name=f"dense_final_{1}",
               activation=DENSE_ACTIVATION,
@@ -360,8 +362,6 @@ cb += [
         )
     ]
 
-cb += [wandbCallback()]
-
 ###############################################################################
 ### Actual Training ###########################################################
 ###############################################################################
@@ -390,5 +390,6 @@ for i in range(N_TRAINING_STAGES):
         nepochs=epochs,
         batchsize=batch_size,
         add_progbar=True,
-        additional_callbacks=cb
+        additional_callbacks=cb,
+        collect_gradients = 1
         )

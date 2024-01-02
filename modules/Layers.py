@@ -19,9 +19,6 @@ global_layers_list['LeakyReLU'] = LeakyReLU
 
 #base modules
 
-from baseModules import PromptMetric
-global_layers_list['PromptMetric'] = PromptMetric
-
 from baseModules import LayerWithMetrics
 global_layers_list['LayerWithMetrics'] = LayerWithMetrics
 

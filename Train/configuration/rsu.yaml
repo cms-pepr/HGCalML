@@ -1,5 +1,5 @@
 General:
-  oc_implementation: 'hinge_deadzone'
+  oc_implementation: 'hinge'
   gravnet:
     - n: 64
     - n: 64
@@ -17,8 +17,8 @@ BatchNormOptions:
 
 LossOptions:
   energy_loss_weight: .00
-  q_min: 5.1
-  use_average_cc_pos: 0.99
+  q_min: 2.1
+  use_average_cc_pos: 0.99999
   classification_loss_weight: 0.0
   too_much_beta_scale: 0.0
   position_loss_weight: 0.0
@@ -28,17 +28,17 @@ LossOptions:
 
 Training:
   - stage_1:
-    batch_size: 600000
-    learning_rate: 0.003
+    batch_size: 120000
+    learning_rate: 0.0001
     epochs: 4
 
   - stage_2:
-    batch_size: 600000
+    batch_size: 400000
     learning_rate: 0.0001
     epochs: 10
 
   - stage_3:
-    batch_size: 600000
+    batch_size: 400000
     learning_rate: 0.00003
     epochs: 20
 

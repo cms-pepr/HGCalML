@@ -18,7 +18,7 @@ from DeepJetCore.training.training_base import training_base as training_base_dj
 from DeepJetCore.modeltools import load_model
 import time
 from DebugLayers import switch_off_debug_plots
-from baseModules import switch_off_metrics_layers
+from DeepJetCore.DJCLayers import LayerWithMetrics
 from tqdm import tqdm
 
 
@@ -90,6 +90,7 @@ class training_base(object):
         self.callbacks=None
         self.custom_optimizer=False
         self.copied_script=""
+        self.gradients=[]
         
         self.inputData = os.path.abspath(args.inputDataCollection) \
 												 if ',' not in args.inputDataCollection else \
@@ -229,7 +230,7 @@ class training_base(object):
             if i:
                 switch_off_debug_plots(m)
                 # TBI: this does not work yet, needs wandb update
-                # switch_off_metrics_layers(m)
+                LayerWithMetrics.switch_off_metrics_layers(m)
 
         #run record_metrics only for one model
 
@@ -319,7 +320,8 @@ class training_base(object):
                 loss = tf.add_n(model.losses)
             return tape.gradient(loss, model.trainable_variables)
         
-    def average_gradients(self, all_gradients):
+    def average_gradients(self):
+        all_gradients = self.gradients
         # Average the gradients across GPUs
         if len(all_gradients) < 2:
             return all_gradients[0]
@@ -329,24 +331,28 @@ class training_base(object):
             avg_grads.append(tf.reduce_mean(grads, axis=0))
         return avg_grads
 
-    def trainstep_parallel(self, split_data):
+
+    def trainstep_parallel(self, split_data, collect_gradients=1):
 
         if self.ngpus == 1: #simple
-            grads = self.compute_gradients(self.mgpu_keras_models[0], split_data[0], 0)
-            self.optimizer.apply_gradients(zip(grads, self.mgpu_keras_models[0].trainable_variables))
-            return
+            self.gradients += [self.compute_gradients(self.mgpu_keras_models[0], split_data[0], 0)]
+            
+        else:
+            batch_gradients = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.ngpus) as executor:
+                futures = [executor.submit(self.compute_gradients, self.mgpu_keras_models[i], split_data[i], i) for i in range(self.ngpus)]
+                for future in concurrent.futures.as_completed(futures):
+                    gradients = future.result()
+                    batch_gradients.append(gradients)
+    
+            self.gradients += batch_gradients
 
-        batch_gradients = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.ngpus) as executor:
-            futures = [executor.submit(self.compute_gradients, self.mgpu_keras_models[i], split_data[i], i) for i in range(self.ngpus)]
-            for future in concurrent.futures.as_completed(futures):
-                gradients = future.result()
-                batch_gradients.append(gradients)
-
-        # Average gradients across GPUs
-        avg_grads = self.average_gradients(batch_gradients)
-        self.optimizer.apply_gradients(zip(avg_grads, self.mgpu_keras_models[0].trainable_variables))
-        self.syncModelWeights() # weights synced
+        # Average gradients across GPUs and collection steps
+        if collect_gradients * self.ngpus <= len(self.gradients):
+            avg_grads = self.average_gradients()
+            self.optimizer.apply_gradients(zip(avg_grads, self.mgpu_keras_models[0].trainable_variables))
+            self.syncModelWeights() # weights synced
+            self.gradients = []
 
 
         
@@ -371,6 +377,7 @@ class training_base(object):
                    plot_batch_loss = False,
                    add_progbar = False,
                    verbose = 0,
+                   collect_gradients = 1, #average N batches before update 
                    **trainargs):
         
         for m in self.mgpu_keras_models:
@@ -430,6 +437,8 @@ class training_base(object):
         valgen = self.val_data.invokeGenerator(fake_truth = use_fake_truth)
 
         while(self.trainedepoches < nepochs):
+
+            self.gradients = [] #reset in case of accumulated gradients
             
             callbacks.on_epoch_begin(self.trainedepoches)
             #this can change from epoch to epoch
@@ -463,7 +472,7 @@ class training_base(object):
 
                 callbacks.on_train_batch_begin(single_counter)
 
-                self.trainstep_parallel(thisbatch)
+                self.trainstep_parallel(thisbatch, collect_gradients)
                 
                 logs = { m.name: m.result() for m in self.keras_model.metrics } #only for main model
 

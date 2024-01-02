@@ -3349,7 +3349,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                (input_shapes[0][0], self.n_neighbours)
 
 
-
+    
     def compute_neighbours_and_distancesq(self, coordinates, row_splits, training):
 
         idx,dist = BinnedSelectKnn(self.n_neighbours+1, coordinates,  row_splits,

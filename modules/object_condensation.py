@@ -72,6 +72,8 @@ class Basic_OC_per_sample(object):
                  spect_supp=None, #None means same as noise
                  global_weight=False
                  ):
+
+        self.rep_range = -1.
         
         self.q_min = q_min
         self.s_b = s_b
@@ -161,6 +163,7 @@ class Basic_OC_per_sample(object):
     def att_func(self,dsq_k_m):
         return tf.math.log(tf.math.exp(1.)*dsq_k_m/2. + 1.)
     
+    #@tf.function
     def V_att_k(self):
         '''
         '''
@@ -197,22 +200,24 @@ class Basic_OC_per_sample(object):
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
         return dsq
         
+    #@tf.function
     def V_rep_k(self):
         
         
         K = tf.reduce_sum(tf.ones_like(self.q_k))
         N_notk = tf.reduce_sum(self.Mnot, axis=1)
-        #future remark: if this gets too large, one could use a kNN here
+        #future remark: if this gets too large, one could use a kNN/radiusNN here
         
         dsq = self.calc_dsq_rep()
         
         # nogradbeta = tf.stop_gradient(self.beta_k_m)
         #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
         sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
-        
         dsq = tf.math.divide_no_nan(dsq, sigma + 1e-4) #K x V x 1
 
         V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
+        if self.rep_range > 0:
+            N_notk = tf.reduce_sum(tf.where(dsq < self.rep_range**2 , 1., tf.zeros_like(dsq)) * self.Mnot, axis=1)
 
         V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
         if self.global_weight:
@@ -223,7 +228,7 @@ class Basic_OC_per_sample(object):
 
         return V_rep
 
-
+    #@tf.function
     def Pll_k(self):
         
         tanhsqbeta = self.beta_v**2 #softer here
@@ -241,6 +246,7 @@ class Basic_OC_per_sample(object):
                                              pw_k_sum  )#K x P
         return pll_k
     
+    #@tf.function
     def Beta_pen_k(self):
         #use continuous max approximation through LSE
         eps = 1e-3
@@ -249,7 +255,8 @@ class Basic_OC_per_sample(object):
         beta_pen += 1. - tf.clip_by_value(tf.reduce_sum(self.beta_k_m, axis=1), 0., 1)
         beta_pen = tf.debugging.check_numerics(beta_pen, "OC: beta pen")
         return beta_pen
-        
+    
+    #@tf.function
     def Noise_pen(self):
         
         nsupp_v = self.beta_v * self.isn_v
@@ -272,7 +279,7 @@ class Basic_OC_per_sample(object):
         return ow_k
     
     
-        
+    #@tf.function   
     def add_to_terms(self,
                      V_att, 
                      V_rep,
@@ -308,8 +315,11 @@ class Basic_OC_per_sample(object):
 
 
     def calc_metrics(self, energies):
-        return self._calc_containment(energies), self._calc_contamination(energies)
+        cont,rel_metrics_radius = self._calc_containment(energies)
+        conta = self._calc_contamination(energies, rel_metrics_radius)
+        return cont, conta
     # metrics functions that can be called at the end, first calc containment, then contamination
+    #@tf.function
     def _calc_containment(self, energies):
         '''
         energies as  V x 1
@@ -321,27 +331,28 @@ class Basic_OC_per_sample(object):
         d_x_k = tf.reduce_sum(d_x_k, axis=2) + 10000. * tf.eye(d_x_k.shape[0],d_x_k.shape[1])  # K x K , add large identity
         d_m_x_k = tf.reduce_min(d_x_k, axis=1, keepdims=True)# K x 1
         d_m_x_k = tf.sqrt(d_m_x_k)/self.d_k 
-        self.rel_metrics_radius = tf.reduce_mean(d_m_x_k) / 2. # ()
+        rel_metrics_radius = tf.reduce_mean(d_m_x_k) / 2. # ()
 
         ##now metrics
         dxk = tf.reduce_sum( (tf.expand_dims(x_k_alpha, axis=1) - self.x_k_m)**2 , axis= -1) #K x V'
         
-        in_radius = self.rel_metrics_radius > tf.sqrt(dxk)/self.d_k #K x V'
+        in_radius = rel_metrics_radius > tf.sqrt(dxk)/self.d_k #K x V'
         in_radius = in_radius[...,tf.newaxis]
 
         energies_k_m = SelectWithDefault(self.Msel, energies, 0.) #K x V' x 1
-        self.energies_k  = tf.reduce_sum(energies_k_m, axis=1) #K x 1
+        energies_k  = tf.reduce_sum(energies_k_m, axis=1) #K x 1
         
         in_radius_energy = tf.reduce_sum(tf.where( in_radius, energies_k_m, 0. ), axis=1) # K x 1
-        in_radius_energy /= self.energies_k
-        return tf.reduce_mean(in_radius_energy)
+        in_radius_energy /= energies_k
+        return tf.reduce_mean(in_radius_energy), rel_metrics_radius
 
-    def _calc_contamination(self, energies):
+    #@tf.function
+    def _calc_contamination(self, energies, rel_metrics_radius):
 
         x_k_alpha = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) 
         dsq = tf.expand_dims(x_k_alpha, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1)  #K x V 
-        in_radius = self.rel_metrics_radius > tf.sqrt(dsq) / self.d_k# K x V
+        in_radius = rel_metrics_radius > tf.sqrt(dsq) / self.d_k# K x V
         
         energies_k_v = tf.expand_dims(energies, axis=0) # K x V x 1
         energies_ir_all_k_v = tf.where(in_radius[...,tf.newaxis], energies_k_v , 0.)
@@ -378,6 +389,7 @@ class Hinge_OC_per_sample(Hinge_OC_per_sample_damped):
     def __init__(self, **kwargs):
         super(Hinge_OC_per_sample, self).__init__(**kwargs)
         self.condensation_damping = 0.0 # Don't stop any gradients
+        #self.rep_range = 2.
 
 
         
@@ -385,6 +397,11 @@ class Dead_Zone_Hinge_OC_per_sample(Hinge_OC_per_sample):
     '''
     This is the classic repulsive hinge loss plus a dead zone
     '''
+    def __init__(self, **kwargs):
+        super(Dead_Zone_Hinge_OC_per_sample, self).__init__(**kwargs)
+        self.condensation_damping = 0.0 # Don't stop any gradients
+        self.rep_range = 2.
+
     def att_func(self,dsq_k_m):
         return 1. - tf.math.exp(-10. * dsq_k_m)
     
@@ -630,7 +647,7 @@ class OC_loss(object):
                  ):
         self.loss_impl=loss_impl(**kwargs)
 
-
+    
     def __call__(self, beta,
                          x,
                          d,
