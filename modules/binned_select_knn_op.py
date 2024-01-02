@@ -4,6 +4,9 @@ from tensorflow.python.framework import ops
 import globals as gl
 from oc_helper_ops import SelectWithDefault
 
+from bin_by_coordinates_op import BinByCoordinates
+from index_replacer_op import IndexReplacer
+
 _binned_select_knn = tf.load_op_library('binned_select_knn.so')
 
 def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_bins, bin_width , tf_compatible=False,
@@ -29,8 +32,8 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_b
                                               use_direction = use_direction
                                               )
 
-
-def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, max_bin_dims=3, tf_compatible=False, max_radius=None, name=""):
+@tf.function
+def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, max_bin_dims : int =3 , tf_compatible=False, max_radius=None, name=""):
     '''
     max_radius is a dummy for now to make it a drop-in replacement
     
@@ -43,21 +46,20 @@ def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, 
     - any other number: can be neighbour and have neighbours
     
     '''
-    from bin_by_coordinates_op import BinByCoordinates
-    from index_replacer_op import IndexReplacer
     
     # the following number of bins seems a good~ish estimate for good performance
     # for homogenous point distributions but should be subject to more tests
-    elems_per_rs = 1
-    if row_splits.shape[0] is not None:
-        elems_per_rs = row_splits[1]
-        #do checks
-        tf.assert_equal(row_splits[-1],coords.shape[0])
+    elems_per_rs = tf.reduce_max(row_splits) / tf.shape(row_splits)[0]
+    elems_per_rs = tf.cast(elems_per_rs, dtype='int32')+1
+    #if row_splits.shape[0] is not None:
+    #    elems_per_rs = row_splits[1]
+    #    #do checks
+    #    tf.assert_equal(row_splits[-1],coords.shape[0])
         
-    max_bin_dims = min([max_bin_dims, coords.shape[1]])
+    max_bin_dims = tf.reduce_min([max_bin_dims, tf.shape(coords)[1]])
     
     if n_bins is None:
-        n_bins = tf.math.pow(tf.cast(elems_per_rs,dtype='float32')/(K/32),1/max_bin_dims)
+        n_bins = tf.math.pow(tf.cast(elems_per_rs,dtype='float32')/(K/32), 1./tf.cast(max_bin_dims,dtype='float32' ))
         n_bins = tf.cast(n_bins,dtype='int32')
         n_bins = tf.where(n_bins<5,5,n_bins)
         n_bins = tf.where(n_bins>30,30,n_bins)#just a guess
@@ -86,12 +88,12 @@ def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, 
     idx,dist = _BinnedSelectKnn(K, scoords,  sbinning, sdbinning, bin_boundaries=bin_boundaries, 
                                 n_bins=nb, bin_width=bin_width, tf_compatible=tf_compatible, direction = direction )
     
-    if row_splits.shape[0] is None:
-        return idx, dist
+    #if row_splits.shape[0] is None:
+    #    return idx, dist
     #sort back 
     idx = IndexReplacer(idx,sorting)
-    dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, dist.shape)
-    idx = tf.scatter_nd(sorting[...,tf.newaxis], idx, idx.shape)
+    dist = tf.scatter_nd(sorting[...,tf.newaxis], dist, tf.shape(dist))
+    idx = tf.scatter_nd(sorting[...,tf.newaxis], idx, tf.shape(idx))
     dist = tf.where(idx<0, 0., dist)#safety
     
     if not gl.knn_ops_use_tf_gradients:

@@ -33,6 +33,16 @@ from baseModules import LayerWithMetrics
 #        outshape *= 2
 #    return tf.reshape(out, [-1, outshape]),midx
 
+def layernorm(x, return_norm=False):
+    #x = x - tf.reduce_mean(x,axis=-1, keepdims=True)
+    norm = tf.reduce_sum(x**2, axis=-1,keepdims=True)
+    norm = tf.sqrt(norm+1e-6)
+    if return_norm:
+        x = tf.concat([x / norm * tf.sqrt(tf.cast(x.shape[-1],'float32')), norm], axis=-1)
+    else:
+        x = x / norm * tf.sqrt(tf.cast(x.shape[-1],'float32'))
+    return x
+
 
 class RandomSampling(tf.keras.layers.Layer):
     """
@@ -3295,7 +3305,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         super(RaggedGravNet, self).build(input_shape)
 
-
+    
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
@@ -3310,14 +3320,12 @@ class RaggedGravNet(tf.keras.layers.Layer):
         features = tf.concat(allfeat + [x], axis=-1)
         return self.output_feature_transform(features)
 
+    
     def priv_call(self, inputs, training=None):
         x = inputs[0]
         row_splits = inputs[1]
         tf.assert_equal(x.shape.ndims, 2)
         tf.assert_equal(row_splits.shape.ndims, 1)
-        #print(row_splits, row_splits[-1], tf.shape(x)[0])
-        if row_splits.shape[0] is not None:
-            tf.assert_equal(row_splits[-1], tf.shape(x)[0])
 
         x_coord = x
         if len(inputs) == 3:
@@ -3409,6 +3417,114 @@ class SelfAttention(tf.keras.layers.Layer):
     def call(self, input):
         att = 2.* self.att_dense(input)
         return input * att
+
+class TranslationInvariantMP(tf.keras.layers.Layer):
+    def __init__(self,
+                 n_feature_transformation,
+                 activation='elu',
+                 mean=True,
+                 layer_norm = False,
+                 sum_weight=False,
+                 **kwargs):
+        super(TranslationInvariantMP, self).__init__(**kwargs)
+
+        self.n_feature_transformation = n_feature_transformation
+        self.activation = activation
+        self.mean = mean
+        self.layer_norm = layer_norm
+        self.sum_weight = sum_weight
+        self.feature_tranformation_dense = []
+        for i in range(len(self.n_feature_transformation)):
+            with tf.name_scope(self.name + "/" + str(i)):
+                self.feature_tranformation_dense.append(
+                    tf.keras.layers.Dense(n_feature_transformation[i], activation=activation, use_bias = i>0))
+
+
+    def build(self, input_shapes):
+        input_shape = input_shapes[0]
+
+        with tf.name_scope(self.name + "/" + str(0)):
+            self.feature_tranformation_dense[0].build(input_shape)
+
+        for i in range(1, len(self.feature_tranformation_dense)):
+            with tf.name_scope(self.name + "/" + str(i)):
+                self.feature_tranformation_dense[i].build((input_shape[0], self.n_feature_transformation[i - 1]))
+
+        super(TranslationInvariantMP, self).build(input_shapes)
+
+
+    def compute_output_shape(self, inputs_shapes):
+        fshape = inputs_shapes[0][-1]
+        return (None, sum(self.n_feature_transformation))
+
+
+    def get_config(self):
+        config = {'n_feature_transformation': self.n_feature_transformation,
+                  'activation': self.activation,
+                  'mean': self.mean,
+                  'layer_norm': self.layer_norm,
+                  'sum_weight': self.sum_weight
+        }
+        base_config = super(TranslationInvariantMP, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    @tf.function
+    def create_output_features(self, x, neighbour_indices, distancesq):
+        allfeat = []
+        features = x
+        K = tf.cast(tf.shape(neighbour_indices)[1], 'float32')
+
+        for i in range(len(self.n_feature_transformation)):
+            
+            if self.layer_norm:
+                features = layernorm(features)
+            prev_feat = features
+
+            if self.mean:
+                #add a 1 to the features for translation invariance later
+                if i==0:
+                    ones = tf.ones_like(features[:,0:1])
+                    features = tf.concat([ones, features], axis=-1)
+
+                # Standard Message Passing
+                features = AccumulateKnn(
+                    10.*distancesq,
+                    features,
+                    neighbour_indices,
+                    mean_and_max=False)[0] * K
+    
+                # this is only necessary for the first exchange, afterwards the features are already translation independent
+                if i==0:
+                    minus_xi = features[:,0:1]
+                    features = features[:,1:]
+                    features -= prev_feat * minus_xi
+
+                if self.sum_weight:
+                    wsum = tf.math.divide_no_nan(K, tf.reduce_sum( tf.exp(-10.*distancesq), axis=1, keepdims=True) + 1e-2)#large eps
+                    features *= wsum
+            else: #max
+                nfeat = SelectWithDefault(neighbour_indices, features,-2.)
+                features = tf.reduce_max(tf.exp(-10.*distancesq) * nfeat - features[:,tf.newaxis,:], axis=1) * K
+
+            t = self.feature_tranformation_dense[i]
+            features = t(features / K) #divide by K here again
+            allfeat.append(features)
+
+        features = tf.concat(allfeat, axis=-1)
+        features = tf.reshape(features, [-1, sum(self.n_feature_transformation)])
+        return features
+
+
+    def call(self, inputs):
+        if len(inputs) == 3:
+            x, neighbor_indices, distancesq = inputs
+        elif len(inputs) == 2:
+            x, neighbor_indices = inputs
+            distancesq = tf.zeros_like(neighbor_indices, dtype='float32')
+        else:
+            raise ValueError(self.name+" was passed wrong inputs")
+
+        return self.create_output_features(x, neighbor_indices, distancesq)
 
 
 class MultiAttentionGravNetAdd(tf.keras.layers.Layer):
@@ -3695,6 +3811,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         base_config = super(DistanceWeightedMessagePassing, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @tf.function
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x

@@ -23,7 +23,7 @@ from Layers import RaggedGravNet
 from Layers import PlotCoordinates
 from Layers import DistanceWeightedMessagePassing, AccumulateNeighbours
 from Layers import LLFillSpace
-from Layers import LLExtendedObjectCondensation
+from Layers import LLExtendedObjectCondensation, TranslationInvariantMP
 
 from tensorflow.keras import Model
 
@@ -112,7 +112,7 @@ else:
 ###############################################################################
 
 
-def config_model(Inputs, td, debug_outdir=None, plot_debug_every=1000):
+def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
     """
     Function that defines the model to train
     """
@@ -170,9 +170,12 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=1000):
     flat_nidx, flat_dist = KNN(32)([flat_coords, rs])
 
     # a few simple MP in different directions
-    for _ in range(2):
-        x = MessagePassing([16,16])([x, lw_nidx])
-        x = MessagePassing([16,16])([x, flat_nidx])
+    
+    for _ in range(1):
+        xt = TranslationInvariantMP([16,16])([x, lw_nidx])
+        x = Concatenate()([xt,x])
+        xt = TranslationInvariantMP([16,16])([x, flat_nidx])
+        x = Concatenate()([x,xt])
 
     c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
     x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x) 
@@ -214,10 +217,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=1000):
                 record_metrics=False,
                 name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
-        x = DistanceWeightedMessagePassing(
+        x = Concatenate()([x, TranslationInvariantMP(
                         [32,32],
                          activation='elu')([x,gnnidx,gndist])
-
+                         ])
 
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
@@ -228,8 +231,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=1000):
         x = DummyLayer()([x,gncoords,gndist])#just make sure any layer above is not optimised away
 
         # afew of those again
-        x = MessagePassing([16,16])([x, lw_nidx])
-        x = MessagePassing([16,16])([x, flat_nidx])
+        xt = TranslationInvariantMP([16,16])([x, lw_nidx])
+        x = Concatenate()([x,xt])
+        xt = TranslationInvariantMP([16,16])([x, flat_nidx])
+        x = Concatenate()([x,xt])
 
         x = Concatenate()([x, x_pre])
         x = Dense(2*d_shape,
@@ -258,8 +263,11 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=1000):
 
     
     # afew of those again
-    x = MessagePassing([16,16])([x, lw_nidx])
-    x = MessagePassing([16,16])([x, flat_nidx])
+    xt = TranslationInvariantMP([32,16])([x, lw_nidx])
+    x = Concatenate()([x,xt])
+    xt = TranslationInvariantMP([32,16])([x, flat_nidx])
+    x = Concatenate()([x,xt])
+    
     x = Dense(64,
               name=f"dense_final_{1}",
               activation=DENSE_ACTIVATION,
@@ -358,7 +366,7 @@ cb += [
     plotClusterSummary(
         outputfile=train.outputDir + "/clustering/",
         samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=1000
+        after_n_batches=500
         )
     ]
 

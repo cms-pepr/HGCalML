@@ -227,6 +227,9 @@ global_layers_list['SoftPixelCNN']=SoftPixelCNN
 from GravNetLayersRagged import RaggedGravNet
 global_layers_list['RaggedGravNet']=RaggedGravNet
 
+from GravNetLayersRagged import TranslationInvariantMP
+global_layers_list['TranslationInvariantMP']=TranslationInvariantMP
+
 from GravNetLayersRagged import SelfAttention
 global_layers_list['SelfAttention']=SelfAttention
 
