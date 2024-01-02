@@ -3305,7 +3305,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         super(RaggedGravNet, self).build(input_shape)
 
-    
+    @tf.function
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
@@ -3320,19 +3320,11 @@ class RaggedGravNet(tf.keras.layers.Layer):
         features = tf.concat(allfeat + [x], axis=-1)
         return self.output_feature_transform(features)
 
-    
-    def priv_call(self, inputs, training=None):
-        x = inputs[0]
-        row_splits = inputs[1]
-        tf.assert_equal(x.shape.ndims, 2)
-        tf.assert_equal(row_splits.shape.ndims, 1)
-
-        x_coord = x
-        if len(inputs) == 3:
-            x_coord = tf.concat([inputs[2], x], axis=-1)
-
+    @tf.function(reduce_retracing=True) #don't know why this is being retraced so often..
+    def priv_call(self, x, row_splits, x_coord):
+        
         coordinates = self.input_spatial_transform(x_coord)
-        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits, training)
+        neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits)
         neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours]) #for proper output shape for keras
         distancesq = tf.reshape(distancesq, [-1, self.n_neighbours])
 
@@ -3341,8 +3333,14 @@ class RaggedGravNet(tf.keras.layers.Layer):
             neighbour_indices, distancesq = sidx, sdist
         return outfeats, coordinates, neighbour_indices, distancesq
 
-    def call(self, inputs, training):
-        return self.priv_call(inputs, training)
+    def call(self, inputs, training=None):
+        x = inputs[0]
+        row_splits = inputs[1]
+        x_coord = x
+        if len(inputs) == 3:
+            x_coord = tf.concat([inputs[2], x], axis=-1)
+
+        return self.priv_call(x, row_splits, x_coord)
 
     def compute_output_shape(self, input_shapes):
         if self.return_self:
@@ -3356,9 +3354,8 @@ class RaggedGravNet(tf.keras.layers.Layer):
                (input_shapes[0][0], self.n_neighbours),\
                (input_shapes[0][0], self.n_neighbours)
 
-
-    
-    def compute_neighbours_and_distancesq(self, coordinates, row_splits, training):
+    @tf.function
+    def compute_neighbours_and_distancesq(self, coordinates, row_splits):
 
         idx,dist = BinnedSelectKnn(self.n_neighbours+1, coordinates,  row_splits,
                                  max_radius= -1.0, tf_compatible=False,
@@ -3468,53 +3465,54 @@ class TranslationInvariantMP(tf.keras.layers.Layer):
         base_config = super(TranslationInvariantMP, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-    @tf.function
+    def _trf_loop(self, features, neighbour_indices, distancesq, K, first):
+
+        if self.layer_norm:
+            features = layernorm(features)
+        prev_feat = features
+        if self.mean:
+            #add a 1 to the features for translation invariance later
+            if first:
+                ones = tf.ones_like(features[:,0:1])
+                features = tf.concat([ones, features], axis=-1)
+            # Standard Message Passing
+            features = AccumulateKnn(
+                10.*distancesq,
+                features,
+                neighbour_indices,
+                mean_and_max=False)[0] * K
+
+            # this is only necessary for the first exchange, afterwards the features are already translation independent
+            if first:
+                minus_xi = features[:,0:1]
+                features = features[:,1:]
+                features -= prev_feat * minus_xi
+            if self.sum_weight:
+                wsum = tf.math.divide_no_nan(K, tf.reduce_sum( tf.exp(-10.*distancesq), axis=1, keepdims=True) + 1e-2)#large eps
+                features *= wsum
+        else: #max
+            nfeat = SelectWithDefault(neighbour_indices, features,-2.)
+            features = tf.reduce_max(tf.exp(-10.*distancesq) * nfeat - features[:,tf.newaxis,:], axis=1) * K
+        
+        return features/K
+        
+    
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
         K = tf.cast(tf.shape(neighbour_indices)[1], 'float32')
 
         for i in range(len(self.n_feature_transformation)):
-            
-            if self.layer_norm:
-                features = layernorm(features)
-            prev_feat = features
-
-            if self.mean:
-                #add a 1 to the features for translation invariance later
-                if i==0:
-                    ones = tf.ones_like(features[:,0:1])
-                    features = tf.concat([ones, features], axis=-1)
-
-                # Standard Message Passing
-                features = AccumulateKnn(
-                    10.*distancesq,
-                    features,
-                    neighbour_indices,
-                    mean_and_max=False)[0] * K
-    
-                # this is only necessary for the first exchange, afterwards the features are already translation independent
-                if i==0:
-                    minus_xi = features[:,0:1]
-                    features = features[:,1:]
-                    features -= prev_feat * minus_xi
-
-                if self.sum_weight:
-                    wsum = tf.math.divide_no_nan(K, tf.reduce_sum( tf.exp(-10.*distancesq), axis=1, keepdims=True) + 1e-2)#large eps
-                    features *= wsum
-            else: #max
-                nfeat = SelectWithDefault(neighbour_indices, features,-2.)
-                features = tf.reduce_max(tf.exp(-10.*distancesq) * nfeat - features[:,tf.newaxis,:], axis=1) * K
-
+            features = self._trf_loop(features, neighbour_indices, distancesq, K, i==0)
             t = self.feature_tranformation_dense[i]
-            features = t(features / K) #divide by K here again
+            features = t(features) #divide by K here again
             allfeat.append(features)
 
         features = tf.concat(allfeat, axis=-1)
         features = tf.reshape(features, [-1, sum(self.n_feature_transformation)])
         return features
 
-
+    @tf.function
     def call(self, inputs):
         if len(inputs) == 3:
             x, neighbor_indices, distancesq = inputs

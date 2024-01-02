@@ -16,13 +16,13 @@ BatchNormOptions:
   learn: True
 
 LossOptions:
-  energy_loss_weight: .00
+  energy_loss_weight: 0.00000000001
   q_min: 2.1
   use_average_cc_pos: 0.99999
-  classification_loss_weight: 0.0
+  classification_loss_weight: 0.00000000001
   too_much_beta_scale: 0.0
-  position_loss_weight: 0.0
-  timing_loss_weight: 0.0
+  position_loss_weight: 0.00000000001
+  timing_loss_weight: 0.00000000001
   beta_loss_scale: 1.0
 
 

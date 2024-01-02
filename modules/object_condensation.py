@@ -313,7 +313,7 @@ class Basic_OC_per_sample(object):
         
         return V_att, V_rep, Noise_pen, B_pen, pll, high_B_pen
 
-
+    #@tf.function(reduce_retracing=True)
     def calc_metrics(self, energies):
         cont,rel_metrics_radius = self._calc_containment(energies)
         conta = self._calc_contamination(energies, rel_metrics_radius)

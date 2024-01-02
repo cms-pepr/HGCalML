@@ -45,16 +45,18 @@ from callbacks import NanSweeper, DebugPlotRunner
 
 
 ####################################################################################################
-### Load Configuration #############################################################################
+### Load Arguments and trainer #####################################################################
 ####################################################################################################
 
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
-parser.add_argument('--no-wandb', dest='wandb', help="Don't use wandb", action='store_true')
+parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
 parser.add_argument('--run_name', help="wandb run name", default='test')
 parser.add_argument('--wandb_project', help="wandb project name", default="Autumn_2023")
-initargs,_ = parser.parse_known_args()
-CONFIGFILE = initargs.configFile
+
+train = training_base_hgcal.HGCalTraining(parser=parser) #this will add all the other standard args -> train.args
+
+CONFIGFILE = train.args.configFile
 print(f"Using config File: \n{CONFIGFILE}")
 
 with open(CONFIGFILE, 'r') as f:
@@ -96,13 +98,13 @@ for i in range(len(config['Training'])):
         wandb_config[f"train_{i}+_max_visc"] = 0.999
         wandb_config[f"train_{i}+_fluidity_decay"] = 0.1
 
-if not initargs.wandb:
+if not train.args.no_wandb:
     wandb.init(
-        project=initargs.wandb_project,
+        project=train.args.wandb_project,
         config=wandb_config,
     )
     wandb.save(sys.argv[0]) # Save python file
-    wandb.save(initargs.configFile) # Save config file
+    wandb.save(train.args.configFile) # Save config file
 else:
     wandb.active=False
 
@@ -337,7 +339,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
 ###############################################################################
 
 
-train = training_base_hgcal.HGCalTraining(parser=parser)
 
 if not train.modelSet():
     train.setModel(
