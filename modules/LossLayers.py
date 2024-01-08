@@ -2526,7 +2526,7 @@ class LLFullObjectCondensation(LossLayerBase):
             #                               div_repulsion = self.div_repulsion,
             #                               dynamic_payload_scaling_onset=self.dynamic_payload_scaling_onset
             #                               )
-            att, rep, noise, min_b, payload, exceed_beta, containment, contamination = self.oc_loss_object(
+            [att, rep, noise, min_b, payload, exceed_beta], mdict = self.oc_loss_object(
                 beta=pred_beta,
                 x=pred_ccoords,
                 d=pred_distscale,
@@ -2537,11 +2537,8 @@ class LLFullObjectCondensation(LossLayerBase):
                 rs=rowsplits,
                 energies = rechit_energy)
 
-        
-        if containment is not None:
-            self.wandb_log({self.name+'_containment': containment, 
-                            self.name+'_contamination': contamination})
-
+        #log the OC metrics dict, if any
+        self.wandb_log(mdict)
 
         att *= self.potential_scaling
         rep *= self.potential_scaling * self.repulsion_scaling

@@ -223,7 +223,7 @@ class Basic_OC_per_sample(object):
         if self.global_weight:
             N_full = tf.reduce_sum(tf.ones_like(self.beta_v))
             V_rep = K * tf.math.divide_no_nan(V_rep, N_full+1e-3)  #K x 1
-        else:
+        elif True: #TEST DEBUG REMOVE AGAIN
             V_rep = tf.math.divide_no_nan(V_rep, N_notk+1e-3)  #K x 1
 
         return V_rep
@@ -315,9 +315,9 @@ class Basic_OC_per_sample(object):
 
     #@tf.function(reduce_retracing=True)
     def calc_metrics(self, energies):
-        cont,rel_metrics_radius = self._calc_containment(energies)
-        conta = self._calc_contamination(energies, rel_metrics_radius)
-        return cont, conta
+        d,rel_metrics_radius = self._calc_containment(energies)
+        d.update(self._calc_contamination(energies, rel_metrics_radius))
+        return d
     # metrics functions that can be called at the end, first calc containment, then contamination
     #@tf.function
     def _calc_containment(self, energies):
@@ -344,7 +344,12 @@ class Basic_OC_per_sample(object):
         
         in_radius_energy = tf.reduce_sum(tf.where( in_radius, energies_k_m, 0. ), axis=1) # K x 1
         in_radius_energy /= energies_k
-        return tf.reduce_mean(in_radius_energy), rel_metrics_radius
+
+        beta_contain = tf.reduce_sum(tf.where( in_radius, self.beta_k_m, 0. ), axis=1) # K x 1
+        beta_contain /= tf.reduce_sum(self.beta_k_m , axis=1) 
+
+        return {'containment': tf.reduce_mean(in_radius_energy),
+                'beta_containment': tf.reduce_mean(beta_contain)}, rel_metrics_radius
 
     #@tf.function
     def _calc_contamination(self, energies, rel_metrics_radius):
@@ -359,7 +364,11 @@ class Basic_OC_per_sample(object):
         energies_ir_not_k_v = tf.where(in_radius[...,tf.newaxis], self.Mnot * energies_k_v , 0.)
         
         rel_cont = tf.reduce_sum(energies_ir_not_k_v, axis=1)/tf.reduce_sum(energies_ir_all_k_v, axis=1)
-        return tf.reduce_mean(rel_cont)
+
+        beta_cont = tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.Mnot * self.beta_v[tf.newaxis,...], 0.), axis=1)
+        beta_cont /= tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.beta_v[tf.newaxis,...], 0.), axis=1)
+
+        return {'contamination': tf.reduce_mean(rel_cont), 'beta_contamination': tf.reduce_mean(beta_cont)}
     
 
 class Hinge_OC_per_sample_damped(Basic_OC_per_sample):
@@ -665,8 +674,7 @@ class OC_loss(object):
         if rs.shape[0] is None or rs.shape[0] < 2:
             return tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
         batch_size = rs.shape[0] - 1
-
-        contai,contam = tf.constant(0,dtype='float32'),tf.constant(0,dtype='float32')
+        mdict = {}
     
         for b in tf.range(batch_size):
             
@@ -683,16 +691,14 @@ class OC_loss(object):
             tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = self.loss_impl.add_to_terms(
                 tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
                 )
-            if energies is not None: #just last batch is fine
-                ca,cm = self.loss_impl.calc_metrics(energies[rs[b]:rs[b + 1]])
-                contai += ca / float(batch_size)
-                contam += cm / float(batch_size)
+
+            #just last row split is good enough for metric
+            if energies is not None and b == batch_size-1: 
+                mdict = self.loss_impl.calc_metrics(energies[rs[b]:rs[b + 1]])
 
         bs = tf.cast(batch_size, dtype='float32') + 1e-3
         out = [a/bs for a in [tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen]]
-        if energies is not None:
-            return out + [contai, contam]
-        return out, None, None
+        return out, mdict
 
 
 #################################################
