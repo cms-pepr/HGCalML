@@ -84,6 +84,9 @@ def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, 
     bin_boundaries = tf.concat([tf.zeros([1],dtype='int32'), nper],axis=0) #row_splits[0:1]
     # make it row split like
     bin_boundaries = tf.cumsum(bin_boundaries)
+
+    #sanity check
+    tf.assert_equal(tf.reduce_max(bin_boundaries), tf.reduce_max(row_splits))
     
     idx,dist = _BinnedSelectKnn(K, scoords,  sbinning, sdbinning, bin_boundaries=bin_boundaries, 
                                 n_bins=nb, bin_width=bin_width, tf_compatible=tf_compatible, direction = direction )
