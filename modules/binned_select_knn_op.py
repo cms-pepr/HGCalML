@@ -32,7 +32,7 @@ def _BinnedSelectKnn(K : int, coords,  bin_idx, dim_bin_idx, bin_boundaries, n_b
                                               use_direction = use_direction
                                               )
 
-@tf.function
+#@tf.function
 def BinnedSelectKnn(K : int, coords, row_splits, direction = None, n_bins=None, max_bin_dims : int =3 , tf_compatible=False, max_radius=None, name=""):
     '''
     max_radius is a dummy for now to make it a drop-in replacement
