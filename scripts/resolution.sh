@@ -8,7 +8,7 @@ PARTICLES=( "electrons" "photons" "kaons" "pions")
 ENERGIES=( "10" "20" "50" "75" "100" "125" "150" "175" "200" "250" )
 PU=( "0" "40" "200" )
 COUNTER=0
-OUTPUTFILE=analysis.hdf
+OUTPUTFILE=analysis_masked.hdf
 
 # print particles
 
@@ -25,7 +25,7 @@ do
 	    echo "Output: ${outputdir}"
 
             # if counter > 10: break
-            if [ $COUNTER -gt 20 ]; then
+            if [ $COUNTER -gt 50 ]; then
                 break
             fi
 
@@ -74,7 +74,7 @@ do
             cd $outputdir
             if [ ! -f $OUTPUTFILE ]; then
                 touch analysis.flag
-                analyse_hgcal_predictions.py . --analysisoutpath $OUTPUTFILE --slim -b 0.3 -d 0.25 -i 0.333 --picturepath full_classic_d025_i033 --hdf --nfiles 3
+                analyse_hgcal_predictions.py . --analysisoutpath $OUTPUTFILE --slim -b 0.3 -d 0.25 -i 0.333 --hdf --eta_phi_mask --nfiles 3
                 rm analysis.flag
 
                 COUNTER=$((COUNTER+1))
