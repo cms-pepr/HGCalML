@@ -314,7 +314,7 @@ from LossLayers import LLEnergySums,LLKnnSimpleObjectCondensation, LLPushTracks,
 from LossLayers import LLRegulariseGravNetSpace, LLSpectatorPenalty
 import traceback
 import os
-
+import itertools
 
 
 ##end debug
@@ -955,7 +955,5 @@ class DictModel(tf.keras.Model):
         """
         
         super(DictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
-
-    
 
 global_layers_list['DictModel']=DictModel

@@ -3321,8 +3321,9 @@ class RaggedGravNet(tf.keras.layers.Layer):
         row_splits = inputs[1]
         tf.assert_equal(x.shape.ndims, 2)
         tf.assert_equal(row_splits.shape.ndims, 1)
+        #print(row_splits, row_splits[-1], tf.shape(x)[0])
         if row_splits.shape[0] is not None:
-            tf.assert_equal(row_splits[-1], x.shape[0])
+            tf.assert_equal(row_splits[-1], tf.shape(x)[0])
 
         x_coord = x
         if len(inputs) == 3:

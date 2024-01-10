@@ -94,8 +94,8 @@ class AverageDistanceRegularizer(LayerWithMetrics):
                   float(avneigh),
                   'penalty',float(loss))
             
-        self.add_prompt_metric(avdist, self.name+'_dist')
-        self.add_prompt_metric(avneigh, self.name+'_Nneigh')
+        #self.add_prompt_metric(avdist, self.name+'_dist')
+        #self.add_prompt_metric(avneigh, self.name+'_Nneigh')
                   
         self.add_loss(loss)
         return inputs
