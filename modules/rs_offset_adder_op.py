@@ -21,6 +21,9 @@ def _RSOffsetAdderGrad(op, gradin):
   
 
 
+'''
+A small unit test in the same file should become standard practice for all custom ops.
+'''
 def test(print_debug = False):
     # a quick test in eager mode
     import numpy as np
