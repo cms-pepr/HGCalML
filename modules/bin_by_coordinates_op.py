@@ -4,13 +4,6 @@ from tensorflow.python.framework import ops
 
 _bin_by_coordinates = tf.load_op_library('bin_by_coordinates.so')
 
-'''
- .Input("coordinates: float")
-    .Input("row_splits: int32")
-    .Input("bin_width: float")
-    .Input("nbins: int32")//same in all dimensions
-    .Output("output: int32"); 
-'''
 
 def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_n_per_bin=True, pre_normalized=False, name=""):
     '''
@@ -39,7 +32,7 @@ def BinByCoordinates(coordinates, row_splits, bin_width=None, n_bins=None, calc_
     - bin indices (the above) flattened
     - number of bins used per dimension (dim = dim(coordinates))
     - bin width used (dim = 1)
-    - (opt) number of points per bin (dim = 1)
+    - (opt) number of points per bin (dim = 1) - this likely reduces the speed of the OP
     
     '''
     

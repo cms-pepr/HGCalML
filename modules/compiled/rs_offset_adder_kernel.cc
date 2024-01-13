@@ -25,7 +25,23 @@ struct RSOffsetAdderOpFunctor<CPUDevice, dtype> { //just because access needs to
             const int n_vert,
             const int n_rs
             ){
-
+                for(int i = 0; i < n_vert; i++){
+                    
+                    //get the offset
+                    int offset = 0;
+                    for(int j = 0; j < n_rs; j++){
+                        if(i >= rs[j]){
+                            offset = rs[j];
+                        }
+                        else{
+                            break;
+                        }
+                    }
+                    if(t_dx[i] >= 0)
+                        new_t_idx[i] = t_dx[i] + offset;
+                    else
+                        new_t_idx[i] = t_dx[i];
+                }
     }
 };
 

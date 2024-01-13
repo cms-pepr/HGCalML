@@ -5,6 +5,6 @@
 using namespace tensorflow;
 
 REGISTER_OP("RSOffsetAdder")
-    .Input("t_dx: int32")
+    .Input("idx: int32")
     .Input("row_splits: int32")
     .Output("output: int32"); 

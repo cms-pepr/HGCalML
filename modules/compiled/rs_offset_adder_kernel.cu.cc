@@ -8,7 +8,7 @@
 #include "cuda_helpers.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 
-#include "index_replacer_kernel.h"
+#include "rs_offset_adder_kernel.h"
 
 namespace tensorflow {
 namespace functor {
@@ -27,15 +27,26 @@ static void calc(
     int i =  blockIdx.x * blockDim.x + threadIdx.x;
     if(i >= n_vert)
         return;
-    
-
-
+    int offset = 0;
+    for (int j = 0; j < n_rs; j++){
+        if (i >= rs[j]){
+            offset = rs[j];
+        }
+        else{
+            break;
+        }
+    }
+    int current =  t_dx[i];
+    if (t_dx[i] >= 0)
+        new_t_idx[i] = current + offset;
+    else
+        new_t_idx[i] = current;
 }
 
 
 
 template<typename dtype>
-struct IndexReplacerOpFunctor<GPUDevice, dtype> { //just because access needs to be different for GPU and CPU
+struct RSOffsetAdderOpFunctor<GPUDevice, dtype> { //just because access needs to be different for GPU and CPU
     void operator()(
             const GPUDevice &d,
             const int * t_dx,
@@ -60,7 +71,7 @@ struct IndexReplacerOpFunctor<GPUDevice, dtype> { //just because access needs to
     }
 };
 
-template struct IndexReplacerOpFunctor<GPUDevice, int32>;
+template struct RSOffsetAdderOpFunctor<GPUDevice, int32>;
 
 }//functor
 }//tensorflow
