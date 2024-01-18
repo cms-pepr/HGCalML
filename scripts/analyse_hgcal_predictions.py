@@ -14,7 +14,7 @@ import numpy as np
 import tensorflow as tf
 
 from OCHits2Showers import OCHits2ShowersLayer, OCHits2ShowersLayer_HDBSCAN
-from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2
+from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2, OCGatherEnergyCorrFac_new
 from ShowersMatcher2 import ShowersMatcher
 from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
 import extra_plots as ep
@@ -64,7 +64,8 @@ def analyse(preddir,
             local_distance_scaling)
     showers_matcher = ShowersMatcher(matching_mode, iou_threshold, de_e_cut, angle_cut)
 
-    energy_gatherer = OCGatherEnergyCorrFac2()
+    # energy_gatherer = OCGatherEnergyCorrFac2()
+    energy_gatherer = OCGatherEnergyCorrFac_new()
 
     files_to_be_tested = [
         os.path.join(preddir, x)
@@ -111,6 +112,14 @@ def analyse(preddir,
             prediction.append(predictions_dict)
             truth.append(truth_dict)
             
+            if 'no_noise_sel' in predictions_dict.keys():
+                no_noise_indices = predictions_dict['no_noise_sel'] #Shape [N_filtered, 1]
+            else:
+                n_feat = features_dict['recHitEnergy'].shape[0]
+                no_noise_indices = tf.reshape(np.arange(n_feat), (-1, 1))
+            zeros = tf.zeros_like(truth_dict['truthHitAssignedEta'][:,0], dtype=tf.bool)
+            ones = tf.ones_like(no_noise_indices[:,0], dtype=tf.bool)
+            mask = tf.tensor_scatter_nd_update(zeros, no_noise_indices, ones)
             if eta_phi_mask:
                 shower_mask = truth_dict['truthHitAssignementIdx'] == 0 
                 phi_true = truth_dict['truthHitAssignedPhi'][shower_mask][0] # Between -pi and pi
@@ -126,45 +135,43 @@ def analyse(preddir,
                 delta_mask = delta_R < 0.5 # Shape [N_unfiltered, 1]
                 # feature_mask = delta_mask
                 # Noise mask is a tensor of indices
-                no_noise_indices = predictions_dict['no_noise_sel'] #Shape [N_filtered, 1]
-                zeros = tf.zeros_like(delta_mask[:,0], dtype=tf.bool)
-                ones = tf.ones_like(no_noise_indices[:,0], dtype=tf.bool)
                 noise_mask = tf.tensor_scatter_nd_update(zeros, no_noise_indices, ones)
                 mask = np.logical_and(delta_mask[:,0], noise_mask) # Shape [N_orig,]
                 pred_mask = tf.gather_nd(delta_mask[:,0], no_noise_indices)
-                includes_mask = True
+                pred_masks.append(pred_mask)
                 pred_keys = [
                         'pred_beta', 'pred_ccoords', 'pred_energy_corr_factor',
                         'pred_energy_low_quantile', 'pred_energy_high_quantile',
                         'pred_pos', 'pred_time', 'pred_id', 'pred_dist', 'rechit_energy',
                         'no_noise_sel']
                 for key in pred_keys:
-                    predictions_dict[key] = predictions_dict[key][pred_mask]
+                    if key is 'no_noise_sel':
+                        try:
+                            predictions_dict[key] = predictions_dict[key][pred_mask]
+                        except KeyError:
+                            pass
+                    else:
+                        predictions_dict[key] = predictions_dict[key][pred_mask]
 
             print(f"Analyzing event {event_id}")
 
             noise_masks.append(no_noise_indices)
             masks.append(mask)
-            pred_masks.append(pred_mask)
             truth_df = ep.dictlist_to_dataframe([truth_dict], add_event_id=False)
             features_df = ep.dictlist_to_dataframe([features_dict], add_event_id=False)
-            if includes_mask:
-                filtered_features = ep.filter_features_dict(features_dict, no_noise_indices)
-                filtered_truth = ep.filter_truth_dict(truth_dict, no_noise_indices)
-                filtered_features = dict(features_df[mask])
-                filtered_truth = dict(truth_df[mask])
-                for key in filtered_features.keys():
-                    filtered_features[key] = np.array(filtered_features[key]).reshape((-1,1))
-                for key in filtered_truth.keys():
-                    filtered_truth[key] = np.array(filtered_truth[key]).reshape((-1,1))
-            else:
-                filtered_features = features_dict
-                filtered_truth = truth_dict
+            filtered_features = ep.filter_features_dict(features_dict, no_noise_indices)
+            filtered_truth = ep.filter_truth_dict(truth_dict, no_noise_indices)
+            filtered_features = dict(features_df[np.array(mask)])
+            filtered_truth = dict(truth_df[np.array(mask)])
+            for key in filtered_features.keys():
+                filtered_features[key] = np.array(filtered_features[key]).reshape((-1,1))
+            for key in filtered_truth.keys():
+                filtered_truth[key] = np.array(filtered_truth[key]).reshape((-1,1))
 
             # filtered_truth_df = ep.dictlist_to_dataframe([filtered_truth], add_event_id=False)
             # filtered_features_df = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
-            filtered_truth_df =  truth_df[mask]
-            filtered_features_df = features_df[mask]
+            filtered_truth_df =  truth_df[np.array(mask)]
+            filtered_features_df = features_df[np.array(mask)]
             """
             n_hits_orig.append(np.sum(truth_df.truthHitAssignementIdx != -1))
             n_hits_filtered.append(np.sum(filtered_truth_df.truthHitAssignementIdx != -1))
