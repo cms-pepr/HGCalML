@@ -432,11 +432,13 @@ class training_base(object):
 
                 self.trainstep_parallel(thisbatch)
                 
+                """Didn't work
                 if batch_time > 0.1:
                     batch_time = time.time() - st
                     time_sum += batch_time
                     if not nbatches_in % int(20/(time_sum/nbatches_in)): # print less when it's faster
                         print('avg batch time', time_sum/nbatches_in, 's')
+                """
 
             self.trainedepoches += 1
             traingen.shuffleFileList()
@@ -493,6 +495,7 @@ class HGCalTraining(training_base):
 
 
 
+"""
 class HGCalTraining_compat(training_base_djc):
     def __init__(self, *args, 
                  **kwargs):
@@ -528,3 +531,4 @@ class HGCalTraining_compat(training_base_djc):
                            backup_after_batches=backup_after_batches,
                            checkperiod=checkperiod,
                             **kwargs)
+"""
