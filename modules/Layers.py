@@ -16,7 +16,6 @@ global_layers_list.update(graph_condensation_layers)
 from tensorflow.keras.layers import LeakyReLU
 global_layers_list['LeakyReLU'] = LeakyReLU
 
-
 #base modules
 
 from baseModules import LayerWithMetrics

@@ -5,6 +5,7 @@
 #endif 
 
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/cc/ops/math_ops.h"
 #include "helpers.h"
 #include "rs_offset_adder_kernel.h"
 
@@ -13,6 +14,7 @@ typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
 
 namespace functor {
+
 
 template<typename dtype>
 struct RSOffsetAdderOpFunctor<CPUDevice, dtype> { //just because access needs to be different for GPU and CPU
@@ -62,10 +64,12 @@ public:
 
         const int n_vert = t_t_idx.dim_size(0);
         const int n_rs = t_rs.dim_size(0);
-        
+
         Tensor *out = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(0,
                 t_t_idx.shape(), &out));
+
+        
 
         RSOffsetAdderOpFunctor<Device, int32>() (
                 context->eigen_device<Device>(),

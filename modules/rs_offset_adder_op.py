@@ -36,7 +36,7 @@ def test(print_debug = False):
     if print_debug:
         print(idx.numpy())
 
-    multiplier = 1000
+    multiplier = 10000
     #more rigorous test implemeting same in numpy with a loop over rowsplits and 10*multiplier random indices
     idx = np.random.randint(-1, 100, 10*multiplier, dtype=np.int32)
     rs = multiplier * np.array([0,3,6,10], dtype=np.int32)
@@ -48,3 +48,5 @@ def test(print_debug = False):
         else:
             np_idx[rs[i-1]:rs[i]]  = np.where( np_idx[rs[i-1]:rs[i]] >=0 , np_idx[rs[i-1]:rs[i]] + rs[i-1], np_idx[rs[i-1]:rs[i]])
     return np.all(np_idx == kernel_idx.numpy())
+
+#print(test())

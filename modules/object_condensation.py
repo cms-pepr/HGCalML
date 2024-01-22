@@ -225,6 +225,8 @@ class Basic_OC_per_sample(object):
             V_rep = K * tf.math.divide_no_nan(V_rep, N_full+1e-3)  #K x 1
         elif True: #TEST DEBUG REMOVE AGAIN
             V_rep = tf.math.divide_no_nan(V_rep, N_notk+1e-3)  #K x 1
+        else:
+            V_rep/=100.
 
         return V_rep
 

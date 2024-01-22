@@ -3320,7 +3320,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
         features = tf.concat(allfeat + [x], axis=-1)
         return self.output_feature_transform(features)
 
-    @tf.function(reduce_retracing=True) #don't know why this is being retraced so often..
+    #@tf.function(reduce_retracing=True) #don't know why this is being retraced so often..
     def priv_call(self, x, row_splits, x_coord):
         
         coordinates = self.input_spatial_transform(x_coord)
@@ -3354,7 +3354,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
                (input_shapes[0][0], self.n_neighbours),\
                (input_shapes[0][0], self.n_neighbours)
 
-    @tf.function
+    #@tf.function
     def compute_neighbours_and_distancesq(self, coordinates, row_splits):
 
         idx,dist = BinnedSelectKnn(self.n_neighbours+1, coordinates,  row_splits,
@@ -3367,9 +3367,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         dist = tf.where(idx<0,0.,dist)
 
-        if self.return_self:
-            return idx[:, 1:], dist[:, 1:], idx, dist
-        return idx[:, 1:], dist[:, 1:], None, None
+        return idx[:, 1:], dist[:, 1:], idx, dist
 
 
     def collect_neighbours(self, features, neighbour_indices, distancesq):
