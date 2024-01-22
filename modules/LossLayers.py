@@ -331,6 +331,46 @@ class LLDummy(LossLayerBase):
 
 
 
+class LLFractionRegressor(LossLayerBase):
+
+    def __init__(self,
+                 mode : str = "binary",
+                 **kwargs):
+        '''
+        Takes as input: 
+        - score
+        - truth_fraction
+        Returns:
+        - score
+        '''
+        assert mode == "binary" or mode == "regression_bce" or mode == "regression_mse"
+
+        super(LLFractionRegressor, self).__init__(**kwargs)
+        self.mode = mode
+
+    def get_config(self):
+        config = {'mode': self.mode}
+        base_config = super(LLFractionRegressor, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def loss(self, inputs):
+        assert isinstance(inputs, list) and len(inputs) == 2
+        score, truth_fraction = inputs
+
+        b_truth_fraction = tf.where(truth_fraction > 0.5, 1., tf.zeros_like(truth_fraction))
+        if self.mode == "binary":
+            return tf.reduce_mean(tf.keras.losses.binary_crossentropy(b_truth_fraction, score))
+        elif self.mode == "regression_bce":
+            return tf.reduce_mean(tf.keras.losses.binary_crossentropy(truth_fraction, score))
+        elif self.mode == "regression_mse":
+            return tf.reduce_mean(tf.keras.losses.mean_squared_error(truth_fraction, score))
+        else:
+            raise ValueError("Unknown mode: {}".format(self.mode))
+        
+        
+
+
+
 class LLValuePenalty(LossLayerBase):
 
     def __init__(self,
