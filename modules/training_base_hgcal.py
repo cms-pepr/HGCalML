@@ -15,8 +15,11 @@ import tensorflow as tf
 import copy
 from DeepJetCore.training.gpuTools import DJCSetGPUs
 from DeepJetCore.training.training_base import training_base as training_base_djc
+from DeepJetCore.modeltools import load_model
 import time
-
+from DebugLayers import switch_off_debug_plots
+from DeepJetCore.DJCLayers import LayerWithMetrics
+from tqdm import tqdm
 
 
 #for multi-gpu we need to overwrite a few things here
@@ -87,6 +90,7 @@ class training_base(object):
         self.callbacks=None
         self.custom_optimizer=False
         self.copied_script=""
+        self.gradients=[]
         
         self.inputData = os.path.abspath(args.inputDataCollection) \
 												 if ',' not in args.inputDataCollection else \
@@ -209,26 +213,40 @@ class training_base(object):
         if not self.keras_model:
             raise Exception('Setting model not successful') 
 
+        self.distributeModelToGPUs()
+
+    def distributeModelToGPUs(self):
         self.mgpu_keras_models = [self.keras_model] #zero model
         if self.ngpus > 1:
+            print("distributing model to",self.ngpus,"GPUs")
             for i in range(self.ngpus-1):
                 with tf.device(f'/GPU:{i+1}'):
-                    self.mgpu_keras_models.append(model(self.keras_inputs,**modelargs))
+                    self.mgpu_keras_models.append(tf.keras.models.clone_model(self.keras_model))
             #sync initial or loaded weights
-            self.syncModelWeights()
+            self.syncModelWeights()    
+
+        #run debug layers etc just for one model
+        for i, m in enumerate(self.mgpu_keras_models):
+            if i:
+                switch_off_debug_plots(m)
+                # TBI: this does not work yet, needs wandb update
+                LayerWithMetrics.switch_off_metrics_layers(m)
+
+        #run record_metrics only for one model
 
     def saveCheckPoint(self,addstring=''):
         self.checkpointcounter=self.checkpointcounter+1 
         self.saveModel("KERAS_model_checkpoint_"+str(self.checkpointcounter)+"_"+addstring)    
            
     def _loadModel(self,filename):
-        from tensorflow.keras.models import load_model
-        keras_model=load_model(filename, custom_objects=custom_objects_list)
+        keras_model=load_model(filename)
         optimizer=keras_model.optimizer
         return keras_model, optimizer
                 
     def loadModel(self,filename):
         self.keras_model, self.optimizer = self._loadModel(filename)
+        self.distributeModelToGPUs()
+        #distribute to gpus
         self.compiled=True
         
     def setCustomOptimizer(self,optimizer):
@@ -264,13 +282,12 @@ class training_base(object):
                     #call on one batch to fully build it
                     print('Model being called once for device '+str(device))
                     model(self.train_data.getExampleFeatureBatch())
-            
-            if print_models:
-                print(model.summary())
-        
+                    
         for i, m in enumerate(self.mgpu_keras_models):
             run_compile(m, f'/GPU:{i}')
         
+        if print_models:
+            print(self.mgpu_keras_models[0].summary())
         self.compiled=True
 
         
@@ -303,7 +320,8 @@ class training_base(object):
                 loss = tf.add_n(model.losses)
             return tape.gradient(loss, model.trainable_variables)
         
-    def average_gradients(self, all_gradients):
+    def average_gradients(self):
+        all_gradients = self.gradients
         # Average the gradients across GPUs
         if len(all_gradients) < 2:
             return all_gradients[0]
@@ -313,19 +331,28 @@ class training_base(object):
             avg_grads.append(tf.reduce_mean(grads, axis=0))
         return avg_grads
 
-    def trainstep_parallel(self, split_data):
 
-        batch_gradients = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.ngpus) as executor:
-            futures = [executor.submit(self.compute_gradients, self.mgpu_keras_models[i], split_data[i], i) for i in range(self.ngpus)]
-            for future in concurrent.futures.as_completed(futures):
-                gradients = future.result()
-                batch_gradients.append(gradients)
+    def trainstep_parallel(self, split_data, collect_gradients=1):
 
-        # Average gradients across GPUs - just see if it executes for now
-        avg_grads = self.average_gradients(batch_gradients)
-        self.optimizer.apply_gradients(zip(avg_grads, self.mgpu_keras_models[0].trainable_variables))
-        self.syncModelWeights() # weights synced
+        if self.ngpus == 1: #simple
+            self.gradients += [self.compute_gradients(self.mgpu_keras_models[0], split_data[0], 0)]
+            
+        else:
+            batch_gradients = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.ngpus) as executor:
+                futures = [executor.submit(self.compute_gradients, self.mgpu_keras_models[i], split_data[i], i) for i in range(self.ngpus)]
+                for future in concurrent.futures.as_completed(futures):
+                    gradients = future.result()
+                    batch_gradients.append(gradients)
+    
+            self.gradients += batch_gradients
+
+        # Average gradients across GPUs and collection steps
+        if collect_gradients * self.ngpus <= len(self.gradients):
+            avg_grads = self.average_gradients()
+            self.optimizer.apply_gradients(zip(avg_grads, self.mgpu_keras_models[0].trainable_variables))
+            self.syncModelWeights() # weights synced
+            self.gradients = []
 
 
         
@@ -348,7 +375,9 @@ class training_base(object):
                    load_in_mem = False,
                    max_files = -1,
                    plot_batch_loss = False,
+                   add_progbar = False,
                    verbose = 0,
+                   collect_gradients = 1, #average N batches before update 
                    **trainargs):
         
         for m in self.mgpu_keras_models:
@@ -356,8 +385,8 @@ class training_base(object):
         # write only after the output classes have been added
         self._initTraining(nepochs,batchsize, batchsize_use_sum_of_squares)
         
-        try: #won't work for purely eager models
-            self.keras_model.save(self.outputDir+'KERAS_untrained_model')
+        try: #won't work for purely eager models unless called first - now fixed in model compile
+            self.saveModel('KERAS_untrained_model.h5')
         except:
             pass
         print('setting up callbacks')
@@ -386,10 +415,16 @@ class training_base(object):
             
         #create callbacks wrapper
         
-        
-        
+        callbacks = tf.keras.callbacks.CallbackList(
+                    self.callbacks.callbacks,
+                    add_history=True,
+                    model=self.keras_model, #only run them on the main model!
+                )
+        if self.trainedepoches == 0:
+            callbacks.on_train_begin()
+
         #prepare generator 
-    
+
         print("setting up generator... can take a while")
         use_fake_truth=None
         if fake_truth:
@@ -401,14 +436,11 @@ class training_base(object):
         traingen = self.train_data.invokeGenerator(fake_truth = use_fake_truth)
         valgen = self.val_data.invokeGenerator(fake_truth = use_fake_truth)
 
-        batch_time = 100
-
-
-        
-
         while(self.trainedepoches < nepochs):
+
+            self.gradients = [] #reset in case of accumulated gradients
             
-        
+            callbacks.on_epoch_begin(self.trainedepoches)
             #this can change from epoch to epoch
             #calculate steps for this epoch
             #feed info below
@@ -421,32 +453,13 @@ class training_base(object):
             print('training batches: ',nbatches_train)
             print('validation batches: ',nbatches_val)
 
-
-            #this is in here because it needs steps count
-            callbacks = tf.keras.callbacks.CallbackList(
-                    self.callbacks.callbacks,
-                    add_history=True,
-                    add_progbar=verbose != 0,
-                    model=self.keras_model, #only run them on the main module!
-                    verbose=verbose,
-                    epochs=1,
-                    steps=nbatches_train,
-                )
-            if self.trainedepoches == 0:
-                callbacks.on_train_begin()
-
-            callbacks.on_epoch_begin(self.trainedepoches)
-
-            ### 
-
             nbatches_in = 0
             single_counter = 0
-            time_sum = 0
+
+            if add_progbar:
+                pbar = tqdm(total=nbatches_train + nbatches_val)
 
             while nbatches_in < nbatches_train:
-
-                if batch_time > 0.1:
-                    st = time.time()
 
                 thisbatch = []
                 while len(thisbatch) < self.ngpus and nbatches_in < nbatches_train:
@@ -459,28 +472,30 @@ class training_base(object):
 
                 callbacks.on_train_batch_begin(single_counter)
 
-                self.trainstep_parallel(thisbatch)
+                self.trainstep_parallel(thisbatch, collect_gradients)
                 
-                if batch_time > 0.1:
-                    batch_time = time.time() - st
-                    time_sum += batch_time
-                    if not nbatches_in % (int(20/(time_sum/nbatches_in))+1): # print less when it's faster
-                        print('avg batch time', time_sum/nbatches_in, 's')
-
                 logs = { m.name: m.result() for m in self.keras_model.metrics } #only for main model
 
                 callbacks.on_train_batch_end(single_counter, logs)
 
                 single_counter += 1
-            
-            callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here
+                if add_progbar:
+                    pbar.update(len(thisbatch))
+            try:
+                callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here
+            except Exception as e:
+                print(e)
+                print('will continue training anyway')
+
+            if add_progbar:
+                pbar.close()
             self.trainedepoches += 1
             traingen.shuffleFileList()
             #
     
         self.saveModel("KERAS_model.h5")
 
-        return self.keras_model, self.callbacks.history
+        #return self.keras_model, callbacks.history
     
     
     
@@ -520,7 +535,6 @@ class HGCalTraining(training_base):
         return super().trainModel(nepochs=nepochs,
                            batchsize=batchsize,
                            run_eagerly=True,
-                           verbose=2,
                            batchsize_use_sum_of_squares=False,
                            fake_truth=True,
                            backup_after_batches=backup_after_batches,

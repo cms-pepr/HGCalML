@@ -94,8 +94,7 @@ class AverageDistanceRegularizer(LayerWithMetrics):
                   float(avneigh),
                   'penalty',float(loss))
             
-        #self.add_prompt_metric(avdist, self.name+'_dist')
-        #self.add_prompt_metric(avneigh, self.name+'_Nneigh')
+        self.wandb_log({self.name+'_dist': avdist,  self.name+'_Nneigh': avneigh})
                   
         self.add_loss(loss)
         return inputs
@@ -145,9 +144,9 @@ class MeanMaxDistanceRegularizer(LayerWithMetrics):
         if self.printout:
             print(self.name,'meanmax dist loss',float(loss))
             
-        self.add_prompt_metric(meanmax, self.name+'_meanmax')
-        self.add_prompt_metric(maxmax, self.name+'_maxmax')
-        self.add_prompt_metric(loss, self.name+'_loss')
+        self.wandb_log({self.name+'_meanmax' : meanmax,
+                        self.name+'_maxmax': maxmax,
+                        self.name+'_loss': loss})
                   
         self.add_loss(loss)
         return inputs

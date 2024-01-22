@@ -11,7 +11,7 @@ Wrap the module
 _sknn_op = tf.load_op_library('select_knn.so')
 
 def SelectKnn(K : int, coords,  row_splits, masking_values=None, threshold=0.5, tf_compatible=False, max_radius=-1.,
-              mask_mode='none', mask_logic='xor'):
+              mask_mode='none', mask_logic='xor',n_bins=None):
     '''
     returns indices and distances**2 , gradient for distances is implemented!
     

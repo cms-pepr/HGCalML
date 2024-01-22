@@ -271,7 +271,7 @@ class LossLayerBase(LayerWithMetrics):
             if not self.return_lossval:
                 self.add_loss(lossval)
 
-        self.add_prompt_metric(lossval, self.name+'_loss')
+        self.wandb_log({self.name+'_loss': lossval})
         if self.return_lossval:
             return a, lossval
         else:
@@ -328,6 +328,46 @@ class LLDummy(LossLayerBase):
 
     def loss(self, inputs):
         return tf.reduce_mean(inputs)
+
+
+
+class LLFractionRegressor(LossLayerBase):
+
+    def __init__(self,
+                 mode : str = "binary",
+                 **kwargs):
+        '''
+        Takes as input: 
+        - score
+        - truth_fraction
+        Returns:
+        - score
+        '''
+        assert mode == "binary" or mode == "regression_bce" or mode == "regression_mse"
+
+        super(LLFractionRegressor, self).__init__(**kwargs)
+        self.mode = mode
+
+    def get_config(self):
+        config = {'mode': self.mode}
+        base_config = super(LLFractionRegressor, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def loss(self, inputs):
+        assert isinstance(inputs, list) and len(inputs) == 2
+        score, truth_fraction = inputs
+
+        b_truth_fraction = tf.where(truth_fraction > 0.5, 1., tf.zeros_like(truth_fraction))
+        if self.mode == "binary":
+            return tf.reduce_mean(tf.keras.losses.binary_crossentropy(b_truth_fraction, score))
+        elif self.mode == "regression_bce":
+            return tf.reduce_mean(tf.keras.losses.binary_crossentropy(truth_fraction, score))
+        elif self.mode == "regression_mse":
+            return tf.reduce_mean(tf.keras.losses.mean_squared_error(truth_fraction, score))
+        else:
+            raise ValueError("Unknown mode: {}".format(self.mode))
+        
+        
 
 
 
@@ -636,7 +676,7 @@ class LLLocalEnergyConservation(LossLayerBase):
 
         abs_mean_diff = tf.abs(tf.reduce_mean(reldiff))
 
-        self.add_prompt_metric(abs_mean_diff, self.name + '_loss')
+        self.wandb_log({self.name + '_loss': abs_mean_diff})
 
         return abs_mean_diff
         #print(reldiff, '\n', tf.reduce_mean(reldiff))
@@ -800,13 +840,10 @@ class LLFullOCThresholds(LossLayerBase):
         efficiency /= ow_sum
         efficiency = tf.reduce_mean(efficiency)
 
-        self.add_prompt_metric(purity, self.name+'_purity')
-        self.add_prompt_metric(efficiency, self.name+'_efficiency')
-
+        self.wandb_log({self.name+'_purity':purity,
+                        self.name+'_efficiency': efficiency})
 
         loss = self.purity_weight * (1. - purity) + (1.-self.purity_weight)* tf.abs(1. - efficiency)
-
-        print(f'purity {purity} efficiency {efficiency} loss {loss}')
 
         return loss
 
@@ -2155,7 +2192,7 @@ class LLFullObjectCondensation(LossLayerBase):
 
         from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_OC_per_sample
         from object_condensation import Hinge_OC_per_sample_damped, Hinge_OC_per_sample, Hinge_Manhatten_OC_per_sample
-        from object_condensation import Hinge_OC_per_sample_learnable_qmin, Hinge_OC_per_sample_learnable_qmin_betascale_position
+        from object_condensation import Dead_Zone_Hinge_OC_per_sample,Hinge_OC_per_sample_learnable_qmin, Hinge_OC_per_sample_learnable_qmin_betascale_position
         impl = Basic_OC_per_sample
         if implementation == 'pushpull':
             impl = PushPull_OC_per_sample
@@ -2163,6 +2200,8 @@ class LLFullObjectCondensation(LossLayerBase):
             impl = PreCond_OC_per_sample
         if implementation == 'hinge':
             impl = Hinge_OC_per_sample
+        if implementation == 'hinge_deadzone':
+            impl = Dead_Zone_Hinge_OC_per_sample
         if implementation == 'hinge_full_grad':
             # same as`hinge`
             impl = Hinge_OC_per_sample
@@ -2457,13 +2496,6 @@ class LLFullObjectCondensation(LossLayerBase):
         timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time, pred_time_unc,t_rec_energy)
         classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id, t_is_unique, hasunique)
 
-        ##just for time metrics
-        tdiff = (t_time-pred_time)
-        tdiff -= tf.reduce_mean(tdiff,keepdims=True)
-        tstd = tf.math.reduce_std(tdiff)
-        self.add_prompt_metric(tstd,self.name+'_time_std')
-        self.add_prompt_metric(tf.reduce_mean(pred_time_unc),self.name+'_time_pred_std')
-        #end just for metrics
 
         # nan_energy = tf.reduce_any(tf.math.is_nan(energy_loss))
         # nan_position = tf.reduce_any(tf.math.is_nan(position_loss))
@@ -2534,7 +2566,7 @@ class LLFullObjectCondensation(LossLayerBase):
             #                               div_repulsion = self.div_repulsion,
             #                               dynamic_payload_scaling_onset=self.dynamic_payload_scaling_onset
             #                               )
-            att, rep, noise, min_b, payload, exceed_beta, containment, contamination = self.oc_loss_object(
+            [att, rep, noise, min_b, payload, exceed_beta], mdict = self.oc_loss_object(
                 beta=pred_beta,
                 x=pred_ccoords,
                 d=pred_distscale,
@@ -2545,12 +2577,8 @@ class LLFullObjectCondensation(LossLayerBase):
                 rs=rowsplits,
                 energies = rechit_energy)
 
-        self.add_prompt_metric(att+rep,self.name+'_dynamic_payload_scaling')
-
-        if containment is not None:
-            self.add_prompt_metric(containment,self.name+'_containment')
-            self.add_prompt_metric(contamination,self.name+'_contamination')
-
+        #log the OC metrics dict, if any
+        self.wandb_log(mdict)
 
         att *= self.potential_scaling
         rep *= self.potential_scaling * self.repulsion_scaling
@@ -2595,20 +2623,16 @@ class LLFullObjectCondensation(LossLayerBase):
 
         lossval = tf.reduce_mean(lossval)+bpush
 
-        self.add_prompt_metric(att,self.name+'_attractive_loss')
-        self.add_prompt_metric(rep,self.name+'_repulsive_loss')
-        self.add_prompt_metric(min_b,self.name+'_min_beta_loss')
-        self.add_prompt_metric(noise,self.name+'_noise_loss')
-        self.add_prompt_metric(energy_loss,self.name+'_energy_loss')
-        self.add_prompt_metric(energy_unc_loss,self.name+'_energy_unc_loss')
-        self.add_prompt_metric(pos_loss,self.name+'_position_loss')
-        self.add_prompt_metric(time_loss,self.name+'_time_loss')
-        self.add_prompt_metric(class_loss,self.name+'_class_loss')
-        self.add_prompt_metric(exceed_beta,self.name+'_exceed_beta_loss')
-        self.add_prompt_metric(bpush,self.name+'_beta_push_loss')
-        self.add_prompt_metric(ccdamp,self.name+'_cc_damp_loss')
-
-        self.add_prompt_metric(tf.reduce_mean(pred_distscale),self.name+'_avg_dist')
+        self.wandb_log({self.name+'_attractive_loss' : att,
+                        self.name+'_repulsive_loss': rep,
+                        self.name+'_min_beta_loss': min_b,
+                        self.name+'_noise_loss': noise,
+                        self.name+'_energy_loss': energy_loss,
+                        self.name+'_energy_unc_loss': energy_unc_loss,
+                        self.name+'_position_loss': pos_loss,
+                        self.name+'_time_loss': time_loss,
+                        self.name+'_class_loss': class_loss
+                        })
 
         self.maybe_print_loss(lossval)
 
@@ -2803,7 +2827,7 @@ class LLExtendedObjectCondensation(LLFullObjectCondensation):
         t_dep_energies = tf.where(t_dep_energies / t_energy < 0.5, 0.5 * t_energy, t_dep_energies)
 
         epred = pred_energy * t_dep_energies
-        sigma = pred_uncertainty_high * t_dep_energies + 1.0
+        sigma = tf.abs(pred_uncertainty_high * t_dep_energies) + 1.0 #abs is a safety measure
 
         # Uncertainty 'sigma' must minimize this term:
         # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
@@ -2814,9 +2838,9 @@ class LLExtendedObjectCondensation(LLFullObjectCondensation):
 
         uncertainty_loss = tf.math.log(sigma**2)
 
-        matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
-        prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
-        uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
+        prediction_loss = tf.debugging.check_numerics(prediction_loss, "E: prediction_loss")
+        uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "E: uncertainty_loss")
+        matching_loss = tf.debugging.check_numerics(matching_loss, "E: matching_loss")
         prediction_loss = tf.clip_by_value(prediction_loss, 0, 10)
         uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
 
@@ -3283,11 +3307,12 @@ class LLPFCondensates(LLFullObjectCondensation):
         eloss, euncloss = e_andunc_loss[...,0:1], e_andunc_loss[...,1:2]
         euncloss /= 2. #same as above
 
-        self.add_prompt_metric(tf.reduce_mean(eweight * closs), self.name + '_class_loss')
-        self.add_prompt_metric(tf.reduce_mean(eweight * tloss), self.name + '_time_loss')
-        self.add_prompt_metric(tf.reduce_mean(eweight * ploss), self.name + '_pos_loss')
-        self.add_prompt_metric(tf.reduce_mean(eweight * eloss), self.name + '_momentum_loss')
-        self.add_prompt_metric(tf.reduce_mean(eweight * euncloss), self.name + '_momentum_unc_loss')
+        self.wand_log({self.name + '_class_loss': tf.reduce_mean(eweight * closs),
+                       self.name + '_time_loss': tf.reduce_mean(eweight * tloss),
+                       self.name + '_pos_loss': tf.reduce_mean(eweight * ploss),
+                       self.name + '_momentum_loss': tf.reduce_mean(eweight * eloss),
+                       self.name + '_momentum_unc_loss': tf.reduce_mean(eweight * euncloss)
+                      })
 
         #this is as if there weren't any modifications
         pfc_t_energy = tf.gather_nd(t_energy, pf_idx).values
@@ -3305,8 +3330,8 @@ class LLPFCondensates(LLFullObjectCondensation):
             offset = tf.reduce_mean( s_pfc_mom_corr - s_pfc_t_encorr )
             var = tf.math.reduce_std(s_pfc_mom_corr - s_pfc_t_encorr - offset)
 
-            self.add_prompt_metric(offset, self.name + '_binned_en_offset_'+namestr)
-            self.add_prompt_metric(var, self.name + '_binned_en_std_'+namestr)
+            #self.add_prompt_metric(offset, self.name + '_binned_en_offset_'+namestr)
+            #self.add_prompt_metric(var, self.name + '_binned_en_std_'+namestr)
 
             s_pfc_energy = s_pfc_mom_corr * tf.ragged.boolean_mask(pfc_ensum, sel)
             s_pfc_t_energy = tf.ragged.boolean_mask(pfc_t_energy, sel)
@@ -3314,8 +3339,8 @@ class LLPFCondensates(LLFullObjectCondensation):
             offset = tf.reduce_mean( (s_pfc_energy - s_pfc_t_energy)/s_pfc_t_energy )
             var = tf.math.reduce_std((s_pfc_energy - s_pfc_t_energy)/s_pfc_t_energy - offset)
 
-            self.add_prompt_metric(offset, self.name + '_binned_t_en_offset_'+namestr)
-            self.add_prompt_metric(var, self.name + '_binned_t_en_std_'+namestr)
+            #self.add_prompt_metric(offset, self.name + '_binned_t_en_offset_'+namestr)
+            #self.add_prompt_metric(var, self.name + '_binned_t_en_std_'+namestr)
 
 
         allloss = eweight * (closs + tloss + ploss + eloss + euncloss)

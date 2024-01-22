@@ -8,27 +8,29 @@ import yaml
 import shutil
 from argparse import ArgumentParser
 
-import wandb
-from wandb_callback import wandbCallback
 import tensorflow as tf
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 from DeepJetCore.DJCLayers import StopGradient, ScalarMultiply
 
+from DeepJetCore.wandb_interface import wandb_wrapper as wandb
+
 import training_base_hgcal
-from Layers import ScaledGooeyBatchNorm2
-from Layers import MixWhere
+from Layers import ScaledGooeyBatchNorm2, DummyLayer
+from Layers import MixWhere, ElementWiseMultiply
 from Layers import RaggedGravNet
 from Layers import PlotCoordinates
 from Layers import DistanceWeightedMessagePassing, AccumulateNeighbours
 from Layers import LLFillSpace
-from Layers import LLExtendedObjectCondensation
-from Layers import DictModel
+from Layers import LLExtendedObjectCondensation, TranslationInvariantMP
+
+from tensorflow.keras import Model
+
 from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
 from Layers import Multi
-from Layers import ShiftDistance, KNN
+from Layers import ShiftDistance, KNN, MessagePassing
 from Layers import LLRegulariseGravNetSpace
 from Regularizers import AverageDistanceRegularizer
 from model_blocks import tiny_pc_pool, condition_input
@@ -43,16 +45,18 @@ from callbacks import NanSweeper, DebugPlotRunner
 
 
 ####################################################################################################
-### Load Configuration #############################################################################
+### Load Arguments and trainer #####################################################################
 ####################################################################################################
 
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
-parser.add_argument('--no-wandb', dest='wandb', help="Don't use wandb", action='store_true')
+parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
 parser.add_argument('--run_name', help="wandb run name", default='test')
 parser.add_argument('--wandb_project', help="wandb project name", default="Autumn_2023")
-initargs,_ = parser.parse_known_args()
-CONFIGFILE = initargs.configFile
+
+train = training_base_hgcal.HGCalTraining(parser=parser) #this will add all the other standard args -> train.args
+
+CONFIGFILE = train.args.configFile
 print(f"Using config File: \n{CONFIGFILE}")
 
 with open(CONFIGFILE, 'r') as f:
@@ -94,13 +98,15 @@ for i in range(len(config['Training'])):
         wandb_config[f"train_{i}+_max_visc"] = 0.999
         wandb_config[f"train_{i}+_fluidity_decay"] = 0.1
 
-if not initargs.wandb:
+if not train.args.no_wandb:
     wandb.init(
-        project=initargs.wandb_project,
+        project=train.args.wandb_project,
         config=wandb_config,
     )
     wandb.save(sys.argv[0]) # Save python file
-    wandb.save(initargs.configFile) # Save config file
+    wandb.save(train.args.configFile) # Save config file
+else:
+    wandb.active=False
 
 
 ###############################################################################
@@ -108,7 +114,7 @@ if not initargs.wandb:
 ###############################################################################
 
 
-def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
+def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
     """
     Function that defines the model to train
     """
@@ -118,7 +124,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ###########################################################################
 
     orig_input = td.interpretAllModelInputs(Inputs)
-    pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False)
+    pre_processed = condition_input(orig_input, no_scaling=False, no_prime=False)
 
     prime_coords = pre_processed['prime_coords']
     is_track = pre_processed['is_track']
@@ -127,52 +133,62 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     t_idx = pre_processed['t_idx']
     x = pre_processed['features']
 
-
-    # Embed hits and track features
+    # preprocessed features here are already normalised! (no_scaling=False above)
+    # Embed hits and track features differently
     x = ScaledGooeyBatchNorm2(
-            fluidity_decay=0.01,
-            max_viscosity=0.999999,
             learn=True,
+            no_bias_gamma=True,
             no_gaus=False)([x, is_track])
 
     x = ScaledGooeyBatchNorm2(
-            fluidity_decay=0.01,
-            max_viscosity=0.999999,
             invert_condition=True,
             learn=True,
+            no_bias_gamma=True,
             no_gaus=False)([x, is_track])
 
     c_coords = prime_coords
     c_coords = ScaledGooeyBatchNorm2(
         name='batchnorm_ccoords',
-        fluidity_decay=0.01,
-            learn=True,
-        max_viscosity=0.999999)(c_coords)
+        no_bias_gamma=True,
+        learn=True
+            )(c_coords)
+
     c_coords = PlotCoordinates(
         plot_every=plot_debug_every,
         outdir=debug_outdir,
         name='input_c_coords',
         # publish = publishpath
         )([c_coords, energy, t_idx, rs])
-    c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
 
     x = Concatenate()([x, c_coords, is_track])
-    x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x) 
-
-    allfeat = [c_coords]
+    x = Dense(24, name='dense_pre_pre_loop', activation=DENSE_ACTIVATION)(x) 
     print("Available keys: ", pre_processed.keys())
 
-    ## testing ##
+    ## create a pre-information exchange
+    layerwise_coords = ElementWiseMultiply([[1.,1.,1000.]])(prime_coords)
+    flat_coords = ElementWiseMultiply([[1.,1.,0.]])(prime_coords)
 
-    #nidx,dist = KNN(8, use_approximate_knn=True)([prime_coords, rs])
-    #x = Concatenate()([x, dist])
-    #x = Concatenate()([x,  DistanceWeightedMessagePassing([16])([x,nidx,dist]) ])
+    lw_nidx, lw_dist = KNN(32)([layerwise_coords, rs])
+    flat_nidx, flat_dist = KNN(32)([flat_coords, rs])
 
+    # a few simple MP in different directions
+    
+    for _ in range(1):
+        xt = TranslationInvariantMP([16,16])([x, lw_nidx])
+        x = Concatenate()([xt,x])
+        xt = TranslationInvariantMP([16,16])([x, flat_nidx])
+        x = Concatenate()([x,xt])
+
+    c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
+    x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x) 
+    allfeat = [c_coords, x]
+    gncoords = c_coords
+   
     ###########################################################################
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
-    gravnet_reg = 0.01
+    gravnet_reg = 1e-4
 
     for i in range(GRAVNET_ITERATIONS):
 
@@ -185,15 +201,16 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
         x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
         x_pre = x
+        x = Concatenate()([gncoords, x])
 
-        xgn, gncoords, gnnidx, gndist = RaggedGravNet(
-                name = f"RSU_gravnet_{i}", # 76929, 42625, 42625 
+        x, gncoords, gnnidx, gndist = RaggedGravNet(
+                name = f"Gravnet_{i}", # 76929, 42625, 42625 
             n_neighbours=config['General']['gravnet'][i]['n'],
             n_dimensions=N_GRAVNET_SPACE_COORDINATES,
             n_filters=d_shape,
             n_propagate=2*d_shape,
-            coord_initialiser_noise=None,
-            feature_activation='elu',
+            coord_initialiser_noise=1e-2,
+            feature_activation=None, #classic gravnet
             # sumwnorm=True,
             )([x, rs])
 
@@ -202,32 +219,26 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 record_metrics=False,
                 name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
-        x = DistanceWeightedMessagePassing(
-                        [32,32,32,32,32,32,32],
+        x = Concatenate()([x, TranslationInvariantMP(
+                        [32,32],
                          activation='elu')([x,gnnidx,gndist])
+                         ])
 
-        #x_rand = random_sampling_block(
-        #        xgn, rs, gncoords, gnnidx, gndist, is_track,
-        #        reduction=6, layer_norm=True, name=f"RSU_{i}")
-        #x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
-
-        gndist = AverageDistanceRegularizer(
-            strength=1e-3,
-            record_metrics=False
-            )(gndist)
-        # gndist = StopGradient()(gndist)
-        gncoords = StopGradient()(gncoords)
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
             outdir=debug_outdir,
             name='gn_coords_'+str(i)
             )([gncoords, energy, t_idx, rs])
 
-        # x = Concatenate()([x_pre, xgn, 0.1 * x_rand, gndist, gncoords])
-        # x_rand = ScalarMultiply(0.1)(x_rand)
-        # gndist = ScalarMultiply(0.01)(gndist)
-        # gncoords = ScalarMultiply(0.01)(gncoords)
-        x = Concatenate()([x, x_pre, xgn, gndist, gncoords])
+        x = DummyLayer()([x,gncoords,gndist])#just make sure any layer above is not optimised away
+
+        # afew of those again
+        xt = TranslationInvariantMP([16,16])([x, lw_nidx])
+        x = Concatenate()([x,xt])
+        xt = TranslationInvariantMP([16,16])([x, flat_nidx])
+        x = Concatenate()([x,xt])
+
+        x = Concatenate()([x, x_pre])
         x = Dense(2*d_shape,
                   name=f"dense_post_gravnet_1_iteration_{i}",
                   activation=DENSE_ACTIVATION,
@@ -252,7 +263,13 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Create output of model and define loss ################################
     ###########################################################################
 
-
+    
+    # afew of those again
+    xt = TranslationInvariantMP([32,16])([x, lw_nidx])
+    x = Concatenate()([x,xt])
+    xt = TranslationInvariantMP([32,16])([x, flat_nidx])
+    x = Concatenate()([x,xt])
+    
     x = Dense(64,
               name=f"dense_final_{1}",
               activation=DENSE_ACTIVATION,
@@ -276,17 +293,13 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
 
-    if config['General']['oc_implementation'] == 'hinge':
-        loss_implementation = 'hinge'
-    else:
-        loss_implementation = ''
 
     pred_beta = LLExtendedObjectCondensation(scale=1.,
                                              use_energy_weights=True,
                                              record_metrics=True,
-                                             print_loss=True,
+                                             print_loss=False,
                                              name="ExtendedOCLoss",
-                                             implementation = loss_implementation,
+                                             implementation = config['General']['oc_implementation'],
                                              **LOSS_OPTIONS)(
         [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
          pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
@@ -317,7 +330,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
 
-    return DictModel(inputs=Inputs, outputs=model_outputs)
+    return Model(inputs=Inputs, outputs=model_outputs)
     #return DictModel(inputs=Inputs, outputs=model_outputs)
 
 
@@ -326,7 +339,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 ###############################################################################
 
 
-train = training_base_hgcal.HGCalTraining(parser=parser)
 
 if not train.modelSet():
     train.setModel(
@@ -350,63 +362,14 @@ RECORD_FREQUENCY = 10
 PLOT_FREQUENCY = 40
 
 cb = [NanSweeper()] #this takes a bit of time checking each batch but could be worth it
-cb += [
-    plotClusteringDuringTraining(
-        use_backgather_idx=8 + i,
-        outputfile=train.outputDir + "/localclust/cluster_" + str(i) + '_',
-        samplefile=samplepath,
-        after_n_batches=500,
-        on_epoch_end=False,
-        publish=None,
-        use_event=0
-        )
-    for i in [0, 2, 4]
-    ]
-
-cb += [
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/metrics.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics=[
-            'ExtendedOCLoss_loss',
-            'ExtendedOCLoss_dynamic_payload_scaling',
-            'ExtendedOCLoss_attractive_loss',
-            'ExtendedOCLoss_repulsive_loss',
-            'ExtendedOCLoss_min_beta_loss',
-            'ExtendedOCLoss_noise_loss',
-            'ExtendedOCLoss_class_loss',
-            'ExtendedOCLoss_energy_loss',
-            'ExtendedOCLoss_energy_unc_loss',
-            # 'ExtendedOCLoss_time_std',
-            # 'ExtendedOCLoss_time_pred_std',
-            '*regularise_gravnet_*',
-            '*_gravReg*',
-            ],
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
-    ]
-
-cb += [
-
-
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/val_metrics.html',
-        call_on_epoch=True,
-        select_metrics='val_*',
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
-    ]
 
 cb += [
     plotClusterSummary(
         outputfile=train.outputDir + "/clustering/",
         samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=1000
+        after_n_batches=500
         )
     ]
-
-cb += [wandbCallback()]
 
 ###############################################################################
 ### Actual Training ###########################################################
@@ -432,8 +395,10 @@ for i in range(N_TRAINING_STAGES):
                 layer.max_viscosity = 0.999
                 layer.fluidity_decay = 0.01
     print("Here we are")
-    model, history = train.trainModel(
+    train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,
-        additional_callbacks=cb
+        add_progbar=True,
+        additional_callbacks=cb,
+        collect_gradients = 1
         )

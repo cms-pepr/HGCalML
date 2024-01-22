@@ -16,11 +16,7 @@ global_layers_list.update(graph_condensation_layers)
 from tensorflow.keras.layers import LeakyReLU
 global_layers_list['LeakyReLU'] = LeakyReLU
 
-
 #base modules
-
-from baseModules import PromptMetric
-global_layers_list['PromptMetric'] = PromptMetric
 
 from baseModules import LayerWithMetrics
 global_layers_list['LayerWithMetrics'] = LayerWithMetrics
@@ -230,6 +226,9 @@ global_layers_list['SoftPixelCNN']=SoftPixelCNN
 from GravNetLayersRagged import RaggedGravNet
 global_layers_list['RaggedGravNet']=RaggedGravNet
 
+from GravNetLayersRagged import TranslationInvariantMP
+global_layers_list['TranslationInvariantMP']=TranslationInvariantMP
+
 from GravNetLayersRagged import SelfAttention
 global_layers_list['SelfAttention']=SelfAttention
 
@@ -377,6 +376,17 @@ from tensorflow.keras.layers import Layer
 import tensorflow.keras.backend as K
 import tensorflow as tf
 
+class DummyLayer(tf.keras.layers.Layer): 
+    '''
+    Just to make sure other layers are not optimised away
+    Inputs:
+    - list of tensors. First will be passed through, the other will be ignored
+    '''
+    def call(self, inputs):
+        return inputs[0]
+
+global_layers_list['DummyLayer']=DummyLayer
+
 
 class GroupSortActivation(tf.keras.layers.Layer): 
     
@@ -388,6 +398,27 @@ class GroupSortActivation(tf.keras.layers.Layer):
         return tf.reshape(out, tf.shape(inputs))
         
 global_layers_list['GroupSortActivation']=GroupSortActivation
+
+
+class ElementWiseMultiply(tf.keras.layers.Layer): 
+
+    def __init__(self, multi_vector : list, **kwargs):
+        super(ElementWiseMultiply, self).__init__(**kwargs)
+        self.multi_vector = multi_vector
+        self.mult = tf.constant(self.multi_vector, dtype='float32')
+        
+    def get_config(self):
+        config = {'multi_vector': self.multi_vector}
+        base_config = super(ElementWiseMultiply, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, inputs):
+        return inputs * self.mult
+        
+global_layers_list['ElementWiseMultiply']=ElementWiseMultiply
 
 
 def layernorm(x, return_norm=False):
@@ -790,6 +821,7 @@ class RobustModel(tf.keras.Model):
         :param kwargs:  For subclass Model
         """
 
+        raise ValueError("RobustModel deprecated, please use simply tf.keras.Model.")
         super(RobustModel, self).__init__(*args, **kwargs)
 
         # if 'config' in kwargs:
@@ -950,7 +982,8 @@ class DictModel(tf.keras.Model):
         """
         Just forces dictionary output
         """
-        
+        raise ValueError("DictModel deprecated, please use simply tf.keras.Model.")
         super(DictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
+
 
 global_layers_list['DictModel']=DictModel
