@@ -1017,7 +1017,7 @@ class ReduceHits(Layer):
 
 
     def get_config(self):
-        config = {'mode': self.feature_index}
+        config = {'mode': self.mode}
         base_config = super(ReduceHits, self).get_config()
         return dict(list(base_config.items()) + list(config.items() ))
 
