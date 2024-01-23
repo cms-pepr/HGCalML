@@ -990,3 +990,35 @@ class DictModel(tf.keras.Model):
 
 
 global_layers_list['DictModel']=DictModel
+
+
+
+class ReduceHits(Layer):
+    def __init__(self, mode, **kwargs):
+        super(ReduceHits, self).__init__(**kwargs)
+        
+        assert mode == 'mean' or mode == 'max' or mode == 'sum' or mode == 'min'
+        self.mode=mode
+
+    def call(self, inputs):
+        assert len(inputs) == 2
+        x, rs = inputs
+        xr = tf.RaggedTensor.from_row_splits(x, rs)
+        if self.mode == 'mean':
+            return tf.reduce_mean(xr, axis=1)
+        elif self.mode == 'max':
+            return tf.reduce_max(xr, axis=1)
+        elif self.mode == 'sum':
+            return tf.reduce_sum(xr, axis=1)
+        elif self.mode == 'min':
+            return tf.reduce_min(xr, axis=1)
+        else:
+            raise ValueError('Unknown mode %s' % self.mode)
+
+
+    def get_config(self):
+        config = {'mode': self.feature_index}
+        base_config = super(ReduceHits, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+
+global_layers_list['ReduceHits']=ReduceHits
