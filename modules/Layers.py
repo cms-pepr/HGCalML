@@ -301,7 +301,7 @@ global_layers_list.update(ragged_layers)
 
 
 from LossLayers import LLValuePenalty,LLNotNoiseClassifier,CreateTruthSpectatorWeights, NormaliseTruthIdxs, LLGraphCondOCLoss
-from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace, LLOCThresholds
+from LossLayers import LLLocalClusterCoordinates,LLFractionRegressor, LLClusterCoordinates,LLFillSpace, LLOCThresholds
 from LossLayers import LossLayerBase, LLBasicObjectCondensation, LLFullObjectCondensation,LLPFCondensates,LLNeighbourhoodClassifier
 from LossLayers import LLFullObjectCondensationUncertainty, LLFullObjectCondensationID
 from LossLayers import LLExtendedObjectCondensation, LLExtendedObjectCondensation2
@@ -327,6 +327,9 @@ global_layers_list['LLValuePenalty']=LLValuePenalty
 
 global_layers_list['LLPushTracks']=LLPushTracks
 global_layers_list['LLEnergySums']=LLEnergySums
+
+global_layers_list['LLFractionRegressor']=LLFractionRegressor
+
 
 
 global_layers_list['LLOCThresholds']=LLOCThresholds
