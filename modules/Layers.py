@@ -1022,3 +1022,22 @@ class ReduceHits(Layer):
         return dict(list(base_config.items()) + list(config.items() ))
 
 global_layers_list['ReduceHits']=ReduceHits
+
+class BroadcastMultiply(Layer):
+    def __init__(self, mode, **kwargs):
+        '''
+        multiplies with broadcasting, e.g.
+        a = tf.constant([[1,2,3],[4,5,6]])
+        b = tf.constant([[1],[2]])
+        c = BroadcastMultiply()([a,b])
+
+        print(c) -> [[1,2,3],[8,10,12]]
+        '''
+        super(BroadcastMultiply, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        assert len(inputs) == 2
+        x, y = inputs
+        return x*y
+    
+global_layers_list['BroadcastMultiply']=BroadcastMultiply
