@@ -1,6 +1,22 @@
 HGCalML
 ===============================================================================
 
+Quick Start
+===========
+```
+ singularity run --nv -B /eos -B /afs /cvmfs/unpacked.cern.ch/registry.hub.docker.com/cernml4reco/deepjetcore4:latest
+ cd <workdir>
+ git clone --recursive https://github.com/cms-pepr/HGCalML
+ cd HGCalML
+ git checkout future_dev
+ source env.sh
+ ./setup.sh
+ cd Train
+ python3 config_trainer_jk.py configuration/rsu.yaml  /eos/home-p/phzehetn/ML4Reco/Data/Paper/Events/train_PU4/dataCollection.djcdc <output_directory> --no_wandb
+```
+
+
+
 Requirements
   * DeepJetCore 4.X (``https://github.com/DL4Jets/DeepJetCore``)
   * DeepJetCore 4.X container (or latest version in general)
