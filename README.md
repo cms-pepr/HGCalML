@@ -12,7 +12,8 @@ Quick Start
  source env.sh
  ./setup.sh
  cd Train
- python3 config_trainer_jk.py configuration/rsu.yaml  /eos/home-p/phzehetn/ML4Reco/Data/Paper/Events/train_PU4/dataCollection.djcdc <output_directory> --no_wandb
+ # the list of gpus to be used corresponds to their device numbers as given by nvidia-smi. Here is an example of 4 gpus
+ python3 config_trainer_jk.py configuration/rsu.yaml  /eos/home-p/phzehetn/ML4Reco/Data/Paper/Events/train_PU4/dataCollection.djcdc --no_wandb <output_directory> --gpu 0,1,2,3 
 ```
 
 
