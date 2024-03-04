@@ -121,6 +121,7 @@ def analyse(preddir,
             ones = tf.ones_like(no_noise_indices[:,0], dtype=tf.bool)
             mask = tf.tensor_scatter_nd_update(zeros, no_noise_indices, ones)
             if eta_phi_mask:
+                if eta_phi_mask.sum() == 0: continue
                 shower_mask = truth_dict['truthHitAssignementIdx'] == 0 
                 phi_true = truth_dict['truthHitAssignedPhi'][shower_mask][0] # Between -pi and pi
                 eta_true = truth_dict['truthHitAssignedEta'][shower_mask][0] # Between -pi and pi
@@ -205,7 +206,9 @@ def analyse(preddir,
                     min_cluster_size=min_cluster_size,
                     min_samples=min_samples,
                     mask_center=mask_center,
-                    mask_radius=mask_radius)
+                    mask_radius=mask_radius,
+                    is_minbias=filtered_truth_df.t_only_minbias,
+                    )
 
             alpha_ids.append(pred_shower_alpha_idx)
             processed.append(processed_pred_dict)
@@ -268,7 +271,7 @@ def analyse(preddir,
             eventsdir = os.path.join('.', 'events')
             if not os.path.isdir(eventsdir):
                 os.mkdir(eventsdir)
-            if event_id < 0:
+            if event_id < 2:
                 # pdb.set_trace()
                 # make 3d plot of the event and save it
                 tmp_feat = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)

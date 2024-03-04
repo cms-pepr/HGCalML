@@ -471,7 +471,8 @@ class OCGatherEnergyCorrFac_new(tf.keras.layers.Layer):
              return_tracks=False,
              raw=False,
              alpha_idx_tracks=None,
-             alpha_idx_hits=None):
+             alpha_idx_hits=None,
+             t_is_minbias=None):
         """
         Same as `OCGatherEnergyCorrFac` with the addition that one can chose if the energy
         reconstructed with the tracks or the enery reconstructed by the calorimeter should be used.
@@ -509,6 +510,12 @@ class OCGatherEnergyCorrFac_new(tf.keras.layers.Layer):
         e_hit_shower = tf.math.unsorted_segment_sum(
             e_hit[:,0], pred_sid_p1[:,0], num_segments=(tf.reduce_max(pred_sid_p1)+1)
         )
+        if t_is_minbias is not None:
+            t_is_minbias = tf.reshape(t_is_minbias, shape=(-1,1))
+            e_no_minbias = tf.where(t_is_minbias==1, tf.zeros_like(e_hit), e_hit)
+            e_no_minbias_shower = tf.math.unsorted_segment_sum(
+                e_no_minbias[:,0], pred_sid_p1[:,0], num_segments=(tf.reduce_max(pred_sid_p1)+1)
+            )
         e_track_shower = tf.math.unsorted_segment_sum(
             e_track[:,0], pred_sid_p1[:,0], num_segments=(tf.reduce_max(pred_sid_p1)+1)
         )
@@ -555,8 +562,14 @@ class OCGatherEnergyCorrFac_new(tf.keras.layers.Layer):
             'tracks_corrected': e_track_corrected,
             'hits_raw': e_hit_raw,
             'hits_corrected': e_hit_corrected,
+            # 'no_minbias_fraction': no_minbias_fraction,
             }
-        # return data
+        if t_is_minbias is not None:
+            e_no_minbias_out = tf.reshape(
+                    tf.gather(e_no_minbias_shower, pred_sid_p1[:,0]),
+                    shape=(-1,1))
+            no_minbias_fraction = tf.math.divide_no_nan(e_no_minbias_out, e_hit_raw)
+            data['no_minbias_fraction'] = no_minbias_fraction
 
         return data
 
@@ -697,7 +710,9 @@ def OCHits2ShowersLayer_HDBSCAN(
 
 def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
         predictions_dict, energy_mode='comb', raw=False,
-        hdbscan=False, min_cluster_size=None, min_samples=None, mask_center=None, mask_radius=None):
+        hdbscan=False, min_cluster_size=None, min_samples=None,
+        mask_center=None, mask_radius=None,
+        is_minbias=None):
     """
     Almost identical to `process_endcap`.
     Difference is that this takes into account the existence of tracks when
@@ -713,6 +728,7 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
         predictions_dict['no_noise_sel'] = np.arange(N_pred).reshape((N_pred,1)).astype(int)
     is_track = np.abs(features_dict['recHitZ']) == 315
 
+    print("Make showers")
     if not hdbscan:
         # Assume the we use the old clustering algorithm
         pred_sid, _, alpha_idx, _, ncond = hits2showers_layer(
@@ -737,10 +753,12 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
     if not isinstance(alpha_idx, np.ndarray):
         alpha_idx = alpha_idx.numpy()
     alpha_idx = np.reshape(alpha_idx, newshape=(-1,))
+    print("Made showers")
 
     processed_pred_dict = dict()
     processed_pred_dict['pred_sid'] = pred_sid
 
+    print("Get energy")
     energy_data = energy_gather_layer(
             pred_sid,
             predictions_dict['pred_energy_corr_factor'],
@@ -750,7 +768,9 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             is_track = is_track,
             alpha_idx_hits = alpha_idx_hits,
             alpha_idx_tracks = alpha_idx_tracks,
+            t_is_minbias = is_minbias,
             )
+    print("Got energy")
 
 
     try:
@@ -762,6 +782,11 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
         processed_pred_dict['pred_energy_hits_raw'] = energy_data['hits_raw'].numpy()
         processed_pred_dict['pred_energy_tracks_raw'] = energy_data['tracks_raw'].numpy()
     except KeyError:
+        pass
+    try:
+        processed_pred_dict['pred_no_minbias_fraction'] = energy_data['no_minbias_fraction'].numpy()
+    except KeyError:
+        print("no_minbias_fraction not found")
         pass
     try:
         processed_pred_dict['pred_energy'] = energy_data['hits_raw'].numpy()
