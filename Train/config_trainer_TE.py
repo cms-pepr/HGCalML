@@ -51,9 +51,9 @@ from callbacks import NanSweeper, DebugPlotRunner
 
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
-parser.add_argument('--run_name', help="wandb run name")
+parser.add_argument('--run_name', help="wandb run name", default="test")
 parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
-parser.add_argument('--rund_name', help="wandb run name", default="test")
+parser.add_argument('--wandb_project', help="wandb_project", default="playground")
 
 train = training_base_hgcal.HGCalTraining(parser=parser)
 CONFIGFILE = train.args.configFile
