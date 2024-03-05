@@ -1,4 +1,4 @@
-from DeepJetCore.TrainData import TrainData
+from DeepJetCore import TrainData
 from DeepJetCore import SimpleArray
 import pickle
 import numpy as np
@@ -7,7 +7,7 @@ import os
 import gzip
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
-from DeepJetCore.dataPipeline import TrainDataGenerator
+from djcdata.dataPipeline import TrainDataGenerator
 from DebugLayers import switch_off_debug_plots
 
 

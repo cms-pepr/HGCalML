@@ -1,4 +1,4 @@
-from DeepJetCore.TrainData import TrainData, fileTimeOut
+from DeepJetCore import TrainData
 from DeepJetCore import SimpleArray 
 import awkward0 as ak
 import pickle

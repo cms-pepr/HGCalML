@@ -149,7 +149,7 @@ static void select_knn_kernel(
             int idx = stepper.step();
             if(idx<0){//not valid
                 if(!continue_search && !distance){//this should not happen
-                    printf("stopping search for vtx %d at distance %d\n",i_v,distance);
+                    printf("\nERROR: binned_select_knn.cu: stopping search for vtx %d at distance %d\n",i_v,distance);
                 }
                 break;
 
@@ -158,12 +158,22 @@ static void select_knn_kernel(
             idx+=gbin_offset;
 
             if(idx>=n_bboundaries-1){
-                printf("idx %d out of range, gb offset %d, distance %d, sb_flat_offset %d, nbb %d\n", idx, gbin_offset, distance, sb_flat_offset,n_bboundaries);
+                printf("\nERROR: binned_select_knn.cu: boundary issue: idx %d out of range, gb offset %d, distance %d, sb_flat_offset %d, nbb %d\n", idx, gbin_offset, distance, sb_flat_offset,n_bboundaries);
                 continue;
             }
 
             int start_vertex = d_bin_boundaries[idx];
             int end_vertex = d_bin_boundaries[idx+1];
+
+            if(start_vertex == end_vertex){ //empty bin
+                continue_search=true; //correct?
+                continue;
+            }
+
+            if(start_vertex>=n_vert || end_vertex>n_vert){
+                printf("\nERROR: binned_select_knn.cu: start_vertex %d or end_vertex %d out of range %d \n", start_vertex, end_vertex, n_vert);
+                continue;//safe guard
+            }
 
             for(size_t j_v=start_vertex;j_v<end_vertex;j_v++){
                 if(i_v == j_v)
@@ -284,6 +294,7 @@ struct BinnedSelectKnnOpFunctor<GPUDevice, dummy> { //just because access needs 
             select_knn_kernel<5><<<gb.grid(),gb.block()>>>(d_coord, d_bin_idx,d_direction,d_dim_bin_idx,d_bin_boundaries,d_n_bins,d_bin_width,
                     d_indices,d_dist,n_vert,n_neigh,n_coords,n_bin_dim,n_bboundaries,use_direction);
 
+        cudaDeviceSynchronize();
     }
 };
 

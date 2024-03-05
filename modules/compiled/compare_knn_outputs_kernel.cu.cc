@@ -52,6 +52,8 @@ struct CompareKnnOpFunctor<GPUDevice, dummy>{
         int thread_per_block = 20;
 
         gpu::CompareKnnOpCudaKernel<<<block_count, thread_per_block, 0, d.stream()>>>(nvertices,nneighbours,input1,input2,output);
+        
+        cudaDeviceSynchronize();
     }
 };
 

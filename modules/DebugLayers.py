@@ -125,7 +125,7 @@ class _DebugPlotBase(tf.keras.layers.Layer):
         if len(outdir) < 1:
             self.plot_every=0
         self.outdir = outdir
-        self.counter=-1
+        self.counter=0
         if not os.path.isdir(os.path.dirname(self.outdir)): #could not be created
             self.outdir=''
             

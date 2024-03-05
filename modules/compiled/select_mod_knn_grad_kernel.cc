@@ -47,7 +47,6 @@ class SelectModKnnGradOp : public OpKernel {
 public:
     explicit SelectModKnnGradOp(OpKernelConstruction *context) : OpKernel(context) {
 
-
     }
 
     void Compute(OpKernelContext *context) override {
@@ -64,13 +63,12 @@ public:
         int n_coords = t_coord.dim_size(1);
         int n_neigh = t_distances.dim_size(1);
 
-        auto coorddimsok = t_coord_mod.dims() == 3
-                && t_coord_mod.dim_size(0) == n_vert
-                && t_coord_mod.dim_size(1) == n_coords
-                && t_coord_mod.dim_size(2) == n_coords
-                ? tensorflow::Status(): tensorflow::Status(tensorflow::error::INVALID_ARGUMENT,
-                        "Coordinate modifier tensor needs to have 3 dimensions (V x C x C)");
-        OP_REQUIRES_OK(context,coorddimsok);
+        //auto coorddimsok = t_coord_mod.dims() == 3
+        //        && t_coord_mod.dim_size(0) == n_vert
+        //        && t_coord_mod.dim_size(1) == n_coords
+        //        && t_coord_mod.dim_size(2) == n_coords 
+        //        ? OkStatus() : errors::FailedPrecondition("Coordinate modifier tensor needs to have 3 dimensions (V x C x C)");
+        //OP_REQUIRES_OK(context,coorddimsok);
 
 
         TensorShape outputShape;

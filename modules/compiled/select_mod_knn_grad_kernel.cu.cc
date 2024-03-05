@@ -247,7 +247,7 @@ struct SelectModKnnGradOpFunctor<GPUDevice, dummy> {
                 n_neigh,
                 n_coords);
 
-
+        cudaDeviceSynchronize();
     }
 
 };

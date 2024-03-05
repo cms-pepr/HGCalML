@@ -72,6 +72,8 @@ class Basic_OC_per_sample(object):
                  spect_supp=None, #None means same as noise
                  global_weight=False
                  ):
+
+        self.rep_range = -1.
         
         self.q_min = q_min
         self.s_b = s_b
@@ -161,6 +163,7 @@ class Basic_OC_per_sample(object):
     def att_func(self,dsq_k_m):
         return tf.math.log(tf.math.exp(1.)*dsq_k_m/2. + 1.)
     
+    #@tf.function
     def V_att_k(self):
         '''
         '''
@@ -197,33 +200,37 @@ class Basic_OC_per_sample(object):
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
         return dsq
         
+    #@tf.function
     def V_rep_k(self):
         
         
         K = tf.reduce_sum(tf.ones_like(self.q_k))
         N_notk = tf.reduce_sum(self.Mnot, axis=1)
-        #future remark: if this gets too large, one could use a kNN here
+        #future remark: if this gets too large, one could use a kNN/radiusNN here
         
         dsq = self.calc_dsq_rep()
         
         # nogradbeta = tf.stop_gradient(self.beta_k_m)
         #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
         sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
-        
         dsq = tf.math.divide_no_nan(dsq, sigma + 1e-4) #K x V x 1
 
         V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
+        if self.rep_range > 0:
+            N_notk = tf.reduce_sum(tf.where(dsq < self.rep_range**2 , 1., tf.zeros_like(dsq)) * self.Mnot, axis=1)
 
         V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
         if self.global_weight:
             N_full = tf.reduce_sum(tf.ones_like(self.beta_v))
             V_rep = K * tf.math.divide_no_nan(V_rep, N_full+1e-3)  #K x 1
-        else:
+        elif True: #TEST DEBUG REMOVE AGAIN
             V_rep = tf.math.divide_no_nan(V_rep, N_notk+1e-3)  #K x 1
+        else:
+            V_rep/=100.
 
         return V_rep
 
-
+    #@tf.function
     def Pll_k(self):
         
         tanhsqbeta = self.beta_v**2 #softer here
@@ -241,6 +248,7 @@ class Basic_OC_per_sample(object):
                                              pw_k_sum  )#K x P
         return pll_k
     
+    #@tf.function
     def Beta_pen_k(self):
         #use continuous max approximation through LSE
         eps = 1e-3
@@ -249,7 +257,8 @@ class Basic_OC_per_sample(object):
         beta_pen += 1. - tf.clip_by_value(tf.reduce_sum(self.beta_k_m, axis=1), 0., 1)
         beta_pen = tf.debugging.check_numerics(beta_pen, "OC: beta pen")
         return beta_pen
-        
+    
+    #@tf.function
     def Noise_pen(self):
         
         nsupp_v = self.beta_v * self.isn_v
@@ -272,7 +281,7 @@ class Basic_OC_per_sample(object):
         return ow_k
     
     
-        
+    #@tf.function   
     def add_to_terms(self,
                      V_att, 
                      V_rep,
@@ -306,10 +315,13 @@ class Basic_OC_per_sample(object):
         
         return V_att, V_rep, Noise_pen, B_pen, pll, high_B_pen
 
-
+    #@tf.function(reduce_retracing=True)
     def calc_metrics(self, energies):
-        return self._calc_containment(energies), self._calc_contamination(energies)
+        d,rel_metrics_radius = self._calc_containment(energies)
+        d.update(self._calc_contamination(energies, rel_metrics_radius))
+        return d
     # metrics functions that can be called at the end, first calc containment, then contamination
+    #@tf.function
     def _calc_containment(self, energies):
         '''
         energies as  V x 1
@@ -321,34 +333,44 @@ class Basic_OC_per_sample(object):
         d_x_k = tf.reduce_sum(d_x_k, axis=2) + 10000. * tf.eye(d_x_k.shape[0],d_x_k.shape[1])  # K x K , add large identity
         d_m_x_k = tf.reduce_min(d_x_k, axis=1, keepdims=True)# K x 1
         d_m_x_k = tf.sqrt(d_m_x_k)/self.d_k 
-        self.rel_metrics_radius = tf.reduce_mean(d_m_x_k) / 2. # ()
+        rel_metrics_radius = tf.reduce_mean(d_m_x_k) / 2. # ()
 
         ##now metrics
         dxk = tf.reduce_sum( (tf.expand_dims(x_k_alpha, axis=1) - self.x_k_m)**2 , axis= -1) #K x V'
         
-        in_radius = self.rel_metrics_radius > tf.sqrt(dxk)/self.d_k #K x V'
+        in_radius = rel_metrics_radius > tf.sqrt(dxk)/self.d_k #K x V'
         in_radius = in_radius[...,tf.newaxis]
 
         energies_k_m = SelectWithDefault(self.Msel, energies, 0.) #K x V' x 1
-        self.energies_k  = tf.reduce_sum(energies_k_m, axis=1) #K x 1
+        energies_k  = tf.reduce_sum(energies_k_m, axis=1) #K x 1
         
         in_radius_energy = tf.reduce_sum(tf.where( in_radius, energies_k_m, 0. ), axis=1) # K x 1
-        in_radius_energy /= self.energies_k
-        return tf.reduce_mean(in_radius_energy)
+        in_radius_energy /= energies_k
 
-    def _calc_contamination(self, energies):
+        beta_contain = tf.reduce_sum(tf.where( in_radius, self.beta_k_m, 0. ), axis=1) # K x 1
+        beta_contain /= tf.reduce_sum(self.beta_k_m , axis=1) 
+
+        return {'containment': tf.reduce_mean(in_radius_energy),
+                'beta_containment': tf.reduce_mean(beta_contain)}, rel_metrics_radius
+
+    #@tf.function
+    def _calc_contamination(self, energies, rel_metrics_radius):
 
         x_k_alpha = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) 
         dsq = tf.expand_dims(x_k_alpha, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1)  #K x V 
-        in_radius = self.rel_metrics_radius > tf.sqrt(dsq) / self.d_k# K x V
+        in_radius = rel_metrics_radius > tf.sqrt(dsq) / self.d_k# K x V
         
         energies_k_v = tf.expand_dims(energies, axis=0) # K x V x 1
         energies_ir_all_k_v = tf.where(in_radius[...,tf.newaxis], energies_k_v , 0.)
         energies_ir_not_k_v = tf.where(in_radius[...,tf.newaxis], self.Mnot * energies_k_v , 0.)
         
         rel_cont = tf.reduce_sum(energies_ir_not_k_v, axis=1)/tf.reduce_sum(energies_ir_all_k_v, axis=1)
-        return tf.reduce_mean(rel_cont)
+
+        beta_cont = tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.Mnot * self.beta_v[tf.newaxis,...], 0.), axis=1)
+        beta_cont /= tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.beta_v[tf.newaxis,...], 0.), axis=1)
+
+        return {'contamination': tf.reduce_mean(rel_cont), 'beta_contamination': tf.reduce_mean(beta_cont)}
     
 
 class Hinge_OC_per_sample_damped(Basic_OC_per_sample):
@@ -378,6 +400,22 @@ class Hinge_OC_per_sample(Hinge_OC_per_sample_damped):
     def __init__(self, **kwargs):
         super(Hinge_OC_per_sample, self).__init__(**kwargs)
         self.condensation_damping = 0.0 # Don't stop any gradients
+        #self.rep_range = 2.
+
+
+        
+class Dead_Zone_Hinge_OC_per_sample(Hinge_OC_per_sample):
+    '''
+    This is the classic repulsive hinge loss plus a dead zone
+    '''
+    def __init__(self, **kwargs):
+        super(Dead_Zone_Hinge_OC_per_sample, self).__init__(**kwargs)
+        self.condensation_damping = 0.0 # Don't stop any gradients
+        self.rep_range = 2.
+
+    def att_func(self,dsq_k_m):
+        return 1. - tf.math.exp(-10. * dsq_k_m)
+    
 
         
 class Hinge_OC_per_sample_learnable_qmin(Hinge_OC_per_sample):
@@ -620,7 +658,7 @@ class OC_loss(object):
                  ):
         self.loss_impl=loss_impl(**kwargs)
 
-
+    
     def __call__(self, beta,
                          x,
                          d,
@@ -638,8 +676,7 @@ class OC_loss(object):
         if rs.shape[0] is None or rs.shape[0] < 2:
             return tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
         batch_size = rs.shape[0] - 1
-
-        contai,contam = tf.constant(0,dtype='float32'),tf.constant(0,dtype='float32')
+        mdict = {}
     
         for b in tf.range(batch_size):
             
@@ -656,16 +693,14 @@ class OC_loss(object):
             tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = self.loss_impl.add_to_terms(
                 tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
                 )
-            if energies is not None: #just last batch is fine
-                ca,cm = self.loss_impl.calc_metrics(energies[rs[b]:rs[b + 1]])
-                contai += ca / float(batch_size)
-                contam += cm / float(batch_size)
+
+            #just last row split is good enough for metric
+            if energies is not None and b == batch_size-1: 
+                mdict = self.loss_impl.calc_metrics(energies[rs[b]:rs[b + 1]])
 
         bs = tf.cast(batch_size, dtype='float32') + 1e-3
         out = [a/bs for a in [tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen]]
-        if energies is not None:
-            return out + [contai, contam]
-        return out, None, None
+        return out, mdict
 
 
 #################################################

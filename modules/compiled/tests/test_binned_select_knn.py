@@ -38,11 +38,17 @@ for nvert in [1000,50000,200000,500000,1000000]:
         nbins = None
         
         idx, dist = BinnedSelectKnn(test_neighbours, coords, row_splits, n_bins=nbins)
+        
+
+
         start = time.time()
         for _ in range(5):
             idx, dist = BinnedSelectKnn(test_neighbours, coords, row_splits, n_bins=nbins)
         end =  time.time()
         print('took',(end-start)/5.,'s','for',nvert,'points on',nbins,'and nn',test_neighbours )
+
+        #exit()
+        continue
         
         idx, dist = SlicingKnn(test_neighbours, coords, row_splits, features_to_bin_on=[0,1], bin_width=(0.02,0.02))
         start = time.time()
@@ -51,6 +57,7 @@ for nvert in [1000,50000,200000,500000,1000000]:
         end =  time.time()
         print('took',(end-start)/5.,'s','for',nvert,'and nn',test_neighbours,'points on SlicingKnn')
     
+    #exit()
     continue
     idx, dist = SelectKnn(test_neighbours, coords, row_splits)
     start = time.time()

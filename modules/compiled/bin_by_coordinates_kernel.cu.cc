@@ -98,7 +98,7 @@ static void calc(
     idx += rsidx * mul;
 
     if(idx>=n_total_bins){
-        printf("global index larger than total bins\n");//DEBUG if you see this you're screwed
+        printf("\nERROR: BinByCoordinatesOpFunctor: global index larger than total bins\n");//DEBUG if you see this you're screwed
         return;
     }
 
@@ -160,6 +160,8 @@ struct BinByCoordinatesOpFunctor<GPUDevice, dummy> { //just because access needs
                     n_rs,
                     n_total_bins,
                     calc_n_per_bin);
+
+            cudaDeviceSynchronize();
 
     }
 };

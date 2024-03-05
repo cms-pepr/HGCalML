@@ -16,11 +16,7 @@ global_layers_list.update(graph_condensation_layers)
 from tensorflow.keras.layers import LeakyReLU
 global_layers_list['LeakyReLU'] = LeakyReLU
 
-
 #base modules
-
-from baseModules import PromptMetric
-global_layers_list['PromptMetric'] = PromptMetric
 
 from baseModules import LayerWithMetrics
 global_layers_list['LayerWithMetrics'] = LayerWithMetrics
@@ -230,6 +226,9 @@ global_layers_list['SoftPixelCNN']=SoftPixelCNN
 from GravNetLayersRagged import RaggedGravNet
 global_layers_list['RaggedGravNet']=RaggedGravNet
 
+from GravNetLayersRagged import TranslationInvariantMP
+global_layers_list['TranslationInvariantMP']=TranslationInvariantMP
+
 from GravNetLayersRagged import SelfAttention
 global_layers_list['SelfAttention']=SelfAttention
 
@@ -247,9 +246,6 @@ global_layers_list['MessagePassing']=MessagePassing
 
 from GravNetLayersRagged import DistanceWeightedMessagePassing
 global_layers_list['DistanceWeightedMessagePassing']=DistanceWeightedMessagePassing
-
-from GravNetLayersRagged import TranslationInvariantMP
-global_layers_list['TranslationInvariantMP']=TranslationInvariantMP
 
 from GravNetLayersRagged import ApproxPCA
 global_layers_list['ApproxPCA']=ApproxPCA
@@ -305,7 +301,7 @@ global_layers_list.update(ragged_layers)
 
 
 from LossLayers import LLValuePenalty,LLNotNoiseClassifier,CreateTruthSpectatorWeights, NormaliseTruthIdxs, LLGraphCondOCLoss
-from LossLayers import LLLocalClusterCoordinates, LLClusterCoordinates,LLFillSpace, LLOCThresholds
+from LossLayers import LLLocalClusterCoordinates,LLFractionRegressor, LLClusterCoordinates,LLFillSpace, LLOCThresholds
 from LossLayers import LossLayerBase, LLBasicObjectCondensation, LLFullObjectCondensation,LLPFCondensates,LLNeighbourhoodClassifier
 from LossLayers import LLFullObjectCondensationUncertainty, LLFullObjectCondensationID
 from LossLayers import LLExtendedObjectCondensation, LLExtendedObjectCondensation2
@@ -331,6 +327,9 @@ global_layers_list['LLValuePenalty']=LLValuePenalty
 
 global_layers_list['LLPushTracks']=LLPushTracks
 global_layers_list['LLEnergySums']=LLEnergySums
+
+global_layers_list['LLFractionRegressor']=LLFractionRegressor
+
 
 
 global_layers_list['LLOCThresholds']=LLOCThresholds
@@ -380,6 +379,17 @@ from tensorflow.keras.layers import Layer
 import tensorflow.keras.backend as K
 import tensorflow as tf
 
+class DummyLayer(tf.keras.layers.Layer): 
+    '''
+    Just to make sure other layers are not optimised away
+    Inputs:
+    - list of tensors. First will be passed through, the other will be ignored
+    '''
+    def call(self, inputs):
+        return inputs[0]
+
+global_layers_list['DummyLayer']=DummyLayer
+
 
 class GroupSortActivation(tf.keras.layers.Layer): 
     
@@ -391,6 +401,27 @@ class GroupSortActivation(tf.keras.layers.Layer):
         return tf.reshape(out, tf.shape(inputs))
         
 global_layers_list['GroupSortActivation']=GroupSortActivation
+
+
+class ElementWiseMultiply(tf.keras.layers.Layer): 
+
+    def __init__(self, multi_vector : list, **kwargs):
+        super(ElementWiseMultiply, self).__init__(**kwargs)
+        self.multi_vector = multi_vector
+        self.mult = tf.constant(self.multi_vector, dtype='float32')
+        
+    def get_config(self):
+        config = {'multi_vector': self.multi_vector}
+        base_config = super(ElementWiseMultiply, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, inputs):
+        return inputs * self.mult
+        
+global_layers_list['ElementWiseMultiply']=ElementWiseMultiply
 
 
 def layernorm(x, return_norm=False):
@@ -793,6 +824,7 @@ class RobustModel(tf.keras.Model):
         :param kwargs:  For subclass Model
         """
 
+        raise ValueError("RobustModel deprecated, please use simply tf.keras.Model.")
         super(RobustModel, self).__init__(*args, **kwargs)
 
         # if 'config' in kwargs:
@@ -953,7 +985,59 @@ class DictModel(tf.keras.Model):
         """
         Just forces dictionary output
         """
-        
+        raise ValueError("DictModel deprecated, please use simply tf.keras.Model.")
         super(DictModel, self).__init__(inputs,outputs=outputs, *args, **kwargs)
 
+
 global_layers_list['DictModel']=DictModel
+
+
+
+class ReduceHits(Layer):
+    def __init__(self, mode, **kwargs):
+        super(ReduceHits, self).__init__(**kwargs)
+        
+        assert mode == 'mean' or mode == 'max' or mode == 'sum' or mode == 'min'
+        self.mode=mode
+
+    def call(self, inputs):
+        assert len(inputs) == 2
+        x, rs = inputs
+        xr = tf.RaggedTensor.from_row_splits(x, rs)
+        if self.mode == 'mean':
+            return tf.reduce_mean(xr, axis=1)
+        elif self.mode == 'max':
+            return tf.reduce_max(xr, axis=1)
+        elif self.mode == 'sum':
+            return tf.reduce_sum(xr, axis=1)
+        elif self.mode == 'min':
+            return tf.reduce_min(xr, axis=1)
+        else:
+            raise ValueError('Unknown mode %s' % self.mode)
+
+
+    def get_config(self):
+        config = {'mode': self.mode}
+        base_config = super(ReduceHits, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+
+global_layers_list['ReduceHits']=ReduceHits
+
+class BroadcastMultiply(Layer):
+    def __init__(self, mode, **kwargs):
+        '''
+        multiplies with broadcasting, e.g.
+        a = tf.constant([[1,2,3],[4,5,6]])
+        b = tf.constant([[1],[2]])
+        c = BroadcastMultiply()([a,b])
+
+        print(c) -> [[1,2,3],[8,10,12]]
+        '''
+        super(BroadcastMultiply, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        assert len(inputs) == 2
+        x, y = inputs
+        return x*y
+    
+global_layers_list['BroadcastMultiply']=BroadcastMultiply
