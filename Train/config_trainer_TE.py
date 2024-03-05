@@ -51,7 +51,12 @@ from callbacks import NanSweeper, DebugPlotRunner
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
 parser.add_argument('--run_name', help="wandb run name")
-CONFIGFILE = sys.argv[1]
+parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
+parser.add_argument('--rund_name', help="wandb run name", default="test")
+
+train = training_base_hgcal.HGCalTraining(parser=parser)
+CONFIGFILE = train.args.configFile
+
 print(f"Using config File: \n{CONFIGFILE}")
 
 with open(CONFIGFILE, 'r') as f:
@@ -93,12 +98,16 @@ for i in range(len(config['Training'])):
         wandb_config[f"train_{i}+_max_visc"] = 0.999
         wandb_config[f"train_{i}+_fluidity_decay"] = 0.1
 
-wandb.init(
-    project="playground",
-    config=wandb_config,
-)
-wandb.save(sys.argv[0]) # Save python file
-wandb.save(sys.argv[1]) # Save config file
+if not train.args.no_wandb:
+    wandb.init(
+        project=train.args.wandb_project,
+        config=wandb_config,
+    )
+    wandb.save(sys.argv[0]) # Save python file
+    wandb.save(train.args.configFile) # Save config file
+else:
+    wandb.active=False
+
 
 
 ###############################################################################
@@ -333,7 +342,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 ###############################################################################
 
 
-train = training_base_hgcal.HGCalTraining(parser=parser)
 
 if not train.modelSet():
     train.setModel(
