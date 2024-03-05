@@ -13,6 +13,7 @@ import wandb
 from wandb_callback import wandbCallback
 import tensorflow as tf
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
+from tensorflow.keras import Model
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 from DeepJetCore.DJCLayers import StopGradient, ScalarMultiply
@@ -325,7 +326,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
 
-    return DictModel(inputs=Inputs, outputs=model_outputs)
+    # return DictModel(inputs=Inputs, outputs=model_outputs)
+    return Model(inputs=Inputs, outputs=model_outputs)
 
 
 ###############################################################################
