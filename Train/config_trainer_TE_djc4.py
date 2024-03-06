@@ -26,6 +26,7 @@ from Layers import RaggedGravNet
 from Layers import PlotCoordinates
 from Layers import DistanceWeightedMessagePassing, TranslationInvariantMP
 from Layers import LLFillSpace
+from Layers import LLExtendedObjectCondensation
 from Layers import LLExtendedObjectCondensation2
 from Layers import DictModel
 from Layers import RaggedGlobalExchange
@@ -217,20 +218,20 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 # sumwnorm=True,
                 )([x, rs])
 
-            gndist = LLRegulariseGravNetSpace(
-                    scale=0.01,
-                    record_metrics=True,
-                    name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
+            # gndist = LLRegulariseGravNetSpace(
+                    # scale=0.01,
+                    # record_metrics=False,
+                    # name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
 
             x_rand = random_sampling_block(
                     xgn, rs, gncoords, gnnidx, gndist, is_track,
                     reduction=6, layer_norm=True, name=f"RSU_{i}")
             x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
 
-            gndist = AverageDistanceRegularizer(
-                strength=1e-3,
-                record_metrics=True
-                )(gndist)
+            # gndist = AverageDistanceRegularizer(
+                # strength=1e-3,
+                # record_metrics=True
+                # )(gndist)
         # gndist = StopGradient()(gndist)
         gncoords = StopGradient()(gncoords)
         gncoords = PlotCoordinates(
@@ -368,6 +369,7 @@ RECORD_FREQUENCY = 10
 PLOT_FREQUENCY = 40
 
 cb = [NanSweeper()] #this takes a bit of time checking each batch but could be worth it
+"""
 cb += [
     plotClusteringDuringTraining(
         use_backgather_idx=8 + i,
@@ -415,6 +417,7 @@ cb += [
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)
         ),
     ]
+"""
 
 cb += [
     plotClusterSummary(
@@ -424,7 +427,7 @@ cb += [
         )
     ]
 
-cb += [wandbCallback()]
+# cb += [wandbCallback()]
 
 ###############################################################################
 ### Actual Training ###########################################################
@@ -449,8 +452,9 @@ for i in range(N_TRAINING_STAGES):
             if 'batchnorm' in layer.name:
                 layer.max_viscosity = 0.999
                 layer.fluidity_decay = 0.01
-    model, history = train.trainModel(
+    train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,
+        add_progbar=True,
         additional_callbacks=cb
         )

@@ -94,7 +94,9 @@ class AverageDistanceRegularizer(LayerWithMetrics):
                   float(avneigh),
                   'penalty',float(loss))
             
-        self.wandb_log({self.name+'_dist': avdist,  self.name+'_Nneigh': avneigh})
+        # avdist = tf.keras.backend.eval(avdist)
+        # avneigh = tf.keras.backend.eval(avneigh)
+        # self.wandb_log({self.name+'_dist': avdist,  self.name+'_Nneigh': avneigh})
                   
         self.add_loss(loss)
         return inputs
