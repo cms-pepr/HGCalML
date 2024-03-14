@@ -76,7 +76,9 @@ BATCHNORM_OPTIONS = config['BatchNormOptions']
 DENSE_ACTIVATION = config['DenseOptions']['activation']
 DENSE_REGULARIZER = tf.keras.regularizers.l2(config['DenseOptions']['kernel_regularizer_rate'])
 DROPOUT = config['DenseOptions']['dropout']
+DISTANCE_SCALE= bool(config['General']['fix_distance'])
 loss_layer = LLExtendedObjectCondensation2
+
 if "LossLayer" in config['General']:
     if config['General']['loss_layer'] == "2":
         loss_layer = LLExtendedObjectCondensation2
@@ -84,6 +86,8 @@ if "LossLayer" in config['General']:
         loss_layer = LLExtendedObjectCondensation3
     elif config['General']['loss_layer'] == "4":
         loss_layer = LLExtendedObjectCondensation4
+else:
+    config['General']['loss_layer'] = 2
 
 
 wandb_config = {
@@ -101,6 +105,8 @@ wandb_config = {
     "dense_activation"              :   config['DenseOptions']['activation'],
     "dense_kernel_reg"              :   config['DenseOptions']['kernel_regularizer_rate'] ,
     "dense_dropout"                 :   config['DenseOptions']['dropout'],
+    "distance_scale"                :   DISTANCE_SCALE,
+    "LossLayer"                     :   config['General']['loss_layer']
 }
 
 for i in range(GRAVNET_ITERATIONS):
@@ -302,7 +308,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         pred_pos, pred_time, pred_time_unc, pred_id = \
         create_outputs(x,
                 n_ccoords=N_CLUSTER_SPACE_COORDINATES,
-                fix_distance_scale=True,
+                fix_distance_scale=not DISTANCE_SCALE,
                 is_track=is_track,
                 set_track_betas_to_one=True)
 

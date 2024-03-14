@@ -2956,7 +2956,7 @@ class LLExtendedObjectCondensation2(LLFullObjectCondensation):
             return prediction_loss, uncertainty_loss + matching_loss
 
 
-class LLExtendedObjectCondensation3(LLFullObjectCondensation):
+class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
     '''
     Same as `LLExtendedObjecCondensation2` but doesn't use the Huber loss in the energy prediction:
     '''

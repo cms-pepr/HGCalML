@@ -86,8 +86,11 @@ class Basic_OC_per_sample(object):
         self.valid=False #constants not created
         
         
-    #helper
     def _create_x_alpha_k(self): 
+        """
+        Use (partially) a mean value to determine the central point of potentials instead of 
+        just the position of the condensation point
+        """
         x_kalpha_m = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) # K x C
         if self.use_mean_x>0:
             w_k_m = self.q_k_m * self.mask_k_m
@@ -96,9 +99,28 @@ class Basic_OC_per_sample(object):
             x_kalpha_m = self.use_mean_x * x_kalpha_m_m + (1. - self.use_mean_x)*x_kalpha_m
         
         return x_kalpha_m 
+
+
+    def _weighted_alpha_k(self, v_k_m, w_k_m, fraction_wrt_alpha : float):
+        '''
+        More general implementation of _create_x_alpha_k allowing to: 
+            - scale/average other quanties than x_k (input v_k_m)
+            - use other weights to scale the input (input w_k_m)
+            - use a separate fraction to scale instead of property self.use_mean_x
+        vkm: V x V' x F
+        '''
+        w_k_m = w_k_m * self.mask_k_m
+        v_k_m_kalpha_m_m = tf.reduce_sum(w_k_m * v_k_m, axis=1) # K x F
+        wvk = tf.math.divide_no_nan(v_k_m_kalpha_m_m, tf.reduce_sum(w_k_m, axis=1)+1e-6) # K x F
+        if fraction_wrt_alpha > 1.-1e-6:
+            return wvk
+        ak = tf.gather_nd(v_k_m,self.alpha_k, batch_dims=1) # K x C    
+        return ak * (1. - fraction_wrt_alpha) + fraction_wrt_alpha * wvk
+    
     
     def create_Ms(self, truth_idx):
         self.Msel, self.Mnot, _ = CreateMidx(truth_idx, calc_m_not=True)
+    
     
     def set_input(self, 
                          beta,
@@ -148,9 +170,14 @@ class Basic_OC_per_sample(object):
         self.alpha_k = tf.argmax(self.q_k_m, axis=1)# high beta and not spectator -> large q
         
         self.beta_k = tf.gather_nd(self.beta_k_m, self.alpha_k, batch_dims=1) # K x 1
-        self.x_k = self._create_x_alpha_k() #K x C
         self.q_k = tf.gather_nd(self.q_k_m, self.alpha_k, batch_dims=1) # K x 1
-        self.d_k = tf.gather_nd(self.d_k_m, self.alpha_k, batch_dims=1) # K x 1
+
+        # Old scaling
+        # self.x_k = self._create_x_alpha_k() #K x C
+        # self.d_k = tf.gather_nd(self.d_k_m, self.alpha_k, batch_dims=1) # K x 1
+
+        self.x_k = self._weighted_alpha_k(self.x_k_m, self.beta_k_m, self.use_mean_x) #K x C
+        self.d_k = self._weighted_alpha_k(self.d_k_m, self.beta_k_m, self.use_mean_x) # K x 1
         
         #just a temp
         ow_k_m = SelectWithDefault(self.Msel, object_weight, 0.)
