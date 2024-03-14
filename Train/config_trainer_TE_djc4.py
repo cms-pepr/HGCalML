@@ -28,14 +28,17 @@ from Layers import DistanceWeightedMessagePassing, TranslationInvariantMP
 from Layers import LLFillSpace
 from Layers import LLExtendedObjectCondensation
 from Layers import LLExtendedObjectCondensation2
+from Layers import LLExtendedObjectCondensation3
+from Layers import LLExtendedObjectCondensation4
 from Layers import DictModel
 from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
 from Layers import Multi
 from Layers import ShiftDistance
-from Layers import LLRegulariseGravNetSpace
+# from Layers import LLRegulariseGravNetSpace
 from Layers import SplitOffTracks, ConcatRaggedTensors
 from Regularizers import AverageDistanceRegularizer
+from Initializers import EyeInitializer
 from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import extent_coords_if_needed
 from model_blocks import create_outputs
@@ -55,7 +58,7 @@ parser = ArgumentParser('training')
 parser.add_argument('configFile')
 parser.add_argument('--run_name', help="wandb run name", default="test")
 parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
-parser.add_argument('--wandb_project', help="wandb_project", default="playground")
+parser.add_argument('--wandb_project', help="wandb_project", default="Paper_Models")
 
 train = training_base_hgcal.HGCalTraining(parser=parser)
 CONFIGFILE = train.args.configFile
@@ -73,6 +76,15 @@ BATCHNORM_OPTIONS = config['BatchNormOptions']
 DENSE_ACTIVATION = config['DenseOptions']['activation']
 DENSE_REGULARIZER = tf.keras.regularizers.l2(config['DenseOptions']['kernel_regularizer_rate'])
 DROPOUT = config['DenseOptions']['dropout']
+loss_layer = LLExtendedObjectCondensation2
+if "LossLayer" in config['General']:
+    if config['General']['loss_layer'] == "2":
+        loss_layer = LLExtendedObjectCondensation2
+    elif config['General']['loss_layer'] == "3":
+        loss_layer = LLExtendedObjectCondensation3
+    elif config['General']['loss_layer'] == "4":
+        loss_layer = LLExtendedObjectCondensation4
+
 
 wandb_config = {
     "loss_implementation"           :   config['General']['oc_implementation'],
@@ -301,19 +313,20 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     else:
         loss_implementation = ''
 
-    pred_beta = LLExtendedObjectCondensation2(scale=1.,
-                                             use_energy_weights=True,
-                                             record_metrics=True,
-                                             print_loss=True,
-                                             name="ExtendedOCLoss",
-                                             implementation = loss_implementation,
-                                             **LOSS_OPTIONS)(
-        [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
-         pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
-         pre_processed['t_idx'] , pre_processed['t_energy'] , pre_processed['t_pos'] ,
-         pre_processed['t_time'] , pre_processed['t_pid'] , pre_processed['t_spectator_weight'],
-         pre_processed['t_fully_contained'], pre_processed['t_rec_energy'],
-         pre_processed['t_is_unique'], pre_processed['row_splits']])
+    pred_beta = loss_layer(
+            scale=1.,
+            use_energy_weights=True,
+            record_metrics=True,
+            print_loss=True,
+            name="ExtendedOCLoss",
+            implementation = loss_implementation,
+            **LOSS_OPTIONS)(
+                    [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
+                        pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
+                        pre_processed['t_idx'] , pre_processed['t_energy'] , pre_processed['t_pos'] ,
+                        pre_processed['t_time'] , pre_processed['t_pid'] , pre_processed['t_spectator_weight'],
+                        pre_processed['t_fully_contained'], pre_processed['t_rec_energy'],
+                        pre_processed['t_is_unique'], pre_processed['row_splits']])
 
     pred_ccoords = PlotCoordinates(
         plot_every=plot_debug_every,
@@ -400,7 +413,7 @@ cb += [
             'ExtendedOCLoss_energy_unc_loss',
             # 'ExtendedOCLoss_time_std',
             # 'ExtendedOCLoss_time_pred_std',
-            '*regularise_gravnet_*',
+            # '*regularise_gravnet_*',
             '*_gravReg*',
             ],
         publish=PUBLISHPATH #no additional directory here (scp cannot create one)

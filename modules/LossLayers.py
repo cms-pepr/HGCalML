@@ -2956,6 +2956,108 @@ class LLExtendedObjectCondensation2(LLFullObjectCondensation):
             return prediction_loss, uncertainty_loss + matching_loss
 
 
+class LLExtendedObjectCondensation3(LLFullObjectCondensation):
+    '''
+    Same as `LLExtendedObjecCondensation2` but doesn't use the Huber loss in the energy prediction:
+    '''
+
+
+    def __init__(self, *args, **kwargs):
+        super(LLExtendedObjectCondensation3, self).__init__(*args, **kwargs)
+
+
+    def calc_energy_correction_factor_loss(self,
+            t_energy, t_dep_energies,
+            pred_energy, pred_uncertainty_low, pred_uncertainty_high,
+            return_concat=False):
+        """
+        This loss uses a Bayesian approach to predict an energy uncertainty.
+        * t_energy              -> Truth energy of shower
+        * t_dep_energies        -> Sum of deposited energy IF clustered perfectly
+        * pred_energy           -> Correction factor applied to energy
+        * pred_uncertainty_low  -> predicted uncertainty
+        * pred_uncertainty_high -> predicted uncertainty (should be equal to ...low)
+        """
+        t_energy = tf.clip_by_value(t_energy,0.,1e12)
+        t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
+        t_dep_energies = tf.where(t_dep_energies / t_energy > 2.0, 2.0 * t_energy, t_dep_energies)
+        t_dep_energies = tf.where(t_dep_energies / t_energy < 0.5, 0.5 * t_energy, t_dep_energies)
+
+        epred = pred_energy * t_dep_energies
+        sigma = pred_uncertainty_high * t_dep_energies + 1.0
+
+        # Uncertainty 'sigma' must minimize this term:
+        # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
+        matching_loss = (pred_uncertainty_low)**2
+        # prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
+        prediction_loss = tf.math.divide_no_nan((t_energy - epred), sigma)
+        # prediction_loss = huber(prediction_loss, d=2)
+
+        uncertainty_loss = tf.math.log(sigma**2)
+
+        matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
+        prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
+        uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
+        prediction_loss = tf.clip_by_value(prediction_loss, 0, 10)
+        uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
+
+        if return_concat:
+            return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
+        else:
+            return prediction_loss, uncertainty_loss + matching_loss
+
+
+class LLExtendedObjectCondensation4(LLFullObjectCondensation):
+    '''
+    Same as `LLExtendedObjecCondensation2` but doesn't use the Huber loss in the energy prediction:
+    '''
+
+
+    def __init__(self, *args, **kwargs):
+        super(LLExtendedObjectCondensation4, self).__init__(*args, **kwargs)
+
+
+    def calc_energy_correction_factor_loss(self,
+            t_energy, t_dep_energies,
+            pred_energy, pred_uncertainty_low, pred_uncertainty_high,
+            return_concat=False):
+        """
+        This loss uses a Bayesian approach to predict an energy uncertainty.
+        * t_energy              -> Truth energy of shower
+        * t_dep_energies        -> Sum of deposited energy IF clustered perfectly
+        * pred_energy           -> Correction factor applied to energy
+        * pred_uncertainty_low  -> predicted uncertainty
+        * pred_uncertainty_high -> predicted uncertainty (should be equal to ...low)
+        """
+        t_energy = tf.clip_by_value(t_energy,0.,1e12)
+        t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
+        t_dep_energies = tf.where(t_dep_energies / t_energy > 2.0, 2.0 * t_energy, t_dep_energies)
+        t_dep_energies = tf.where(t_dep_energies / t_energy < 0.5, 0.5 * t_energy, t_dep_energies)
+
+        epred = pred_energy * t_dep_energies
+        sigma = pred_uncertainty_high * t_dep_energies + 1.0
+
+        # Uncertainty 'sigma' must minimize this term:
+        # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
+        matching_loss = (pred_uncertainty_low)**2
+        # prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
+        prediction_loss = tf.math.divide_no_nan((t_energy - epred), sigma)
+        prediction_loss = huber(prediction_loss, d=2)
+
+        uncertainty_loss = tf.math.log(sigma**2)
+
+        matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
+        prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
+        uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
+        prediction_loss = tf.clip_by_value(prediction_loss, 0, 10)
+        uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
+
+        if return_concat:
+            return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
+        else:
+            return prediction_loss, uncertainty_loss + matching_loss
+
+
 class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):
 
     def __init__(self, *args, **kwargs):
