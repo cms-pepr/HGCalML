@@ -196,6 +196,8 @@ def analyse(preddir,
                 mask_center = shower0_ccoords[np.argmax(shower0_betas)].reshape((n_cluster_space,))
 
             mask_center = None
+            if 't_only_minbias' not in filtered_truth_df.keys():
+                filtered_truth_df['t_only_minbias'] = 0.
             processed_pred_dict, pred_shower_alpha_idx = process_endcap2(
                     hits2showers,
                     energy_gatherer,
@@ -286,7 +288,7 @@ def analyse(preddir,
                 # print("processed: ", processed_dataframe.shape)
                 tmp_predbeta = pd.DataFrame(predictions_dict['pred_beta'], columns=['pred_beta'])
                 full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe, tmp_predbeta), axis=1)
-                fig_truth = dataframe_to_plot(full_df, truth=True)
+                fig_truth = dataframe_to_plot(full_df, truth=True, allgrey=True)
                 fig_pred = dataframe_to_plot(full_df, truth=False)
                 event_dir = os.path.join(args.picturepath, 'events')
                 # print(f"Saving to {event_dir}")

@@ -92,7 +92,7 @@ def make_figure():
 
 
 
-def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
+def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, allgrey=False):
     df = df[df.event_id == id]
     size = 10 * np.log(df.recHitEnergy + 1)
     # change sizes bigger than 5 to 5
@@ -162,8 +162,18 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
             size = 50 * np.log(df_i.recHitEnergy + 1)
         size[size > 10] = 10
         size[size < 0.1] = 0.1
-        color = px.colors.qualitative.Alphabet[i % len(px.colors.qualitative.Alphabet)]
-        if i < 0: color = 'black'
+        if allgrey:
+            opacity = 0.5
+            grey_level = 0.4 + 0.4 * np.random.uniform()
+            color = f'rgb({grey_level*255}, {grey_level*255}, {grey_level*255})'
+            # color = 'lightgrey'
+            if i == 0:
+                color = 'crimson'
+                opacity = 1.0
+        else:
+            color = px.colors.qualitative.Alphabet[i % len(px.colors.qualitative.Alphabet)]
+            opacity = 0.8
+            if i < 0: color = 'black'
         if truth:
             customdata=np.stack((
                 df_i['recHitX'], df_i['recHitY'], df_i['recHitZ'],
@@ -210,13 +220,20 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
             marker = dict(
                 size = size,
                 color = color,
-                opacity = 0.8,
+                opacity = opacity,
                 line=dict(width=0),
             ),
             customdata = customdata,
             hovertemplate = hovertemplate,
         )
         fig.add_trace(trace_i)
+        fig.update_layout(
+                scene = dict(
+                    xaxis=dict(title='Z [cm]', titlefont=dict(size=20)),
+                    yaxis=dict(title='Y [cm]', titlefont=dict(size=20)),
+                    zaxis=dict(title='X [cm]', titlefont=dict(size=20)),
+                    )
+                )
         fig.update_layout(scene_camera=camera)
 
     return fig
