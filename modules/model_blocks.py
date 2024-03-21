@@ -99,24 +99,30 @@ def random_sampling_block2(x, rs, gncoords, gnnidx, gndist, is_track,
     x_left0 = x
 
     xleft_list = [x_left0]  # left-sided features after message passing
+    is_track_list = [is_track]
     row_splits_list = [rs]
     gncoords_list = [gncoords]
     gnnidx_list = [gnnidx]
     gndist_list = [gndist]
-    is_track_list = [is_track]
     size_list = []      # this list will stay one entry shorter than the others
     indices_list = []   # this list will stay one entry shorter than the others
 
     # Left side of the RSU
     for i in range(n_reduction):
         # Sampling and KNN
+        # indices_selected_tmp are the indices regarding the input size
         x_temp, rs_temp, (size_tmp, indices_selected_tmp) = RandomSampling(
             reduction,
             name=name + f"_RSU_random_sampling{i}",
         )([xleft_list[-1], is_track_list[-1], row_splits_list[-1]])
 
-        gravnetcoords_tmp = SelectFromIndices()([indices_selected_tmp, gncoords])
-        gnnidx_tmp, gndist_tmp = KNN(K=K, record_metrics=True, name=name + f"_RSU_KNN_{i}", min_bins=20)([gravnetcoords_tmp, rs_temp])
+        gravnetcoords_tmp = SelectFromIndices()(
+            [indices_selected_tmp, gncoords_list[-1]])
+        is_track_tmp = SelectFromIndices()(
+            [indices_selected_tmp, is_track_list[-1]])
+        gnnidx_tmp, gndist_tmp = KNN(
+            K=K, record_metrics=True, 
+            name=name + f"_RSU_KNN_{i}", min_bins=20)([gravnetcoords_tmp, rs_temp])
         gndist_tmp = gndist_tmp / (reduction**(2/D))    #TOOD: Double or triple check that this makes sense
         gndist_tmp = AverageDistanceRegularizer(
                 strength=1e-8,
@@ -133,12 +139,11 @@ def random_sampling_block2(x, rs, gncoords, gnnidx, gndist, is_track,
         
         # Bookkeeping
         xleft_list.append(x_temp)
+        is_track_list.append(is_track_tmp)
         row_splits_list.append(rs_temp)
         gncoords_list.append(gravnetcoords_tmp)
         gnnidx_list.append(gnnidx_tmp)
         gndist_list.append(gndist_tmp)
-        is_track_tmp = SelectFromIndices()([indices_selected_tmp, is_track_list[-1]])
-        is_track_list.append(is_track_tmp)
         size_list.append(size_tmp)
         indices_list.append(indices_selected_tmp)
 
