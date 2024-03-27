@@ -123,7 +123,7 @@ def random_sampling_block2(x, rs, gncoords, gnnidx, gndist, is_track,
         gnnidx_tmp, gndist_tmp = KNN(
             K=K, record_metrics=True, 
             name=name + f"_RSU_KNN_{i}", min_bins=20)([gravnetcoords_tmp, rs_temp])
-        gndist_tmp = gndist_tmp / (reduction**(2/D))    #TOOD: Double or triple check that this makes sense
+        gndist_tmp = gndist_tmp / (reduction**(2/D))
         gndist_tmp = AverageDistanceRegularizer(
                 strength=1e-8,
                 record_metrics=True,
@@ -131,7 +131,11 @@ def random_sampling_block2(x, rs, gncoords, gnnidx, gndist, is_track,
 
         # Message Passing
         x_temp = Dense(N_Dense, activation=activation, name=name + f'_dense_left_preMP_{i}')(x_temp)
-        x_temp = CollectNeighbourAverageAndMax()([x_temp, gnnidx_tmp, gndist_tmp])
+        x_temp = DistanceWeightedMessagePassing(
+            name=name + f"_RSU_message_passing_left_{i}",
+            n_feature_transformation = [64, 32, 32, 16],
+            activation='elu',
+        )([x_temp, gnnidx_tmp, gndist_tmp])
         x_temp = Dense(N_Dense, activation=activation, name=name + f'_dense_left_postMP_{i}')(x_temp)
         x_temp = ScaledGooeyBatchNorm2(fluidity_decay = 0.01,
                                        max_viscosity=0.9999,
@@ -159,7 +163,12 @@ def random_sampling_block2(x, rs, gncoords, gnnidx, gndist, is_track,
 
         # Message Passing
         x_temp = Dense(N_Dense, activation=activation, name=name + f'_dense_right_preMP_{j}')(x_temp)
-        x_temp = CollectNeighbourAverageAndMax()([x_temp, gnnidx_tmp, gndist_tmp])
+        # x_temp = CollectNeighbourAverageAndMax()([x_temp, gnnidx_tmp, gndist_tmp])
+        x_temp = DistanceWeightedMessagePassing(
+            name=name + f"_RSU_message_passing_right_{j}",
+            n_feature_transformation = [64, 32, 32, 16],
+            activation='elu',
+        )([x_temp, gnnidx_tmp, gndist_tmp])
         x_temp = Dense(N_Dense, activation=activation, name=name + f'_dense_right_postMP_{j}')(x_temp)
         
         x_temp = ScaledGooeyBatchNorm2(fluidity_decay = 0.01,
