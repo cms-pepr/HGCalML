@@ -5,8 +5,11 @@ import gzip
 import pickle
 import numpy as np
 
-from DeepJetCore.DataCollection import DataCollection
-from DeepJetCore.dataPipeline import TrainDataGenerator
+# from DeepJetCore.DataCollection import DataCollection # for old DJC version
+# from DeepJetCore.dataPipeline import TrainDataGenerator # old DJC version
+
+from DeepJetCore import DataCollection # for new DJC version
+from djcdata.dataPipeline import TrainDataGenerator
 from DeepJetCore.modeltools import load_model
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
