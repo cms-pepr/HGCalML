@@ -258,7 +258,7 @@ class ShowersMatcher:
 
         # print("IOU Matrix", iou_matrix)
         # 0/0
-        secondary_condition = np.ones((len(pred_shower_energy), len(truth_shower_energy)), np.bool)
+        secondary_condition = np.ones((len(pred_shower_energy), len(truth_shower_energy)), bool)
 
         n = max(len(truth_shower_sid), len(pred_shower_sid))
 
