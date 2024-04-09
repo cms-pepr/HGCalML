@@ -271,7 +271,7 @@ class LossLayerBase(LayerWithMetrics):
             if not self.return_lossval:
                 self.add_loss(lossval)
 
-        self.wandb_log({self.name+'_loss': lossval})
+        # self.wandb_log({self.name+'_loss': lossval})
         if self.return_lossval:
             return a, lossval
         else:
@@ -2833,8 +2833,8 @@ class LLExtendedObjectCondensation(LLFullObjectCondensation):
         # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
         matching_loss = (pred_uncertainty_low - pred_uncertainty_high)**2
         # prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
-        prediction_loss = tf.math.divide_no_nan((t_energy - epred), sigma)
-        prediction_loss = huber(prediction_loss, d=2)
+        prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma)
+        # prediction_loss = huber(prediction_loss, d=2)
 
         uncertainty_loss = tf.math.log(sigma**2)
 
