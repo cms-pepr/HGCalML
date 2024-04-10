@@ -52,7 +52,7 @@ parser = ArgumentParser('training')
 parser.add_argument('configFile')
 parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
 parser.add_argument('--run_name', help="wandb run name", default='test')
-parser.add_argument('--wandb_project', help="wandb project name", default="Autumn_2023")
+parser.add_argument('--wandb_project', help="wandb project name", default="Merge")
 
 train = training_base_hgcal.HGCalTraining(parser=parser) #this will add all the other standard args -> train.args
 
