@@ -15,8 +15,10 @@ import extra_plots as ep
 # get environment variable 'HGCALML'
 try:
     HGCALML = os.environ['HGCALML']
-    from DeepJetCore.DataCollection import DataCollection
-    from DeepJetCore.dataPipeline import TrainDataGenerator
+    # from DeepJetCore.DataCollection import DataCollection
+    # from DeepJetCore.dataPipeline import TrainDataGenerator
+    from DeepJetCore import DataCollection # for new DJC version
+    from djcdata.dataPipeline import TrainDataGenerator
 except KeyError:
     HGCALML = None
     print("HGCALML not set, relying on gzip/pickle")
@@ -92,12 +94,13 @@ def make_figure():
 
 
 
-def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
+def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, allgrey=False):
     df = df[df.event_id == id]
     size = 10 * np.log(df.recHitEnergy + 1)
     # change sizes bigger than 5 to 5
     size[size > 5] = 5
     size[size < 0.1] = 0.1
+    print(df['recHitZ'].max())
 
     if verbose:
         print(np.min(size), np.median(size), np.mean(size), np.max(size))
@@ -162,8 +165,19 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
             size = 50 * np.log(df_i.recHitEnergy + 1)
         size[size > 10] = 10
         size[size < 0.1] = 0.1
-        color = px.colors.qualitative.Alphabet[i % len(px.colors.qualitative.Alphabet)]
-        if i < 0: color = 'black'
+        if allgrey:
+            opacity = 0.5
+            grey_level = 0.4 + 0.4 * np.random.uniform()
+            color = f'rgb({grey_level*255}, {grey_level*255}, {grey_level*255})'
+            # color = 'lightgrey'
+            if i == 0:
+                color = 'crimson'
+                opacity = 1.0
+        else:
+            color = px.colors.qualitative.Alphabet[i % len(px.colors.qualitative.Alphabet)]
+            opacity = 0.8
+            if i < 0: color = 'black'
+
         if truth:
             customdata=np.stack((
                 df_i['recHitX'], df_i['recHitY'], df_i['recHitZ'],
@@ -193,14 +207,6 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
             hovertemplate += '<br><br><b>Prediction</b>' +\
                 '<br>sid: %{customdata[10]}<br>' +\
                 'energy: %{customdata[11]:.2f}'
-        camera = dict(
-            up=dict(x=0, y=0, z=1),
-            center=dict(x=0, y=0, z=0),
-            eye=dict(
-                x=-2.0,
-                y=0.3,
-                z=0.5)
-        )
 
         trace_i = go.Scatter3d(
             x = x,
@@ -210,16 +216,173 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False):
             marker = dict(
                 size = size,
                 color = color,
-                opacity = 0.8,
+                opacity = opacity,
                 line=dict(width=0),
             ),
             customdata = customdata,
             hovertemplate = hovertemplate,
         )
+            
         fig.add_trace(trace_i)
-        fig.update_layout(scene_camera=camera)
+    plot_detector = True
+    if plot_detector:
+        # plot beam pipe
+        radius = 5
+        n_points = 100
+        theta = np.linspace(0, 2*np.pi, n_points)
+        x = np.linspace(300, 500, n_points)
+        y = radius * np.cos(theta)
+        z = radius * np.sin(theta)
+        # fig.add_trace(go.Surface(x=x, y=y, z=z, colorscale='Blues', showscale=False))
+        fig.add_trace(
+            go.Scatter3d(
+                x=[200, 500],
+                y=[0, 0],
+                z=[0, 0],
+                mode='lines',
+                line=dict(color='blue', width=20)
+                )
+            )
+        # First circles
+        r_front = z_to_r(320, 1.5)
+        center_front = (320, 0, 0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        r_front = z_to_r(320, 3.0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        # Second circles
+        r_front = z_to_r(370, 1.5)
+        center_front = (370, 0, 0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        r_front = z_to_r(370, 3.0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        # Thrid circles
+        r_front = z_to_r(420, 1.5)
+        center_front = (420, 0, 0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        r_front = z_to_r(420, 3.0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        # Fourth circles
+        r_front = z_to_r(470, 1.5)
+        center_front = (470, 0, 0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        r_front = z_to_r(470, 3.0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        # Fifth circles
+        r_front = z_to_r(520, 1.5)
+        center_front = (520, 0, 0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+        r_front = z_to_r(520, 3.0)
+        x_cf, y_cf, z_cf = create_circle(center_front, r_front)
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_cf, y=y_cf, z=z_cf, mode='lines', line=dict(color='blue', width=5)
+                )
+            )
+
+        # plot other lines
+        for angle in np.linspace(0, 2*np.pi, 12):
+            start_0_inner = (320, np.cos(angle) * z_to_r(320, 3.0), np.sin(angle) * z_to_r(320, 3.0))
+            stop_0_inner = (520, np.cos(angle) * z_to_r(520, 3.0), np.sin(angle) * z_to_r(520, 3.0))
+            start_0_outer = (320, np.cos(angle) * z_to_r(320, 1.5), np.sin(angle) * z_to_r(320, 1.5))
+            stop_0_outer = (520, np.cos(angle) * z_to_r(520, 1.5), np.sin(angle) * z_to_r(520, 1.5))
+            fig.add_trace(
+                    go.Scatter3d(
+                        x=[start_0_inner[0], stop_0_inner[0]],
+                        y=[start_0_inner[1], stop_0_inner[1]],
+                        z=[start_0_inner[2], stop_0_inner[2]],
+                        mode='lines',
+                        line=dict(color='blue', width=5)
+                        )
+                    )
+            fig.add_trace(
+                    go.Scatter3d(
+                        x=[start_0_outer[0], stop_0_outer[0]],
+                        y=[start_0_outer[1], stop_0_outer[1]],
+                        z=[start_0_outer[2], stop_0_outer[2]],
+                        mode='lines',
+                        line=dict(color='blue', width=5)
+                        )
+                    )
+
+        
+
+    camera = dict(
+        up=dict(x=0, y=0, z=1),
+        center=dict(x=0, y=0, z=0),
+        eye=dict(
+            x=-2.0,
+            y=0.3,
+            z=0.5)
+    )
+
+    fig.update_layout(
+            scene = dict(
+                xaxis=dict(title='Z [cm]', titlefont=dict(size=20)),
+                yaxis=dict(title='Y [cm]', titlefont=dict(size=20)),
+                zaxis=dict(title='X [cm]', titlefont=dict(size=20)),
+                )
+            )
+    fig.update_layout(scene_camera=camera)
 
     return fig
+
+
+def z_to_r(z, eta):
+    theta = 2 * np.arctan(np.exp(-1 * eta))
+    return z * np.tan(theta)
+
+
+def create_circle(center, radius, num_points=100):
+    theta = np.linspace(0, 2*np.pi, num_points)
+    x = center[0] + np.zeros_like(theta)
+    y = center[1] + radius * np.cos(theta)
+    z = center[2] + radius * np.sin(theta)
+    return x, y, z
 
 
 def matched_plot(truth, features, processed_df, showers_df):

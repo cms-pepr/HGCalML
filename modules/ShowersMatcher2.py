@@ -258,7 +258,7 @@ class ShowersMatcher:
 
         # print("IOU Matrix", iou_matrix)
         # 0/0
-        secondary_condition = np.ones((len(pred_shower_energy), len(truth_shower_energy)), np.bool)
+        secondary_condition = np.ones((len(pred_shower_energy), len(truth_shower_energy)), bool)
 
         n = max(len(truth_shower_sid), len(pred_shower_sid))
 
@@ -325,13 +325,14 @@ class ShowersMatcher:
         self.calculated_graph = matched_full_graph
 
 
-    def process(self):
+    def process(self, extra=False):
         self._build_data_graph()
         if self.match_mode == 'iou_max':
             self._match_single_pass()
         else:
             raise NotImplementedError('Match mode not found')
-        # self._assign_additional_attr()
+        if extra:
+            self._assign_additional_attr()
 
 
     def get_matched_hit_sids(self):
