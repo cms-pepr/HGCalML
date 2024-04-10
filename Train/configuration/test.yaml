@@ -5,6 +5,7 @@ General:
     - n: 64
   n_cluster_space_coordinates: 3
   n_gravnet_space_coordinates: 3
+  fix_distance: 1
 
 DenseOptions:
   activation: "elu"
