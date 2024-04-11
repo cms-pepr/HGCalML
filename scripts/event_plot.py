@@ -75,7 +75,6 @@ def analyse(preddir,
         files_to_be_tested = files_to_be_tested[0:min(nfiles, len(files_to_be_tested))]
 
     showers_dataframe = pd.DataFrame()
-    matched_showers = pd.DataFrame()
     features = []
     truth = []
     prediction = []
@@ -111,7 +110,7 @@ def analyse(preddir,
             features.append(features_dict)
             prediction.append(predictions_dict)
             truth.append(truth_dict)
-            
+
             if 'no_noise_sel' in predictions_dict.keys():
                 no_noise_indices = predictions_dict['no_noise_sel'] #Shape [N_filtered, 1]
             else:
@@ -121,8 +120,8 @@ def analyse(preddir,
             ones = tf.ones_like(no_noise_indices[:,0], dtype=tf.bool)
             mask = tf.tensor_scatter_nd_update(zeros, no_noise_indices, ones)
             if eta_phi_mask:
-                if eta_phi_mask.sum() == 0: continue
-                shower_mask = truth_dict['truthHitAssignementIdx'] == 0 
+                # if eta_phi_mask.sum() == 0: continue
+                shower_mask = truth_dict['truthHitAssignementIdx'] == 0
                 phi_true = truth_dict['truthHitAssignedPhi'][shower_mask][0] # Between -pi and pi
                 eta_true = truth_dict['truthHitAssignedEta'][shower_mask][0] # Between -pi and pi
                 delta_eta = np.abs(truth_dict['truthHitAssignedEta'] - eta_true)
@@ -196,121 +195,49 @@ def analyse(preddir,
                 mask_center = shower0_ccoords[np.argmax(shower0_betas)].reshape((n_cluster_space,))
 
             mask_center = None
-            if 't_only_minbias' not in filtered_truth_df.keys():
-                filtered_truth_df['t_only_minbias'] = 0.
-            processed_pred_dict, pred_shower_alpha_idx = process_endcap2(
-                    hits2showers,
-                    energy_gatherer,
-                    filtered_features,
-                    predictions_dict,
-                    energy_mode=energy_mode,
-                    hdbscan=use_hdbscan,
-                    min_cluster_size=min_cluster_size,
-                    min_samples=min_samples,
-                    mask_center=mask_center,
-                    mask_radius=mask_radius,
-                    is_minbias=filtered_truth_df.t_only_minbias,
-                    )
 
-            alpha_ids.append(pred_shower_alpha_idx)
-            processed.append(processed_pred_dict)
-            showers_matcher.set_inputs(
-                features_dict=filtered_features,
-                truth_dict=filtered_truth,
-                predictions_dict=processed_pred_dict,
-                pred_alpha_idx=pred_shower_alpha_idx
-            )
-            showers_matcher.process(extra=extra)
-            dataframe = showers_matcher.get_result_as_dataframe()
-            matched_truth_sid, matched_pred_sid = showers_matcher.get_matched_hit_sids()
-            matched.append((matched_truth_sid, matched_pred_sid))
 
-            dataframe['event_id'] = event_id
-            showers_dataframe = pd.concat((showers_dataframe, dataframe))
             processed_dataframe = ep.dictlist_to_dataframe(processed[-1:])
-            matched_df = dataframe.dropna()
-            matched_df = matched_df[['truthHitAssignementIdx', 'pred_sid']]
-            map_truthkey = dict(zip(matched_df.truthHitAssignementIdx.values, matched_df.pred_sid.values))
-            map_predkey = dict(zip(matched_df.pred_sid.values, matched_df.truthHitAssignementIdx.values))
-            df = pd.DataFrame()
-            df['pred_sid'] = processed_pred_dict['pred_sid'][:,0]
-            df['no_noise_sel'] = processed_pred_dict['no_noise_sel'][:,0]
-            df['truth_sid'] = truth_dict['truthHitAssignementIdx'][df['no_noise_sel']][:,0]
-
-            mapped_pred_sid = []
-            for sid in df.pred_sid.values:
-                if sid in map_predkey.keys():
-                    mapped_pred_sid.append(map_predkey[sid])
-                else:
-                    mapped_pred_sid.append(-1)
-            df['mapped_pred_sid'] = mapped_pred_sid
-            df['recHitEnergy'] = filtered_features['recHitEnergy']
-            matched_df.columns = ['truth_sid', 'pred_sid']
 
             n_pred, n_truth, n_pred_and_truth, n_pred_not_truth = [], [], [], []
             e_pred, e_truth, e_pred_and_truth, e_pred_not_truth = [], [], [], []
-            for sid in matched_df.truth_sid.values:
-                n_truth.append(df[df.truth_sid == sid].shape[0])
-                e_truth.append(df[df.truth_sid == sid]['recHitEnergy'].sum())
-                n_pred.append(df[df.mapped_pred_sid == sid].shape[0])
-                e_pred.append(df[df.mapped_pred_sid == sid]['recHitEnergy'].sum())
-                n_pred_and_truth.append(df[(df.truth_sid == sid) & (df.mapped_pred_sid == sid)].shape[0])
-                e_pred_and_truth.append(df[(df.truth_sid == sid) & (df.mapped_pred_sid == sid)]['recHitEnergy'].sum())
-                n_pred_not_truth.append(df[(df.truth_sid != sid) & (df.mapped_pred_sid == sid)].shape[0])
-                e_pred_not_truth.append(df[(df.truth_sid != sid) & (df.mapped_pred_sid == sid)]['recHitEnergy'].sum())
-            matched_df['n_truth'] = n_truth
-            matched_df['e_truth'] = e_truth
-            matched_df['n_pred'] = n_pred
-            matched_df['e_pred'] = e_pred
-            matched_df['n_pred_and_truth'] = n_pred_and_truth
-            matched_df['e_pred_and_truth'] = e_pred_and_truth
-            matched_df['n_pred_not_truth'] = n_pred_not_truth
-            matched_df['e_pred_not_truth'] = e_pred_not_truth
-            matched_df['event_id'] = event_id
-            matched_showers = pd.concat((matched_showers, matched_df))
-
 
             eventsdir = os.path.join('.', 'events')
             if not os.path.isdir(eventsdir):
                 os.mkdir(eventsdir)
-            if event_id < 2:
-                # pdb.set_trace()
-                # make 3d plot of the event and save it
-                tmp_feat = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
-                tmp_truth = ep.dictlist_to_dataframe([filtered_truth], add_event_id=False)
-                # tmp_feat.drop(['event_id'], inplace=True)
-                # tmp_truth.drop(['event_id'], inplace=True)
-                s_feat = tmp_feat.shape
-                s_processed = processed_dataframe.shape
-                if s_processed[0] != s_feat[0]:
-                    pdb.set_trace()
-                # print("tmp_feat: ", tmp_feat.shape, "\ntmp_truth: ", tmp_truth.shape)
-                # print("processed: ", processed_dataframe.shape)
-                tmp_predbeta = pd.DataFrame(predictions_dict['pred_beta'], columns=['pred_beta'])
-                full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe, tmp_predbeta), axis=1)
-                fig_truth = dataframe_to_plot(full_df, truth=True, allgrey=True)
-                fig_pred = dataframe_to_plot(full_df, truth=False)
-                event_dir = os.path.join(args.picturepath, 'events')
-                # print(f"Saving to {event_dir}")
-                if not os.path.exists(event_dir):
-                    os.mkdir(event_dir)
-                fig_truth.write_html(os.path.join(event_dir, f'event_{event_id}_truth.html'))
-                fig_pred.write_html(os.path.join(event_dir, f'event_{event_id}_pred.html'))
-                fig_cluster_pca = dataframe_to_plot(full_df, truth=False, clusterspace='pca')
-                fig_cluster_first = dataframe_to_plot(full_df, truth=False, clusterspace=(0,1,2))
-                fig_cluster_pca.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_pca.html'))
-                fig_cluster_first.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_first.html'))
-                fig_cluster_pca_truth = dataframe_to_plot(full_df, truth=True, clusterspace='pca')
-                fig_cluster_first_truth = dataframe_to_plot(full_df, truth=True, clusterspace=(0,1,2))
-                fig_cluster_pca_truth.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_pca_truth.html'))
-                fig_cluster_first_truth.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_first_truth.html'))
-                fig_matched = matched_plot(filtered_truth, filtered_features, processed_dataframe, dataframe)
-                fig_matched.write_html(os.path.join(event_dir, f'event_{event_id}_matched.html'))
-                fig_class_hit = ep.classification_hitbased(
-                        filtered_truth, predictions_dict,
-                        weighted=True, normalize='true')
-                fig_class_hit.savefig(os.path.join(event_dir, f'event_{event_id}_classification_plot_hits.jpg'))
+            if event_id > 2: break
 
+            # pdb.set_trace()
+            # make 3d plot of the event and save it
+            tmp_feat = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
+            tmp_truth = ep.dictlist_to_dataframe([filtered_truth], add_event_id=False)
+            # tmp_feat.drop(['event_id'], inplace=True)
+            # tmp_truth.drop(['event_id'], inplace=True)
+            s_feat = tmp_feat.shape
+            s_processed = processed_dataframe.shape
+            # if s_processed[0] != s_feat[0]:
+                # pdb.set_trace()
+            # print("tmp_feat: ", tmp_feat.shape, "\ntmp_truth: ", tmp_truth.shape)
+            # print("processed: ", processed_dataframe.shape)
+            tmp_predbeta = pd.DataFrame(predictions_dict['pred_beta'], columns=['pred_beta'])
+            full_df = pd.concat((tmp_feat, tmp_truth, processed_dataframe, tmp_predbeta), axis=1)
+            full_df['event_id'] = event_id 
+            fig_truth = dataframe_to_plot(full_df, truth=True, allgrey=True)
+            # fig_pred = dataframe_to_plot(full_df, truth=False)
+            event_dir = os.path.join(args.picturepath, 'events')
+            # print(f"Saving to {event_dir}")
+            if not os.path.exists(event_dir):
+                os.mkdir(event_dir)
+            fig_truth.write_html(os.path.join(event_dir, f'event_{event_id}_truth.html'))
+            # fig_pred.write_html(os.path.join(event_dir, f'event_{event_id}_pred.html'))
+            # fig_cluster_pca = dataframe_to_plot(full_df, truth=False, clusterspace='pca')
+            # fig_cluster_first = dataframe_to_plot(full_df, truth=False, clusterspace=(0,1,2))
+            # fig_cluster_pca.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_pca.html'))
+            # fig_cluster_first.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_first.html'))
+            # fig_cluster_pca_truth = dataframe_to_plot(full_df, truth=True, clusterspace='pca')
+            # fig_cluster_first_truth = dataframe_to_plot(full_df, truth=True, clusterspace=(0,1,2))
+            # fig_cluster_pca_truth.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_pca_truth.html'))
+            # fig_cluster_first_truth.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_first_truth.html'))
             event_id += 1
 
     """
@@ -331,73 +258,6 @@ def analyse(preddir,
     ### New plotting stuff ########################################################################
     ###############################################################################################
 
-    ### Noise Filter Performance ##################################################################
-    try:
-        fig = ep.noise_performance(noise_df)
-        fig.savefig(os.path.join(args.picturepath, 'noise_performance.jpg'))
-    except:
-        print("Noise overview failed")
-
-    ### Prediction overview #######################################################################
-    try:
-        fig = ep.prediction_overview(prediction)
-        fig.savefig(os.path.join(args.picturepath, 'prediction_overview.jpg'))
-    except:
-        print("Overview failed")
-
-    ### Classification ############################################################################
-    try:
-        fig = ep.classification_plot(showers_dataframe, normalize=None)
-        fig.savefig(os.path.join(args.picturepath, 'classification_plot_counts.jpg'))
-        fig = ep.classification_plot(showers_dataframe, normalize='true')
-        fig.savefig(os.path.join(args.picturepath, 'classification_plot_true.jpg'))
-        fig = ep.classification_plot(showers_dataframe, normalize='pred')
-        fig.savefig(os.path.join(args.picturepath, 'classification_plot_pred.jpg'))
-        fig = ep.classification_plot(showers_dataframe, normalize='all')
-        fig.savefig(os.path.join(args.picturepath, 'classification_plot_all.jpg'))
-    except:
-        print("Classification failed")
-
-    ### Tracks versus hits ########################################################################
-    try:
-        fig = ep.tracks_vs_hits(showers_dataframe)
-        fig.savefig(os.path.join(args.picturepath, 'median_ratios.jpg'))
-    except:
-        print("Tracks-vs-hits failed")
-
-    ### Efficiency plots ##########################################################################
-    try:
-        fig_eff, eff_summary = ep.efficiency_plot(showers_dataframe, return_summary=True)
-        fig_eff.savefig(os.path.join(args.picturepath, 'efficiency.jpg'))
-        with open(os.path.join(args.picturepath, 'efficiency.pkl'), 'wb') as f:
-            pickle.dump(eff_summary, f)
-
-    except:
-        print("Efficiency failed")
-
-    ### Resolution plots ##########################################################################
-    try:
-        fig_res = ep.energy_resolution(showers_dataframe)
-        fig_res.savefig(os.path.join(args.picturepath, 'energy_resolution.jpg'))
-    except:
-        print("Resolution plot failed")
-
-    ### Energy uncertainty plot ###################################################################
-    try:
-        fig_unc = ep.within_uncertainty(showers_dataframe)
-        fig_unc.savefig(os.path.join(args.picturepath, 'within_uncertainty.jpg'))
-    except:
-        print("Uncertainty plot failed")
-
-
-    ### low-high difference plot ##################################################################
-
-    try:
-        fig_low_high = ep.plot_high_low_difference(prediction)
-        fig_low_high.savefig(os.path.join(args.picturepath, 'low_high_difference.jpg'))
-    except:
-        print("low-high difference plot failed")
-
     # This is only to write to pdf files
     scalar_variables = {
         'beta_threshold': str(beta_threshold),
@@ -408,35 +268,6 @@ def analyse(preddir,
         'de_e_cut': str(de_e_cut),
         'angle_cut': str(angle_cut),
     }
-
-    if len(analysisoutpath) > 0:
-        analysis_data = {
-            'showers_dataframe' : showers_dataframe,
-            'events_dataframe' : None,
-            'scalar_variables' : scalar_variables,
-            'alpha_ids'        : alpha_ids,
-            'noise_masks': noise_masks,
-            'matched': matched,
-            'matched_showers': matched_showers,
-        }
-        if not slim:
-            analysis_data['processed_dataframe'] = ep.dictlist_to_dataframe(processed)
-            analysis_data['features'] = features
-            analysis_data['truth'] = truth
-            analysis_data['prediction'] = prediction
-        if not hdf:
-            with gzip.open(analysisoutpath, 'wb') as output_file:
-                print("Writing dataframes to pickled file",analysisoutpath)
-                pickle.dump(analysis_data, output_file)
-        else:
-            showers_dataframe.to_hdf(analysisoutpath, key='showers')
-
-
-
-    if len(pdfpath)>0:
-        plotter = HGCalAnalysisPlotter()
-        plotter.set_data(showers_dataframe, None, '', pdfpath, scalar_variables=scalar_variables)
-        plotter.process()
 
     print("DONE")
 
