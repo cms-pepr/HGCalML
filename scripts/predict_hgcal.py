@@ -4,6 +4,9 @@
 Script that calls the HGCalPredictor class to run inference on a data collection.
 """
 
+from DeepJetCore.wandb_interface import wandb_wrapper as wandb
+wandb.active = False 
+
 from argparse import ArgumentParser
 from hgcal_predictor import HGCalPredictor
 
