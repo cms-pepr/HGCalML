@@ -5,8 +5,11 @@ import gzip
 import pickle
 import numpy as np
 
-from DeepJetCore.DataCollection import DataCollection
-from DeepJetCore.dataPipeline import TrainDataGenerator
+# from DeepJetCore.DataCollection import DataCollection # for old DJC version
+# from DeepJetCore.dataPipeline import TrainDataGenerator # old DJC version
+
+from DeepJetCore import DataCollection # for new DJC version
+from djcdata.dataPipeline import TrainDataGenerator
 from DeepJetCore.modeltools import load_model
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
@@ -158,7 +161,11 @@ class HGCalPredictor():
                     extra_data.append([truth_info])
                 else:
                     t0 = time.time()
-                    predictions_dict = model(data_in[0])
+                    if len(data_in[0]) == 24:
+                        data = data_in[0][:20]
+                    else:
+                        data = data_in[0]
+                    predictions_dict = model(data)
                     pred_time = time.time() - t0
                     predict_time += pred_time
                     n_pred = predictions_dict['pred_beta'].shape[0]
@@ -176,11 +183,7 @@ class HGCalPredictor():
                 except:
                     print("features_dict not created")
 
-                try:
-                    truth_dict = td.createTruthDict(data_in[0])
-                except:
-                    print("truth dict not create")
-                    success_truth = False
+                truth_dict = td.createTruthDict(data_in[0])
 
                 dumping_data.append([features_dict, truth_dict, predictions_dict])
 

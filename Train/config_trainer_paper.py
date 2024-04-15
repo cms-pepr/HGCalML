@@ -3,41 +3,47 @@ Flexible training script that should be mostly configured with a yaml config fil
 """
 
 import os
+import pdb
 import sys
 import yaml
 import shutil
 from argparse import ArgumentParser
 
+# import wandb
+from DeepJetCore.wandb_interface import wandb_wrapper as wandb
+from wandb_callback import wandbCallback
 import tensorflow as tf
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
+from tensorflow.keras import Model
 
 from DeepJetCore.training.DeepJet_callbacks import simpleMetricsCallback
 from DeepJetCore.DJCLayers import StopGradient, ScalarMultiply
 
-from DeepJetCore.wandb_interface import wandb_wrapper as wandb
-
 import training_base_hgcal
-from Layers import ScaledGooeyBatchNorm2, DummyLayer
-from Layers import MixWhere, ElementWiseMultiply
+from Layers import ScaledGooeyBatchNorm2
+from Layers import MixWhere
 from Layers import RaggedGravNet
 from Layers import PlotCoordinates
-from Layers import DistanceWeightedMessagePassing, AccumulateNeighbours
+from Layers import DistanceWeightedMessagePassing, TranslationInvariantMP
 from Layers import LLFillSpace
-from Layers import LLExtendedObjectCondensation, TranslationInvariantMP
-
-from tensorflow.keras import Model
-
+from Layers import LLExtendedObjectCondensation
+from Layers import LLExtendedObjectCondensation2
+from Layers import LLExtendedObjectCondensation3
+from Layers import LLExtendedObjectCondensation4
+from Layers import DictModel
 from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
 from Layers import Multi
-from Layers import ShiftDistance, KNN, MessagePassing
-from Layers import LLRegulariseGravNetSpace
+from Layers import ShiftDistance
+# from Layers import LLRegulariseGravNetSpace
+from Layers import SplitOffTracks, ConcatRaggedTensors
 from Regularizers import AverageDistanceRegularizer
+from Initializers import EyeInitializer
 from model_blocks import tiny_pc_pool, condition_input
 from model_blocks import extent_coords_if_needed
 from model_blocks import create_outputs
 from model_tools import apply_weights_from_path
-from model_blocks import random_sampling_unit, random_sampling_block, random_sampling_block2
+from model_blocks import random_sampling_unit, random_sampling_block2
 from noise_filter import noise_filter
 from callbacks import plotClusteringDuringTraining
 from callbacks import plotClusterSummary
@@ -45,18 +51,18 @@ from callbacks import NanSweeper, DebugPlotRunner
 
 
 ####################################################################################################
-### Load Arguments and trainer #####################################################################
+### Load Configuration #############################################################################
 ####################################################################################################
 
 parser = ArgumentParser('training')
 parser.add_argument('configFile')
+parser.add_argument('--run_name', help="wandb run name", default="test")
 parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
-parser.add_argument('--run_name', help="wandb run name", default='test')
-parser.add_argument('--wandb_project', help="wandb project name", default="Merge")
+parser.add_argument('--wandb_project', help="wandb_project", default="Merge")
 
-train = training_base_hgcal.HGCalTraining(parser=parser) #this will add all the other standard args -> train.args
-
+train = training_base_hgcal.HGCalTraining(parser=parser)
 CONFIGFILE = train.args.configFile
+
 print(f"Using config File: \n{CONFIGFILE}")
 
 with open(CONFIGFILE, 'r') as f:
@@ -70,6 +76,19 @@ BATCHNORM_OPTIONS = config['BatchNormOptions']
 DENSE_ACTIVATION = config['DenseOptions']['activation']
 DENSE_REGULARIZER = tf.keras.regularizers.l2(config['DenseOptions']['kernel_regularizer_rate'])
 DROPOUT = config['DenseOptions']['dropout']
+DISTANCE_SCALE= bool(config['General']['fix_distance'])
+loss_layer = LLExtendedObjectCondensation2
+
+if "LossLayer" in config['General']:
+    if config['General']['loss_layer'] == "2":
+        loss_layer = LLExtendedObjectCondensation2
+    elif config['General']['loss_layer'] == "3":
+        loss_layer = LLExtendedObjectCondensation3
+    elif config['General']['loss_layer'] == "4":
+        loss_layer = LLExtendedObjectCondensation4
+else:
+    config['General']['loss_layer'] = 2
+
 
 wandb_config = {
     "loss_implementation"           :   config['General']['oc_implementation'],
@@ -86,6 +105,8 @@ wandb_config = {
     "dense_activation"              :   config['DenseOptions']['activation'],
     "dense_kernel_reg"              :   config['DenseOptions']['kernel_regularizer_rate'] ,
     "dense_dropout"                 :   config['DenseOptions']['dropout'],
+    "distance_scale"                :   DISTANCE_SCALE,
+    "LossLayer"                     :   config['General']['loss_layer']
 }
 
 for i in range(GRAVNET_ITERATIONS):
@@ -109,12 +130,13 @@ else:
     wandb.active=False
 
 
+
 ###############################################################################
 ### Define Model ##############################################################
 ###############################################################################
 
 
-def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
+def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     """
     Function that defines the model to train
     """
@@ -124,34 +146,15 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
     ###########################################################################
 
     orig_input = td.interpretAllModelInputs(Inputs)
-    pre_processed = condition_input(orig_input, no_scaling=False, no_prime=False)
+    pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False)
 
     prime_coords = pre_processed['prime_coords']
+    c_coords = prime_coords
     is_track = pre_processed['is_track']
     rs = pre_processed['row_splits']
     energy = pre_processed['rechit_energy']
     t_idx = pre_processed['t_idx']
     x = pre_processed['features']
-
-    # preprocessed features here are already normalised! (no_scaling=False above)
-    # Embed hits and track features differently
-    x = ScaledGooeyBatchNorm2(
-            learn=True,
-            no_bias_gamma=True,
-            no_gaus=False)([x, is_track])
-
-    x = ScaledGooeyBatchNorm2(
-            invert_condition=True,
-            learn=True,
-            no_bias_gamma=True,
-            no_gaus=False)([x, is_track])
-
-    c_coords = prime_coords
-    c_coords = ScaledGooeyBatchNorm2(
-        name='batchnorm_ccoords',
-        no_bias_gamma=True,
-        learn=True
-            )(c_coords)
 
     c_coords = PlotCoordinates(
         plot_every=plot_debug_every,
@@ -159,87 +162,107 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
         name='input_c_coords',
         # publish = publishpath
         )([c_coords, energy, t_idx, rs])
+    c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
 
     x = Concatenate()([x, c_coords, is_track])
-    x = Dense(24, name='dense_pre_pre_loop', activation=DENSE_ACTIVATION)(x) 
+    x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x)
+
+    allfeat = []
     print("Available keys: ", pre_processed.keys())
 
-    ## create a pre-information exchange
-    layerwise_coords = ElementWiseMultiply([[1.,1.,1000.]])(prime_coords)
-    flat_coords = ElementWiseMultiply([[1.,1.,0.]])(prime_coords)
-
-    lw_nidx, lw_dist = KNN(32)([layerwise_coords, rs])
-    flat_nidx, flat_dist = KNN(32)([flat_coords, rs])
-
-    # a few simple MP in different directions
-    
-    for _ in range(1):
-        xt = TranslationInvariantMP([16,16])([x, lw_nidx])
-        x = Concatenate()([xt,x])
-        xt = TranslationInvariantMP([16,16])([x, flat_nidx])
-        x = Concatenate()([x,xt])
-
-    c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
-    x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x) 
-    allfeat = [c_coords, x]
-    gncoords = c_coords
-   
     ###########################################################################
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
-    gravnet_reg = 1e-4
 
     for i in range(GRAVNET_ITERATIONS):
 
         d_shape = x.shape[1]//2
 
-        x = Dense(d_shape,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(d_shape,activation=DENSE_ACTIVATION,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
+        if i in (0, 4):
+            x = Dense(d_shape,activation=DENSE_ACTIVATION,
+                kernel_regularizer=DENSE_REGULARIZER)(x)
+            x = Dense(d_shape,activation=DENSE_ACTIVATION,
+                kernel_regularizer=DENSE_REGULARIZER)(x)
 
-        x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
+            x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
         x_pre = x
-        x = Concatenate()([gncoords, x])
+        # get indices of x
 
-        x, gncoords, gnnidx, gndist = RaggedGravNet(
-                name = f"Gravnet_{i}", # 76929, 42625, 42625 
-            n_neighbours=config['General']['gravnet'][i]['n'],
-            n_dimensions=N_GRAVNET_SPACE_COORDINATES,
-            n_filters=d_shape,
-            n_propagate=2*d_shape,
-            coord_initialiser_noise=1e-2,
-            feature_activation=None, #classic gravnet
-            # sumwnorm=True,
-            )([x, rs])
+        if i == 0:
+            x_hit, x_track, rs_hit, rs_track = SplitOffTracks()([is_track, [x], rs])
+            x_hit = x_hit[0]
+            x_track = x_track[0]
 
-        gndist = LLRegulariseGravNetSpace(
-                scale=gravnet_reg,
-                record_metrics=False,
-                name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
+            xgn_hit, gncoords_hit, gnnidx_hit, gndist_hit = RaggedGravNet(
+                    name = f"RSU_gravnet_{i}_hit", # 76929, 42625, 42625
+                n_neighbours=config['General']['gravnet'][i]['n'],
+                n_dimensions=N_GRAVNET_SPACE_COORDINATES,
+                n_filters=d_shape,
+                n_propagate=2*d_shape,
+                coord_initialiser_noise=None,
+                feature_activation='elu',
+                )([x_hit, rs_hit])
+            xgn_track, gncoords_track, gnnidx_track, gndist_track = RaggedGravNet(
+                    name = f"RSU_gravnet_{i}_track", # 76929, 42625, 42625
+                n_neighbours=16,
+                n_dimensions=N_GRAVNET_SPACE_COORDINATES,
+                n_filters=d_shape,
+                n_propagate=2*d_shape,
+                coord_initialiser_noise=None,
+                feature_activation='elu',
+                )([x_track, rs_track])
 
-        x = Concatenate()([x, TranslationInvariantMP(
-                        [32,32],
-                         activation='elu')([x,gnnidx,gndist])
-                         ])
 
+            # x_hit = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
+            # x_track = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
+            x_hit = TranslationInvariantMP([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
+            x_track = TranslationInvariantMP([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
+
+            [xgn, gncoords], rs  = ConcatRaggedTensors()([
+                [xgn_track, gncoords_track],
+                [xgn_hit, gncoords_hit],
+                rs_track, rs_hit])
+
+        else:
+            xgn, gncoords, gnnidx, gndist = RaggedGravNet(
+                    name = f"RSU_gravnet_{i}", # 76929, 42625, 42625
+                n_neighbours=config['General']['gravnet'][i]['n'],
+                n_dimensions=N_GRAVNET_SPACE_COORDINATES,
+                n_filters=d_shape,
+                n_propagate=2*d_shape,
+                coord_initialiser_noise=None,
+                feature_activation='elu',
+                # sumwnorm=True,
+                )([x, rs])
+
+            # gndist = LLRegulariseGravNetSpace(
+                    # scale=0.01,
+                    # record_metrics=False,
+                    # name=f'regularise_gravnet_{i}')([gndist, prime_coords, gnnidx])
+
+            x_rand = random_sampling_block2(
+                    xgn, rs, gncoords, gnnidx, gndist, is_track,
+                    reduction=6, name=f"RSU_{i}")
+            x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
+
+            # gndist = AverageDistanceRegularizer(
+                # strength=1e-3,
+                # record_metrics=True
+                # )(gndist)
+        # gndist = StopGradient()(gndist)
+        gncoords = StopGradient()(gncoords)
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
             outdir=debug_outdir,
             name='gn_coords_'+str(i)
             )([gncoords, energy, t_idx, rs])
 
-        x = DummyLayer()([x,gncoords,gndist])#just make sure any layer above is not optimised away
-
-        # afew of those again
-        xt = TranslationInvariantMP([16,16])([x, lw_nidx])
-        x = Concatenate()([x,xt])
-        xt = TranslationInvariantMP([16,16])([x, flat_nidx])
-        x = Concatenate()([x,xt])
-
-        x = Concatenate()([x, x_pre])
-        x = Dense(2*d_shape,
+        if i == 0:
+            x = Concatenate()([xgn, gncoords])
+        else:
+            x = Concatenate()([x_pre, xgn, x_rand, gncoords])
+        x = Dense(d_shape,
                   name=f"dense_post_gravnet_1_iteration_{i}",
                   activation=DENSE_ACTIVATION,
                   kernel_regularizer=DENSE_REGULARIZER)(x)
@@ -263,13 +286,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
     ### Create output of model and define loss ################################
     ###########################################################################
 
-    
-    # afew of those again
-    xt = TranslationInvariantMP([32,16])([x, lw_nidx])
-    x = Concatenate()([x,xt])
-    xt = TranslationInvariantMP([32,16])([x, flat_nidx])
-    x = Concatenate()([x,xt])
-    
+
     x = Dense(64,
               name=f"dense_final_{1}",
               activation=DENSE_ACTIVATION,
@@ -289,24 +306,33 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
     pred_beta, pred_ccoords, pred_dist, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
         pred_pos, pred_time, pred_time_unc, pred_id = \
-        create_outputs(x, n_ccoords=N_CLUSTER_SPACE_COORDINATES, fix_distance_scale=True)
+        create_outputs(x,
+                n_ccoords=N_CLUSTER_SPACE_COORDINATES,
+                fix_distance_scale=not DISTANCE_SCALE,
+                is_track=is_track,
+                set_track_betas_to_one=True)
 
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
 
+    if config['General']['oc_implementation'] == 'hinge':
+        loss_implementation = 'hinge'
+    else:
+        loss_implementation = ''
 
-    pred_beta = LLExtendedObjectCondensation(scale=1.,
-                                             use_energy_weights=True,
-                                             record_metrics=True,
-                                             print_loss=False,
-                                             name="ExtendedOCLoss",
-                                             implementation = config['General']['oc_implementation'],
-                                             **LOSS_OPTIONS)(
-        [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
-         pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
-         pre_processed['t_idx'] , pre_processed['t_energy'] , pre_processed['t_pos'] ,
-         pre_processed['t_time'] , pre_processed['t_pid'] , pre_processed['t_spectator_weight'],
-         pre_processed['t_fully_contained'], pre_processed['t_rec_energy'],
-         pre_processed['t_is_unique'], pre_processed['row_splits']])
+    pred_beta = loss_layer(
+            scale=1.,
+            use_energy_weights=True,
+            record_metrics=True,
+            print_loss=True,
+            name="ExtendedOCLoss",
+            implementation = loss_implementation,
+            **LOSS_OPTIONS)(
+                    [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
+                        pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
+                        pre_processed['t_idx'] , pre_processed['t_energy'] , pre_processed['t_pos'] ,
+                        pre_processed['t_time'] , pre_processed['t_pid'] , pre_processed['t_spectator_weight'],
+                        pre_processed['t_fully_contained'], pre_processed['t_rec_energy'],
+                        pre_processed['t_is_unique'], pre_processed['row_splits']])
 
     pred_ccoords = PlotCoordinates(
         plot_every=plot_debug_every,
@@ -330,8 +356,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=500):
         # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
 
+    # return DictModel(inputs=Inputs, outputs=model_outputs)
     return Model(inputs=Inputs, outputs=model_outputs)
-    #return DictModel(inputs=Inputs, outputs=model_outputs)
 
 
 ###############################################################################
@@ -362,14 +388,65 @@ RECORD_FREQUENCY = 10
 PLOT_FREQUENCY = 40
 
 cb = [NanSweeper()] #this takes a bit of time checking each batch but could be worth it
+"""
+cb += [
+    plotClusteringDuringTraining(
+        use_backgather_idx=8 + i,
+        outputfile=train.outputDir + "/localclust/cluster_" + str(i) + '_',
+        samplefile=samplepath,
+        after_n_batches=500,
+        on_epoch_end=False,
+        publish=None,
+        use_event=0
+        )
+    for i in [0, 2, 4]
+    ]
+
+cb += [
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/metrics.html',
+        record_frequency= RECORD_FREQUENCY,
+        plot_frequency = PLOT_FREQUENCY,
+        select_metrics=[
+            'ExtendedOCLoss_loss',
+            'ExtendedOCLoss_dynamic_payload_scaling',
+            'ExtendedOCLoss_attractive_loss',
+            'ExtendedOCLoss_repulsive_loss',
+            'ExtendedOCLoss_min_beta_loss',
+            'ExtendedOCLoss_noise_loss',
+            'ExtendedOCLoss_class_loss',
+            'ExtendedOCLoss_energy_loss',
+            'ExtendedOCLoss_energy_unc_loss',
+            # 'ExtendedOCLoss_time_std',
+            # 'ExtendedOCLoss_time_pred_std',
+            # '*regularise_gravnet_*',
+            '*_gravReg*',
+            ],
+        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
+        ),
+    ]
+
+cb += [
+
+
+    simpleMetricsCallback(
+        output_file=train.outputDir+'/val_metrics.html',
+        call_on_epoch=True,
+        select_metrics='val_*',
+        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
+        ),
+    ]
+"""
 
 cb += [
     plotClusterSummary(
         outputfile=train.outputDir + "/clustering/",
         samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=500
+        after_n_batches=1000
         )
     ]
+
+# cb += [wandbCallback()]
 
 ###############################################################################
 ### Actual Training ###########################################################
@@ -394,11 +471,9 @@ for i in range(N_TRAINING_STAGES):
             if 'batchnorm' in layer.name:
                 layer.max_viscosity = 0.999
                 layer.fluidity_decay = 0.01
-    print("Here we are")
     train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,
         add_progbar=True,
-        additional_callbacks=cb,
-        collect_gradients = 1
+        additional_callbacks=cb
         )
