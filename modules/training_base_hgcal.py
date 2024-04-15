@@ -1,6 +1,6 @@
 #from DeepJetCore.training.training_base import training_base
 
-
+import gc
 import concurrent.futures
 import numpy as np
 
@@ -318,7 +318,12 @@ class training_base(object):
             with tf.GradientTape() as tape:
                 predictions = model(data, training=True)
                 loss = tf.add_n(model.losses)
-            return tape.gradient(loss, model.trainable_variables)
+            vars = model.trainable_variables
+            grads = tape.gradient(loss, vars)
+            del loss
+            del tape
+            del vars
+            return grads
         
     def average_gradients(self):
         all_gradients = self.gradients
@@ -352,6 +357,8 @@ class training_base(object):
             avg_grads = self.average_gradients()
             self.optimizer.apply_gradients(zip(avg_grads, self.mgpu_keras_models[0].trainable_variables))
             self.syncModelWeights() # weights synced
+            for g in self.gradients:
+                del g
             self.gradients = []
 
 
@@ -481,6 +488,8 @@ class training_base(object):
                 single_counter += 1
                 if add_progbar:
                     pbar.update(len(thisbatch))
+
+                gc.collect()
             try:
                 callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here
             except Exception as e:
