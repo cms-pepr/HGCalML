@@ -471,7 +471,11 @@ class training_base(object):
                 thisbatch = []
                 while len(thisbatch) < self.ngpus and nbatches_in < nbatches_train:
                     #only 'feature' part matters for HGCAL
-                    thisbatch.append(next(traingen.feedNumpyData())[0])
+                    data = next(traingen.feedNumpyData())[0]
+                    tfdata = [tf.convert_to_tensor(data[i]) for i in range(len(data))] #explicit
+                    for d in data:
+                        del d
+                    thisbatch.append(tfdata)
                     nbatches_in += 1
 
                 if len(thisbatch) != self.ngpus: #last batch might not be enough
@@ -488,6 +492,9 @@ class training_base(object):
                 single_counter += 1
                 if add_progbar:
                     pbar.update(len(thisbatch))
+
+                for b in thisbatch:
+                    del b
 
                 gc.collect()
             try:
