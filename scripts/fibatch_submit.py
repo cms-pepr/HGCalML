@@ -24,7 +24,7 @@ if '-h' in sys.argv or '--help' in sys.argv:
     sys.exit()
 
 # can be used by others on FI
-DJCLOC="/mnt/home/pzehetner/containers/deepjetcore4_c547b65.sif"
+DJCLOC="/mnt/home/pzehetner/containers/deepjetcore4_4b69ed8.sif"
 UEXT = str(uuid.uuid4())
 
 WORKDIR=None
@@ -40,7 +40,7 @@ NAME="batchscript"
 CONSTRAINT="a100-80gb"
 #CONSTRAINT="a100"
 TIME="7-0"
-GPUS="4"
+GPUS="1"
 
 for clo in sys.argv:
 
