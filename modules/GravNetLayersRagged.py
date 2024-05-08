@@ -3305,7 +3305,7 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         super(RaggedGravNet, self).build(input_shape)
 
-    @tf.function
+    #@tf.function
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x
@@ -3510,7 +3510,7 @@ class TranslationInvariantMP(tf.keras.layers.Layer):
         features = tf.reshape(features, [-1, sum(self.n_feature_transformation)])
         return features
 
-    @tf.function
+    #@tf.function
     def call(self, inputs):
         if len(inputs) == 3:
             x, neighbor_indices, distancesq = inputs
@@ -3807,7 +3807,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         base_config = super(DistanceWeightedMessagePassing, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-    @tf.function
+    #@tf.function
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
         features = x

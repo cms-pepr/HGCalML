@@ -489,6 +489,10 @@ class training_base(object):
 
                 callbacks.on_train_batch_end(single_counter, logs)
 
+                for l in logs.values():
+                    del l
+                del logs
+
                 single_counter += 1
                 if add_progbar:
                     pbar.update(len(thisbatch))
@@ -496,6 +500,7 @@ class training_base(object):
                 for b in thisbatch:
                     del b
 
+            if nbatches_in % 32 == 0: #force garbage collection every 32 batches
                 gc.collect()
             try:
                 callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here
@@ -507,6 +512,7 @@ class training_base(object):
                 pbar.close()
             self.trainedepoches += 1
             traingen.shuffleFileList()
+            gc.collect()
             #
     
         self.saveModel("KERAS_model.h5")
