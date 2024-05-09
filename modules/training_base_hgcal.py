@@ -503,7 +503,7 @@ class training_base(object):
             if nbatches_in % 32 == 0: #force garbage collection every 32 batches
                 gc.collect()
             try:
-                callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here
+                callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here, will throw error atm
             except Exception as e:
                 print(e)
                 print('will continue training anyway')
