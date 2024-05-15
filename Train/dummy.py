@@ -1,5 +1,5 @@
 """
-Flexible training script that should be mostly configured with a yaml config file
+python3 dummy.py <path to dataCollection.djcdc>  <output dir> --no_wandb
 """
 
 import os
@@ -55,69 +55,13 @@ from callbacks import NanSweeper, DebugPlotRunner
 ####################################################################################################
 
 parser = ArgumentParser('training')
-parser.add_argument('configFile')
 parser.add_argument('--run_name', help="wandb run name", default="test")
 parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
 parser.add_argument('--wandb_project', help="wandb_project", default="Paper_Models")
 
 train = training_base_hgcal.HGCalTraining(parser=parser)
-CONFIGFILE = train.args.configFile
 
-print(f"Using config File: \n{CONFIGFILE}")
-
-with open(CONFIGFILE, 'r') as f:
-    config = yaml.load(f, Loader=yaml.FullLoader)
-
-N_CLUSTER_SPACE_COORDINATES = config['General']['n_cluster_space_coordinates']
-N_GRAVNET_SPACE_COORDINATES = config['General']['n_gravnet_space_coordinates']
-GRAVNET_ITERATIONS = len(config['General']['gravnet'])
-LOSS_OPTIONS = config['LossOptions']
-BATCHNORM_OPTIONS = config['BatchNormOptions']
-DENSE_ACTIVATION = config['DenseOptions']['activation']
-DENSE_REGULARIZER = tf.keras.regularizers.l2(config['DenseOptions']['kernel_regularizer_rate'])
-DROPOUT = config['DenseOptions']['dropout']
-DISTANCE_SCALE= bool(config['General']['fix_distance'])
 loss_layer = LLExtendedObjectCondensation2
-
-if "LossLayer" in config['General']:
-    if config['General']['loss_layer'] == "2":
-        loss_layer = LLExtendedObjectCondensation2
-    elif config['General']['loss_layer'] == "3":
-        loss_layer = LLExtendedObjectCondensation3
-    elif config['General']['loss_layer'] == "4":
-        loss_layer = LLExtendedObjectCondensation4
-else:
-    config['General']['loss_layer'] = 2
-
-
-wandb_config = {
-    "loss_implementation"           :   config['General']['oc_implementation'],
-    "gravnet_iterations"            :   GRAVNET_ITERATIONS,
-    "gravnet_space_coordinates"     :   N_GRAVNET_SPACE_COORDINATES,
-    "cluster_space_coordinates"     :   N_CLUSTER_SPACE_COORDINATES,
-    "loss_energy_weight"            :   config['LossOptions']['energy_loss_weight'],
-    "loss_classification_weight"    :   config['LossOptions']['classification_loss_weight'],
-    "loss_qmin"                     :   config['LossOptions']['q_min'],
-    "loss_use_average_cc_pos"       :   config['LossOptions']['use_average_cc_pos'],
-    "loss_too_much_beta_scale"      :   config['LossOptions']['too_much_beta_scale'],
-    "loss_beta_scale"               :   config['LossOptions']['beta_loss_scale'],
-    "batch_max_viscosity"           :   config['BatchNormOptions']['max_viscosity'],
-    "dense_activation"              :   config['DenseOptions']['activation'],
-    "dense_kernel_reg"              :   config['DenseOptions']['kernel_regularizer_rate'] ,
-    "dense_dropout"                 :   config['DenseOptions']['dropout'],
-    "distance_scale"                :   DISTANCE_SCALE,
-    "LossLayer"                     :   config['General']['loss_layer']
-}
-
-for i in range(GRAVNET_ITERATIONS):
-    wandb_config[f"gravnet_{i}_neighbours"] =config['General']['gravnet'][i]['n']
-for i in range(len(config['Training'])):
-    wandb_config[f"train_{i}_lr"] = config['Training'][i]['learning_rate']
-    wandb_config[f"train_{i}_epochs"] = config['Training'][i]['epochs']
-    wandb_config[f"train_{i}_batchsize"] = config['Training'][i]['batch_size']
-    if i == 1:
-        wandb_config[f"train_{i}+_max_visc"] = 0.999
-        wandb_config[f"train_{i}+_fluidity_decay"] = 0.1
 
 if not train.args.no_wandb:
     wandb.init(
@@ -130,13 +74,27 @@ else:
     wandb.active=False
 
 
-
 ###############################################################################
 ### Define Model ##############################################################
 ###############################################################################
 
+N_CLUSTER_SPACE_COORDINATES  = 3
+DENSE_ACTIVATION = 'elu'
+DISTANCE_SCALE = False
 
-def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
+LOSS_OPTIONS = {
+    'energy_loss_weight': 0.,
+    'q_min': 5.,
+    'use_average_cc_pos': 0.99,
+    'classification_loss_weight':0.0, # to make it work0.5,
+    'too_much_beta_scale': 0.0,
+    'position_loss_weight':0.,
+    'timing_loss_weight':0.0,
+    'beta_loss_scale':1., #2.0
+    # 'implementation': 'hinge_full_grad' #'hinge_manhatten'#'hinge'#old school
+    }
+
+def dummy_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     """
     Function that defines the model to train
     """
@@ -178,19 +136,15 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x)
     x = Dense(64,
               name=f"dense_final_{1}",
-              activation=DENSE_ACTIVATION,
-              kernel_regularizer=DENSE_REGULARIZER)(x)
+              activation=DENSE_ACTIVATION)(x)
     x = Dense(64,
               name=f"dense_final_{2}",
-              activation=DENSE_ACTIVATION,
-              kernel_regularizer=DENSE_REGULARIZER)(x)
+              activation=DENSE_ACTIVATION)(x)
     x = Dense(64,
               name=f"dense_final_{3}",
-              activation=DENSE_ACTIVATION,
-              kernel_regularizer=DENSE_REGULARIZER)(x)
+              activation=DENSE_ACTIVATION)(x)
     x = ScaledGooeyBatchNorm2(
-        name=f"batchnorm_final",
-        **BATCHNORM_OPTIONS)(x)
+        name=f"batchnorm_final")(x)
 
     pred_beta, pred_ccoords, pred_dist, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
@@ -203,18 +157,14 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     # pred_ccoords = LLFillSpace(maxhits=2000, runevery=5, scale=0.01)([pred_ccoords, rs, t_idx])
 
-    if config['General']['oc_implementation'] == 'hinge':
-        loss_implementation = 'hinge'
-    else:
-        loss_implementation = ''
 
     pred_beta = loss_layer(
             scale=1.,
             use_energy_weights=True,
             record_metrics=True,
-            print_loss=True,
+            print_loss=False,
             name="ExtendedOCLoss",
-            implementation = loss_implementation,
+            implementation = 'hinge',
             **LOSS_OPTIONS)(
                     [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
                         pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
@@ -257,7 +207,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
 if not train.modelSet():
     train.setModel(
-        config_model,
+        dummy_model,
         td=train.train_data.dataclass(),
         debug_outdir=train.outputDir+'/intplots',
         )
@@ -277,92 +227,15 @@ RECORD_FREQUENCY = 10
 PLOT_FREQUENCY = 40
 
 cb = [NanSweeper()] #this takes a bit of time checking each batch but could be worth it
-"""
-cb += [
-    plotClusteringDuringTraining(
-        use_backgather_idx=8 + i,
-        outputfile=train.outputDir + "/localclust/cluster_" + str(i) + '_',
-        samplefile=samplepath,
-        after_n_batches=500,
-        on_epoch_end=False,
-        publish=None,
-        use_event=0
-        )
-    for i in [0, 2, 4]
-    ]
-
-cb += [
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/metrics.html',
-        record_frequency= RECORD_FREQUENCY,
-        plot_frequency = PLOT_FREQUENCY,
-        select_metrics=[
-            'ExtendedOCLoss_loss',
-            'ExtendedOCLoss_dynamic_payload_scaling',
-            'ExtendedOCLoss_attractive_loss',
-            'ExtendedOCLoss_repulsive_loss',
-            'ExtendedOCLoss_min_beta_loss',
-            'ExtendedOCLoss_noise_loss',
-            'ExtendedOCLoss_class_loss',
-            'ExtendedOCLoss_energy_loss',
-            'ExtendedOCLoss_energy_unc_loss',
-            # 'ExtendedOCLoss_time_std',
-            # 'ExtendedOCLoss_time_pred_std',
-            # '*regularise_gravnet_*',
-            '*_gravReg*',
-            ],
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
-    ]
-
-cb += [
-
-
-    simpleMetricsCallback(
-        output_file=train.outputDir+'/val_metrics.html',
-        call_on_epoch=True,
-        select_metrics='val_*',
-        publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        ),
-    ]
-"""
-
-cb += [
-    plotClusterSummary(
-        outputfile=train.outputDir + "/clustering/",
-        samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=1000
-        )
-    ]
-
-# cb += [wandbCallback()]
 
 ###############################################################################
 ### Actual Training ###########################################################
 ###############################################################################
 
-shutil.copyfile(CONFIGFILE, os.path.join(sys.argv[3], "config.yaml"))
-
-N_TRAINING_STAGES = len(config['Training'])
-for i in range(N_TRAINING_STAGES):
-    print(f"Starting training stage {i}")
-    learning_rate = config['Training'][i]['learning_rate']
-    epochs = config['Training'][i]['epochs']
-    batch_size = config['Training'][i]['batch_size']
-    train.change_learning_rate(learning_rate)
-    print(f"Training for {epochs} epochs")
-    print(f"Learning rate set to {learning_rate}")
-    print(f"Batch size: {batch_size}")
-
-    if i == 1:
-        # change batchnorm
-        for layer in train.keras_model.layers:
-            if 'batchnorm' in layer.name:
-                layer.max_viscosity = 0.999
-                layer.fluidity_decay = 0.01
-    train.trainModel(
-        nepochs=epochs,
-        batchsize=batch_size,
+train.trainModel(
+        nepochs=3,
+        batchsize=120000,
         add_progbar=True,
         additional_callbacks=cb
         )
+
