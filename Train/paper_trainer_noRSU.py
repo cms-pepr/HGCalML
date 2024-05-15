@@ -175,7 +175,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         plot_every=plot_debug_every,
         outdir=debug_outdir,
         name='input_c_coords',
-        # publish = publishpath
         )([c_coords, energy, t_idx, rs])
     
     c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
@@ -190,14 +189,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ### Loop over GravNet Layers ##############################################
     ###########################################################################
 
-
-    #####################
-    ############## >>>>> TODO: FIXME: NOW!:  maybe consider making it as simple as this
-    #####################   
-
-    # dense_nodes = [32,64,128,128]
-    # n_neighbours = [32,32,128,128]
-    # n_gravnet_coords = [4,4,4,4]
 
     for i in range(GRAVNET_ITERATIONS):
 
@@ -377,39 +368,6 @@ cb += [
         )
     for i in [0, 2, 4]
     ]
-
-# cb += [
-    # simpleMetricsCallback(
-        # output_file=train.outputDir+'/metrics.html',
-        # record_frequency= RECORD_FREQUENCY,
-        # plot_frequency = PLOT_FREQUENCY,
-        # select_metrics=[
-            # 'ExtendedOCLoss_loss',
-            # 'ExtendedOCLoss_dynamic_payload_scaling',
-            # 'ExtendedOCLoss_attractive_loss',
-            # 'ExtendedOCLoss_repulsive_loss',
-            # 'ExtendedOCLoss_min_beta_loss',
-            # 'ExtendedOCLoss_noise_loss',
-            # 'ExtendedOCLoss_class_loss',
-            # 'ExtendedOCLoss_energy_loss',
-            # 'ExtendedOCLoss_energy_unc_loss',
-            # 'ExtendedOCLoss_time_std',
-            # 'ExtendedOCLoss_time_pred_std',
-            # '*regularise_gravnet_*',
-            # '*_gravReg*',
-            # ],
-        # publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        # ),
-    # ]
-
-# cb += [
-    # simpleMetricsCallback(
-        # output_file=train.outputDir+'/val_metrics.html',
-        # call_on_epoch=True,
-        # select_metrics='val_*',
-        # publish=PUBLISHPATH #no additional directory here (scp cannot create one)
-        # ),
-    # ]
 
 cb += [
     plotClusterSummary(
