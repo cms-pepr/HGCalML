@@ -202,42 +202,21 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         x_pre = x
         x = Concatenate()([c_coords, x])
 
-        x_hit, x_track, rs_hit, rs_track = SplitOffTracks()([is_track, [x], rs])
-        x_hit = x_hit[0]
-        x_track = x_track[0]
-
-        xgn_hit, gncoords_hit, gnnidx_hit, gndist_hit = RaggedGravNet(
-                name = f"RSU_gravnet_{i}_hit", # 76929, 42625, 42625
+        xgn, gncoords, gnnidx, gndist = RaggedGravNet(
+            name = f"RSU_gravnet_{i}",
             n_neighbours=NEIGHBOURS[i],
             n_dimensions=N_GRAVNET_SPACE_COORDINATES,
             n_filters=d_shape,
-            n_propagate=d_shape,
+            n_propagate=2*d_shape,
             coord_initialiser_noise=1e-2,
             feature_activation='elu',
-            )([x_hit, rs_hit])
-        xgn_track, gncoords_track, gnnidx_track, gndist_track = RaggedGravNet(
-                name = f"RSU_gravnet_{i}_track", # 76929, 42625, 42625
-            n_neighbours=16,
-            n_dimensions=N_GRAVNET_SPACE_COORDINATES,
-            n_filters=d_shape,
-            n_propagate=d_shape,
-            coord_initialiser_noise=1e-2,
-            feature_activation='elu',
-            )([x_track, rs_track])
+            )([x, rs])
 
-        x_hit = TranslationInvariantMP([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
-        x_track = TranslationInvariantMP([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
-
-        [xgn, gncoords], rs  = ConcatRaggedTensors()([
-            [xgn_track, gncoords_track],
-            [xgn_hit, gncoords_hit],
-            rs_track, rs_hit])
-        gncoords = PlotCoordinates(
-            plot_every=plot_debug_every,
-            outdir = debug_outdir,
-            name=f'gncoords_{i}'
-            )([gncoords, energy, pre_processed['t_idx'], rs])
-        x = Concatenate()([gncoords, xgn, x_pre])
+        x_rand = random_sampling_block2(
+                xgn, rs, gncoords, gnnidx, gndist, is_track,
+                reduction=6, name=f"RSU_{i}")
+        x_rand = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x_rand)
+        x = Concatenate()([gncoords, xgn, x_rand])
 
         xgn_comb, gncoords_comb, gnnidx_comb, gndist_comb = RaggedGravNet(
                 name = f"RSU_gravnet_{i}_comb", 
