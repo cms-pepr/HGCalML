@@ -24,7 +24,7 @@ if '-h' in sys.argv or '--help' in sys.argv:
     sys.exit()
 
 # can be used by others on FI
-DJCLOC="/mnt/home/pzehetner/containers/deepjetcore4_4b69ed8.sif"
+DJCLOC="/mnt/home/pzehetner/containers/deepjetcore4_5ef28a3.sif"
 UEXT = str(uuid.uuid4())
 
 WORKDIR=None
