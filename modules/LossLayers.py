@@ -2772,8 +2772,8 @@ class LLExtendedObjectCondensation(LLFullObjectCondensation):
             return tf.reduce_mean(pred_id,axis=1, keepdims=True)
 
         charged_hadronic_conditions = [
-                tf.abs(orig_t_pid) == 211,  # Pions
-                tf.abs(orig_t_pid) == 312,  # Kaons
+                tf.abs(orig_t_pid) == 211,  # Charged Pions
+                tf.abs(orig_t_pid) == 321,  # Charged Kaons
                 tf.abs(orig_t_pid) == 2212, # Protons
                 ]
         neutral_hadronic_conditions = [
@@ -2958,7 +2958,7 @@ class LLExtendedObjectCondensation2(LLFullObjectCondensation):
 
 class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
     '''
-    Same as `LLExtendedObjecCondensation2` but doesn't use the Huber loss in the energy prediction:
+    Same as `LLExtendedObjecCondensation` but doesn't use the Huber loss in the energy prediction:
     '''
 
 
@@ -2989,9 +2989,7 @@ class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
         # Uncertainty 'sigma' must minimize this term:
         # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
         matching_loss = (pred_uncertainty_low)**2
-        # prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
-        prediction_loss = tf.math.divide_no_nan((t_energy - epred), sigma)
-        # prediction_loss = huber(prediction_loss, d=2)
+        prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
 
         uncertainty_loss = tf.math.log(sigma**2)
 

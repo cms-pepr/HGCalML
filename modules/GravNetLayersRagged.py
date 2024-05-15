@@ -1507,12 +1507,10 @@ class ConditionalScaledGooeyBatchNorm(tf.keras.layers.Layer):
 class ProcessFeatures(tf.keras.layers.Layer):
 
     def __init__(self,
-                  is_hgcal = False,
                  **kwargs):
 
         super().__init__(**kwargs)
 
-        self.is_hgcal = is_hgcal
         '''
         'recHitEnergy': feat[:,0:1] ,          #recHitEnergy,
         'recHitEta'   : feat[:,1:2] ,          #recHitEta   ,
@@ -1526,60 +1524,76 @@ class ProcessFeatures(tf.keras.layers.Layer):
         'recHitHitR'  : feat[:,9:10] ,   
         '''
 
-        if self.is_hgcal:
-            self.mean = tf.constant([[
-                0.1, 
-                0., # 2.6024690e+00, #this is abs
-                0., 
-                0., # 1.5362334e-01, #this is abs
-                0., # 3.4008121e+02, #this is abs
-                0., 
-                0., 
-                0., # 3.3786691e+02 #this is abs
-                0., 
-                0.1]], dtype='float32')
-        else:
-            self.mean = tf.constant([[
-                0.1, 
-                2.6, #this is abs
-                0., 
-                1.5e-01, #this is abs
-                3.5e+02, #this is abs
-                0., 
-                0., 
-                3.5e+02,
-                0., 
-                0.1]], dtype='float32')
+        self.mean_hit = tf.constant([
+            0.0475, # recHitEnergy
+            2.55,   # recHitEta
+            0.0,    # recHitID -> don't normalize
+            0.167,  # recHitTheta
+            341.4,  # recHitR
+            0.0,    # recHitX -> centered around zero
+            0.0,    # recHitY -> centered around zero
+            336.0,  # recHitZ
+            0.0,    # recHitTime -> All zeros
+            0.95,   # recHitHitR
+            ])
+        self.std_hit = tf.constant([
+            0.1991, # recHitEnergy
+            0.35,   # recHitEta
+            1.0,    # recHitID -> don't normalize
+            0.067,  # recHitTheta
+            15.1,   # recHitR
+            42.0,   # recHitX
+            42.0,   # recHitY
+            14.5,   # recHitZ
+            1.0,    # recHitTime -> All zeros
+            0.39,   # recHitHitR
+            ])
 
-        self.std =  tf.constant([[ 
-            2.4, 
-            3.4e-01, 
-            1., #ID set to 1, this will be track charge?
-            6.4e-02,
-            1.5e+01, 
-            4.0e+01, 
-            3.9e+01, 
-            1.3e+01,
-            1., 
-            4.2e-01]], dtype='float32')
+        self.mean_track = tf.constant([
+            3.04,   # recHitEnergy
+            2.27,   # recHitEta
+            0.0,    # recHitID -> don't normalize
+            0.22,   # recHitTheta
+            324.5,  # recHitR
+            0.0,    # recHitX -> centered around zero
+            0.0,    # recHitY -> centered around zero
+            315.0,  # recHitZ -> All tracks are at z=315
+            0.0,    # recHitTime -> All zeros
+            0.0,    # recHitHitR -> All zeros for tracks
+            ])
+        self.std_track = tf.constant([
+            3.63,   # recHitEnergy
+            0.41,   # recHitEta
+            1.0,    # recHitID -> don't normalize
+            0.09,   # recHitTheta
+            7.6,    # recHitR
+            55.0,   # recHitX
+            55.0,   # recHitY
+            1.0,    # recHitZ -> All tracks are at z=315
+            1.0,    # recHitTime -> All zeros
+            1.0,    # recHitHitR -> All zeros for tracks
+            ])
 
     
     def get_config(self):
-        config = {'is_hgcal': self.is_hgcal}
+        config = {}
         base_config = super(ProcessFeatures, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
+
     def compute_output_shape(self, input_shape):
         return input_shape
 
-    def call(self, inputs):
-        #hard coded normalisation for HGCAL (or similar) only!
-        feat = inputs
-    
-        feat -= self.mean
-        feat /= self.std
 
-        return feat
+    def call(self, inputs):
+        features = inputs
+        is_track = tf.cast(features[:,2:3], bool)
+    
+        normalized_hits = (features - self.mean_hit) / self.std_hit
+        normalized_tracks = (features - self.mean_track) / self.std_track
+        normalized = tf.where(is_track, normalized_tracks, normalized_hits)
+
+        return normalized
 
 
 
