@@ -65,7 +65,7 @@ train = training_base_hgcal.HGCalTraining(parser=parser)
 
 N_CLUSTER_SPACE_COORDINATES = 6
 N_GRAVNET_SPACE_COORDINATES = 6
-NEIGHBOURS = [64, 64, 64, 64]
+NEIGHBOURS = [64, 64]
 LOSS_IMPLEMENTATION = "hinge"
 GRAVNET_ITERATIONS = len(NEIGHBOURS)
 LOSS_OPTIONS = {
@@ -76,7 +76,7 @@ LOSS_OPTIONS = {
     "position_loss_weight": 0.0,
     "timing_loss_weight": 0.0,
     "q_min": 1.0,
-    "use_average_cc_pos": 0.99,
+    "use_average_cc_pos": 0.9999,
 }
 BATCHNORM_OPTIONS = {
     "max_viscosity": 0.9999,
@@ -160,6 +160,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     orig_input = td.interpretAllModelInputs(Inputs)
     pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False)
+    d_shape = 64
 
     prime_coords = pre_processed['prime_coords']
     c_coords = prime_coords
@@ -192,8 +193,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     for i in range(GRAVNET_ITERATIONS):
 
-        d_shape = x.shape[1]//2
-
         x = Dense(d_shape,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
         x = Dense(d_shape,activation=DENSE_ACTIVATION,
@@ -201,7 +200,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
         x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
         x_pre = x
-        allfeat.append(x_pre)
+        x = Concatenate()([c_coords, x])
 
         x_hit, x_track, rs_hit, rs_track = SplitOffTracks()([is_track, [x], rs])
         x_hit = x_hit[0]
@@ -212,8 +211,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             n_neighbours=NEIGHBOURS[i],
             n_dimensions=N_GRAVNET_SPACE_COORDINATES,
             n_filters=d_shape,
-            n_propagate=2*d_shape,
-            coord_initialiser_noise=None,
+            n_propagate=d_shape,
+            coord_initialiser_noise=1e-2,
             feature_activation='elu',
             )([x_hit, rs_hit])
         xgn_track, gncoords_track, gnnidx_track, gndist_track = RaggedGravNet(
@@ -221,14 +220,11 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             n_neighbours=16,
             n_dimensions=N_GRAVNET_SPACE_COORDINATES,
             n_filters=d_shape,
-            n_propagate=2*d_shape,
-            coord_initialiser_noise=None,
+            n_propagate=d_shape,
+            coord_initialiser_noise=1e-2,
             feature_activation='elu',
             )([x_track, rs_track])
 
-
-            # x_hit = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
-            # x_track = DistanceWeightedMessagePassing([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
         x_hit = TranslationInvariantMP([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
         x_track = TranslationInvariantMP([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
 
@@ -236,7 +232,29 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             [xgn_track, gncoords_track],
             [xgn_hit, gncoords_hit],
             rs_track, rs_hit])
-        x = Concatenate()([xgn, gncoords])
+        gncoords = PlotCoordinates(
+            plot_every=plot_debug_every,
+            outdir = debug_outdir,
+            name=f'gncoords_{i}'
+            )([gncoords, energy, pre_processed['t_idx'], rs])
+        x = Concatenate()([gncoords, xgn, x_pre])
+
+        xgn_comb, gncoords_comb, gnnidx_comb, gndist_comb = RaggedGravNet(
+                name = f"RSU_gravnet_{i}_comb", 
+            n_neighbours=NEIGHBOURS[i],
+            n_dimensions=N_GRAVNET_SPACE_COORDINATES,
+            n_filters=d_shape,
+            n_propagate=d_shape,
+            coord_initialiser_noise=1e-2,
+            feature_activation='elu',
+            )([x, rs])
+        xgn_comb = TranslationInvariantMP([64, 32, 16], activation='elu')([xgn_comb, gnnidx_comb, gndist_comb])
+        gncoords_comb = PlotCoordinates(
+            plot_every=plot_debug_every,
+            outdir = debug_outdir,
+            name=f'gncoords2_{i}'
+            )([gncoords_comb, energy, pre_processed['t_idx'], rs])
+        x = Concatenate()([xgn_comb, gncoords_comb])
         x = Dense(d_shape,
                   name=f"dense_post_gravnet_1_iteration_{i}",
                   activation=DENSE_ACTIVATION,
@@ -261,7 +279,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     ###########################################################################
 
 
-    x = Dense(64,
+    x = Dense(128,
               name=f"dense_final_{1}",
               activation=DENSE_ACTIVATION,
               kernel_regularizer=DENSE_REGULARIZER)(x)
@@ -395,7 +413,7 @@ for i in range(1, N_TRAINING_STAGES+1):
     print(f"Learning rate set to {learning_rate}")
     print(f"Batch size: {batch_size}")
 
-    if i == 1:
+    if i == 2:
         # change batchnorm
         for layer in train.keras_model.layers:
             if 'batchnorm' in layer.name:
