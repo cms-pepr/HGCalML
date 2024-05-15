@@ -247,13 +247,13 @@ class Basic_OC_per_sample(object):
             N_notk = tf.reduce_sum(tf.where(dsq < self.rep_range**2 , 1., tf.zeros_like(dsq)) * self.Mnot, axis=1)
 
         V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
-        if self.global_weight:
-            N_full = tf.reduce_sum(tf.ones_like(self.beta_v))
-            V_rep = K * tf.math.divide_no_nan(V_rep, N_full+1e-3)  #K x 1
-        elif True: #TEST DEBUG REMOVE AGAIN
-            V_rep = tf.math.divide_no_nan(V_rep, N_notk+1e-3)  #K x 1
-        else:
-            V_rep/=100.
+        #if self.global_weight:
+        #    N_full = tf.reduce_sum(tf.ones_like(self.beta_v))
+        #    V_rep = K * tf.math.divide_no_nan(V_rep, N_full+1e-3)  #K x 1
+        #elif True: #TEST DEBUG REMOVE AGAIN
+        #    V_rep = tf.math.divide_no_nan(V_rep, N_notk+1e-3)  #K x 1
+        #else:
+        V_rep/=100.
 
         return V_rep
 
