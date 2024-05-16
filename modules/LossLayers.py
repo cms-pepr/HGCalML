@@ -271,11 +271,19 @@ class LossLayerBase(LayerWithMetrics):
             if not self.return_lossval:
                 self.add_loss(lossval)
 
-        self.wandb_log({self.name+'_loss': lossval})
+        self.wandb_log({self.name+'_loss': self._to_numpy(lossval)})
         if self.return_lossval:
             return a, lossval
         else:
             return a
+
+    def _to_numpy(self, tensor):
+        # Converts a tensor to numpy regardless of execution mode
+        if tf.executing_eagerly():
+            return tensor.numpy()
+        else:
+            with tf.compat.v1.Session() as sess:
+                return sess.run(tensor)
 
     def loss(self, inputs):
         '''
