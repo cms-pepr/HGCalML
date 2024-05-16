@@ -21,6 +21,7 @@ from DeepJetCore.DJCLayers import StopGradient, ScalarMultiply
 
 import training_base_hgcal
 from Layers import ScaledGooeyBatchNorm2
+from Layers import DummyLayer
 from Layers import MixWhere
 from Layers import ProcessFeatures
 from Layers import RaggedGravNet
@@ -36,7 +37,7 @@ from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
 from Layers import Multi
 from Layers import ShiftDistance
-# from Layers import LLRegulariseGravNetSpace
+from Layers import LLRegulariseGravNetSpace
 from Layers import SplitOffTracks, ConcatRaggedTensors
 from Regularizers import AverageDistanceRegularizer
 from Initializers import EyeInitializer
@@ -201,7 +202,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         x = Dense(d_shape,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
 
-        x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
+        # x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
         x_pre = x
         x = Concatenate()([c_coords, x])
 
@@ -218,10 +219,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             coord_initialiser_noise=1e-2,
             feature_activation='elu',
             )([x_hit, rs_hit])
-        gndist_hit = LLRegulariseGravNetSpace(
-            name=f'gravnet_coords_reg_hit_{i}',
-            record_metrics=True,
-            scale=SPACE_REG_STRENGTH)([gndist_hit, cprime_hit, gnnidx_hit])
+        # gndist_hit = LLRegulariseGravNetSpace(
+            # name=f'gravnet_coords_reg_hit_{i}',
+            # record_metrics=True,
+            # scale=SPACE_REG_STRENGTH)([gndist_hit, cprime_hit, gnnidx_hit])
         xgn_track, gncoords_track, gnnidx_track, gndist_track = RaggedGravNet(
                 name = f"RSU_gravnet_{i}_track", # 76929, 42625, 42625
             n_neighbours=16,
@@ -231,15 +232,15 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             coord_initialiser_noise=1e-2,
             feature_activation='elu',
             )([x_track, rs_track])
-        gndist_track = LLRegulariseGravNetSpace(
-            name=f'gravnet_coords_reg_track_{i}',
-            record_metrics=True,
-            scale=SPACE_REG_STRENGTH)([gndist_track, cprime_track, gnnidx_track])
+        # gndist_track = LLRegulariseGravNetSpace(
+            # name=f'gravnet_coords_reg_track_{i}',
+            # record_metrics=True,
+            # scale=SPACE_REG_STRENGTH)([gndist_track, cprime_track, gnnidx_track])
 
         x_hit = TranslationInvariantMP([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
         x_track = TranslationInvariantMP([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
 
-        [xgn, gncoords], rs  = ConcatRaggedTensors()([
+        [x_mp, xgn, gncoords], rs  = ConcatRaggedTensors()([
             [x_track, xgn_track, gncoords_track],
             [x_hit, xgn_hit, gncoords_hit],
             rs_track, rs_hit])
@@ -248,7 +249,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             outdir = debug_outdir,
             name=f'gncoords_{i}'
             )([gncoords, energy, pre_processed['t_idx'], rs])
-        x = Concatenate()([gncoords, xgn, x_pre])
+        x = Concatenate()([gncoords, x_mp, xgn, x_pre])
 
         xgn_comb, gncoords_comb, gnnidx_comb, gndist_comb = RaggedGravNet(
                 name = f"RSU_gravnet_{i}_comb", 
@@ -259,10 +260,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             coord_initialiser_noise=1e-2,
             feature_activation='elu',
             )([x, rs])
-        gndist_comb = LLRegulariseGravNetSpace(
-            name=f'gravnet_coords_reg_comb_{i}',
-            record_metrics=True,
-            scale=SPACE_REG_STRENGTH)([gndist_comb, cprime_comb, gnnidx_comb])
+        # gndist_comb = LLRegulariseGravNetSpace(
+            # name=f'gravnet_coords_reg_comb_{i}',
+            # record_metrics=True,
+            # scale=SPACE_REG_STRENGTH)([gndist_comb, c_coords, gnnidx_comb])
         xgn_comb = TranslationInvariantMP([64, 32, 16], activation='elu')([xgn_comb, gnnidx_comb, gndist_comb])
         gncoords_comb = PlotCoordinates(
             plot_every=plot_debug_every,
@@ -279,9 +280,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                   activation=DENSE_ACTIVATION,
                   kernel_regularizer=DENSE_REGULARIZER)(x)
 
-        x = ScaledGooeyBatchNorm2(
-            name=f"batchnorm_loop1_iteration_{i}",
-            **BATCHNORM_OPTIONS)(x)
+        # x = ScaledGooeyBatchNorm2(
+            # name=f"batchnorm_loop1_iteration_{i}",
+            # **BATCHNORM_OPTIONS)(x)
         allfeat.append(x)
         if len(allfeat) > 1:
             x = Concatenate()(allfeat)
@@ -306,9 +307,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
               name=f"dense_final_{3}",
               activation=DENSE_ACTIVATION,
               kernel_regularizer=DENSE_REGULARIZER)(x)
-    x = ScaledGooeyBatchNorm2(
-        name=f"batchnorm_final",
-        **BATCHNORM_OPTIONS)(x)
+    # x = ScaledGooeyBatchNorm2(
+        # name=f"batchnorm_final",
+        # **BATCHNORM_OPTIONS)(x)
 
     pred_beta, pred_ccoords, pred_dist, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
