@@ -85,19 +85,19 @@ DENSE_ACTIVATION = "elu"
 DENSE_REGULARIZER_RATE = 1e-9
 DENSE_REGULARIZER = tf.keras.regularizers.l2(DENSE_REGULARIZER_RATE)
 DROPOUT = 1e-2
-DISTANCE_SCALE = True
+DISTANCE_SCALE = False
 loss_layer = LLExtendedObjectCondensation3
 
 TRAINING = {
   "stage_1": {
     "batch_size": 120000,
-    "learning_rate": 0.001,
+    "learning_rate": 0.01,
     "epochs": 1,
     },
 
   "stage_2": {
     "batch_size": 120000,
-    "learning_rate": 0.0001,
+    "learning_rate": 0.001,
     "epochs": 10,
     },
 
