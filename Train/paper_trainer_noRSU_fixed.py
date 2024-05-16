@@ -145,8 +145,8 @@ if not train.args.no_wandb:
 else:
     wandb.active=False
 
-RECORD_FREQUENCY = 1#10
-PLOT_FREQUENCY = 5#40
+RECORD_FREQUENCY = 10
+PLOT_FREQUENCY = 40
 
 ###############################################################################
 ### Define Model ##############################################################
@@ -244,7 +244,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         x = Dense(d_shape,activation=DENSE_ACTIVATION,
             kernel_regularizer=DENSE_REGULARIZER)(x)
 
-        x = ScaledGooeyBatchNorm2(**BATCHNORM_OPTIONS)(x)
         x_pre = x
         x = Concatenate()([c_coords, x])
 
@@ -272,9 +271,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                   activation=DENSE_ACTIVATION,
                   kernel_regularizer=DENSE_REGULARIZER)(x)
 
-        x = ScaledGooeyBatchNorm2(
-            name=f"batchnorm_loop1_iteration_{i}",
-            **BATCHNORM_OPTIONS)(x)
         allfeat.append(x)
         if len(allfeat) > 1:
             x = Concatenate()(allfeat)
@@ -299,9 +295,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
               name=f"dense_final_{3}",
               activation=DENSE_ACTIVATION,
               kernel_regularizer=DENSE_REGULARIZER)(x)
-    x = ScaledGooeyBatchNorm2(
-        name=f"batchnorm_final",
-        **BATCHNORM_OPTIONS)(x)
+    
 
     pred_beta, pred_ccoords, pred_dist, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
@@ -317,7 +311,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             scale=1.,
             use_energy_weights=True,
             record_metrics=True,
-            print_loss=False,
+            print_loss=True,
             name="ExtendedOCLoss",
             implementation = LOSS_IMPLEMENTATION,
             **LOSS_OPTIONS)(
@@ -367,7 +361,7 @@ if not train.modelSet():
         debug_outdir=train.outputDir+'/intplots',
         plot_debug_every=RECORD_FREQUENCY*PLOT_FREQUENCY,
         )
-    train.setCustomOptimizer(tf.keras.optimizers.Nadam(clipnorm=1.))
+    train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
 
