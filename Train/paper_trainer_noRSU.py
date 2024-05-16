@@ -86,6 +86,7 @@ DENSE_REGULARIZER_RATE = 1e-9
 DENSE_REGULARIZER = tf.keras.regularizers.l2(DENSE_REGULARIZER_RATE)
 DROPOUT = 1e-2
 DISTANCE_SCALE = False
+SPACE_REG_STRENGTH=1e-2
 loss_layer = LLExtendedObjectCondensation3
 
 TRAINING = {
@@ -122,6 +123,7 @@ wandb_config = {
     "dense_kernel_reg"              :   DENSE_REGULARIZER_RATE,
     "dense_dropout"                 :   DROPOUT,
     "distance_scale"                :   DISTANCE_SCALE,
+    "space_regularizer"             :   SPACE_REG_STRENGTH,
 }
 
 for i in range(GRAVNET_ITERATIONS):
@@ -179,6 +181,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         )([c_coords, energy, t_idx, rs])
     
     c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
+    [cprime_hit], [cprime_track], rs_hit, rs_track = SplitOffTracks()([is_track, [c_coords], rs])
 
     x = Concatenate()([x, c_coords, is_track])
     x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x)
@@ -215,6 +218,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             coord_initialiser_noise=1e-2,
             feature_activation='elu',
             )([x_hit, rs_hit])
+        gndist_hit = LLRegulariseGravNetSpace(
+            name=f'gravnet_coords_reg_hit_{i}',
+            record_metrics=True,
+            scale=SPACE_REG_STRENGTH)([gndist_hit, cprime_hit, gnnidx_hit])
         xgn_track, gncoords_track, gnnidx_track, gndist_track = RaggedGravNet(
                 name = f"RSU_gravnet_{i}_track", # 76929, 42625, 42625
             n_neighbours=16,
@@ -224,13 +231,17 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             coord_initialiser_noise=1e-2,
             feature_activation='elu',
             )([x_track, rs_track])
+        gndist_track = LLRegulariseGravNetSpace(
+            name=f'gravnet_coords_reg_track_{i}',
+            record_metrics=True,
+            scale=SPACE_REG_STRENGTH)([gndist_track, cprime_track, gnnidx_track])
 
         x_hit = TranslationInvariantMP([64, 32, 16], activation='elu')([x_hit, gnnidx_hit, gndist_hit])
         x_track = TranslationInvariantMP([64, 32, 16], activation='elu')([x_track, gnnidx_track, gndist_track])
 
         [xgn, gncoords], rs  = ConcatRaggedTensors()([
-            [xgn_track, gncoords_track],
-            [xgn_hit, gncoords_hit],
+            [x_track, xgn_track, gncoords_track],
+            [x_hit, xgn_hit, gncoords_hit],
             rs_track, rs_hit])
         gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
@@ -248,6 +259,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             coord_initialiser_noise=1e-2,
             feature_activation='elu',
             )([x, rs])
+        gndist_comb = LLRegulariseGravNetSpace(
+            name=f'gravnet_coords_reg_comb_{i}',
+            record_metrics=True,
+            scale=SPACE_REG_STRENGTH)([gndist_comb, cprime_comb, gnnidx_comb])
         xgn_comb = TranslationInvariantMP([64, 32, 16], activation='elu')([xgn_comb, gnnidx_comb, gndist_comb])
         gncoords_comb = PlotCoordinates(
             plot_every=plot_debug_every,
