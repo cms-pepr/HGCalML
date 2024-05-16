@@ -1,5 +1,5 @@
 import tensorflow as tf
-
+from tensorflow.keras.utils import get_custom_objects
 
 class EyeInitializer(tf.keras.initializers.Initializer):
     def __init__(self, mean=0, stddev=0.1, eye_scaling=1):
@@ -28,3 +28,5 @@ class EyeInitializer(tf.keras.initializers.Initializer):
     def get_config(self):  # To support serialization
         return {"mean": self.mean, "stddev": self.stddev, "eye_scaling":self.eye_scaling}
 
+
+get_custom_objects().update({'EyeInitializer': EyeInitializer})
