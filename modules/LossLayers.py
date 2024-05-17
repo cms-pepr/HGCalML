@@ -1050,17 +1050,20 @@ class LLRegulariseGravNetSpace(LossLayerBase):
             # so we can just remove it
             in_coords = in_coords[:,:2]
         
-        ncoords = SelectWithDefault(nidx, in_coords, -1e6)
+        ncoords = SelectWithDefault(nidx, in_coords, 0.)
         dist = tf.reduce_sum( (in_coords[:,tf.newaxis,:] - ncoords)**2, axis=2 ) # V x K+1
         
-        dist = tf.where(ncoords[:,:,0] < -1e5, 0., dist)#mask masked again
+        dist = tf.where(nidx<1, 0., dist)#mask masked again
+        gndist = tf.where(nidx<1, 0., gndist)#mask masked again (this should already be done but just in case)
         
         dist = tf.sqrt(dist + 1e-6)
-        
-        dist = dist / (tf.reduce_mean(dist, axis=1, keepdims=True)+1e-4)
+        mean_dist = tf.reduce_mean(dist, axis=1, keepdims=True)
+
+        self.wandb_log({self.name+'_mean_distance': self._to_numpy(tf.reduce_mean(mean_dist))})
+
+        dist = dist / (mean_dist+1e-4)
         
         gndist = tf.sqrt(gndist + 1e-6)
-        
         gndist = gndist / (tf.reduce_mean(gndist, axis=1, keepdims=True)+1e-4)
         
         lossval = tf.reduce_mean((dist - gndist)**2)
