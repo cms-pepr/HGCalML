@@ -3550,7 +3550,7 @@ class TranslationInvariantMP2(tf.keras.layers.Layer):
                  sum_weight=False,
                  regularizer=1e-3,
                  **kwargs):
-        super(TranslationInvariantMP, self).__init__(**kwargs)
+        super(TranslationInvariantMP2, self).__init__(**kwargs)
         if layer_norm:
             orig_activation = activation
             activation = None
@@ -3572,7 +3572,7 @@ class TranslationInvariantMP2(tf.keras.layers.Layer):
                         n_feature_transformation[i],
                         activation=activation,
                         use_bias = i>0,
-                        kernel_regularizer=regularizers.l2(regularizer)
+                        kernel_regularizer=tf.keras.regularizers.l2(regularizer)
                         ))
                 if self.layer_norm:
                     self.dense_layer_norms.append(

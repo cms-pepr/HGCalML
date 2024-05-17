@@ -229,6 +229,9 @@ global_layers_list['RaggedGravNet']=RaggedGravNet
 from GravNetLayersRagged import TranslationInvariantMP
 global_layers_list['TranslationInvariantMP']=TranslationInvariantMP
 
+from GravNetLayersRagged import TranslationInvariantMP2
+global_layers_list['TranslationInvariantMP2']=TranslationInvariantMP2
+
 from GravNetLayersRagged import SelfAttention
 global_layers_list['SelfAttention']=SelfAttention
 
