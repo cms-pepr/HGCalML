@@ -3536,6 +3536,144 @@ class TranslationInvariantMP(tf.keras.layers.Layer):
 
         return self.create_output_features(x, neighbor_indices, distancesq)
 
+class TranslationInvariantMP2(tf.keras.layers.Layer):
+    """
+    Differences to version 1: 
+        - Use Layer Normalization
+        - Use Layer Regularization
+    """
+    def __init__(self,
+                 n_feature_transformation,
+                 activation='elu',
+                 mean=True,
+                 layer_norm = False,
+                 sum_weight=False,
+                 regularizer=1e-3,
+                 **kwargs):
+        super(TranslationInvariantMP, self).__init__(**kwargs)
+        if layer_norm:
+            orig_activation = activation
+            activation = None
+
+
+        self.n_feature_transformation = n_feature_transformation
+        self.activation = activation
+        self.mean = mean
+        self.layer_norm = layer_norm
+        self.sum_weight = sum_weight
+        self.regularizer = regularizer
+        self.feature_tranformation_dense = []
+        self.dense_layer_norms = []
+        self.dense_activations = []
+        for i in range(len(self.n_feature_transformation)):
+            with tf.name_scope(self.name + "/" + str(i)):
+                self.feature_tranformation_dense.append(
+                    tf.keras.layers.Dense(
+                        n_feature_transformation[i],
+                        activation=activation,
+                        use_bias = i>0,
+                        kernel_regularizer=regularizers.l2(regularizer)
+                        ))
+                if self.layer_norm:
+                    self.dense_layer_norms.append(
+                        tf.keras.layers.LayerNormalization())
+                    self.dense_activations.append(
+                        tf.keras.layers.Activation(activation))
+
+    def build(self, input_shapes):
+        input_shape = input_shapes[0]
+
+        with tf.name_scope(self.name + "/" + str(0)):
+            self.feature_tranformation_dense[0].build(input_shape)
+            if self.layer_norm:
+                self.dense_layer_norms[0].build((input_shape[0], self.n_feature_transformation[0]))
+                self.dense_activations[0].build((input_shape[0], self.n_feature_transformation[0]))
+
+        for i in range(1, len(self.feature_tranformation_dense)):
+            with tf.name_scope(self.name + "/" + str(i)):
+                    self.feature_tranformation_dense[i].build((input_shape[0], self.n_feature_transformation[i - 1]))
+                    if self.layer_norm: 
+                        self.dense_layer_norms[i].build((input_shape[0], self.n_feature_transformation[i])) 
+                        self.dense_activations[i].build((input_shape[0], self.n_feature_transformation[i]))
+
+        super(TranslationInvariantMP2, self).build(input_shapes)
+
+
+    def compute_output_shape(self, inputs_shapes):
+        fshape = inputs_shapes[0][-1]
+        return (None, sum(self.n_feature_transformation))
+
+
+    def get_config(self):
+        config = {'n_feature_transformation': self.n_feature_transformation,
+                  'activation': self.activation,
+                  'mean': self.mean,
+                  'layer_norm': self.layer_norm,
+                  'sum_weight': self.sum_weight,
+                  'regularizer': self.regularizer,
+        }
+        base_config = super(TranslationInvariantMP2, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def _trf_loop(self, features, neighbour_indices, distancesq, K, first):
+
+        prev_feat = features
+        if self.mean:
+            #add a 1 to the features for translation invariance later
+            if first:
+                ones = tf.ones_like(features[:,0:1])
+                features = tf.concat([ones, features], axis=-1)
+            # Standard Message Passing
+            features = AccumulateKnn(
+                10.*distancesq,
+                features,
+                neighbour_indices,
+                mean_and_max=False)[0] * K
+
+            # this is only necessary for the first exchange, afterwards the features are already translation independent
+            if first:
+                minus_xi = features[:,0:1]
+                features = features[:,1:]
+                features -= prev_feat * minus_xi
+            if self.sum_weight:
+                wsum = tf.math.divide_no_nan(K, tf.reduce_sum( tf.exp(-10.*distancesq), axis=1, keepdims=True) + 1e-2)#large eps
+                features *= wsum
+        else: #max
+            nfeat = SelectWithDefault(neighbour_indices, features,-2.)
+            features = tf.reduce_max(tf.exp(-10.*distancesq) * nfeat - features[:,tf.newaxis,:], axis=1) * K
+        
+        return features/K
+        
+    
+    def create_output_features(self, x, neighbour_indices, distancesq):
+        allfeat = []
+        features = x
+        K = tf.cast(tf.shape(neighbour_indices)[1], 'float32')
+
+        for i in range(len(self.n_feature_transformation)):
+            features = self._trf_loop(features, neighbour_indices, distancesq, K, i==0)
+            features = self.feature_tranformation_dense[i](features)
+            if self.layer_norm:
+                features = self.dense_layer_norms[i](features)
+                features = self.dense_activations[i](features)
+            allfeat.append(features)
+
+        features = tf.concat(allfeat, axis=-1)
+        features = tf.reshape(features, [-1, sum(self.n_feature_transformation)])
+        return features
+
+    #@tf.function
+    def call(self, inputs):
+        if len(inputs) == 3:
+            x, neighbor_indices, distancesq = inputs
+        elif len(inputs) == 2:
+            x, neighbor_indices = inputs
+            distancesq = tf.zeros_like(neighbor_indices, dtype='float32')
+        else:
+            raise ValueError(self.name+" was passed wrong inputs")
+
+        return self.create_output_features(x, neighbor_indices, distancesq)
+
 
 class MultiAttentionGravNetAdd(tf.keras.layers.Layer):
     def __init__(self,
