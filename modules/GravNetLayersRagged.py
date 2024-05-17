@@ -4036,6 +4036,15 @@ class EdgeConvStatic(tf.keras.layers.Layer):
 
 class XYZtoXYZPrime(tf.keras.layers.Layer):
 
+    def __init__(self,new_prime,**kwargs):
+        super(XYZtoXYZPrime, self).__init__(**kwargs)
+        self.new_prime = new_prime
+
+    def get_config(self):
+        config = {'new_prime': self.new_prime}
+        base_config = super(XYZtoXYZPrime, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
     def call(self, inputs):
         x = inputs[...,0:1]
         y = inputs[...,1:2]
@@ -4046,6 +4055,9 @@ class XYZtoXYZPrime(tf.keras.layers.Layer):
         xprime = x / tf.where(z == 0., tf.sign(z)*1., z *10.)
         yprime = y / tf.where(z == 0., tf.sign(z)*1., z *10.)
         zprime = r / 100.
+        if self.new_prime:
+            xprime = xprime * 10.
+            yprime = yprime * 10.
 
         return tf.concat([xprime,yprime,zprime], axis=-1)
 

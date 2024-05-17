@@ -660,8 +660,9 @@ def condition_input(orig_inputs, no_scaling=False):
 
 def condition_input(orig_inputs,
                     no_scaling=False,
-                    no_prime=False):
-
+                    no_prime=False,
+                    new_prime=False):
+    
     if not 't_spectator_weight' in orig_inputs.keys(): #compat layer
         orig_t_spectator_weight = CreateTruthSpectatorWeights(threshold=5.,minimum=1e-1,active=True
                                                          )([orig_inputs['t_spectator'],
@@ -695,7 +696,7 @@ def condition_input(orig_inputs,
         if no_prime:
             orig_inputs['prime_coords'] = SelectFeatures(5, 8)(orig_inputs['orig_features'])
         else:
-            orig_inputs['prime_coords'] = XYZtoXYZPrime()(SelectFeatures(5, 8)(orig_inputs['orig_features']))
+            orig_inputs['prime_coords'] = XYZtoXYZPrime(new_prime=new_prime)(SelectFeatures(5, 8)(orig_inputs['orig_features']))
 
     return orig_inputs
 
