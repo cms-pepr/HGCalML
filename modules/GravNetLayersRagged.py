@@ -3410,6 +3410,14 @@ class RaggedGravNet(tf.keras.layers.Layer):
         base_config = super(RaggedGravNet, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @staticmethod
+    def set_all_gn_space_trainable(model, trainable=True):
+        for l in model.layers:
+            if isinstance(l, RaggedGravNet):
+                l.input_spatial_transform.trainable = trainable
+                    
+
+
 class SelfAttention(tf.keras.layers.Layer):
 
     def __init__(self,**kwargs):

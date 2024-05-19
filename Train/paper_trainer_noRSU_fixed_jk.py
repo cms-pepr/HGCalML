@@ -65,7 +65,8 @@ train = training_base_hgcal.HGCalTraining(parser=parser)
 
 N_CLUSTER_SPACE_COORDINATES = 6
 N_GRAVNET_SPACE_COORDINATES = 4
-NEIGHBOURS = [64, 64]
+d_shape = 64
+NEIGHBOURS = [32, 64]
 LOSS_IMPLEMENTATION = "hinge"
 GRAVNET_ITERATIONS = len(NEIGHBOURS)
 LOSS_OPTIONS = {
@@ -92,19 +93,19 @@ loss_layer = LLExtendedObjectCondensation3
 
 TRAINING = {
   "stage_1": {
-    "batch_size": 80000,
+    "batch_size": 70000,
     "learning_rate": 0.001,
     "epochs": 5,
     },
 
   "stage_2": {
-    "batch_size": 80000,
+    "batch_size": 70000,
     "learning_rate": 0.0001,
     "epochs": 10,
     },
 
   "stage_3": {
-    "batch_size": 80000,
+    "batch_size": 70000,
     "learning_rate": 0.00001,
     "epochs": 20,
     },
@@ -145,7 +146,7 @@ if not train.args.no_wandb:
 else:
     wandb.active=False
 
-RECORD_FREQUENCY = 1
+RECORD_FREQUENCY = 10
 PLOT_FREQUENCY = 40
 
 ###############################################################################
@@ -168,7 +169,7 @@ def GravNet_plus_TEQMP(name,
             n_dimensions=N_GRAVNET_SPACE_COORDINATES,
             n_filters=d_shape,
             n_propagate=d_shape,
-            coord_initialiser_noise=1e-2,
+            coord_initialiser_noise=1e-3,
             feature_activation='elu',
             )([x, rs])
 
@@ -207,7 +208,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     orig_input = td.interpretAllModelInputs(Inputs)
     pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False, new_prime=True)
-    d_shape = 64
+    
 
     prime_coords = pre_processed['prime_coords']
 
@@ -373,6 +374,7 @@ if not train.modelSet():
         debug_outdir=train.outputDir+'/intplots',
         plot_debug_every=RECORD_FREQUENCY*PLOT_FREQUENCY,
         )
+    RaggedGravNet.set_all_gn_space_trainable(train.keras_model, False) #start with fixed GN space
     train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
@@ -420,6 +422,7 @@ for i in range(1, N_TRAINING_STAGES+1):
         for layer in train.keras_model.layers:
             if isinstance(layer, BatchNormalization):
                 layer.trainable = False
+        RaggedGravNet.set_all_gn_space_trainable(train.keras_model, True)
         train.distributeModelToGPUs() #re-distribute changes
         train.compileModel(learningrate=learning_rate) # recompile models
 
