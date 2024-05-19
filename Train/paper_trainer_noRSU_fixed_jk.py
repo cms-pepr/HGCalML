@@ -49,7 +49,7 @@ from noise_filter import noise_filter
 from callbacks import plotClusteringDuringTraining
 from callbacks import plotClusterSummary
 from callbacks import NanSweeper, DebugPlotRunner
-#from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import BatchNormalization, LayerNormalization
 
 ####################################################################################################
 ### Load Configuration #############################################################################
@@ -64,7 +64,7 @@ train = training_base_hgcal.HGCalTraining(parser=parser)
 
 
 N_CLUSTER_SPACE_COORDINATES = 6
-N_GRAVNET_SPACE_COORDINATES = 6
+N_GRAVNET_SPACE_COORDINATES = 4
 NEIGHBOURS = [64, 64]
 LOSS_IMPLEMENTATION = "hinge"
 GRAVNET_ITERATIONS = len(NEIGHBOURS)
@@ -83,6 +83,7 @@ BATCHNORM_OPTIONS = {
     "learn": False
 }
 DENSE_ACTIVATION = "elu"
+DENSE_INIT = "he_normal"
 DENSE_REGULARIZER_RATE = 1e-9
 DENSE_REGULARIZER = tf.keras.regularizers.l2(DENSE_REGULARIZER_RATE)
 DROPOUT = 1e-2
@@ -91,19 +92,19 @@ loss_layer = LLExtendedObjectCondensation3
 
 TRAINING = {
   "stage_1": {
-    "batch_size": 120000,
+    "batch_size": 80000,
     "learning_rate": 0.001,
-    "epochs": 1,
+    "epochs": 5,
     },
 
   "stage_2": {
-    "batch_size": 120000,
+    "batch_size": 80000,
     "learning_rate": 0.0001,
     "epochs": 10,
     },
 
   "stage_3": {
-    "batch_size": 120000,
+    "batch_size": 80000,
     "learning_rate": 0.00001,
     "epochs": 20,
     },
@@ -144,7 +145,7 @@ if not train.args.no_wandb:
 else:
     wandb.active=False
 
-RECORD_FREQUENCY = 5
+RECORD_FREQUENCY = 1
 PLOT_FREQUENCY = 40
 
 ###############################################################################
@@ -185,9 +186,12 @@ def GravNet_plus_TEQMP(name,
     x = DummyLayer()([x, gncoords]) #just so the branch is not optimised away, anyway used further down
     x = Concatenate()([xgn, x])
     
-    x = TranslationInvariantMP([64, 32, 16], activation='elu')([x, gnnidx, gndist])
+    x = TranslationInvariantMP([64, 32, 16, 8], 
+                 layer_norm = True,
+                 activation = None, #layer norm takes care
+                 sum_weight = True)([x, gnnidx, gndist])
 
-    return x
+    return Concatenate()([xgn, x])
 
 
 
@@ -239,11 +243,12 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     for i in range(GRAVNET_ITERATIONS):
 
-        x = Dense(d_shape,activation=DENSE_ACTIVATION,
+        x = Dense(d_shape,activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
             kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(d_shape,activation=DENSE_ACTIVATION,
+        x = Dense(d_shape,activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
             kernel_regularizer=DENSE_REGULARIZER)(x)
-
+        
+        #x = LayerNormalization()(x)
         x_pre = x
         x = Concatenate()([c_coords, x])
 
@@ -262,18 +267,21 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             rs_track, rs_hit])
         
         x = Concatenate()([xgn, x_pre])
+        #x = LayerNormalization()(x)
+
         x = GravNet_plus_TEQMP(f'gncomb_{i}', x, prime_coords, energy, t_idx, rs, 
                                d_shape, NEIGHBOURS[i], debug_outdir, plot_debug_every, space_reg_strength=1e-2)
 
         x = Dense(d_shape,
                   name=f"dense_post_gravnet_1_iteration_{i}",
-                  activation=DENSE_ACTIVATION,
+                  activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
                   kernel_regularizer=DENSE_REGULARIZER)(x)
         x = Dense(d_shape,
                   name=f"dense_post_gravnet_2_iteration_{i}",
-                  activation=DENSE_ACTIVATION,
+                  activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
                   kernel_regularizer=DENSE_REGULARIZER)(x)
 
+        #x = LayerNormalization()(x)
         allfeat.append(x)
         if len(allfeat) > 1:
             x = Concatenate()(allfeat)
@@ -288,16 +296,17 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     x = Dense(128,
               name=f"dense_final_{1}",
-              activation=DENSE_ACTIVATION,
+              activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
               kernel_regularizer=DENSE_REGULARIZER)(x)
     x = Dense(64,
               name=f"dense_final_{2}",
-              activation=DENSE_ACTIVATION,
+              activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
               kernel_regularizer=DENSE_REGULARIZER)(x)
     x = Dense(64,
               name=f"dense_final_{3}",
-              activation=DENSE_ACTIVATION,
+              activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
               kernel_regularizer=DENSE_REGULARIZER)(x)
+    #x = BatchNormalization()(x)
     
 
     pred_beta, pred_ccoords, pred_dist, \
@@ -314,7 +323,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             scale=1.,
             use_energy_weights=True,
             record_metrics=True,
-            print_loss=True,
+            print_loss=train.args.no_wandb,
             name="ExtendedOCLoss",
             implementation = LOSS_IMPLEMENTATION,
             **LOSS_OPTIONS)(
@@ -407,11 +416,13 @@ for i in range(1, N_TRAINING_STAGES+1):
     print(f"Batch size: {batch_size}")
 
     if i == 2:
-        # change batchnorm
+        # fix the keras batch norm 
         for layer in train.keras_model.layers:
-            if 'batchnorm' in layer.name:
-                layer.max_viscosity = 0.9999999
-                layer.fluidity_decay = 0.01
+            if isinstance(layer, BatchNormalization):
+                layer.trainable = False
+        train.distributeModelToGPUs() #re-distribute changes
+        train.compileModel(learningrate=learning_rate) # recompile models
+
     train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,

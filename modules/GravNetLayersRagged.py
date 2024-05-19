@@ -37,10 +37,11 @@ def layernorm(x, return_norm=False):
     #x = x - tf.reduce_mean(x,axis=-1, keepdims=True)
     norm = tf.reduce_sum(x**2, axis=-1,keepdims=True)
     norm = tf.sqrt(norm+1e-6)
+    corr = tf.sqrt(tf.cast(tf.shape(x)[-1],'float32'))
     if return_norm:
-        x = tf.concat([x / norm * tf.sqrt(tf.cast(x.shape[-1],'float32')), norm], axis=-1)
+        x = tf.concat([x / norm * corr, norm], axis=-1)
     else:
-        x = x / norm * tf.sqrt(tf.cast(x.shape[-1],'float32'))
+        x = x / norm * corr
     return x
 
 
@@ -3282,8 +3283,10 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
 
+
         with tf.name_scope(self.name + "/1/"):
-            self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation=feature_activation)
+            self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation=feature_activation,
+                                                                 kernel_initializer='he_normal')
 
         with tf.name_scope(self.name + "/2/"):
             s_kernel_initializer = 'glorot_uniform'
@@ -3439,6 +3442,7 @@ class TranslationInvariantMP(tf.keras.layers.Layer):
 
         self.n_feature_transformation = n_feature_transformation
         self.activation = activation
+        initializer = 'he_normal'
         self.mean = mean
         self.layer_norm = layer_norm
         self.sum_weight = sum_weight
@@ -3446,7 +3450,9 @@ class TranslationInvariantMP(tf.keras.layers.Layer):
         for i in range(len(self.n_feature_transformation)):
             with tf.name_scope(self.name + "/" + str(i)):
                 self.feature_tranformation_dense.append(
-                    tf.keras.layers.Dense(n_feature_transformation[i], activation=activation, use_bias = i>0))
+                    tf.keras.layers.Dense(n_feature_transformation[i], activation=activation, 
+                                            kernel_initializer=initializer,
+                                          use_bias = i>0))
 
 
     def build(self, input_shapes):
