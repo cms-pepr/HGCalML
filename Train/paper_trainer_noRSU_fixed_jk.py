@@ -374,7 +374,7 @@ if not train.modelSet():
         debug_outdir=train.outputDir+'/intplots',
         plot_debug_every=RECORD_FREQUENCY*PLOT_FREQUENCY,
         )
-    RaggedGravNet.set_all_gn_space_trainable(train.keras_model, False) #start with fixed GN space
+    train.applyFunctionToAllModels(RaggedGravNet.set_all_gn_space_trainable, False) #start with fixed GN space
     train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
@@ -389,7 +389,7 @@ PUBLISHPATH = ""
 PUBLISHPATH += [d  for d in train.outputDir.split('/') if len(d)][-1]
 
 
-cb = [NanSweeper()] #this takes a bit of time checking each batch but could be worth it
+cb = []#[NanSweeper()] #this takes a bit of time checking each batch but could be worth it
 
 cb += [
     plotClusterSummary(
@@ -398,6 +398,7 @@ cb += [
         after_n_batches=1000
         )
     ]
+
 
 # cb += [wandbCallback()]
 
@@ -419,11 +420,13 @@ for i in range(1, N_TRAINING_STAGES+1):
 
     if i == 2:
         # fix the keras batch norm 
-        for layer in train.keras_model.layers:
-            if isinstance(layer, BatchNormalization):
-                layer.trainable = False
-        RaggedGravNet.set_all_gn_space_trainable(train.keras_model, True)
-        train.distributeModelToGPUs() #re-distribute changes
+        def fix_batchnorm(model):
+            for layer in model.layers:
+                if isinstance(layer, BatchNormalization):
+                    layer.trainable = False
+        train.applyFunctionToAllModels(fix_batchnorm)
+        train.applyFunctionToAllModels(RaggedGravNet.set_all_gn_space_trainable, True)
+        #train.distributeModelToGPUs() #re-distribute changes
         train.compileModel(learningrate=learning_rate) # recompile models
 
     train.trainModel(
