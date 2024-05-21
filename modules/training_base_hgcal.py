@@ -215,7 +215,17 @@ class training_base(object):
 
         self.distributeModelToGPUs()
 
+    def applyFunctionToAllModels(self, function, *args, **kwargs):
+        function(self.keras_model)
+        for m in self.mgpu_keras_models:
+            function(m, *args, **kwargs)
+
     def distributeModelToGPUs(self):
+        if self.mgpu_keras_models is not None and len(self.mgpu_keras_models) > 0:
+            # delete all models but the first
+            for m in self.mgpu_keras_models[1:]:
+                del m
+
         self.mgpu_keras_models = [self.keras_model] #zero model
         if self.ngpus > 1:
             print("distributing model to",self.ngpus,"GPUs")
