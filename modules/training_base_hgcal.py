@@ -19,7 +19,7 @@ from DeepJetCore.modeltools import load_model
 import time
 from DebugLayers import switch_off_debug_plots
 from DeepJetCore.DJCLayers import LayerWithMetrics
-from DeepJetCore.wandb_interface import wandb
+from DeepJetCore.wandb_interface import wandb_wrapper as wandb
 from tqdm import tqdm
 
 
@@ -516,6 +516,8 @@ class training_base(object):
                 single_counter += 1
                 if add_progbar:
                     pbar.update(len(thisbatch))
+                    #also put the global loss in the prog bar
+                    pbar.set_postfix({'global_loss': self.global_loss.numpy()})
 
                 for b in thisbatch:
                     del b
