@@ -2782,7 +2782,6 @@ def tree_condensation_block(pre_processed,
                                    teq_nodes = [16,16],
                                    return_coords = True, trainable = trainable)
     
-    gn_coords = StopGradient()(gn_coords) #stop the gradient here
     x = Concatenate()([xgn, x])
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
     
