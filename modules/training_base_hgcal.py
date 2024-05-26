@@ -353,7 +353,7 @@ class training_base(object):
         if self.ngpus == 1: #simple
             g, l = self.compute_gradients(self.mgpu_keras_models[0], split_data[0], 0)
             self.gradients += [g]
-            self.global_loss = l
+            self.global_loss = np.mean(l)
             
         else:
             batch_gradients = []
@@ -517,6 +517,7 @@ class training_base(object):
                 if add_progbar:
                     pbar.update(len(thisbatch))
                     #also put the global loss in the prog bar
+
                     pbar.set_postfix({'global_loss': self.global_loss.numpy()})
 
                 for b in thisbatch:
