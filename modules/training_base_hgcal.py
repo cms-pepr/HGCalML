@@ -19,6 +19,7 @@ from DeepJetCore.modeltools import load_model
 import time
 from DebugLayers import switch_off_debug_plots
 from DeepJetCore.DJCLayers import LayerWithMetrics
+from DeepJetCore.wandb_interface import wandb
 from tqdm import tqdm
 
 
@@ -91,6 +92,7 @@ class training_base(object):
         self.custom_optimizer=False
         self.copied_script=""
         self.gradients=[]
+        self.global_loss=0.
         
         self.inputData = os.path.abspath(args.inputDataCollection) \
 												 if ',' not in args.inputDataCollection else \
@@ -330,10 +332,9 @@ class training_base(object):
                 loss = tf.add_n(model.losses)
             vars = model.trainable_variables
             grads = tape.gradient(loss, vars)
-            del loss
             del tape
             del vars
-            return grads
+            return grads, loss
         
     def average_gradients(self):
         all_gradients = self.gradients
@@ -350,17 +351,23 @@ class training_base(object):
     def trainstep_parallel(self, split_data, collect_gradients=1):
 
         if self.ngpus == 1: #simple
-            self.gradients += [self.compute_gradients(self.mgpu_keras_models[0], split_data[0], 0)]
+            g, l = self.compute_gradients(self.mgpu_keras_models[0], split_data[0], 0)
+            self.gradients += [g]
+            self.global_loss = l
             
         else:
             batch_gradients = []
+            batch_losses = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.ngpus) as executor:
                 futures = [executor.submit(self.compute_gradients, self.mgpu_keras_models[i], split_data[i], i) for i in range(self.ngpus)]
                 for future in concurrent.futures.as_completed(futures):
-                    gradients = future.result()
+                    gradients, losses = future.result()
                     batch_gradients.append(gradients)
+                    batch_losses.append(losses)
     
             self.gradients += batch_gradients
+            # average global loss
+            self.global_loss = np.mean(batch_losses) #global loss is just for information, can kill gradient and ignore collection steps
 
         # Average gradients across GPUs and collection steps
         if collect_gradients * self.ngpus <= len(self.gradients):
@@ -498,6 +505,9 @@ class training_base(object):
                 logs = { m.name: m.result() for m in self.keras_model.metrics } #only for main model
 
                 callbacks.on_train_batch_end(single_counter, logs)
+
+                #explicit wandb loss
+                wandb.log({'global_loss': self.global_loss})
 
                 for l in logs.values():
                     del l
