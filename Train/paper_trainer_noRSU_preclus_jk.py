@@ -61,7 +61,6 @@ parser = ArgumentParser('training')
 parser.add_argument('--run_name', help="wandb run name", default="test")
 parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
 parser.add_argument('--wandb_project', help="wandb_project", default="Paper_Models")
-wandb.active=False
 
 train = training_base_hgcal.HGCalTraining(parser=parser)
 
@@ -73,7 +72,6 @@ if not train.args.no_wandb:
     wandb.save(sys.argv[0]) # Save python file
 else:
     wandb.active=False
-
 
 PLOT_FREQUENCY = 200
 
