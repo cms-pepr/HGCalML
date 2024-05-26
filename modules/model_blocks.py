@@ -2772,9 +2772,9 @@ def tree_condensation_block(pre_processed,
     x = pre_processed['features']
 
     x = ProcessFeatures()(x)
-    x = Dense(32, activation='elu', name=name+'_enc', trainable = trainable, kernel_initializer='he_normal')(x)
-
-    x = Concatenate()([prime_coords,x])
+    xd = Dense(32, activation='tanh', name=name+'_enc', trainable = trainable)(x)
+    x = Concatenate()([prime_coords,xd,x])
+    
     xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
                                    16, #nodes
                                    16, #neighbours
