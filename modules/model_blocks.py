@@ -2627,7 +2627,7 @@ def mini_tree_create(
         K=K_loss,
                 active=trainable,
             penalty_fraction=0.5,
-            low_energy_cut = 1., #allow everything below 1 GeV to be removed
+            low_energy_cut = 3., #allow everything below 3 GeV to be removed
             name = name + '_score'
             )([score, coords, t_idx, t_energy, rs])
 
@@ -2774,7 +2774,7 @@ def tree_condensation_block(pre_processed,
     x = ProcessFeatures()(x)
     xd = Dense(32, activation='tanh', name=name+'_enc', trainable = trainable)(x)
     x = Concatenate()([prime_coords,xd,x])
-    
+
     xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
                                    16, #nodes
                                    16, #neighbours
