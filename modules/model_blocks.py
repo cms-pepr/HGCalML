@@ -2614,6 +2614,13 @@ def mini_tree_create(
     '''
     provides the loss needed and the condensation graph
     '''
+    coords = LLClusterCoordinates(
+                record_metrics = record_metrics,
+                active=trainable,
+                scale = 1.,
+                ignore_noise = True, #this is filtered by the graph condensation anyway
+                print_batch_time=False
+                )([coords, t_idx,  score, rs ]) #score is not affected here
 
     score = LLGraphCondensationScore(
         record_metrics = record_metrics,
@@ -2765,8 +2772,10 @@ def tree_condensation_block(pre_processed,
     x = pre_processed['features']
 
     x = ProcessFeatures()(x)
+    x = Dense(32, activation='elu', name=name+'_enc', trainable = trainable, kernel_initializer='he_normal')(x)
+
     x = Concatenate()([prime_coords,x])
-    x, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
+    xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
                                    16, #nodes
                                    16, #neighbours
                                    debug_outdir, plot_debug_every,
@@ -2774,6 +2783,7 @@ def tree_condensation_block(pre_processed,
                                    return_coords = True, trainable = trainable)
     
     gn_coords = StopGradient()(gn_coords) #stop the gradient here
+    x = Concatenate()([xgn, x])
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
     
     ud_graph = mini_tree_create(

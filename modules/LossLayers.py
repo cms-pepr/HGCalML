@@ -1433,8 +1433,8 @@ class LLClusterCoordinates(LossLayerBase):
 
         lossval = tf.where(tf.math.is_finite(lossval), lossval, 0.)#DEBUG
 
-        self.add_prompt_metric(self.scale * distloss, self.name+'_att_loss')
-        self.add_prompt_metric(self.scale * reploss, self.name+'_rep_loss')
+        self.wandb_log({self.name+'_att_loss': self.scale * distloss,
+                        self.name+'_rep_loss': self.scale * reploss})
 
         return lossval
 
