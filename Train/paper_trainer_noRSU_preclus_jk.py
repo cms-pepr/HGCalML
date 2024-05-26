@@ -62,16 +62,20 @@ parser.add_argument('--run_name', help="wandb run name", default="test")
 parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
 parser.add_argument('--wandb_project', help="wandb_project", default="Paper_Models")
 
-train = training_base_hgcal.HGCalTraining(parser=parser)
+# get the args so far but ignore the other args to pass them on
 
-if not train.args.no_wandb:
+pre_args,_ = parser.parse_known_args() 
+
+if not pre_args.no_wandb:
     wandb.init(
-        project=train.args.wandb_project,
+        project=pre_args.wandb_project,
         config={},
     )
     wandb.save(sys.argv[0]) # Save python file
 else:
     wandb.active=False
+#parses the rest of the arguments
+train = training_base_hgcal.HGCalTraining(parser=parser)
 
 PLOT_FREQUENCY = 200
 
@@ -157,15 +161,17 @@ if not train.modelSet():
 train.change_learning_rate(1e-2)
 train.trainModel(
         nepochs=2,
-        batchsize=90000,
+        batchsize=120000,
         add_progbar=True,
-        additional_callbacks=[]
+        additional_callbacks=[],
+        collect_gradients = 4 #average out more gradients
         )
 
 train.change_learning_rate(1e-3)
 train.trainModel(
         nepochs=20,
-        batchsize=90000,
+        batchsize=120000,
         add_progbar=True,
-        additional_callbacks=[]
+        additional_callbacks=[],
+        collect_gradients = 4
         )
