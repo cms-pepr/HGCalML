@@ -45,6 +45,8 @@ from oc_helper_ops import SelectWithDefault
 
 from binned_select_knn_op import BinnedSelectKnn
 
+from Layers import TranslationInvariantMP, DummyLayer
+
 
 
 def random_sampling_block2(x, rs, gncoords, gnnidx, gndist, is_track, 
@@ -2524,11 +2526,6 @@ def intermediate_graph_condensation(
     is_track = orig_inputs['is_track']
     energy = orig_inputs['rechit_energy']
 
-    if dynamic_spectators:
-        tmp_spec = Dense(1, activation = 'sigmoid', name = name+'_dyn_specw')(x)
-        orig_inputs['t_spectator_weight'] = LLValuePenalty(active = trainable,
-                                                    record_metrics=record_metrics)(tmp_spec)
-
     score = Dense(1, activation='sigmoid',name=name+'_gc_score', trainable=trainable)(x)
     coords = Dense(n_cond_coords, name=name+'_cond_coords', use_bias = False, trainable=trainable)(x)
 
@@ -2545,17 +2542,15 @@ def intermediate_graph_condensation(
                 active=trainable,
                 scale = 1.,
                 ignore_noise = True, #this is filtered by the graph condensation anyway
-                print_batch_time=True
+                print_batch_time=False
                 )([coords, orig_inputs['t_idx'], orig_inputs['t_spectator_weight'],
                                             score, rs ])
-
 
     trans_a = CreateGraphCondensation(
             score_threshold = score_threshold,
             K=K
             )(score,coords,rs,
               always_promote = is_track)
-
 
     trans_a = MLGraphCondensationMetrics(
         name = name + '_graphcondensation_metrics',
@@ -2597,6 +2592,222 @@ def intermediate_graph_condensation(
 
     return trans_a, out_truth, sum_energy
 
+
+def mini_tree_create(
+        score,
+        coords,
+        rs,
+
+        t_idx, t_energy, 
+
+        is_track = None,
+
+        K = 5,
+
+        K_loss = 48,
+        score_threshold=0.5,
+        
+        record_metrics = False,
+        trainable = False,
+        name = 'tree_creation_0',
+        ):
+    '''
+    provides the loss needed and the condensation graph
+    '''
+
+    score = LLGraphCondensationScore(
+        record_metrics = record_metrics,
+        K=K_loss,
+                active=trainable,
+            penalty_fraction=0.5,
+            low_energy_cut = 1., #allow everything below 1 GeV to be removed
+            name = name + '_score'
+            )([score, coords, t_idx, t_energy, rs])
+
+
+    trans_a = CreateGraphCondensation(
+            score_threshold = score_threshold,
+            K=K,
+            name=name+'_tree'
+            )(score,coords,rs, always_promote = is_track)
+
+    trans_a = MLGraphCondensationMetrics(
+        name = name + '_metrics',
+        record_metrics = record_metrics,
+        )(trans_a, t_idx, t_energy)
+
+    return trans_a
+
+
+def mini_tree_clustering(
+        pre_inputs : dict, # features, rechit_energy, row_splits, t_idx, 
+
+        trans_a : GraphCondensation,
+
+        edge_dense = [64,64,64],
+        edge_pre_nodes = 32,
+
+        record_metrics = False,
+        trainable = False,
+        name = 'tree_clustering_0',
+        produce_output = True # turn off for fast pretraining
+        ):
+    
+    x = pre_inputs['features']
+    energy = pre_inputs['rechit_energy']
+
+    x_e = CreateGraphCondensationEdges(
+                     edge_dense=edge_dense,
+                     pre_nodes=edge_pre_nodes,
+                     K = trans_a['nidx_down'].shape[1],
+                     trainable=trainable,
+                     name=name+'_gc_edges')(x, trans_a)
+
+    x_e = LLGraphCondensationEdges(
+            active=trainable,
+            record_metrics=record_metrics
+            )(x_e, trans_a, pre_inputs['t_idx'])
+
+    x_e = StopGradient()(x_e) #edges are purely learned from explicit loss
+    trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
+
+    out={}
+
+    if produce_output:
+        # now push up, some explicit:
+        # explicit_keys = ['prime_coords', 'coords', 'rechit_energy', 'features', 'is_track', 'row_splits']
+
+        out['prime_coords'] = PushUp(add_self=True)(pre_inputs['prime_coords'], trans_a, weight = energy)
+        out['coords'] = PushUp(add_self=True)(pre_inputs['coords'], trans_a, weight = energy)
+        out['rechit_energy'] = PushUp(mode='sum', add_self=True)(energy, trans_a)
+        ew_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a, weight = energy)
+        w_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a)
+        out['features'] = Concatenate()([x, ew_feat, w_feat])
+    
+        out['is_track'] = SelectUp()(pre_inputs['is_track'], trans_a)
+        out['row_splits'] = trans_a['rs_up']
+
+        # now explicit pass through
+        out['orig_features'] = pre_inputs['orig_features']
+        out['orig_row_splits'] = pre_inputs['orig_row_splits']
+
+        for k in pre_inputs.keys(): # pass through truth
+            if 't_' == k[0:2]:
+                out[k] = SelectUp()(pre_inputs[k],trans_a)
+
+        return out, trans_a
+    
+    #this is a dummy return
+    return {}, trans_a
+
+def GravNet_plus_TEQMP(name,
+                       x, cprime, hit_energy, t_idx,
+                       rs, 
+                       d_shape, 
+                       n_neighbours,
+                       debug_outdir, 
+                       plot_debug_every, 
+                       space_reg_strength=1e-9,
+                       n_gn_coords = 4,
+                       teq_nodes = [64, 32, 16, 8],
+                       return_coords = False,
+                       trainable = False
+                       ):
+    
+    xgn, gncoords, gnnidx, gndist = RaggedGravNet(
+                name = "GravNet_"+name, # 76929, 42625, 42625
+            n_neighbours=n_neighbours,
+            n_dimensions=n_gn_coords,
+            n_filters=d_shape,
+            n_propagate=d_shape,
+            coord_initialiser_noise=1e-3,
+            feature_activation='elu',
+            trainable = trainable
+            )([x, rs])
+
+    if space_reg_strength > 0:
+        gndist = LLRegulariseGravNetSpace(name=f'gravnet_coords_reg_{name}' , 
+                                          record_metrics=True,
+                                          scale=space_reg_strength)([gndist, cprime, gnnidx])
+    
+    gncoords = PlotCoordinates(
+            plot_every=plot_debug_every,
+            outdir = debug_outdir,
+            name=f'gncoords_{name}'
+            )([gncoords, hit_energy, t_idx, rs])
+    
+    x = DummyLayer()([x, gncoords]) #just so the branch is not optimised away, anyway used further down
+    x = Concatenate()([xgn, x])
+    
+    x = TranslationInvariantMP(teq_nodes, 
+                 layer_norm = True,
+                 activation = None, #layer norm takes care
+                 sum_weight = True,
+                 trainable = trainable)([x, gnnidx, gndist])
+
+    if return_coords:
+        return Concatenate()([xgn, x]), gncoords
+    return Concatenate()([xgn, x])
+
+def tree_condensation_block(pre_processed,
+                             debug_outdir=None, plot_debug_every=-1,
+                             name = 'tree_condensation_block',
+                             trainable = False,
+                             record_metrics = False,
+                             produce_output = True):
+
+    prime_coords = pre_processed['prime_coords']
+    is_track = pre_processed['is_track']
+    rs = pre_processed['row_splits']
+    energy = pre_processed['rechit_energy']
+    t_idx = pre_processed['t_idx']
+    x = pre_processed['features']
+
+    x = ProcessFeatures()(x)
+
+    x, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
+                                   16, #nodes
+                                   16, #neighbours
+                                   debug_outdir, plot_debug_every,
+                                   teq_nodes = [16,16],
+                                   return_coords = True, trainable = trainable)
+    
+    gn_coords = StopGradient()(gn_coords) #stop the gradient here
+    score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
+    
+    ud_graph = mini_tree_create(
+        score,
+        gn_coords,
+        rs,
+
+        t_idx, pre_processed['t_energy'], 
+
+        is_track = is_track,
+
+        K = 5,
+
+        K_loss = 48,
+        score_threshold=0.5,
+        
+        record_metrics = record_metrics,
+        trainable = trainable,
+        name = name+'_tree_creation',
+        )
+    
+    out = mini_tree_clustering(
+        pre_processed,
+        ud_graph,
+        edge_dense = [16,16],
+        edge_pre_nodes = 8,
+
+        record_metrics = record_metrics,
+        trainable = trainable,
+        name = name+'_tree_clustering',
+        produce_output = produce_output
+        )
+    
+    return out
+    
 
 def tiny_pc_pool(
         orig_inputs,
