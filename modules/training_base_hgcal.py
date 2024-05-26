@@ -518,7 +518,7 @@ class training_base(object):
                     pbar.update(len(thisbatch))
                     #also put the global loss in the prog bar
 
-                    pbar.set_postfix({'global_loss': self.global_loss.numpy()})
+                    pbar.set_postfix({'global_loss': self.global_loss})
 
                 for b in thisbatch:
                     del b
