@@ -613,7 +613,7 @@ class CreateGraphCondensationEdges(tf.keras.layers.Layer):
         - graph transition
         
         Outputs:
-        - processed edges with K+1 entries (first is self-edge)
+        - processed edges with K+1 entries (first is self-edge), V x K+1
         
         '''
         
@@ -947,10 +947,8 @@ class LLGraphCondensationScore(LossLayerBase):
         
         rest_low_loss = tf.reduce_mean(rest_low_loss)
         
-        self.add_prompt_metric(0.*rest_low_loss, self.name+'_extra_score_loss')
-        self.add_prompt_metric(rest_low_loss, self.name+'_global_loss')
-        self.add_prompt_metric(one_max_loss, self.name+'_local_max_loss')
-        self.add_prompt_metric(0.*rest_low_loss, self.name+'_noise_loss')
+        self.wandb.log({self.name+'_global_loss': rest_low_loss,
+                        self.name+'_local_max_loss': one_max_loss})
 
         return  (1. - self.penalty_fraction) * one_max_loss + self.penalty_fraction * rest_low_loss
 
@@ -1160,7 +1158,10 @@ class LLGraphCondensationEdges(LossLayerBase):
         
     def loss(self, inputs):
         assert len(inputs) == 3
-        e_score, nidx, t_idx = inputs
+        e_score, nidx, t_idx = inputs 
+
+        if len(e_score.shape) == 2:
+            e_score = e_score[:,:, tf.newaxis]
         
         n_t_idx = select(nidx, t_idx, -2)[:,:,0]
         
@@ -1186,6 +1187,7 @@ class LLGraphCondensationEdges(LossLayerBase):
         is_up = nidx[:,0] < 0
         prob = create_encoding()
         is_down_f = 1. - tf.cast(is_up,'float32')
+
         bce = self.bce(prob, e_score)
         
         bce = tf.where( is_up[..., tf.newaxis], 0., bce )
@@ -1212,9 +1214,9 @@ class LLGraphCondensationEdges(LossLayerBase):
             acc_score = tf.reduce_sum(is_down_f * acc_score) / tf.reduce_sum(is_down_f)
             return acc_score
         
-        self.add_prompt_metric(calc_acc(e_score), self.name+'_accuracy')
-        self.add_prompt_metric(calc_acc(tf.where(e_score>0.5, 1., tf.zeros_like(e_score))), self.name+'_bin_accuracy')
-        
+        self.wandb_log({self.name+'_accuracy':  calc_acc(e_score),
+                        self.name+'_bin_accuracy': calc_acc(tf.where(e_score>0.5, 1., tf.zeros_like(e_score))),
+                        })
         
         return lossval  
         
