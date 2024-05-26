@@ -9,7 +9,7 @@ import yaml
 import shutil
 from argparse import ArgumentParser
 
-# import wandb
+# import wandb very early
 from DeepJetCore.wandb_interface import wandb_wrapper as wandb
 import tensorflow as tf
 from tensorflow.keras.layers import Concatenate, Dense, Dropout
@@ -62,8 +62,6 @@ parser.add_argument('--run_name', help="wandb run name", default="test")
 parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
 parser.add_argument('--wandb_project', help="wandb_project", default="Paper_Models")
 
-train = training_base_hgcal.HGCalTraining(parser=parser)
-
 if not train.args.no_wandb:
     wandb.init(
         project=train.args.wandb_project,
@@ -72,6 +70,9 @@ if not train.args.no_wandb:
     wandb.save(sys.argv[0]) # Save python file
 else:
     wandb.active=False
+    
+train = training_base_hgcal.HGCalTraining(parser=parser)
+
 
 PLOT_FREQUENCY = 200
 
@@ -156,7 +157,15 @@ if not train.modelSet():
 
 train.change_learning_rate(1e-2)
 train.trainModel(
-        nepochs=50,
+        nepochs=2,
+        batchsize=90000,
+        add_progbar=True,
+        additional_callbacks=[]
+        )
+
+train.change_learning_rate(1e-3)
+train.trainModel(
+        nepochs=20,
         batchsize=90000,
         add_progbar=True,
         additional_callbacks=[]
