@@ -284,6 +284,14 @@ class LossLayerBase(LayerWithMetrics):
         else:
             with tf.compat.v1.Session() as sess:
                 return sess.run(tensor)
+            
+    def wandb_log(self, log_dict): #restrict to dict, translate all to numpy if needed
+        for key, value in log_dict.items():
+            # check if it is a tensor
+            if isinstance(value, tf.Tensor):
+                log_dict[key] = self._to_numpy(value)
+        # ru super wandb_log
+        super(LossLayerBase, self).wandb_log(log_dict)
 
     def loss(self, inputs):
         '''
@@ -1055,6 +1063,20 @@ class LLRegulariseGravNetSpace(LossLayerBase):
         
         dist = tf.where(nidx<1, 0., dist)#mask masked again
         gndist = tf.where(nidx<1, 0., gndist)#mask masked again (this should already be done but just in case)
+
+        #old goes here
+        dist = tf.sqrt(dist + 1e-6)
+        gndist = tf.sqrt(gndist + 1e-6)
+
+        #now just normalise with softmax
+        dist = tf.nn.softmax(dist, axis=1)
+        gndist = tf.nn.softmax(gndist, axis=1)
+
+        lossval = tf.reduce_mean((dist - gndist)**2)# both should be similar
+
+        return lossval
+    
+        #old
         
         dist = tf.sqrt(dist + 1e-6)
         mean_dist = tf.reduce_mean(dist, axis=1, keepdims=True)
