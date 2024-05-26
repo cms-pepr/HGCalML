@@ -2722,7 +2722,8 @@ def GravNet_plus_TEQMP(name,
             n_propagate=d_shape,
             coord_initialiser_noise=1e-3,
             feature_activation='elu',
-            trainable = trainable
+            trainable = trainable,
+            
             )([x, rs])
 
     if space_reg_strength > 0:
@@ -2764,7 +2765,7 @@ def tree_condensation_block(pre_processed,
     x = pre_processed['features']
 
     x = ProcessFeatures()(x)
-
+    x = Concatenate()([prime_coords,x])
     x, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
                                    16, #nodes
                                    16, #neighbours
