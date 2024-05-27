@@ -2693,7 +2693,8 @@ def mini_tree_clustering(
         out['rechit_energy'] = PushUp(mode='sum', add_self=True)(energy, trans_a)
         ew_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a, weight = energy)
         w_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a)
-        out['features'] = Concatenate()([x, ew_feat, w_feat])
+        x_sel = SelectUp()(x, trans_a)
+        out['features'] = Concatenate()([x_sel, ew_feat, w_feat])
     
         out['is_track'] = SelectUp()(pre_inputs['is_track'], trans_a)
         out['row_splits'] = trans_a['rs_up']
@@ -2768,7 +2769,7 @@ def GravNet_plus_TEQMP(name,
     return Concatenate()([xgn, x])
 
 def tree_condensation_block(pre_processed,
-                             debug_outdir=None, plot_debug_every=-1,
+                             debug_outdir='', plot_debug_every=-1,
                              name = 'tree_condensation_block',
                              trainable = False,
                              record_metrics = False,
