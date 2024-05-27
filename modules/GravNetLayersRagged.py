@@ -1985,8 +1985,8 @@ class LocalDistanceScaling (LayerWithMetrics):
     def call(self, inputs):
         dist,scale = inputs
         newdist,scale = LocalDistanceScaling.raw_call(dist,scale,self.max_scale,self.b,self.c)
-        self.add_prompt_metric(tf.reduce_mean(scale), self.name+'_dist_scale')
-        self.add_prompt_metric(tf.math.reduce_std(scale), self.name+'_var_dist_scale')
+        #self.add_prompt_metric(tf.reduce_mean(scale), self.name+'_dist_scale')
+        #self.add_prompt_metric(tf.math.reduce_std(scale), self.name+'_var_dist_scale')
         return newdist
 
 
