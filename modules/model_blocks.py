@@ -2613,6 +2613,8 @@ def mini_tree_create(
         ):
     '''
     provides the loss needed and the condensation graph
+    Does not contain any learnable parameters whatsoever.
+    trainable only turns on the losses
     '''
     coords = LLClusterCoordinates(
                 record_metrics = record_metrics,
@@ -2642,6 +2644,8 @@ def mini_tree_create(
         name = name + '_metrics',
         record_metrics = record_metrics,
         )(trans_a, t_idx, t_energy)
+    
+    
 
     return trans_a
 
@@ -2718,7 +2722,8 @@ def GravNet_plus_TEQMP(name,
                        n_gn_coords = 4,
                        teq_nodes = [64, 32, 16, 8],
                        return_coords = False,
-                       trainable = False
+                       trainable = False,
+                       add_scaling = True
                        ):
     
     xgn, gncoords, gnnidx, gndist = RaggedGravNet(
@@ -2746,6 +2751,11 @@ def GravNet_plus_TEQMP(name,
     
     x = DummyLayer()([x, gncoords]) #just so the branch is not optimised away, anyway used further down
     x = Concatenate()([xgn, x])
+
+    dscale = Dense(1, activation='sigmoid', name=name+'_dscale', trainable = trainable)(x)
+    dscale = ScalarMultiply(2.)(dscale)
+    dscale = Multiply()([dscale, dscale]) # as distances are also quadratic
+    gndist = LocalDistanceScaling()([gndist, dscale])
     
     x = TranslationInvariantMP(teq_nodes, 
                  layer_norm = True,
@@ -2807,8 +2817,8 @@ def tree_condensation_block(pre_processed,
     out = mini_tree_clustering(
         pre_processed,
         ud_graph,
-        edge_dense = [16,16],
-        edge_pre_nodes = 8,
+        edge_dense = [32,16],
+        edge_pre_nodes = 16,
 
         record_metrics = record_metrics,
         trainable = trainable,

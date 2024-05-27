@@ -52,6 +52,7 @@ from callbacks import NanSweeper, DebugPlotRunner
 from tensorflow.keras.layers import BatchNormalization, LayerNormalization
 
 from model_blocks import tree_condensation_block
+from Layers import PlotGraphCondensationEfficiency
 
 ####################################################################################################
 ### Load Configuration #############################################################################
@@ -63,6 +64,7 @@ parser.add_argument('--no_wandb', help="Don't use wandb", action='store_true')
 parser.add_argument('--wandb_project', help="wandb_project", default="Paper_Models")
 
 # get the args so far but ignore the other args to pass them on
+# this prevents errors with wandb in layers
 
 pre_args,_ = parser.parse_known_args() 
 
@@ -77,7 +79,7 @@ else:
 #parses the rest of the arguments
 train = training_base_hgcal.HGCalTraining(parser=parser)
 
-PLOT_FREQUENCY = 200
+PLOT_FREQUENCY = 600
 
 ###############################################################################
 ### Define Model ##############################################################
@@ -107,6 +109,13 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                             trainable = True,
                             record_metrics = True,
                             produce_output = check_keys)
+    
+    pre_processed['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = plot_debug_every,
+                     outdir= debug_outdir )(pre_processed['t_energy'], pre_processed['t_idx'], graph)
+    
+    #just to keep the plot in the loop
+    graph['weights_down'] = DummyLayer()([graph['weights_down'], pre_processed['t_energy']])
     
     # check if there are keys in out missing that are in pre_processed, just for debugging
     if check_keys:
