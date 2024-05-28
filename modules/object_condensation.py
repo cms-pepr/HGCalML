@@ -344,8 +344,8 @@ class Basic_OC_per_sample(object):
 
     #@tf.function(reduce_retracing=True)
     def calc_metrics(self, energies):
-        d,rel_metrics_radius = self._calc_containment(energies)
-        d.update(self._calc_contamination(energies, rel_metrics_radius))
+        d,rel_metrics_radius,energies_k = self._calc_containment(energies)
+        d.update(self._calc_contamination(energies, rel_metrics_radius,energies_k))
         return d
     # metrics functions that can be called at the end, first calc containment, then contamination
     #@tf.function
@@ -375,13 +375,20 @@ class Basic_OC_per_sample(object):
         in_radius_energy /= energies_k
 
         beta_contain = tf.reduce_sum(tf.where( in_radius, self.beta_k_m, 0. ), axis=1) # K x 1
-        beta_contain /= tf.reduce_sum(self.beta_k_m , axis=1) 
+        beta_contain /= tf.reduce_sum(self.beta_k_m , axis=1)
+
+        # the same for deposited energy > 20 GeV
+        en_norm = tf.reduce_sum(tf.cast(energies_k > 20., dtype='float'), axis=0)
+        in_radius_energy_20 = tf.where(energies_k > 20., in_radius_energy, 0.) / en_norm
+        beta_contain_20 = tf.where(energies_k > 20., beta_contain, 0.) / en_norm
 
         return {'containment': tf.reduce_mean(in_radius_energy),
-                'beta_containment': tf.reduce_mean(beta_contain)}, rel_metrics_radius
+                'beta_containment': tf.reduce_mean(beta_contain),
+                'containment_E20': tf.reduce_mean(in_radius_energy_20),
+                'beta_containment_E20': tf.reduce_mean(beta_contain_20)  }, rel_metrics_radius, energies_k
 
     #@tf.function
-    def _calc_contamination(self, energies, rel_metrics_radius):
+    def _calc_contamination(self, energies, rel_metrics_radius, energies_k):
 
         x_k_alpha = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) 
         dsq = tf.expand_dims(x_k_alpha, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
@@ -392,12 +399,21 @@ class Basic_OC_per_sample(object):
         energies_ir_all_k_v = tf.where(in_radius[...,tf.newaxis], energies_k_v , 0.)
         energies_ir_not_k_v = tf.where(in_radius[...,tf.newaxis], self.Mnot * energies_k_v , 0.)
         
-        rel_cont = tf.reduce_sum(energies_ir_not_k_v, axis=1)/tf.reduce_sum(energies_ir_all_k_v, axis=1)
+        rel_cont_k = tf.reduce_sum(energies_ir_not_k_v, axis=1)/tf.reduce_sum(energies_ir_all_k_v, axis=1)
 
-        beta_cont = tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.Mnot * self.beta_v[tf.newaxis,...], 0.), axis=1)
-        beta_cont /= tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.beta_v[tf.newaxis,...], 0.), axis=1)
+        beta_cont_k = tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.Mnot * self.beta_v[tf.newaxis,...], 0.), axis=1) # K x 1?
+        beta_cont_k /= tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.beta_v[tf.newaxis,...], 0.), axis=1)
 
-        return {'contamination': tf.reduce_mean(rel_cont), 'beta_contamination': tf.reduce_mean(beta_cont)}
+        # the same for deposited energy > 20 GeV
+        # use energies_k
+        en_norm = tf.reduce_sum(tf.cast(energies_k > 20., dtype='float'), axis=0)
+        rel_cont_k_E20 = tf.reduce_sum(tf.where(energies_k > 20., rel_cont_k, 0.), axis=0) / en_norm
+        beta_cont_k_E20 = tf.reduce_sum(tf.where(energies_k > 20., beta_cont_k, 0.), axis=0) / en_norm
+
+        return {'contamination': tf.reduce_mean(rel_cont_k), 
+                'beta_contamination': tf.reduce_mean(beta_cont_k),
+                'contamination_E20': tf.reduce_mean(rel_cont_k_E20),
+                'beta_contamination_E20': tf.reduce_mean(beta_cont_k_E20)}
     
 
 class Hinge_OC_per_sample_damped(Basic_OC_per_sample):
