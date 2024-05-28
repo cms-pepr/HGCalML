@@ -2632,7 +2632,7 @@ def mini_tree_create(
                 ignore_noise = True, #this is filtered by the graph condensation anyway
                 print_batch_time=False,
                 specweight_to_weight = True,
-                )() #score is not affected here
+                )(lcc_input) #score is not affected here
 
     if cleaning_mode:
         score = LLValuePenalty(1., active = trainable)(score)
