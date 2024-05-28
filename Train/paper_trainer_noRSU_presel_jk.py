@@ -92,19 +92,19 @@ loss_layer = LLExtendedObjectCondensation3
 
 TRAINING = {
   "stage_1": {
-    "batch_size": 70000,
+    "batch_size": 120000,
     "learning_rate": 0.001,
     "epochs": 5,
     },
 
   "stage_2": {
-    "batch_size": 70000,
+    "batch_size": 120000,
     "learning_rate": 0.0001,
     "epochs": 10,
     },
 
   "stage_3": {
-    "batch_size": 70000,
+    "batch_size": 120000,
     "learning_rate": 0.00001,
     "epochs": 20,
     },
@@ -248,6 +248,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                   name=f"dense_post_gravnet_2_iteration_{i}",
                   activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
                   kernel_regularizer=DENSE_REGULARIZER)(x)
+        
 
         #x = LayerNormalization()(x)
         allfeat.append(x)
@@ -392,5 +393,6 @@ for i in range(1, N_TRAINING_STAGES+1):
         nepochs=epochs,
         batchsize=batch_size,
         add_progbar=True,
-        additional_callbacks=cb
+        additional_callbacks=cb,
+        collect_gradients = 4 #make it more smooth
         )

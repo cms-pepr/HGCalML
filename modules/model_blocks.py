@@ -5,7 +5,7 @@ from tensorflow.keras.layers import Flatten, Reshape
 from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply, StopGradient
 from GravNetLayersRagged import RaggedGravNet
 
-from LossLayers import LLEnergySums
+from LossLayers import LLEnergySums, LLValuePenalty
 from LossLayers import LLRegulariseGravNetSpace, LLEdgeClassifier
 from LossLayers import LLClusterCoordinates, AmbiguousTruthToNoiseSpectator, LLNotNoiseClassifier
 from LossLayers import LLFullOCThresholds, LLBasicObjectCondensation, LLFillSpace
@@ -2610,28 +2610,41 @@ def mini_tree_create(
         record_metrics = False,
         trainable = False,
         name = 'tree_creation_0',
+        always_record_reduction = True,
+
+        cleaning_mode = False #changes the score loss to the cleaning loss
         ):
     '''
     provides the loss needed and the condensation graph
     Does not contain any learnable parameters whatsoever.
     trainable only turns on the losses
     '''
+
+    if cleaning_mode:
+        lcc_input = [coords, t_idx,  score, score, rs ]
+    else:
+        lcc_input = [coords, t_idx,  score, rs ]
+
     coords = LLClusterCoordinates(
                 record_metrics = record_metrics,
                 active=trainable,
                 scale = 1.,
                 ignore_noise = True, #this is filtered by the graph condensation anyway
-                print_batch_time=False
-                )([coords, t_idx,  score, rs ]) #score is not affected here
+                print_batch_time=False,
+                specweight_to_weight = True,
+                )() #score is not affected here
 
-    score = LLGraphCondensationScore(
-        record_metrics = record_metrics,
-        K=K_loss,
-                active=trainable,
-            penalty_fraction=0.5,
-            low_energy_cut = 3., #allow everything below 3 GeV to be removed
-            name = name + '_score'
-            )([score, coords, t_idx, t_energy, rs])
+    if cleaning_mode:
+        score = LLValuePenalty(1., active = trainable)(score)
+    else:
+        score = LLGraphCondensationScore(
+            record_metrics = record_metrics,
+            K=K_loss,
+                    active=trainable,
+                penalty_fraction=0.5,
+                low_energy_cut = 3., #allow everything below 3 GeV to be removed
+                name = name + '_score'
+                )([score, coords, t_idx, t_energy, rs])
 
 
     trans_a = CreateGraphCondensation(
@@ -2642,11 +2655,9 @@ def mini_tree_create(
 
     trans_a = MLGraphCondensationMetrics(
         name = name + '_metrics',
-        record_metrics = record_metrics,
+        record_metrics = record_metrics or always_record_reduction,
         )(trans_a, t_idx, t_energy)
     
-    
-
     return trans_a
 
 
@@ -2773,7 +2784,8 @@ def tree_condensation_block(pre_processed,
                              name = 'tree_condensation_block',
                              trainable = False,
                              record_metrics = False,
-                             produce_output = True):
+                             produce_output = True,
+                             always_record_reduction = True):
 
     prime_coords = pre_processed['prime_coords']
     is_track = pre_processed['is_track']
@@ -2813,6 +2825,7 @@ def tree_condensation_block(pre_processed,
         record_metrics = record_metrics,
         trainable = trainable,
         name = name+'_tree_creation',
+        always_record_reduction = always_record_reduction
         )
     
     out = mini_tree_clustering(
@@ -2824,11 +2837,59 @@ def tree_condensation_block(pre_processed,
         record_metrics = record_metrics,
         trainable = trainable,
         name = name+'_tree_clustering',
-        produce_output = produce_output
+        produce_output = produce_output,
         )
     
     return out
     
+
+def tree_cleaning_block(pre_processed, # the full dictionary so that the truth can be fed through
+                        coords, # the coordinates for the cleaning
+                        score, # the score for the cleaning (sigmoid activated!)
+                        score_threshold = 0.5, # high threshold -> more cleaning; between 0 and 1
+                        name = 'tree_cleaning_block',
+                        trainable = False 
+                        ):
+    '''
+    Contains the loss necessary for the tree cleaning
+    '''
+    
+    ud_graph = mini_tree_create(
+        score,
+        coords,
+        pre_processed['rs'],
+
+        pre_processed['t_idx'], pre_processed['t_energy'], 
+
+        is_track = pre_processed['is_track'],
+
+        K = 5,
+
+        K_loss = 48,
+        score_threshold=score_threshold,
+        
+        record_metrics = trainable,
+        trainable = trainable,
+        name = name+'_tree_creation',
+        cleaning_mode= True #!!!
+        )
+
+
+
+    out = mini_tree_clustering(
+        pre_processed,
+        ud_graph,
+        edge_dense = [64,16],
+        edge_pre_nodes = 32,
+
+        record_metrics = trainable,
+        trainable = trainable,
+        name = name+'_tree_clustering',
+        produce_output = True
+        )
+    
+    return out
+
 
 def tiny_pc_pool(
         orig_inputs,

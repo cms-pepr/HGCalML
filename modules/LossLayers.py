@@ -1274,6 +1274,7 @@ class LLClusterCoordinates(LossLayerBase):
     def __init__(self, downsample:int = -1,
                  ignore_noise=False,
                  hinge_mode = False,
+                 specweight_to_weight = False,
                  **kwargs):
         if 'dynamic' in kwargs:
             super(LLClusterCoordinates, self).__init__(**kwargs)
@@ -1283,6 +1284,7 @@ class LLClusterCoordinates(LossLayerBase):
         self.downsample = downsample
         self.ignore_noise = ignore_noise
         self.hinge_mode = hinge_mode
+        self.specweight_to_weight = specweight_to_weight
 
         #self.built = True #not necessary for loss layers
 
@@ -1290,7 +1292,8 @@ class LLClusterCoordinates(LossLayerBase):
         base_config = super(LLClusterCoordinates, self).get_config()
         return dict(list(base_config.items()) + list({'downsample':self.downsample,
                                                       'ignore_noise': self.ignore_noise,
-                                                      'hinge_mode': self.hinge_mode}.items()))
+                                                      'hinge_mode': self.hinge_mode,
+                                                      'specweight_to_weight': self.specweight_to_weight}.items()))
 
     def _attfunc(self, dsq):
         if self.hinge_mode:
@@ -1399,6 +1402,9 @@ class LLClusterCoordinates(LossLayerBase):
                 specw = tf.gather_nd(specw, sel)
                 energy = tf.gather_nd(energy, sel)
 
+            if self.specweight_to_weight:
+                specw = 1. - specw
+
             tlv, tdl, trl = self._rs_loop(coords,tidx,specw,energy)
             tlv = tf.where(tf.math.is_finite(tlv), tlv, 0.)
             tdl = tf.where(tf.math.is_finite(tdl), tdl, 0.)
@@ -1417,6 +1423,8 @@ class LLClusterCoordinates(LossLayerBase):
         elif len(inputs) == 4:
             coords, tidx, energy, rs = inputs
             specw = tf.zeros_like(energy)
+            if self.specweight_to_weight:
+                specw = 1. - specw
         else:
             raise ValueError("LLClusterCoordinates: expects 4 or 5 inputs")
 
