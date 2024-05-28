@@ -2606,6 +2606,7 @@ def mini_tree_create(
 
         K_loss = 48,
         score_threshold=0.5,
+        low_energy_cut = 3.,  #allow everything below 3 GeV to be removed
         
         record_metrics = False,
         trainable = False,
@@ -2641,8 +2642,8 @@ def mini_tree_create(
             record_metrics = record_metrics,
             K=K_loss,
                     active=trainable,
-                penalty_fraction=0.5,
-                low_energy_cut = 3., #allow everything below 3 GeV to be removed
+                penalty_fraction=0.5,#doesn't matter in current implementation
+                low_energy_cut = low_energy_cut,
                 name = name + '_score'
                 )([score, coords, t_idx, t_energy, rs])
 
