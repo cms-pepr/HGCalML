@@ -94,13 +94,17 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     """
 
     ###########################################################################
-    ### Pre-processing step ###################################################
+    ### Pre-processing step, common to all models #############################
     ###########################################################################
 
     orig_input = td.interpretAllModelInputs(Inputs)
     pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False, new_prime=True)
     
     pre_processed['features'] = ProcessFeatures()(pre_processed['features'])    
+
+    ###########################################################################
+    ### Model definition ######################################################
+    ###########################################################################
 
     out, graph = tree_condensation_block(pre_processed, 
                                   
@@ -109,6 +113,10 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                             trainable = True,
                             record_metrics = True,
                             produce_output = check_keys)
+    
+    ###########################################################################
+    ### Just some debug out ###################################################
+    ###########################################################################
     
     pre_processed['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,

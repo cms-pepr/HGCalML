@@ -2604,9 +2604,9 @@ def mini_tree_create(
 
         K = 5,
 
-        K_loss = 48,
+        K_loss = 64,
         score_threshold=0.5,
-        low_energy_cut = 3.,  #allow everything below 3 GeV to be removed
+        low_energy_cut = 4.,  #allow everything below 4 GeV to be removed
         
         record_metrics = False,
         trainable = False,
@@ -2676,7 +2676,6 @@ def mini_tree_clustering(
         produce_output = True # turn off for fast pretraining
         ):
     
-    x = pre_inputs['features']
     energy = pre_inputs['rechit_energy']
 
     x_e = CreateGraphCondensationEdges(
@@ -2684,7 +2683,7 @@ def mini_tree_clustering(
                      pre_nodes=edge_pre_nodes,
                      K = trans_a['nidx_down'].shape[1],
                      trainable=trainable,
-                     name=name+'_gc_edges')(x, trans_a)
+                     name=name+'_gc_edges')(pre_inputs['features'], trans_a)
 
     x_e = LLGraphCondensationEdges(
             active=trainable,
@@ -2705,7 +2704,7 @@ def mini_tree_clustering(
         out['rechit_energy'] = PushUp(mode='sum', add_self=True)(energy, trans_a)
         ew_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a, weight = energy)
         w_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a)
-        x_sel = SelectUp()(x, trans_a)
+        x_sel = SelectUp()(pre_inputs['features'], trans_a)
         out['features'] = Concatenate()([x_sel, ew_feat, w_feat])
     
         out['is_track'] = SelectUp()(pre_inputs['is_track'], trans_a)
@@ -2795,7 +2794,6 @@ def tree_condensation_block(pre_processed,
     t_idx = pre_processed['t_idx']
     x = pre_processed['features']
 
-    x = ProcessFeatures()(x)
     xd = Dense(32, activation='tanh', name=name+'_enc', trainable = trainable)(x)
     x = Concatenate()([prime_coords,xd,x])
 
@@ -2808,6 +2806,7 @@ def tree_condensation_block(pre_processed,
     
     x = Concatenate()([xgn, x])
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
+    pre_processed['features'] = x #pass through
     
     ud_graph = mini_tree_create(
         score,
