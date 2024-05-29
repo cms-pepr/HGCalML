@@ -36,7 +36,7 @@ from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscrim
 from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
 from GraphCondensationLayers import GraphCondensation, CreateGraphCondensation, PushUp, SelectUp, PullDown
 from GraphCondensationLayers import LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
-from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore
+from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, AddNeighbourDiff
 from Initializers import EyeInitializer
 from Regularizers import AverageDistanceRegularizer
 
@@ -2678,12 +2678,18 @@ def mini_tree_clustering(
     
     energy = pre_inputs['rechit_energy']
 
-    x_e = CreateGraphCondensationEdges(
-                     edge_dense=edge_dense,
-                     pre_nodes=edge_pre_nodes,
-                     K = trans_a['nidx_down'].shape[1],
-                     trainable=trainable,
-                     name=name+'_gc_edges')(pre_inputs['features'], trans_a)
+    x = Dense(edge_pre_nodes, activation='elu', 
+              kernel_initializer='he_normal',
+              name=name+'_enc', trainable = trainable)(pre_inputs['features'])
+    x_e = AddNeighbourDiff()(x, trans_a)
+
+    for i, nodes in enumerate(edge_dense):
+        x_e = Dense(nodes, activation='elu', 
+              kernel_initializer='he_normal',
+              name=name+f'_edge_dense_{i}', trainable = trainable)(x_e)
+    #break them down to K+1
+    x_e = Dense(trans_a.K()+1, activation='sigmoid', 
+              name=name+'_edge_dense_final', trainable = trainable)(x_e)
 
     x_e = LLGraphCondensationEdges(
             active=trainable,
@@ -2691,7 +2697,7 @@ def mini_tree_clustering(
             )(x_e, trans_a, pre_inputs['t_idx'])
 
     x_e = StopGradient()(x_e) #edges are purely learned from explicit loss
-    trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
+    trans_a = InsertEdgesIntoTransition()(x_e, trans_a) #this normalises them to sum=1-noise fraction
 
     out={}
 

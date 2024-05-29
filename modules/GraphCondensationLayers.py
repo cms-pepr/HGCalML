@@ -62,6 +62,9 @@ class GraphCondensation(RestrictedDict):
     ## just for convenience ##
     def check(self):
         assert self['weights_down'].shape[1] == self['nidx_down'].shape[1] 
+
+    def K(self):
+        return self['nidx_down'].shape[1]
     
 
 
@@ -717,6 +720,25 @@ class CreateGraphCondensationEdges(tf.keras.layers.Layer):
     
 graph_condensation_layers['CreateGraphCondensationEdges'] =   CreateGraphCondensationEdges          
 
+class AddNeighbourDiff(tf.keras.layers.Layer): 
+        def __init__(self, *args, **kwargs):
+            '''
+            Concatenates the difference between the vertex and its neighbours to the vertex features.
+            It also adds the distances to the neighbouts
+            '''
+            super(AddNeighbourDiff, self).__init__(*args, **kwargs)
+            
+        
+        def call(self, x, transition : GraphCondensation):
+            nidx = transition['nidx_down']
+            x_nn = select(nidx, x, 0.)
+            x_n = x[:, tf.newaxis, :] - x_nn # V x K x F, make it equivariant
+            # now flatten and concat self in the beginning
+            x_n = tf.reshape(x_n, [-1, x_n.shape[1]*x_n.shape[2]] ) # V x K * F
+            x = tf.concat([x, x_n, transition['distsq_down']], axis=1)
+            return x_n
+        
+graph_condensation_layers['AddNeighbourDiff'] =   AddNeighbourDiff
 
        
 class CreateGraphCondensationEdges2(tf.keras.layers.Layer): 
@@ -823,12 +845,20 @@ graph_condensation_layers['CreateMultiAttentionGraphTransitions'] =   CreateMult
 
 class InsertEdgesIntoTransition(tf.keras.layers.Layer):
     
-    def __init__(self, exponent = 2, **kwargs):
+    def __init__(self, 
+                 exponent = 1, 
+                 noise_assign_norm_threshold = 0.1, 
+                 **kwargs):
+        '''
+        This also takes care of normalisation! Should not be done beforehand
+        '''
         self.exponent = exponent
+        self.noise_assign_norm_threshold = noise_assign_norm_threshold
         super(InsertEdgesIntoTransition, self).__init__(**kwargs)
         
     def get_config(self):
-        config = {'exponent': self.exponent}
+        config = {'exponent': self.exponent,
+                  'noise_assign_norm_threshold': self.noise_assign_norm_threshold}
         base_config = super(InsertEdgesIntoTransition, self).get_config()
         return dict(list(base_config.items()) + list(config.items())) 
     
@@ -837,6 +867,11 @@ class InsertEdgesIntoTransition(tf.keras.layers.Layer):
         
         if len(x_e.shape) > 2:
             x_e = tf.squeeze(x_e, axis=2)
+
+        if self.exponent != 1:
+            x_e = x_e**self.exponent
+
+        norm = tf.reduce_sum(x_e, axis=1, keepdims=True)
             
         if x_e.shape[1] == trans['weights_down'].shape[1]:
             trans['weights_down'] = x_e
@@ -845,10 +880,12 @@ class InsertEdgesIntoTransition(tf.keras.layers.Layer):
         else:
             raise ValueError("Edges don't match graph transition")
         
-        if self.exponent != 1:
-            trans['weights_down'] = trans['weights_down']**self.exponent
+        #apply norm threshold
+        trans['weights_down'] = tf.where(norm < self.noise_assign_norm_threshold, 
+                       tf.zeros_like(trans['weights_down']), trans['weights_down'])
+        
         #normalise always
-        trans['weights_down'] /= tf.reduce_sum(trans['weights_down'], axis=1, keepdims=True) + 1e-6
+        trans['weights_down'] /= norm + 1e-6
         
         return trans
         
@@ -1187,21 +1224,12 @@ class LLGraphCondensationEdges(LossLayerBase):
         is_up = nidx[:,0] < 0
         prob = create_encoding()
         is_down_f = 1. - tf.cast(is_up,'float32')
-
-        bce = self.bce(prob, e_score)
+ 
+        #just a sanity check
+        assert prob.shape == e_score.shape and len(prob.shape) == 3
+        bce = self.bce(prob, e_score) # -> V x K
         
         bce = tf.where( is_up[..., tf.newaxis], 0., bce )
-        
-        if False: #just debug printing
-            print_offset = 30000
-            
-            tf.print('\n\nnidx\n',
-                     nidx[print_offset:print_offset+6] ,'\nnt_idx\n',
-                     tf.concat([t_idx, n_t_idx],axis=1)[print_offset:print_offset+6],'\nprob\n',
-                     prob[print_offset:print_offset+6,...,0],'\nscore\n',
-                     e_score[print_offset:print_offset+6,...,0],'\nbce\n',
-                     bce[print_offset:print_offset+6],'\nis_up\n',
-                     is_up[print_offset:print_offset+6])
             
         bce = tf.reduce_mean(bce, axis=1)
         
