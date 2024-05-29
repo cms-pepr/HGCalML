@@ -2740,7 +2740,7 @@ def GravNet_plus_TEQMP(name,
                        n_gn_coords = 4,
                        teq_nodes = [64, 32, 16, 8],
                        return_coords = False,
-                       trainable = False,
+                       trainable = True,
                        add_scaling = True
                        ):
     
