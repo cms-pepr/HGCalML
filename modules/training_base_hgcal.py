@@ -209,7 +209,8 @@ class training_base(object):
             self.keras_model=model(self.keras_inputs,**modelargs)
         
         if len(self.keras_weight_model_path):
-            from DeepJetCore.modeltools import apply_weights_where_possible, load_model
+            from DeepJetCore.modeltools import load_model
+            from model_tools import apply_weights_where_possible
             self.keras_model = apply_weights_where_possible(self.keras_model, 
                                          load_model(self.keras_weight_model_path))
         if not self.keras_model:
