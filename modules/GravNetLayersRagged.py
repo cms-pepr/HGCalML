@@ -1552,25 +1552,31 @@ class ProcessFeatures(tf.keras.layers.Layer):
 
         self.mean_track = tf.constant([
             3.04,   # recHitEnergy
-            2.27,   # recHitEta
+            
+            #the next seven are set to be the same as the hits on purpose
+            2.55,   # recHitEta
             0.0,    # recHitID -> don't normalize
-            0.22,   # recHitTheta
-            324.5,  # recHitR
+            0.167,  # recHitTheta
+            341.4,  # recHitR
             0.0,    # recHitX -> centered around zero
             0.0,    # recHitY -> centered around zero
-            315.0,  # recHitZ -> All tracks are at z=315
+            336.0,  # recHitZ
+
             0.0,    # recHitTime -> All zeros
             0.0,    # recHitHitR -> All zeros for tracks
             ])
         self.std_track = tf.constant([
             3.63,   # recHitEnergy
-            0.41,   # recHitEta
+            
+            #the next seven are set to be the same as the hits on purpose
+            0.35,   # recHitEta
             1.0,    # recHitID -> don't normalize
-            0.09,   # recHitTheta
-            7.6,    # recHitR
-            55.0,   # recHitX
-            55.0,   # recHitY
-            1.0,    # recHitZ -> All tracks are at z=315
+            0.067,  # recHitTheta
+            15.1,   # recHitR
+            42.0,   # recHitX
+            42.0,   # recHitY
+            14.5,   # recHitZ
+            
             1.0,    # recHitTime -> All zeros
             1.0,    # recHitHitR -> All zeros for tracks
             ])
@@ -1588,7 +1594,7 @@ class ProcessFeatures(tf.keras.layers.Layer):
 
     def call(self, inputs):
         features = inputs
-        is_track = tf.cast(features[:,2:3], bool)
+        is_track = tf.cast(features[:,2:3], bool) # is True if feature is != 0 (also true for -1)
     
         normalized_hits = (features - self.mean_hit) / self.std_hit
         normalized_tracks = (features - self.mean_track) / self.std_track
