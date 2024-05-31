@@ -2852,6 +2852,30 @@ def tree_condensation_block(pre_processed,
         )
     
     return out
+
+def post_tree_condensation_push(
+        orig_preprocessed, #before pushing as defined in the graph
+        graph,
+        trainable = True,
+        name = 'post_tree_push'):
+    '''
+    Defines a simple block to push up learnable quantities
+    '''
+    x = orig_preprocessed['features']
+    x = Dense(64, activation='elu', kernel_initializer='he_normal', trainable = trainable,
+              name = name + '_dense')(x)
+    xm = PushUp(add_self=False, mode = 'mean')(x, graph)
+    xs = PushUp(add_self=False, mode = 'sum')(x, graph)
+    return Concatenate()([xm,xs])
+
+
+def tree_condensation_block2(*args, **kwargs):
+    #just define some defaults here
+    return tree_condensation_block(*args, **kwargs,
+                                   gn_nodes = 64,
+                                   gn_neighbours = 128,
+                                   teq_nodes = [64,64],
+                                   name = 'tree_condensation_block2')
     
 
 def tree_cleaning_block(pre_processed, # the full dictionary so that the truth can be fed through
