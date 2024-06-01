@@ -1552,25 +1552,31 @@ class ProcessFeatures(tf.keras.layers.Layer):
 
         self.mean_track = tf.constant([
             3.04,   # recHitEnergy
-            2.27,   # recHitEta
+            
+            #the next seven are set to be the same as the hits on purpose
+            2.55,   # recHitEta
             0.0,    # recHitID -> don't normalize
-            0.22,   # recHitTheta
-            324.5,  # recHitR
+            0.167,  # recHitTheta
+            341.4,  # recHitR
             0.0,    # recHitX -> centered around zero
             0.0,    # recHitY -> centered around zero
-            315.0,  # recHitZ -> All tracks are at z=315
+            336.0,  # recHitZ
+
             0.0,    # recHitTime -> All zeros
             0.0,    # recHitHitR -> All zeros for tracks
             ])
         self.std_track = tf.constant([
             3.63,   # recHitEnergy
-            0.41,   # recHitEta
+            
+            #the next seven are set to be the same as the hits on purpose
+            0.35,   # recHitEta
             1.0,    # recHitID -> don't normalize
-            0.09,   # recHitTheta
-            7.6,    # recHitR
-            55.0,   # recHitX
-            55.0,   # recHitY
-            1.0,    # recHitZ -> All tracks are at z=315
+            0.067,  # recHitTheta
+            15.1,   # recHitR
+            42.0,   # recHitX
+            42.0,   # recHitY
+            14.5,   # recHitZ
+            
             1.0,    # recHitTime -> All zeros
             1.0,    # recHitHitR -> All zeros for tracks
             ])
@@ -1588,7 +1594,7 @@ class ProcessFeatures(tf.keras.layers.Layer):
 
     def call(self, inputs):
         features = inputs
-        is_track = tf.cast(features[:,2:3], bool)
+        is_track = tf.cast(features[:,2:3], bool) # is True if feature is != 0 (also true for -1)
     
         normalized_hits = (features - self.mean_hit) / self.std_hit
         normalized_tracks = (features - self.mean_track) / self.std_track
@@ -3283,7 +3289,6 @@ class RaggedGravNet(tf.keras.layers.Layer):
         self.n_propagate = n_propagate
         self.n_prop_total = 2 * self.n_propagate
 
-
         with tf.name_scope(self.name + "/1/"):
             self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation=feature_activation,
                                                                  kernel_initializer='he_normal')
@@ -3300,8 +3305,6 @@ class RaggedGravNet(tf.keras.layers.Layer):
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform = tf.keras.layers.Dense(self.n_filters, activation='relu')#changed to relu
 
-        with tf.name_scope(self.name + "/4/"):
-            self.dynamic_radius = tf.Variable(initial_value=1.,trainable=False,dtype='float32')
 
     def build(self, input_shapes):
         input_shape = input_shapes[0]
@@ -3319,6 +3322,9 @@ class RaggedGravNet(tf.keras.layers.Layer):
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform.build((input_shape[0], self.n_prop_total + input_shape[1]))
+
+        with tf.name_scope(self.name + "/4/"):
+            self.dynamic_radius = self.add_weight(name='dynamic_radius', initializer=tf.constant_initializer(1.), trainable=False)
 
         super(RaggedGravNet, self).build(input_shape)
 
@@ -3460,6 +3466,7 @@ class TranslationInvariantMP(tf.keras.layers.Layer):
                 self.feature_tranformation_dense.append(
                     tf.keras.layers.Dense(n_feature_transformation[i], activation=activation, 
                                             kernel_initializer=initializer,
+                                            trainable=self.trainable,
                                           use_bias = i>0))
 
 

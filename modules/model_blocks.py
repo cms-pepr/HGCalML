@@ -36,7 +36,7 @@ from DebugLayers import PlotCoordinates, PlotEdgeDiscriminator, PlotNoiseDiscrim
 from DebugLayers import PlotGraphCondensation, PlotGraphCondensationEfficiency
 from GraphCondensationLayers import GraphCondensation, CreateGraphCondensation, PushUp, SelectUp, PullDown
 from GraphCondensationLayers import LLGraphCondensationEdges, CreateGraphCondensationEdges, InsertEdgesIntoTransition
-from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore
+from GraphCondensationLayers import MLGraphCondensationMetrics, LLGraphCondensationScore, AddNeighbourDiff
 from Initializers import EyeInitializer
 from Regularizers import AverageDistanceRegularizer
 
@@ -2604,9 +2604,9 @@ def mini_tree_create(
 
         K = 5,
 
-        K_loss = 48,
+        K_loss = 64,
         score_threshold=0.5,
-        low_energy_cut = 3.,  #allow everything below 3 GeV to be removed
+        low_energy_cut = 4.,  #allow everything below 4 GeV to be removed
         
         record_metrics = False,
         trainable = False,
@@ -2676,15 +2676,20 @@ def mini_tree_clustering(
         produce_output = True # turn off for fast pretraining
         ):
     
-    x = pre_inputs['features']
     energy = pre_inputs['rechit_energy']
 
-    x_e = CreateGraphCondensationEdges(
-                     edge_dense=edge_dense,
-                     pre_nodes=edge_pre_nodes,
-                     K = trans_a['nidx_down'].shape[1],
-                     trainable=trainable,
-                     name=name+'_gc_edges')(x, trans_a)
+    x = Dense(edge_pre_nodes, activation='elu', 
+              kernel_initializer='he_normal',
+              name=name+'_enc', trainable = trainable)(pre_inputs['features'])
+    x_e = AddNeighbourDiff()(x, trans_a)
+
+    for i, nodes in enumerate(edge_dense):
+        x_e = Dense(nodes, activation='elu', 
+              kernel_initializer='he_normal',
+              name=name+f'_edge_dense_{i}', trainable = trainable)(x_e)
+    #break them down to K+1
+    x_e = Dense(trans_a.K()+1, activation='sigmoid', 
+              name=name+'_edge_dense_final', trainable = trainable)(x_e)
 
     x_e = LLGraphCondensationEdges(
             active=trainable,
@@ -2692,7 +2697,7 @@ def mini_tree_clustering(
             )(x_e, trans_a, pre_inputs['t_idx'])
 
     x_e = StopGradient()(x_e) #edges are purely learned from explicit loss
-    trans_a = InsertEdgesIntoTransition()(x_e, trans_a)
+    trans_a = InsertEdgesIntoTransition()(x_e, trans_a) #this normalises them to sum=1-noise fraction
 
     out={}
 
@@ -2705,7 +2710,7 @@ def mini_tree_clustering(
         out['rechit_energy'] = PushUp(mode='sum', add_self=True)(energy, trans_a)
         ew_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a, weight = energy)
         w_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a)
-        x_sel = SelectUp()(x, trans_a)
+        x_sel = SelectUp()(pre_inputs['features'], trans_a)
         out['features'] = Concatenate()([x_sel, ew_feat, w_feat])
     
         out['is_track'] = SelectUp()(pre_inputs['is_track'], trans_a)
@@ -2735,7 +2740,7 @@ def GravNet_plus_TEQMP(name,
                        n_gn_coords = 4,
                        teq_nodes = [64, 32, 16, 8],
                        return_coords = False,
-                       trainable = False,
+                       trainable = True,
                        add_scaling = True
                        ):
     
@@ -2786,7 +2791,11 @@ def tree_condensation_block(pre_processed,
                              trainable = False,
                              record_metrics = False,
                              produce_output = True,
-                             always_record_reduction = True):
+                             always_record_reduction = True,
+                             
+                             gn_nodes = 16,
+                             gn_neighbours = 16,
+                             teq_nodes = [16,16]):
 
     prime_coords = pre_processed['prime_coords']
     is_track = pre_processed['is_track']
@@ -2795,19 +2804,20 @@ def tree_condensation_block(pre_processed,
     t_idx = pre_processed['t_idx']
     x = pre_processed['features']
 
-    x = ProcessFeatures()(x)
     xd = Dense(32, activation='tanh', name=name+'_enc', trainable = trainable)(x)
     x = Concatenate()([prime_coords,xd,x])
 
     xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
-                                   16, #nodes
-                                   16, #neighbours
+                                   gn_nodes, #nodes
+                                   gn_neighbours, #neighbours
                                    debug_outdir, plot_debug_every,
-                                   teq_nodes = [16,16],
-                                   return_coords = True, trainable = trainable)
+                                   teq_nodes = teq_nodes,
+                                   return_coords = True, 
+                                   trainable = trainable)
     
     x = Concatenate()([xgn, x])
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
+    pre_processed['features'] = x #pass through
     
     ud_graph = mini_tree_create(
         score,
@@ -2842,6 +2852,30 @@ def tree_condensation_block(pre_processed,
         )
     
     return out
+
+def post_tree_condensation_push(
+        orig_preprocessed, #before pushing as defined in the graph
+        graph,
+        trainable = True,
+        name = 'post_tree_push'):
+    '''
+    Defines a simple block to push up learnable quantities
+    '''
+    x = orig_preprocessed['features']
+    x = Dense(64, activation='elu', kernel_initializer='he_normal', trainable = trainable,
+              name = name + '_dense')(x)
+    xm = PushUp(add_self=False, mode = 'mean')(x, graph)
+    xs = PushUp(add_self=False, mode = 'sum')(x, graph)
+    return Concatenate()([xm,xs])
+
+
+def tree_condensation_block2(*args, **kwargs):
+    #just define some defaults here
+    return tree_condensation_block(*args, **kwargs,
+                                   gn_nodes = 64,
+                                   gn_neighbours = 128,
+                                   teq_nodes = [64,64],
+                                   name = 'tree_condensation_block2')
     
 
 def tree_cleaning_block(pre_processed, # the full dictionary so that the truth can be fed through

@@ -51,7 +51,7 @@ from callbacks import plotClusterSummary
 from callbacks import NanSweeper, DebugPlotRunner
 from tensorflow.keras.layers import BatchNormalization, LayerNormalization
 
-from model_blocks import tree_condensation_block
+from model_blocks import tree_condensation_block, tree_condensation_block2, post_tree_condensation_push
 from Layers import PlotGraphCondensationEfficiency
 
 ####################################################################################################
@@ -85,6 +85,18 @@ PLOT_FREQUENCY = 600
 ### Define Model ##############################################################
 ###############################################################################
 
+'''
+Total params: 8,652
+Trainable params: 8,646
+Non-trainable params: 6
+
+in presel model
+
+>> GravNet_tree_condensation_block_net
+Total params: 351,026
+Trainable params: 342,361
+Non-trainable params: 8,665
+'''
 
 def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY, 
                  #check_keys is just for debugging
@@ -112,7 +124,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                             debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
                             trainable = True,
                             record_metrics = True,
-                            produce_output = check_keys)
+                            produce_output = True)
     
     ###########################################################################
     ### Just some debug out ###################################################
@@ -120,11 +132,36 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     
     pre_processed['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
+                     name = 'first_stage',
                      outdir= debug_outdir )(pre_processed['t_energy'], pre_processed['t_idx'], graph)
     
     #just to keep the plot in the loop
     graph['weights_down'] = DummyLayer()([graph['weights_down'], pre_processed['t_energy']])
+
+    ###########################################################################
+    ### Second stage ##########################################################
+    ###########################################################################    
+    xadd = post_tree_condensation_push( pre_processed, graph) #this gets the original vector, adds more features to be pushed
+    out['features'] = Concatenate()( [out['features'], xadd] )  
+
+    out['features'] = BatchNormalization()(out['features']) #this might be crucial after the summing
+
+    out2, graph = tree_condensation_block2(out, 
+                                          debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
+                                          trainable = True,
+                                          record_metrics = True)
     
+    ###########################################################################
+    ### Done, now just checks and plots #######################################
+    ###########################################################################
+
+    out['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = plot_debug_every,
+                     name = 'second_stage',
+                     outdir= debug_outdir )(out['t_energy'], out['t_idx'], graph)
+
+    graph['weights_down'] = DummyLayer()([graph['weights_down'], out['t_energy']])
+
     # check if there are keys in out missing that are in pre_processed, just for debugging
     if check_keys:
         
@@ -183,6 +220,17 @@ train.trainModel(
         additional_callbacks=[],
         collect_gradients = 4 #average out more gradients
         )
+
+# loop through model layers and turn  batch normalisation to fixed
+def fix_batchnorm(m):
+    for layer in m.layers:
+        if isinstance(layer, BatchNormalization):
+            layer.trainable = False
+
+#apply to all models
+train.applyFunctionToAllModels(fix_batchnorm)
+#recompile
+train.compileModel(learningrate=1e-3)
 
 train.change_learning_rate(1e-3)
 train.trainModel(

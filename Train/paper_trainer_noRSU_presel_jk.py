@@ -65,7 +65,7 @@ parser.add_argument('--wandb_project', help="wandb_project", default="Paper_Mode
 N_CLUSTER_SPACE_COORDINATES = 6
 N_GRAVNET_SPACE_COORDINATES = 4
 d_shape = 64
-NEIGHBOURS = [32, 64]
+NEIGHBOURS = [64, 128]
 LOSS_IMPLEMENTATION = "hinge"
 GRAVNET_ITERATIONS = len(NEIGHBOURS)
 LOSS_OPTIONS = {
@@ -152,6 +152,7 @@ train = training_base_hgcal.HGCalTraining(parser=parser)
 
 
 PLOT_FREQUENCY = 400
+DOUBLE_PRESEL = False
 
 ###############################################################################
 ### Define Model ##############################################################
@@ -176,6 +177,21 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     pre_processed, graph = tree_condensation_block(pre_processed)
 
     orig_input.update(pre_processed) #overwrite also the truth
+
+    if DOUBLE_PRESEL:  
+        pre_processed['features'] = GravNet_plus_TEQMP('pre_gnteq', 
+                                                       pre_processed['features'], 
+                                                       pre_processed['prime_coords'], 
+                                                       pre_processed['rechit_energy'], 
+                                                       pre_processed['t_idx'], 
+                                                       pre_processed['row_splits'], 
+                               d_shape, 128, debug_outdir, plot_debug_every, space_reg_strength=1e-2)
+        
+        pre_processed, graph = tree_condensation_block(pre_processed,
+                                                       debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
+                                                       trainable = True,
+                                                       record_metrics = True,
+                                                       name = 'tree_condensation_block2')
 
     ############## preclus done #########
 
