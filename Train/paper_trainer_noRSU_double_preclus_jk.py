@@ -160,7 +160,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                      name = 'second_stage',
                      outdir= debug_outdir )(out['t_energy'], out['t_idx'], graph)
 
-    graph['weights_down'] = DummyLayer()([graph['weights_down'], pre_processed['t_energy']])
+    graph['weights_down'] = DummyLayer()([graph['weights_down'], out['t_energy']])
 
     # check if there are keys in out missing that are in pre_processed, just for debugging
     if check_keys:
