@@ -94,7 +94,7 @@ def make_figure():
 
 
 
-def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, allgrey=False):
+def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, allgrey=False, plot_detector=True):
     df = df[df.event_id == id]
     size = 10 * np.log(df.recHitEnergy + 1)
     # change sizes bigger than 5 to 5
@@ -224,7 +224,6 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, a
         )
             
         fig.add_trace(trace_i)
-    plot_detector = True
     if plot_detector:
         # plot beam pipe
         radius = 5
