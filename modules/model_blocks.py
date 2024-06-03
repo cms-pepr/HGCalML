@@ -2791,7 +2791,11 @@ def tree_condensation_block(pre_processed,
                              trainable = False,
                              record_metrics = False,
                              produce_output = True,
-                             always_record_reduction = True):
+                             always_record_reduction = True,
+                             
+                             gn_nodes = 16,
+                             gn_neighbours = 16,
+                             teq_nodes = [16,16]):
 
     prime_coords = pre_processed['prime_coords']
     is_track = pre_processed['is_track']
@@ -2804,11 +2808,12 @@ def tree_condensation_block(pre_processed,
     x = Concatenate()([prime_coords,xd,x])
 
     xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
-                                   16, #nodes
-                                   16, #neighbours
+                                   gn_nodes, #nodes
+                                   gn_neighbours, #neighbours
                                    debug_outdir, plot_debug_every,
-                                   teq_nodes = [16,16],
-                                   return_coords = True, trainable = trainable)
+                                   teq_nodes = teq_nodes,
+                                   return_coords = True, 
+                                   trainable = trainable)
     
     x = Concatenate()([xgn, x])
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
@@ -2847,6 +2852,30 @@ def tree_condensation_block(pre_processed,
         )
     
     return out
+
+def post_tree_condensation_push(
+        orig_preprocessed, #before pushing as defined in the graph
+        graph,
+        trainable = True,
+        name = 'post_tree_push'):
+    '''
+    Defines a simple block to push up learnable quantities
+    '''
+    x = orig_preprocessed['features']
+    x = Dense(64, activation='elu', kernel_initializer='he_normal', trainable = trainable,
+              name = name + '_dense')(x)
+    xm = PushUp(add_self=False, mode = 'mean')(x, graph)
+    xs = PushUp(add_self=False, mode = 'sum')(x, graph)
+    return Concatenate()([xm,xs])
+
+
+def tree_condensation_block2(*args, **kwargs):
+    #just define some defaults here
+    return tree_condensation_block(*args, **kwargs,
+                                   gn_nodes = 64,
+                                   gn_neighbours = 128,
+                                   teq_nodes = [64,64],
+                                   name = 'tree_condensation_block2')
     
 
 def tree_cleaning_block(pre_processed, # the full dictionary so that the truth can be fed through
