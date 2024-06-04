@@ -1580,6 +1580,60 @@ class ProcessFeatures(tf.keras.layers.Layer):
             1.0,    # recHitTime -> All zeros
             1.0,    # recHitHitR -> All zeros for tracks
             ])
+class ProcessFeaturesCocoa(ProcessFeatures):
+    def __init__(self,
+                 **kwargs):
+        super().__init__(**kwargs)  
+        self.mean_hit = tf.constant([
+            182, # recHitEnergy
+            0.028,   # recHitEta
+            0.0,    # recHitID -> don't normalize
+            0.0074,  # recHitTheta
+            3012,  # recHitR
+            0.0,    # recHitX -> centered around zero
+            0.0,    # recHitY -> centered around zero
+            48,  # recHitZ
+            0.0,    # recHitTime -> All zeros
+            0.0,   # recHitHitR
+            ])
+        self.std_hit = tf.constant([
+            1087, # recHitEnergy
+            1.46,   # recHitEta
+            1.0,    # recHitID -> don't normalize
+            1.78,  # recHitTheta
+            829,   # recHitR
+            1096,   # recHitX
+            1096,   # recHitY
+            2604,   # recHitZ
+            1.0,    # recHitTime -> All zeros
+            1.0,   # recHitHitR
+            ])
+
+        self.mean_track = tf.constant([
+            0.0,   # recHitEnergy
+            0.0,   # recHitEta
+            0.0,    # recHitID -> don't normalize
+            1.57,  # recHitTheta
+            5607720,  # recHitR
+            -4402849,    # recHitX -> centered around zero
+            -3468792,    # recHitY -> centered around zero
+            -1.1,  # recHitZ -> All tracks are at z=315
+            0.0,    # recHitTime -> All zeros
+            0.0,    # recHitHitR -> All zeros for tracks
+            ])
+        self.std_track = tf.constant([
+            1.0,   # recHitEnergy
+            1.46,   # recHitEta
+            1.0,    # recHitID -> don't normalize
+            0.93,   # recHitTheta
+            2619667000,    # recHitR
+            2057752536,   # recHitX
+            1621205660,   # recHitY
+            2342,    # recHitZ -> All tracks are at z=315
+            1.0,    # recHitTime -> All zeros
+            1.0,    # recHitHitR -> All zeros for tracks
+            ])
+
 
     
     def get_config(self):

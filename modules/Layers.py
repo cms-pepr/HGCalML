@@ -141,6 +141,9 @@ global_layers_list['ConditionalScaledGooeyBatchNorm']=ConditionalScaledGooeyBatc
 from GravNetLayersRagged import ProcessFeatures
 global_layers_list['ProcessFeatures']=ProcessFeatures
 
+from GravNetLayersRagged import ProcessFeaturesCocoa
+global_layers_list['ProcessFeaturesCocoa']=ProcessFeaturesCocoa
+
 from GravNetLayersRagged import ManualCoordTransform
 global_layers_list['ManualCoordTransform']=ManualCoordTransform
 
