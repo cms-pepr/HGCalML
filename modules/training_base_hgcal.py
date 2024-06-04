@@ -510,6 +510,9 @@ class training_base(object):
                 #explicit wandb loss
                 wandb.log({'global_loss': self.global_loss})
 
+                if hasattr(wandb, 'flush'): #backwards compatibility
+                    wandb.flush()
+
                 for l in logs.values():
                     del l
                 del logs
