@@ -142,7 +142,7 @@ if not train.args.no_wandb:
         project=train.args.wandb_project,
         config=wandb_config,
     )
-    wandb.save(sys.argv[0]) # Save python file
+    wandb.wandb.save(sys.argv[0]) # Save python file
 else:
     wandb.active=False
 
