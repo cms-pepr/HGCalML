@@ -945,7 +945,7 @@ class LLGraphCondensationScore(LossLayerBase):
         base_config = super(LLGraphCondensationScore, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
-    def _create_labels(self, nidx, t_idx, n_score, smooth_labels = False):
+    def _create_labels(self, nidx, t_idx, n_score, t_energy, smooth_labels = False):
        '''
        returns truth labels for the K neighbours of each hit V x K x 1
        and a loss mask (V x 1)
@@ -979,6 +979,10 @@ class LLGraphCondensationScore(LossLayerBase):
        max_mask = max_mask[:,0,:, tf.newaxis] # V x K x 1
        
        y = tf.where(max_mask, y_inv, y)
+       # add low energy cut
+       n_t_energy = select(nidx, t_energy, 0.) # V x K x 1
+       y = tf.where(n_t_energy > self.low_energy_cut, y, 0.) # keep target score low also for low energy objects
+
        return y, loss_mask, arg_max_neighbour, is_same
     
     
@@ -1000,6 +1004,7 @@ class LLGraphCondensationScore(LossLayerBase):
     def weighted_bce_loss(self, inputs):
         if len(inputs) == 4:
             score, coords, t_idx, rs = inputs
+            t_energy = tf.ones_like(score) + self.low_energy_cut + 1000.
         elif len(inputs) == 5:
             score, coords, t_idx, t_energy, rs = inputs
         else:
@@ -1012,7 +1017,7 @@ class LLGraphCondensationScore(LossLayerBase):
         
         n_score = select(nidx, score, 0.) # V x K x 1
         
-        y, loss_mask, max_ids, n_mask = self._create_labels(nidx, t_idx, n_score, smooth_labels = False)
+        y, loss_mask, max_ids, n_mask = self._create_labels(nidx, t_idx, n_score, t_energy, smooth_labels = False)
         
         coords = tf.stop_gradient(coords) #only as static weights
         w = self._get_d_weight(coords, nidx, max_ids, n_mask)
