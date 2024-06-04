@@ -36,13 +36,12 @@ class meta_option(object):
 
 opts = {
     'd' : meta_option('d'),
-    't' : meta_option('t', '/work/friemer/hgcalml/trainingdata_split/'),
-    'm' : meta_option('m', '/work/friemer/hgcalml/HGCalML/Train/paper_trainer_noRSU.py'),
-    'h' : meta_option('h', 'HGCalML'), 
+    'h' : meta_option('h', '/work/friemer/hgcalml/'), 
     'n' : meta_option('n','TrainJob'),
     'cpu': meta_option('cpu', '1'),
     'memory': meta_option('memory', '15 GB'),
     'disk': meta_option('disk', '8 GB'),
+    'gpu': meta_option('gpu', '1'),
 }
 
 filtered_clo=[]
@@ -66,13 +65,12 @@ if '-h' in sys.argv or '--help' in sys.argv or (not all_valid):
     print('all commands are fully forwarded with one exception:')
     print('\n    ---d <workdir>    specifies a working directory that can be specified '
       'that will contain the files. It is created if it does not exist.\n')
-    print('\n    ---t <filepath> specifies the location of the training-data to feed the model\n')
-    print('\n    ---m <filepath> specifies which model to execute\n')
     print('\n    ---h <filepath> location of HGCalML-Folder with necessary modules\n')
     print('\n    ---n <name> (opt) specifies a name for the scripts\n')
     print('\n    ---cpu <number> (opt) number of cpus to request default: 1\n')
     print('\n    ---memory <memory size> (opt) size of memory to request default: 15 GB\n')
     print('\n    ---disk <disk size> (opt) size of memory to request default 8 GB\n')
+    print('\n    ---gpu <number> (opt) number of gpus to request default: 1\n')
     sys.exit()
 
 if os.path.isdir(opts['d'].value):
@@ -92,8 +90,29 @@ for clos in filtered_clo:
 
 CWD = os.getcwd()
 
+
+####################################################################################################
+### Create Sub File #############################################################################
+####################################################################################################
+
+#Get absolute filepath and transfer entire folder if there is a .djcdc file also replace filepaths with filenames
+inputfileslocations =''
+NEWCOMMANDS = ''
+for word in COMMANDS.split():
+    if '.' in word:
+        if '.djcdc' in word:
+            inputfileslocations +=  os.path.join(CWD, os.path.dirname(word))+ '/, '
+        else:
+            inputfileslocations += os.path.join(CWD, word) + ', '
+        NEWCOMMANDS+=os.path.basename(word) + ' '
+    else:
+        NEWCOMMANDS+=word + ' '
+
 #Create a tarball of the HGCalML folder
-os.system(f'''tar -czf {opts['d'].value}/HGCalML.tar.gz {opts['h'].value}''')
+os.system(f'''
+          cd {opts['h'].value}
+          tar -czf {opts['d'].value}/HGCalML.tar.gz HGCalML
+          cd {CWD}''')
 
 #Setup the sub file
 sub_temp=f'''#!/bin/bash
@@ -105,13 +124,12 @@ requirements =(TARGET.CloudSite=="topas")
 +RemoteJob = True
 +RequestWalltime = 72 * 60 * 60
 
-executable = {opts['n'].value+UEXT+'_run.sh'}
+executable = {opts['n'].value+'_'+UEXT+'_run.sh'}
 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 
-transfer_input_files =  {opts['m'].value}, {opts['t'].value}, {CWD+ '/' +opts['d'].value}/HGCalML.tar.gz, {CWD+ '/' +opts['d'].value+ '/' + opts['n'].value+UEXT+'_run.sh'}
-#transfer_output_files = {opts['n'].value+'_'+UEXT}
+transfer_input_files =  {inputfileslocations} {CWD+ '/' +opts['d'].value}/HGCalML.tar.gz, {CWD+ '/' +opts['d'].value+ '/' + opts['n'].value+'_'+UEXT+'_run.sh'}
 
 output = {opts['n'].value+'_'+UEXT}.out
 error = {opts['n'].value+'_'+UEXT}.err
@@ -120,20 +138,17 @@ log = {opts['n'].value+'_'+UEXT}.log
 request_cpus = {opts['cpu'].value}
 request_memory = {opts['memory'].value}
 request_disk = {opts['disk'].value}
+request_GPUs = {opts['gpu'].value}
 '''
 
-## Path to your shell script
+# Command to get WANDB_API_KEY
 script_path = os.path.expanduser('~/private/wandb_api.sh')
-
-# Command to source the shell script and print the environment variable
 command = f'''
 echo "Checking for wandb API Key"
 if [ -f {script_path} ]; then
    source {script_path}
    echo $WANDB_API_KEY
 fi'''
-
-# Execute the command and capture the output
 result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, executable='/bin/bash')
 
 # Extract the WANDB_API_KEY from the command output
@@ -153,6 +168,11 @@ queue
 with open(opts['d'].value+'/'+opts['n'].value+'_'+UEXT+'.sub','w', encoding='utf-8') as f:
     f.write(sub_temp)
 
+
+####################################################################################################
+### Create Run File #############################################################################
+####################################################################################################
+
 #Setup Run script
 runscript_temp=f'''
 #!/bin/bash
@@ -171,12 +191,17 @@ export LANG=C.UTF-8    # necessary for wandb
 
 ls -l
 
-python3 {os.path.basename(opts['m'].value)} dataCollection._n.djcdc {opts['n'].value+'_'+UEXT}
+{NEWCOMMANDS}
 '''
-with open(opts['d'].value+'/'+opts['n'].value+UEXT+'_run.sh','w', encoding='utf-8') as f:
+with open(opts['d'].value+'/'+opts['n'].value+ '_' +UEXT+'_run.sh','w', encoding='utf-8') as f:
     f.write(runscript_temp)
 
-#Submit the job
+
+
+####################################################################################################
+### Submit the Job #############################################################################
+####################################################################################################
+
 COMMAND = (
     'cd ' + opts['d'].value + '; pwd; condor_submit ' + opts['n'].value + '_' + UEXT + '.sub'
 )
