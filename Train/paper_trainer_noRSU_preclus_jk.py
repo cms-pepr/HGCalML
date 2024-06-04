@@ -73,7 +73,7 @@ if not pre_args.no_wandb:
         project=pre_args.wandb_project,
         config={},
     )
-    wandb.save(sys.argv[0]) # Save python file
+    wandb.wandb().save(sys.argv[0]) # Save python file
 else:
     wandb.active=False
 #parses the rest of the arguments
