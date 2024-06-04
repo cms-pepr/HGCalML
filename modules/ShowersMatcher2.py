@@ -90,13 +90,14 @@ class ShowersMatcher:
     _NODE_TYPE_PRED_SHOWER = 1
     _NODE_TYPE_RECHIT = 7
 
-    def __init__(self, match_mode, iou_threshold, de_e_cut, angle_cut):
+    def __init__(self, match_mode, iou_threshold, de_e_cut, angle_cut, shower0=False):
         super().__init__()
         self.match_mode=match_mode
         self.iou_threshold=iou_threshold
         self.de_e_cut=de_e_cut
         self.angle_cut=angle_cut
         self.iom_threshold=0.9
+        self.shower0 = shower0
 
 
     def set_inputs(self, features_dict, truth_dict, predictions_dict, pred_alpha_idx):
@@ -167,7 +168,11 @@ class ShowersMatcher:
         keys = self.truth_dict.keys()
 
         # Building adding truth nodes to the graph
-        for i in range(len(truth_shower_sid)):
+        if self.shower0:
+            n_truth_showers = 1
+        else:
+            n_truth_showers = len(truth_shower_sid)
+        for i in range(n_truth_showers):
             node_attributes = dict()
 
             for k in keys:
