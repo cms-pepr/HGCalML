@@ -216,7 +216,7 @@ train.change_learning_rate(1e-2)
 train.trainModel(
         nepochs=2,
         batchsize=120000,
-        add_progbar=True,
+        add_progbar=False,
         additional_callbacks=[],
         collect_gradients = 4 #average out more gradients
         )
@@ -231,12 +231,13 @@ def fix_batchnorm(m):
 train.applyFunctionToAllModels(fix_batchnorm)
 #recompile
 train.compileModel(learningrate=1e-3)
+print('entering second training phase')
 
 train.change_learning_rate(1e-3)
 train.trainModel(
         nepochs=20,
         batchsize=120000,
-        add_progbar=True,
+        add_progbar=False,
         additional_callbacks=[],
         collect_gradients = 4
         )

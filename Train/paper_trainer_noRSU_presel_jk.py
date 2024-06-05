@@ -407,7 +407,7 @@ for i in range(1, N_TRAINING_STAGES+1):
     train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,
-        add_progbar=True,
+        add_progbar=False,
         additional_callbacks=cb,
         collect_gradients = 4 #make it more smooth
         )
