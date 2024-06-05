@@ -983,6 +983,9 @@ class LLGraphCondensationScore(LossLayerBase):
        n_t_energy = select(nidx, t_energy, 0.) # V x K x 1
        y = tf.where(n_t_energy > self.low_energy_cut, y, 0.) # keep target score low also for low energy objects
 
+       #set y for noise to zero
+       y = tf.where(n_t_idx < 0, 0., y)
+
        return y, loss_mask, arg_max_neighbour, is_same
     
     
