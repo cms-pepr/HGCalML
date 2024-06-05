@@ -100,7 +100,6 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, a
     # change sizes bigger than 5 to 5
     size[size > 5] = 5
     size[size < 0.1] = 0.1
-    print(df['recHitZ'].max())
 
     if verbose:
         print(np.min(size), np.median(size), np.mean(size), np.max(size))
@@ -134,7 +133,6 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, a
             df['pca_y'] = pca_y
             df['pca_z'] = pca_z
 
-    # print(ids)
     for i in ids:
         if truth:
             df_i = df[df.truthHitAssignementIdx == i]
@@ -171,7 +169,7 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, a
             color = f'rgb({grey_level*255}, {grey_level*255}, {grey_level*255})'
             # color = 'lightgrey'
             if i == 0:
-                color = 'crimson'
+                color = 'blue'
                 opacity = 1.0
         else:
             color = px.colors.qualitative.Alphabet[i % len(px.colors.qualitative.Alphabet)]

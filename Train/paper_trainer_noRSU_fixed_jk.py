@@ -72,8 +72,8 @@ GRAVNET_ITERATIONS = len(NEIGHBOURS)
 LOSS_OPTIONS = {
     "beta_loss_scale": 1.0,
     "too_much_beta_scale": 0.0,
-    "energy_loss_weight": 0.01,
-    "classification_loss_weight": 0.01,
+    "energy_loss_weight": 0.4,
+    "classification_loss_weight": 0.4,
     "position_loss_weight": 0.0,
     "timing_loss_weight": 0.0,
     "q_min": 1.0,
@@ -88,7 +88,7 @@ DENSE_INIT = "he_normal"
 DENSE_REGULARIZER_RATE = 1e-9
 DENSE_REGULARIZER = tf.keras.regularizers.l2(DENSE_REGULARIZER_RATE)
 DROPOUT = 1e-2
-DISTANCE_SCALE = True
+DISTANCE_SCALE = False
 loss_layer = LLExtendedObjectCondensation3
 
 TRAINING = {
@@ -100,14 +100,14 @@ TRAINING = {
 
   "stage_2": {
     "batch_size": 70000,
-    "learning_rate": 0.0001,
-    "epochs": 10,
+    "learning_rate": 0.0005,
+    "epochs": 15,
     },
 
   "stage_3": {
     "batch_size": 70000,
-    "learning_rate": 0.00001,
-    "epochs": 20,
+    "learning_rate": 0.0001,
+    "epochs": 30,
     },
 }
 
@@ -142,7 +142,7 @@ if not train.args.no_wandb:
         project=train.args.wandb_project,
         config=wandb_config,
     )
-    wandb.save(sys.argv[0]) # Save python file
+    wandb.wandb.save(sys.argv[0]) # Save python file
 else:
     wandb.active=False
 

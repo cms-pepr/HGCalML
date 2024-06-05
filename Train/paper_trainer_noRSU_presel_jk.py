@@ -50,6 +50,7 @@ from callbacks import plotClusteringDuringTraining
 from callbacks import plotClusterSummary
 from callbacks import NanSweeper, DebugPlotRunner
 from tensorflow.keras.layers import BatchNormalization, LayerNormalization
+from GraphCondensationLayers import PushUp, AddNeighbourDiff
 
 ####################################################################################################
 ### Load Configuration #############################################################################
@@ -172,26 +173,24 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     orig_input = td.interpretAllModelInputs(Inputs)
     pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False, new_prime=True)
     
-    pre_processed['features'] = ProcessFeatures()(pre_processed['features'])    
+    pre_processed['features'] = ProcessFeatures()(pre_processed['features'])   
+    x_full  = pre_processed['features']
 
     pre_processed, graph = tree_condensation_block(pre_processed)
 
     orig_input.update(pre_processed) #overwrite also the truth
 
-    if DOUBLE_PRESEL:  
-        pre_processed['features'] = GravNet_plus_TEQMP('pre_gnteq', 
-                                                       pre_processed['features'], 
-                                                       pre_processed['prime_coords'], 
-                                                       pre_processed['rechit_energy'], 
-                                                       pre_processed['t_idx'], 
-                                                       pre_processed['row_splits'], 
-                               d_shape, 128, debug_outdir, plot_debug_every, space_reg_strength=1e-2)
-        
-        pre_processed, graph = tree_condensation_block(pre_processed,
-                                                       debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
-                                                       trainable = True,
-                                                       record_metrics = True,
-                                                       name = 'tree_condensation_block2')
+    if False:
+        #do another push to get the good features for the rest and keep this part trainable
+        x_full = Dense(64, activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT)(x_full)
+        x= []
+        for _ in range(2): #attention heads
+            x_e = Dense(16, activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT)(x_full)
+            x_e = AddNeighbourDiff()(x_e, graph)
+            x_e = Dense(graph['nidx_down'].shape[1], activation = 'softmax')(x_e)
+            graph['weights_down'] = x_e
+            x += [PushUp(add_self=False, mode='mean')(x_full,graph), PushUp(add_self=False, mode='sum')(x_full,graph)]
+        pre_processed['features'] = Concatenate()(x + [pre_processed['features']])
 
     ############## preclus done #########
 

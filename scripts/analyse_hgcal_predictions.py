@@ -43,6 +43,7 @@ def analyse(preddir,
             extra=False,
             hdf=False,
             eta_phi_mask=False,
+            shower0=False,
         ):
     """
     Analyse model predictions
@@ -53,6 +54,8 @@ def analyse(preddir,
     * calculating energy resolution
     * calculating pid prediction accuracy
     * plotting all of the above
+
+    - shower0: for energy resolution, only match with truth shower 0
     """
 
     if use_hdbscan:
@@ -62,7 +65,7 @@ def analyse(preddir,
             beta_threshold,
             distance_threshold,
             local_distance_scaling)
-    showers_matcher = ShowersMatcher(matching_mode, iou_threshold, de_e_cut, angle_cut)
+    showers_matcher = ShowersMatcher(matching_mode, iou_threshold, de_e_cut, angle_cut, shower0)
 
     # energy_gatherer = OCGatherEnergyCorrFac2()
     energy_gatherer = OCGatherEnergyCorrFac_new()
@@ -214,6 +217,13 @@ def analyse(preddir,
 
             alpha_ids.append(pred_shower_alpha_idx)
             processed.append(processed_pred_dict)
+            """
+            if shower0:
+                mask = filtered_truth['truthHitAssignementIdx'] == 0
+                for key in filtered_truth.keys():
+                    filtered_truth[key] = filtered_truth[key][mask]
+                    filtered_truth[key] = np.array(filtered_truth[key]).reshape((-1,1))
+            """
             showers_matcher.set_inputs(
                 features_dict=filtered_features,
                 truth_dict=filtered_truth,
@@ -493,6 +503,9 @@ if __name__ == '__main__':
     parser.add_argument('--extra',
         help="Calculate more information for showers",
         action='store_true')
+    parser.add_argument('--shower0',
+        help="Only match with truth shower ID=0",
+        action='store_true')
 
 
     args = parser.parse_args()
@@ -521,4 +534,5 @@ if __name__ == '__main__':
             extra=args.extra,
             hdf=args.hdf,
             eta_phi_mask=args.eta_phi_mask,
+            shower0=args.shower0
             )

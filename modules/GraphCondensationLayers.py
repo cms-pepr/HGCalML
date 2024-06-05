@@ -934,6 +934,8 @@ class LLGraphCondensationScore(LossLayerBase):
         self.extra_oc_scale = extra_oc_scale
         self.noise_scale = noise_scale
         self.low_energy_cut = low_energy_cut
+        self.loss = self.weighted_bce_loss
+
         super(LLGraphCondensationScore, self).__init__(**kwargs)
         
     def get_config(self):
@@ -943,7 +945,93 @@ class LLGraphCondensationScore(LossLayerBase):
         base_config = super(LLGraphCondensationScore, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
-    def loss(self, inputs):
+    def _create_labels(self, nidx, t_idx, n_score, t_energy, smooth_labels = False):
+       '''
+       returns truth labels for the K neighbours of each hit V x K x 1
+       and a loss mask (V x 1)
+       '''
+    
+       n_t_idx = select(nidx, t_idx, -2) # V x K x 1
+    
+       # create the truth label -> V x K here, not V x 1!
+       # needs to be w.r.t. each hit, not the max score one to not miss an object; mask noise at the end
+       is_same = t_idx[...,tf.newaxis] == n_t_idx 
+       is_same = tf.where(n_t_idx<0, False, is_same)#noise is never same
+       none_same = tf.reduce_sum(tf.cast(is_same, tf.int32), axis=1) == 0
+       
+       # final loss mask applied to V x 1
+       loss_mask = 1. - tf.cast( tf.logical_or(none_same, t_idx < 0), 'float32' )
+       
+       is_same_n_score = tf.where(is_same, n_score, 0.) # V x K x 1
+       arg_max_neighbour = tf.argmax(is_same_n_score, axis=1) # V x 1
+       
+       ###### define the label
+       if smooth_labels:
+           y = 1. - smooth_max(is_same_n_score, axis=1) # V x 1; this is the label all but the max one should have
+           y = tf.tile(y, [1, self.K])[:,:,tf.newaxis] # V x K x 1
+           y_inv = 1. - y # V x 1; this is the label the max one should have
+       else:
+           y = tf.zeros_like(is_same_n_score)
+           y_inv = tf.ones_like(is_same_n_score) #remove the extra last dim
+       
+       #set y to 1 for the max neighbour
+       max_mask = tf.one_hot(arg_max_neighbour, self.K, on_value=True, off_value=False, axis=-1) # V x 1 x K
+       max_mask = max_mask[:,0,:, tf.newaxis] # V x K x 1
+       
+       y = tf.where(max_mask, y_inv, y)
+       # add low energy cut
+       n_t_energy = select(nidx, t_energy, 0.) # V x K x 1
+       y = tf.where(n_t_energy > self.low_energy_cut, y, 0.) # keep target score low also for low energy objects
+
+       return y, loss_mask, arg_max_neighbour, is_same
+    
+    
+    def _get_d_weight(self, x, nidx, max_idx, mask):
+       # x: V x K x C, 
+       # nidx: V x K , 
+       # max_idx -> select V x 1, 
+       # mask: V x K x 1
+       
+       x_n = select(nidx, x, 0.) # V x K x C
+       x_max = select(max_idx, x, 0.) #tf.gather_nd(x, max_idx, batch_dims=2 )
+    
+       distsq = tf.reduce_sum((x_n - x_max)**2, axis=-1, keepdims=True) # V x K x 1
+       d_weight = tf.exp(-distsq)
+       d_weight = tf.where(mask, d_weight, 0.)
+       d_weight = tf.math.divide_no_nan(d_weight, tf.reduce_sum(d_weight, axis = 1, keepdims=True))
+       return d_weight 
+
+    def weighted_bce_loss(self, inputs):
+        if len(inputs) == 4:
+            score, coords, t_idx, rs = inputs
+            t_energy = tf.ones_like(score) + self.low_energy_cut + 1000.
+        elif len(inputs) == 5:
+            score, coords, t_idx, t_energy, rs = inputs
+        else:
+            raise ValueError("Wrong number of inputs")
+
+        assert len(score.shape) == 2 and len(coords.shape) == 2 and len(t_idx.shape) == 2
+        
+        nidx, _ = select_knn(self.K+1, coords, rs) # omit self
+        nidx = nidx[...,1:] # V x K, remove self reference 
+        
+        n_score = select(nidx, score, 0.) # V x K x 1
+        
+        y, loss_mask, max_ids, n_mask = self._create_labels(nidx, t_idx, n_score, t_energy, smooth_labels = False)
+        
+        coords = tf.stop_gradient(coords) #only as static weights
+        w = self._get_d_weight(coords, nidx, max_ids, n_mask)
+
+        n_score = tf.clip_by_value(n_score, 1e-6, 1.-1e-6) #clip to avoid log(0)
+
+        bce = - ( (1 - w) * y * tf.math.log(n_score) + w * (1. - y) * tf.math.log(1. - n_score) )
+        bce = tf.reduce_sum(bce, axis=1) # V x 1
+        bce = tf.math.divide_no_nan(tf.reduce_sum(bce * loss_mask) , tf.reduce_sum(loss_mask) + 0.1 ) # (this is typically > 10k if not > 100k)
+
+        return bce
+
+
+    def loss_v1(self, inputs):
         assert len(inputs) == 4 or (self.low_energy_cut > 0. and len(inputs) == 5)
         if len(inputs) == 4:
             score, coords, t_idx, rs = inputs
