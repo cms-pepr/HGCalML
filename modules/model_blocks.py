@@ -2857,7 +2857,7 @@ def post_tree_condensation_push(
         indict, #before pushing as defined in the graph
         graph,
         trainable = True,
-        heads : int = 1 ,
+        heads : int = 4,
         name = 'post_tree_push'):
     '''
     Defines a simple block to push up learnable quantities
@@ -2887,13 +2887,13 @@ def tree_condensation_block2(*args, **kwargs):
                                    teq_nodes = [64,64],
                                    name = 'tree_condensation_block2')
 
-def double_tree_condensation_block(pre_processed,
+def double_tree_condensation_block(in_dict,
                              debug_outdir='', plot_debug_every=-1,
                              name = 'double_tree_condensation_block',
                              trainable = False,
                              record_metrics = False):
 
-    out, graph = tree_condensation_block(pre_processed, 
+    out, graph = tree_condensation_block(in_dict, 
                                   
                             #the latter overwrites the default arguments such that it is in training mode
                             debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
@@ -2905,19 +2905,21 @@ def double_tree_condensation_block(pre_processed,
     ### Just some debug out ###################################################
     ###########################################################################
     
-    pre_processed['t_energy'] = PlotGraphCondensationEfficiency(
+    in_dict['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
                      name = 'double_cond_first_stage',
-                     outdir= debug_outdir )(pre_processed['t_energy'], pre_processed['t_idx'], graph)
+                     outdir= debug_outdir )(in_dict['t_energy'], in_dict['t_idx'], graph)
     
     #just to keep the plot in the loop
-    graph['weights_down'] = DummyLayer()([graph['weights_down'], pre_processed['t_energy']])
+    graph['weights_down'] = DummyLayer()([graph['weights_down'], in_dict['t_energy']])
 
     ###########################################################################
     ### Second stage ##########################################################
     ########################################################################### 
        
-    xadd = post_tree_condensation_push( pre_processed, graph, heads = 1, name = name+'_push') #this gets the original vector, adds more features to be pushed
+    xadd = post_tree_condensation_push(in_dict, graph, heads = 4, 
+                                       name = name+'_push',
+                                       trainable = trainable) #this gets the original vector, adds more features to be pushed
     out['features'] = Concatenate()( [out['features'], xadd] )  
 
     out['features'] = BatchNormalization(name = name + '_bn1', 

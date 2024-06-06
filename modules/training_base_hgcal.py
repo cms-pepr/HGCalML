@@ -56,7 +56,8 @@ class training_base(object):
         #parser.add_argument("--isbatchrun",   help="is batch run", default=False, action="store_true")
         parser.add_argument("--valdata",   help="set validation dataset (optional)", default="")
         parser.add_argument("--takeweights",   help="Applies weights from the model given as relative or absolute path. Matches by names and skips layers that don't match.", default="")
-        
+        #add boolean strict_weights argument, default to True
+        parser.add_argument("--no_strict_weights",   help="If true, it will omit throwing an error if weights cannot be applied to same-named layers", default=False, action="store_true")
         
         args = parser.parse_args()
         self.args = args
@@ -81,6 +82,7 @@ class training_base(object):
         self.keras_model=None
         self.mgpu_keras_models = []
         self.keras_weight_model_path=args.takeweights
+        self.strict_weight_loading = not args.no_strict_weights
         self.train_data=None
         self.val_data=None
         self.startlearningrate=None
@@ -212,7 +214,7 @@ class training_base(object):
             from DeepJetCore.modeltools import load_model
             from model_tools import apply_weights_where_possible
             self.keras_model = apply_weights_where_possible(self.keras_model, 
-                                         load_model(self.keras_weight_model_path))
+                                         load_model(self.keras_weight_model_path), strict = self.strict_weight_loading)
         if not self.keras_model:
             raise Exception('Setting model not successful') 
 
