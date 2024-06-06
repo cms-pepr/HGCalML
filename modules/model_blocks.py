@@ -2851,10 +2851,11 @@ def tree_condensation_block(pre_processed,
         produce_output = produce_output,
         )
     
-    return out
+    return out, x
 
 def post_tree_condensation_push(
-        indict, #before pushing as defined in the graph
+        x_in, #before pushing as defined in the graph
+        x_mix,
         graph,
         trainable = True,
         heads : int = 4,
@@ -2863,15 +2864,14 @@ def post_tree_condensation_push(
     Defines a simple block to push up learnable quantities
     '''
     from GraphCondensationLayers import Mix
-    x = indict['features']
-    x = Dense(64, activation='elu', kernel_initializer='he_normal', trainable = trainable,
-              name = name + '_dense')(x)
+    
+    x = x_in
     xup = []
     for i in range(heads):
-        x_mix = Mix()(indict['features'], graph)
+        x_mix_i = Mix()(x_mix, graph)
         #sigmoid is ok, the 'mean' takes care of what the softmax does in classic attention
         attention = Dense(graph['nidx_down'].shape[1], activation='sigmoid', trainable = trainable,
-              name = name + f'_weights_{i}')(x_mix)
+              name = name + f'_weights_{i}')(x_mix_i)
         # add an epsilon to avoid numerical instabilities
         #this behaves very similar to standard attention now
         xm = PushUp(add_self=False, mode = 'mean')(x, graph, nweights = attention)
@@ -2895,7 +2895,7 @@ def double_tree_condensation_block(in_dict,
                              record_metrics = False,
                              push_heads : int = 4):
 
-    out, graph = tree_condensation_block(in_dict, 
+    [out, graph], x_proc = tree_condensation_block(in_dict, 
                                   
                             #the latter overwrites the default arguments such that it is in training mode
                             debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
@@ -2918,8 +2918,15 @@ def double_tree_condensation_block(in_dict,
     ###########################################################################
     ### Second stage ##########################################################
     ########################################################################### 
+
+    x = Concatenate()([x_proc, in_dict['features']])
+    x_mix = Dense(8, activation='sigmoid', trainable = trainable,
+              name = name + '_x_mix')(x)
        
-    xadd = post_tree_condensation_push(in_dict, graph, heads = push_heads, 
+    xadd = post_tree_condensation_push(x, #pushed (with attention)
+                                       x_mix, # used to mix and build attention
+                                       graph, 
+                                       heads = push_heads, 
                                        name = name+'_push',
                                        trainable = trainable) #this gets the original vector, adds more features to be pushed
     out['features'] = Concatenate()( [out['features'], xadd] )  
@@ -2927,10 +2934,11 @@ def double_tree_condensation_block(in_dict,
     out['features'] = BatchNormalization(name = name + '_bn1', 
                                          trainable = trainable)(out['features']) #this might be crucial after the summing
 
-    out2, graph2 = tree_condensation_block2(out, 
+    [out2, graph2], x_proc2 = tree_condensation_block2(out, 
                                           debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
                                           trainable = trainable,
                                           record_metrics = record_metrics)
+    
     
     ###########################################################################
     ### Done, now just checks and plots #######################################
