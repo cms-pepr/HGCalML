@@ -2892,7 +2892,8 @@ def double_tree_condensation_block(in_dict,
                              debug_outdir='', plot_debug_every=-1,
                              name = 'double_tree_condensation_block',
                              trainable = False,
-                             record_metrics = False):
+                             record_metrics = False,
+                             push_heads : int = 4):
 
     out, graph = tree_condensation_block(in_dict, 
                                   
@@ -2918,7 +2919,7 @@ def double_tree_condensation_block(in_dict,
     ### Second stage ##########################################################
     ########################################################################### 
        
-    xadd = post_tree_condensation_push(in_dict, graph, heads = 4, 
+    xadd = post_tree_condensation_push(in_dict, graph, heads = push_heads, 
                                        name = name+'_push',
                                        trainable = trainable) #this gets the original vector, adds more features to be pushed
     out['features'] = Concatenate()( [out['features'], xadd] )  
