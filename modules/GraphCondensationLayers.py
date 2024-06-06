@@ -306,7 +306,7 @@ class PushUp(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes):
         return (None, input_shapes[0][-1])
     
-    def call(self,features, transition : GraphCondensation, weight = None):
+    def call(self,features, transition : GraphCondensation, weight = None, nweights = None):
         
         assert len(features.shape) == 2 
         
@@ -321,7 +321,10 @@ class PushUp(tf.keras.layers.Layer):
             up_f = tf.concat([weight, up_f], axis=-1)
             
         nidx = transition['nidx_down']
-        nweights = transition['weights_down']
+        if isinstance(nweights, str) and nweights == 'ones':
+            nweights = tf.ones_like(nidx, dtype='float32')
+        if nweights is None:
+            nweights = transition['weights_down']
         
         if self.add_self:
             snidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx[:,1:]*0 -1 ],axis=1)

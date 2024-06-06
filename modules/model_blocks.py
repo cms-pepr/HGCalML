@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Concatenate, Add, Multiply
+from tensorflow.keras.layers import Dense, Concatenate, Add, Multiply, BatchNormalization
 from tensorflow.keras.layers import Flatten, Reshape
 
 from DeepJetCore.DJCLayers import  SelectFeatures, ScalarMultiply, StopGradient
@@ -2854,19 +2854,29 @@ def tree_condensation_block(pre_processed,
     return out
 
 def post_tree_condensation_push(
-        orig_preprocessed, #before pushing as defined in the graph
+        indict, #before pushing as defined in the graph
         graph,
         trainable = True,
+        heads : int = 1 ,
         name = 'post_tree_push'):
     '''
     Defines a simple block to push up learnable quantities
     '''
-    x = orig_preprocessed['features']
+    from GraphCondensationLayers import Mix
+    x = indict['features']
     x = Dense(64, activation='elu', kernel_initializer='he_normal', trainable = trainable,
               name = name + '_dense')(x)
-    xm = PushUp(add_self=False, mode = 'mean')(x, graph)
-    xs = PushUp(add_self=False, mode = 'sum')(x, graph)
-    return Concatenate()([xm,xs])
+    xup = []
+    for i in range(heads):
+        x_mix = Mix()(indict['features'], graph)
+        #sigmoid is ok, the 'mean' takes care of what the softmax does in classic attention
+        attention = Dense(graph['nidx_down'].shape[1], activation='sigmoid', trainable = trainable,
+              name = name + f'_weights_{i}')(x_mix)
+        #this behaves very similar to standard attention now
+        xm = PushUp(add_self=False, mode = 'mean')(x, graph, nweights = attention)
+        xup.append(xm)
+
+    return Concatenate()(xup)
 
 
 def tree_condensation_block2(*args, **kwargs):
@@ -2876,6 +2886,65 @@ def tree_condensation_block2(*args, **kwargs):
                                    gn_neighbours = 128,
                                    teq_nodes = [64,64],
                                    name = 'tree_condensation_block2')
+
+def double_tree_condensation_block(pre_processed,
+                             debug_outdir='', plot_debug_every=-1,
+                             name = 'double_tree_condensation_block',
+                             trainable = False,
+                             record_metrics = False):
+
+    out, graph = tree_condensation_block(pre_processed, 
+                                  
+                            #the latter overwrites the default arguments such that it is in training mode
+                            debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
+                            trainable = trainable,
+                            record_metrics = record_metrics,
+                            produce_output = True)
+    
+    ###########################################################################
+    ### Just some debug out ###################################################
+    ###########################################################################
+    
+    pre_processed['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = plot_debug_every,
+                     name = 'double_cond_first_stage',
+                     outdir= debug_outdir )(pre_processed['t_energy'], pre_processed['t_idx'], graph)
+    
+    #just to keep the plot in the loop
+    graph['weights_down'] = DummyLayer()([graph['weights_down'], pre_processed['t_energy']])
+
+    ###########################################################################
+    ### Second stage ##########################################################
+    ########################################################################### 
+       
+    xadd = post_tree_condensation_push( pre_processed, graph, heads = 1, name = name+'_push') #this gets the original vector, adds more features to be pushed
+    out['features'] = Concatenate()( [out['features'], xadd] )  
+
+    out['features'] = BatchNormalization(name = name + '_bn1', 
+                                         trainable = trainable)(out['features']) #this might be crucial after the summing
+
+    out2, graph2 = tree_condensation_block2(out, 
+                                          debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
+                                          trainable = trainable,
+                                          record_metrics = record_metrics)
+    
+    ###########################################################################
+    ### Done, now just checks and plots #######################################
+    ###########################################################################
+
+    #this is out and not out2 on purpose!
+    out['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = plot_debug_every,
+                     name = 'double_cond_second_stage',
+                     outdir= debug_outdir )(out['t_energy'], out['t_idx'], graph2)
+
+    #make sure the above does not get optimised away
+    graph2['weights_down'] = DummyLayer()([graph2['weights_down'], out['t_energy']])
+
+    # create indices that were removed for tracking
+    survived_both_stages = SelectUp()(graph['sel_idx_up'], graph2) 
+
+    return out2, graph2, survived_both_stages
     
 
 def tree_cleaning_block(pre_processed, # the full dictionary so that the truth can be fed through

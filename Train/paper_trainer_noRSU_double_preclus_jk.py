@@ -51,7 +51,7 @@ from callbacks import plotClusterSummary
 from callbacks import NanSweeper, DebugPlotRunner
 from tensorflow.keras.layers import BatchNormalization, LayerNormalization
 
-from model_blocks import tree_condensation_block, tree_condensation_block2, post_tree_condensation_push
+from model_blocks import tree_condensation_block, tree_condensation_block2, post_tree_condensation_push, double_tree_condensation_block
 from Layers import PlotGraphCondensationEfficiency
 
 ####################################################################################################
@@ -118,68 +118,12 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     ### Model definition ######################################################
     ###########################################################################
 
-    out, graph = tree_condensation_block(pre_processed, 
-                                  
-                            #the latter overwrites the default arguments such that it is in training mode
-                            debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
-                            trainable = True,
-                            record_metrics = True,
-                            produce_output = True)
+    out, graph, sels = double_tree_condensation_block(pre_processed,
+                             debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
+                             trainable = True,
+                             record_metrics = True)
     
-    ###########################################################################
-    ### Just some debug out ###################################################
-    ###########################################################################
-    
-    pre_processed['t_energy'] = PlotGraphCondensationEfficiency(
-                     plot_every = plot_debug_every,
-                     name = 'first_stage',
-                     outdir= debug_outdir )(pre_processed['t_energy'], pre_processed['t_idx'], graph)
-    
-    #just to keep the plot in the loop
-    graph['weights_down'] = DummyLayer()([graph['weights_down'], pre_processed['t_energy']])
-
-    ###########################################################################
-    ### Second stage ##########################################################
-    ###########################################################################    
-    xadd = post_tree_condensation_push( pre_processed, graph) #this gets the original vector, adds more features to be pushed
-    out['features'] = Concatenate()( [out['features'], xadd] )  
-
-    out['features'] = BatchNormalization()(out['features']) #this might be crucial after the summing
-
-    out2, graph = tree_condensation_block2(out, 
-                                          debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
-                                          trainable = True,
-                                          record_metrics = True)
-    
-    ###########################################################################
-    ### Done, now just checks and plots #######################################
-    ###########################################################################
-
-    out['t_energy'] = PlotGraphCondensationEfficiency(
-                     plot_every = plot_debug_every,
-                     name = 'second_stage',
-                     outdir= debug_outdir )(out['t_energy'], out['t_idx'], graph)
-
-    graph['weights_down'] = DummyLayer()([graph['weights_down'], out['t_energy']])
-
-    # check if there are keys in out missing that are in pre_processed, just for debugging
-    if check_keys:
-        
-        not_there = []
-        for key in pre_processed.keys():
-            if key not in out.keys():
-                print(f"Key {key} missing in out")
-                not_there.append(key)
-    
-        if len(not_there):
-            print("Keys in pre_processed:")
-            print(pre_processed.keys())
-            print("Keys in out:")
-            print(out.keys())
-            print('Keys missing in out:')
-            print(not_there)
-            raise ValueError("Keys missing in out")
-    
+    graph.update(out) #just so everything is connected
     return Model(inputs=Inputs, outputs=graph)
 
 
@@ -216,7 +160,7 @@ train.change_learning_rate(1e-2)
 train.trainModel(
         nepochs=2,
         batchsize=120000,
-        add_progbar=False,
+        add_progbar=pre_args.no_wandb,
         additional_callbacks=[],
         collect_gradients = 4 #average out more gradients
         )
