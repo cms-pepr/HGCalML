@@ -1020,8 +1020,8 @@ class LLGraphCondensationScore(LossLayerBase):
 
         assert len(score.shape) == 2 and len(coords.shape) == 2 and len(t_idx.shape) == 2
         
-        nidx, _ = select_knn(self.K+1, coords, rs) # omit self
-        nidx = nidx[...,1:] # V x K, remove self reference 
+        nidx, _ = select_knn(self.K, coords, rs) # includes  self reference at :,0
+        #nidx = nidx[...,1:] # V x K, do not remove self reference 
         
         n_score = select(nidx, score, 0.) # V x K x 1
         
