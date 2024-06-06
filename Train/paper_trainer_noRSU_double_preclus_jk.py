@@ -156,7 +156,7 @@ if not train.modelSet():
 
 #set the learning rate to 1e-2
 
-train.change_learning_rate(1e-2)
+train.change_learning_rate(2e-4)
 train.trainModel(
         nepochs=2,
         batchsize=120000,
@@ -177,7 +177,7 @@ train.applyFunctionToAllModels(fix_batchnorm)
 train.compileModel(learningrate=1e-3)
 print('entering second training phase')
 
-train.change_learning_rate(1e-3)
+train.change_learning_rate(1e-4)
 train.trainModel(
         nepochs=20,
         batchsize=120000,
