@@ -2872,6 +2872,7 @@ def post_tree_condensation_push(
         #sigmoid is ok, the 'mean' takes care of what the softmax does in classic attention
         attention = Dense(graph['nidx_down'].shape[1], activation='sigmoid', trainable = trainable,
               name = name + f'_weights_{i}')(x_mix)
+        # add an epsilon to avoid numerical instabilities
         #this behaves very similar to standard attention now
         xm = PushUp(add_self=False, mode = 'mean')(x, graph, nweights = attention)
         xup.append(xm)

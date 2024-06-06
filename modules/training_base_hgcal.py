@@ -485,8 +485,11 @@ class training_base(object):
 
             if add_progbar:
                 pbar = tqdm(total=nbatches_train + nbatches_val)
-
+            
+            start_time = time.time()
             while nbatches_in < nbatches_train:
+
+                
 
                 thisbatch = []
                 while len(thisbatch) < self.ngpus and nbatches_in < nbatches_train:
@@ -511,6 +514,8 @@ class training_base(object):
 
                 #explicit wandb loss
                 wandb.log({'global_loss': self.global_loss})
+                wandb.log({'time_per_step': time.time() - start_time})
+                start_time = time.time() #take the full next batch including overhead
 
                 if hasattr(wandb, 'flush'): #backwards compatibility
                     wandb.flush()

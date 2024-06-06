@@ -325,6 +325,8 @@ class PushUp(tf.keras.layers.Layer):
             nweights = tf.ones_like(nidx, dtype='float32')
         if nweights is None:
             nweights = transition['weights_down']
+        else:
+            nweights = tf.nn.relu(nweights) + 1e-6 #safety
         
         if self.add_self:
             snidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx[:,1:]*0 -1 ],axis=1)
