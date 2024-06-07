@@ -8,6 +8,8 @@ import os
 import uuid
 import subprocess
 
+import re
+
 UEXT = str(uuid.uuid4())
 
 
@@ -35,9 +37,8 @@ class meta_option(object):
         
 
 opts = {
-    'd' : meta_option('d'),
     'h' : meta_option('h', '/work/friemer/hgcalml/'), 
-    'n' : meta_option('n','TrainJob'),
+    'n' : meta_option('n','TrainJob_'+UEXT),
     'cpu': meta_option('cpu', '1'),
     'memory': meta_option('memory', '15 GB'),
     'disk': meta_option('disk', '8 GB'),
@@ -63,8 +64,6 @@ for _,o in opts.items():
 if '-h' in sys.argv or '--help' in sys.argv or (not all_valid):
     print('script to submit commands within the  container to sbatch.\n')
     print('all commands are fully forwarded with one exception:')
-    print('\n    ---d <workdir>    specifies a working directory that can be specified '
-      'that will contain the files. It is created if it does not exist.\n')
     print('\n    ---h <filepath> location of HGCalML-Folder with necessary modules\n')
     print('\n    ---n <name> (opt) specifies a name for the scripts\n')
     print('\n    ---cpu <number> (opt) number of cpus to request default: 1\n')
@@ -73,14 +72,14 @@ if '-h' in sys.argv or '--help' in sys.argv or (not all_valid):
     print('\n    ---gpu <number> (opt) number of gpus to request default: 1\n')
     sys.exit()
 
-if os.path.isdir(opts['d'].value):
+if os.path.isdir(opts['n'].value):
     var = input(\
         'Working directory exists, are you sure you want to continue, please type "yes/y"\n')
     var = var.lower()
     if not var in ('yes', 'y'):
         sys.exit()
 else:
-    os.system('mkdir -p '+opts['d'].value)
+    os.system('mkdir -p '+opts['n'].value)
 
 
 filtered_clo = filtered_clo[1:] #remove
@@ -98,8 +97,9 @@ CWD = os.getcwd()
 #Get absolute filepath and transfer entire folder if there is a .djcdc file also replace filepaths with filenames
 inputfileslocations =''
 NEWCOMMANDS = ''
+pattern = r'\.[a-zA-Z]'
 for word in COMMANDS.split():
-    if '.' in word:
+    if re.search(pattern, word):
         if '.djcdc' in word:
             inputfileslocations +=  os.path.join(CWD, os.path.dirname(word))+ '/, '
         else:
@@ -111,13 +111,13 @@ for word in COMMANDS.split():
 #Create a tarball of the HGCalML folder
 os.system(f'''
           cd {opts['h'].value}
-          tar -czf {opts['d'].value}/HGCalML.tar.gz HGCalML
+          tar -czf {opts['n'].value}/HGCalML.tar.gz HGCalML
           cd {CWD}''')
 
 #Setup the sub file
 sub_temp=f'''#!/bin/bash
 Universe = docker
-docker_image = cernml4reco/deepjetcore4:5ef28a3
+docker_image = cernml4reco/deepjetcore4:06bc79b
 accounting_group = cms.jet
 
 requirements =(TARGET.CloudSite=="topas")
@@ -129,7 +129,7 @@ executable = {opts['n'].value+'_'+UEXT+'_run.sh'}
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 
-transfer_input_files =  {inputfileslocations} {CWD+ '/' +opts['d'].value}/HGCalML.tar.gz, {CWD+ '/' +opts['d'].value+ '/' + opts['n'].value+'_'+UEXT+'_run.sh'}
+transfer_input_files =  {inputfileslocations} {CWD+ '/' +opts['n'].value}/HGCalML.tar.gz, {CWD+ '/' +opts['n'].value+ '/' + opts['n'].value+'_'+UEXT+'_run.sh'}
 
 output = {opts['n'].value+'_'+UEXT}.out
 error = {opts['n'].value+'_'+UEXT}.err
@@ -165,7 +165,7 @@ sub_temp += f'''
 queue
 '''
 
-with open(opts['d'].value+'/'+opts['n'].value+'_'+UEXT+'.sub','w', encoding='utf-8') as f:
+with open(opts['n'].value+'/'+opts['n'].value+'_'+UEXT+'.sub','w', encoding='utf-8') as f:
     f.write(sub_temp)
 
 
@@ -179,8 +179,6 @@ runscript_temp=f'''
 tar -xzf HGCalML.tar.gz
 
 export HGCALML=$(readlink -f HGCalML)
-echo $HGCALML
-
 export DEEPJETCORE_SUBPACKAGE=$HGCALML
 
 export PATH=$HGCALML/scripts:$PATH
@@ -193,7 +191,7 @@ ls -l
 
 {NEWCOMMANDS}
 '''
-with open(opts['d'].value+'/'+opts['n'].value+ '_' +UEXT+'_run.sh','w', encoding='utf-8') as f:
+with open(opts['n'].value+'/'+opts['n'].value+ '_' +UEXT+'_run.sh','w', encoding='utf-8') as f:
     f.write(runscript_temp)
 
 
@@ -203,6 +201,6 @@ with open(opts['d'].value+'/'+opts['n'].value+ '_' +UEXT+'_run.sh','w', encoding
 ####################################################################################################
 
 COMMAND = (
-    'cd ' + opts['d'].value + '; pwd; condor_submit ' + opts['n'].value + '_' + UEXT + '.sub'
+    'cd ' + opts['n'].value + '; pwd; condor_submit ' + opts['n'].value + '_' + UEXT + '.sub'
 )
 os.system(COMMAND)
