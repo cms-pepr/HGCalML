@@ -179,16 +179,17 @@ train.change_learning_rate(1e-2)
 train.trainModel(
         nepochs=2,
         batchsize=120000,
-        add_progbar=True,
+        add_progbar=False,
         additional_callbacks=[],
         collect_gradients = 4 #average out more gradients
         )
 
+print('entering second training phase')
 train.change_learning_rate(1e-3)
 train.trainModel(
         nepochs=20,
         batchsize=120000,
-        add_progbar=True,
+        add_progbar=False,
         additional_callbacks=[],
         collect_gradients = 4
         )

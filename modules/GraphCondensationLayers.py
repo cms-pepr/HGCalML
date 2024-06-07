@@ -306,7 +306,7 @@ class PushUp(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shapes):
         return (None, input_shapes[0][-1])
     
-    def call(self,features, transition : GraphCondensation, weight = None):
+    def call(self,features, transition : GraphCondensation, weight = None, nweights = None):
         
         assert len(features.shape) == 2 
         
@@ -321,7 +321,12 @@ class PushUp(tf.keras.layers.Layer):
             up_f = tf.concat([weight, up_f], axis=-1)
             
         nidx = transition['nidx_down']
-        nweights = transition['weights_down']
+        if isinstance(nweights, str) and nweights == 'ones':
+            nweights = tf.ones_like(nidx, dtype='float32')
+        if nweights is None:
+            nweights = transition['weights_down']
+        else:
+            nweights = tf.nn.relu(nweights) + 1e-6 #safety
         
         if self.add_self:
             snidx = tf.concat([tf.range(tf.shape(nidx)[0])[:,tf.newaxis], nidx[:,1:]*0 -1 ],axis=1)
@@ -983,6 +988,9 @@ class LLGraphCondensationScore(LossLayerBase):
        n_t_energy = select(nidx, t_energy, 0.) # V x K x 1
        y = tf.where(n_t_energy > self.low_energy_cut, y, 0.) # keep target score low also for low energy objects
 
+       #set y for noise to zero
+       y = tf.where(n_t_idx < 0, 0., y)
+
        return y, loss_mask, arg_max_neighbour, is_same
     
     
@@ -1012,8 +1020,8 @@ class LLGraphCondensationScore(LossLayerBase):
 
         assert len(score.shape) == 2 and len(coords.shape) == 2 and len(t_idx.shape) == 2
         
-        nidx, _ = select_knn(self.K+1, coords, rs) # omit self
-        nidx = nidx[...,1:] # V x K, remove self reference 
+        nidx, _ = select_knn(self.K, coords, rs) # includes  self reference at :,0
+        #nidx = nidx[...,1:] # V x K, do not remove self reference 
         
         n_score = select(nidx, score, 0.) # V x K x 1
         

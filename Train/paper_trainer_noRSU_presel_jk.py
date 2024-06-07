@@ -145,7 +145,7 @@ if not pre_args.no_wandb:
         project=pre_args.wandb_project,
         config={},
     )
-    wandb.save(sys.argv[0]) # Save python file
+    wandb.wandb().save(sys.argv[0]) # Save python file
 else:
     wandb.active=False
 #parses the rest of the arguments
@@ -407,7 +407,7 @@ for i in range(1, N_TRAINING_STAGES+1):
     train.trainModel(
         nepochs=epochs,
         batchsize=batch_size,
-        add_progbar=True,
+        add_progbar=False,
         additional_callbacks=cb,
         collect_gradients = 4 #make it more smooth
         )

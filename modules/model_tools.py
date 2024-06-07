@@ -8,33 +8,30 @@ import numpy as np
 
 #debug overwrite
 def apply_weights_where_possible(target_model, weight_model, strict=True):
+
+    def try_to_set_weights(layer_a, layer_b):
+        try:
+            layer_a.set_weights(layer_b.get_weights()) 
+            print('using weights from ',  layer_a.name)
+        except Exception as e :  
+            print(e)
+            print('target shape\n',
+                  [a.shape for a in layer_a.get_weights()],'\nsource shape:\n',
+                  [a.shape for a in layer_b.get_weights()])
+            if strict:
+                print('strict mode, raising exception')
+                raise e
     
     for layer_a in target_model.layers:
         for layer_b in weight_model.layers:
             if layer_a.name == layer_b.name:
-                try:
-                    layer_a.set_weights(layer_b.get_weights()) 
-                    print('using weights from ',  layer_a.name)
-                except Exception as e :  
-                    print('unable to copy weights for layer ',  layer_a.name)
-                    if isinstance(layer_a, RaggedGravNet): # THIS IS A COMPATIBILITY HACK!!
-                        # the weights are not compatible, but we can still copy the weights of the sublayers
-                        # this is a hack and should be removed once the model is retrained
-                        print('applying weights to sublayers that matter, omitting the unused tf.Variable that cannot be removed due to compatibility issues.')
-                        layer_a.input_feature_transform.set_weights(layer_b.input_feature_transform.get_weights())
-                        layer_a.input_spatial_transform.set_weights(layer_b.input_spatial_transform.get_weights())
-                        layer_a.output_feature_transform.set_weights(layer_b.output_feature_transform.get_weights())
-                        
-                    else:
-                        print(e)
-                        print('target shape\n',
-                              [a.shape for a in layer_a.get_weights()],'\nsource shape:\n',
-                              [a.shape for a in layer_b.get_weights()])
-                        if strict:
-                            raise e
-                    #print(layer_a.weights,'\n',layer_b.weights)
-    
-    
+                if isinstance(layer_a, RaggedGravNet): # THIS IS A COMPATIBILITY HACK!!
+                    try_to_set_weights(layer_a.input_feature_transform, layer_b.input_feature_transform)
+                    try_to_set_weights(layer_a.input_spatial_transform, layer_b.input_spatial_transform)
+                    try_to_set_weights(layer_a.output_feature_transform, layer_b.output_feature_transform)
+                else:
+                    try_to_set_weights(layer_a, layer_b)
+
     return target_model
 
 def apply_weights_from_path(path_to_weight_model, existing_model, 
