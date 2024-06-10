@@ -37,8 +37,8 @@ class meta_option(object):
         
 
 opts = {
-    'h' : meta_option('h', '/work/friemer/hgcalml/'), 
     'n' : meta_option('n','TrainJob_'+UEXT),
+    'f' : meta_option('f', '/work/friemer/hgcalml/HGCalML'), 
     'cpu': meta_option('cpu', '1'),
     'memory': meta_option('memory', '15 GB'),
     'disk': meta_option('disk', '8 GB'),
@@ -64,8 +64,8 @@ for _,o in opts.items():
 if '-h' in sys.argv or '--help' in sys.argv or (not all_valid):
     print('script to submit commands within the  container to sbatch.\n')
     print('all commands are fully forwarded with one exception:')
-    print('\n    ---h <filepath> location of HGCalML-Folder with necessary modules\n')
     print('\n    ---n <name> (opt) specifies a name for the scripts\n')
+    print('\n    ---f <filepath> location of other files to transfer like the HGCalML-Folder with necessary modules\n')
     print('\n    ---cpu <number> (opt) number of cpus to request default: 1\n')
     print('\n    ---memory <memory size> (opt) size of memory to request default: 15 GB\n')
     print('\n    ---disk <disk size> (opt) size of memory to request default 8 GB\n')
@@ -97,9 +97,8 @@ CWD = os.getcwd()
 #Get absolute filepath and transfer entire folder if there is a .djcdc file also replace filepaths with filenames
 inputfileslocations =''
 NEWCOMMANDS = ''
-pattern = r'\.[a-zA-Z]'
 for word in COMMANDS.split():
-    if re.search(pattern, word):
+    if os.path.exists(word):
         if '.djcdc' in word:
             inputfileslocations +=  os.path.join(CWD, os.path.dirname(word))+ '/, '
         else:
@@ -109,10 +108,17 @@ for word in COMMANDS.split():
         NEWCOMMANDS+=word + ' '
 
 #Create a tarball of the HGCalML folder
-os.system(f'''
-          cd {opts['h'].value}
-          tar -czf {opts['n'].value}/HGCalML.tar.gz HGCalML
-          cd {CWD}''')
+if os.path.isdir(opts['f'].value):
+    os.system(f'''
+            cd {opts['f'].value}
+            cd ../
+            tar -czf {opts['n'].value}/HGCalML.tar.gz {os.path.basename(opts['f'].value)}
+            cd {CWD}''')
+elif os.path.isfile(opts['f'].value) and opts['f'].value.endswith('.tar.gz'):
+    os.system(f'''
+            cp {opts['f'].value} {opts['n'].value}/HGCalML.tar.gz''')
+else:
+    raise Exception('Folder not found, please specify the correct path to the HGCalML-folder with ---f <filepath>')
 
 #Setup the sub file
 sub_temp=f'''#!/bin/bash
@@ -130,6 +136,7 @@ should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 
 transfer_input_files =  {inputfileslocations} {CWD+ '/' +opts['n'].value}/HGCalML.tar.gz, {CWD+ '/' +opts['n'].value+ '/' + opts['n'].value+'_'+UEXT+'_run.sh'}
+transfer_output_files = .
 
 output = {opts['n'].value+'_'+UEXT}.out
 error = {opts['n'].value+'_'+UEXT}.err
@@ -190,6 +197,13 @@ export LANG=C.UTF-8    # necessary for wandb
 ls -l
 
 {NEWCOMMANDS}
+
+ls -l
+
+rm HGCalML.tar.gz
+rm -r HGCalML
+
+ls -l
 '''
 with open(opts['n'].value+'/'+opts['n'].value+ '_' +UEXT+'_run.sh','w', encoding='utf-8') as f:
     f.write(runscript_temp)
@@ -200,7 +214,7 @@ with open(opts['n'].value+'/'+opts['n'].value+ '_' +UEXT+'_run.sh','w', encoding
 ### Submit the Job #############################################################################
 ####################################################################################################
 
-COMMAND = (
+SUBMITCOMMAND = (
     'cd ' + opts['n'].value + '; pwd; condor_submit ' + opts['n'].value + '_' + UEXT + '.sub'
 )
-os.system(COMMAND)
+os.system(SUBMITCOMMAND)
