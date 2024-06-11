@@ -65,7 +65,7 @@ if '-h' in sys.argv or '--help' in sys.argv or (not all_valid):
     print('script to submit commands within the  container to sbatch.\n')
     print('all commands are fully forwarded with one exception:')
     print('\n    ---n <name> (opt) specifies a name for the scripts\n')
-    print('\n    ---f <filepath> location of other files to transfer like the HGCalML-Folder with necessary modules\n')
+    print('\n    ---f <filepath> location of the HGCalML-Folder with necessary modules\n')
     print('\n    ---cpu <number> (opt) number of cpus to request default: 1\n')
     print('\n    ---memory <memory size> (opt) size of memory to request default: 15 GB\n')
     print('\n    ---disk <disk size> (opt) size of memory to request default 8 GB\n')
@@ -202,6 +202,8 @@ ls -l
 
 rm HGCalML.tar.gz
 rm -r HGCalML
+rm *.djctd
+rm *.djcdc
 
 ls -l
 '''

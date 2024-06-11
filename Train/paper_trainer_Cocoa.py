@@ -77,7 +77,7 @@ LOSS_OPTIONS = {
     "classification_loss_weight": 0.01,
     "position_loss_weight": 0.0,
     "timing_loss_weight": 0.0,
-    "q_min": 1.0,
+    "q_min": 0.8,
     "use_average_cc_pos": 0.9999,
 }
 BATCHNORM_OPTIONS = {
@@ -89,26 +89,32 @@ DENSE_INIT = "he_normal"
 DENSE_REGULARIZER_RATE = 1e-9
 DENSE_REGULARIZER = tf.keras.regularizers.l2(DENSE_REGULARIZER_RATE)
 DROPOUT = 1e-2
-DISTANCE_SCALE = True
+DISTANCE_SCALE = False 
 loss_layer = LLExtendedObjectCondensation3
 
 TRAINING = {
   "stage_1": {
-    "batch_size": 100000,
+    "batch_size": 5000,
     "learning_rate": 0.002,
     "epochs": 5,
     },
 
   "stage_2": {
-    "batch_size": 100000,
+    "batch_size": 5000,
     "learning_rate": 0.0002,
     "epochs": 10,
     },
 
   "stage_3": {
-    "batch_size": 100000,
+    "batch_size": 5000,
     "learning_rate": 0.00002,
     "epochs": 20,
+    },
+  
+  "stage_4": {
+    "batch_size": 5000,
+    "learning_rate": 0.00001,
+    "epochs": 40,
     },
 }
 
@@ -230,7 +236,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     
     [cprime_hit], [cprime_track], rs_hit, rs_track = SplitOffTracks()([is_track, [prime_coords], rs])
     
-    c_coords = extent_coords_if_needed(prime_coords, x, N_CLUSTER_SPACE_COORDINATES)
+    c_coords = extent_coords_if_needed(c_coords, x, N_CLUSTER_SPACE_COORDINATES)
 
     x = Concatenate()([x, c_coords, is_track])
     x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x)

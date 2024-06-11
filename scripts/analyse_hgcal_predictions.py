@@ -149,7 +149,7 @@ def analyse(preddir,
                         'pred_pos', 'pred_time', 'pred_id', 'pred_dist', 'rechit_energy',
                         'no_noise_sel']
                 for key in pred_keys:
-                    if key is 'no_noise_sel':
+                    if key == 'no_noise_sel':
                         try:
                             predictions_dict[key] = predictions_dict[key][pred_mask]
                         except KeyError:
