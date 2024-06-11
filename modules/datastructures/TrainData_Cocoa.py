@@ -85,13 +85,15 @@ class TrainData_Cocoa(TrainData_NanoML):
         df_track['recHitEta'] = -np.log(np.tan(df_track['recHitTheta']/2))
 
         df_track['isTrack'] = 1
-        df_track['recHitEnergy'] = 0
 
         df_track['recHitTime'] = 0
         df_track['recHitHitR'] = 0
 
         #join track information to particle information
         df_track = df_track.join(df_particle, on='t_idx')
+        
+        #Smear true energy for track
+        df_track['recHitEnergy'] = df_track['t_energy'].apply(lambda x: np.random.normal(x, 0.01 * x))
 
         #join cell information to truth information
         df_cell = df_cell.join(df_particle, on='t_idx')
