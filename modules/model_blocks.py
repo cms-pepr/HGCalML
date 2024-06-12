@@ -2859,16 +2859,21 @@ def post_tree_condensation_push(
         graph,
         trainable = True,
         heads : int = 4,
+        mix_nodes = 8,
         name = 'post_tree_push'):
     '''
-    Defines a simple block to push up learnable quantities
+    Defines a simple block to push up learnable quantities.
+    The inputs x and x_mix are *before* the push up defined by the graph object.
+    The output will have dimensionality *after* the push up.
     '''
     from GraphCondensationLayers import Mix
     
     x = x_in
     xup = []
     for i in range(heads):
-        x_mix_i = Mix()(x_mix, graph)
+        x_mix_i = Dense(mix_nodes, activation='elu', trainable = trainable,
+              name = name + f'_int_mix_{i}')(x_mix)
+        x_mix_i = Mix()(x_mix_i, graph)
         #sigmoid is ok, the 'mean' takes care of what the softmax does in classic attention
         attention = Dense(graph['nidx_down'].shape[1], activation='sigmoid', trainable = trainable,
               name = name + f'_weights_{i}')(x_mix_i)
@@ -2876,8 +2881,12 @@ def post_tree_condensation_push(
         #this behaves very similar to standard attention now
         xm = PushUp(add_self=False, mode = 'mean')(x, graph, nweights = attention)
         xup.append(xm)
-
-    return Concatenate()(xup)
+    
+    if heads > 1:
+        xup = Concatenate()(xup)
+    else:
+        xup = xup[0]
+    return xup
 
 
 def tree_condensation_block2(*args, **kwargs):
@@ -2922,17 +2931,17 @@ def double_tree_condensation_block(in_dict,
     ########################################################################### 
 
     x = Concatenate()([x_proc, in_dict['features']])
-    x_mix = Dense(8, activation='sigmoid', trainable = trainable,
-              name = name + '_x_mix')(x)
+    x = BatchNormalization(name = name + '_bn0', 
+                                         trainable = trainable)(x) #this might be crucial after the summing
        
     xadd = post_tree_condensation_push(x, #pushed (with attention)
-                                       x_mix, # used to mix and build attention
+                                       x, # used to mix and build attention
                                        graph, 
-                                       heads = push_heads, 
+                                       # take default here: heads = push_heads, 
                                        name = name+'_push',
                                        trainable = trainable) #this gets the original vector, adds more features to be pushed
+    
     out['features'] = Concatenate()( [out['features'], xadd] )  
-
     out['features'] = BatchNormalization(name = name + '_bn1', 
                                          trainable = trainable)(out['features']) #this might be crucial after the summing
 
