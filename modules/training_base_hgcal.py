@@ -339,6 +339,12 @@ class training_base(object):
             del vars
             return grads, loss
         
+    def run_model(self, model, data, i):
+        with tf.device(f'/GPU:{i}'):
+            predictions = model(data, training=True)
+            loss = tf.add_n(model.losses)
+            return None, loss
+        
     def average_gradients(self):
         all_gradients = self.gradients
         # Average the gradients across GPUs
@@ -381,6 +387,18 @@ class training_base(object):
                 del g
             self.gradients = []
 
+    def teststep_parallel(self, split_data):
+        if self.ngpus == 1:
+            _, l = self.run_model(self.mgpu_keras_models[0], split_data[0], 0)
+            return l
+        else:
+            batch_losses = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.ngpus) as executor:
+                futures = [executor.submit(self.run_model, self.mgpu_keras_models[i], split_data[i], i) for i in range(self.ngpus)]
+                for future in concurrent.futures.as_completed(futures):
+                    _, losses = future.result()
+                    batch_losses.append(losses)
+            return np.mean(batch_losses)
 
         
     def trainModel(self,
@@ -480,6 +498,18 @@ class training_base(object):
             print('training batches: ',nbatches_train)
             print('validation batches: ',nbatches_val)
 
+            def accumulate_batch(nbatches_in, gen):
+                thisbatch = []
+                while len(thisbatch) < self.ngpus and nbatches_in < nbatches_train:
+                    #only 'feature' part matters for HGCAL
+                    data = next(gen.feedNumpyData())[0]
+                    tfdata = [tf.convert_to_tensor(data[i]) for i in range(len(data))] #explicit
+                    for d in data:
+                        del d
+                    thisbatch.append(tfdata)
+                    nbatches_in += 1
+                return thisbatch, nbatches_in
+
             nbatches_in = 0
             single_counter = 0
 
@@ -489,17 +519,7 @@ class training_base(object):
             start_time = time.time()
             while nbatches_in < nbatches_train:
 
-                
-
-                thisbatch = []
-                while len(thisbatch) < self.ngpus and nbatches_in < nbatches_train:
-                    #only 'feature' part matters for HGCAL
-                    data = next(traingen.feedNumpyData())[0]
-                    tfdata = [tf.convert_to_tensor(data[i]) for i in range(len(data))] #explicit
-                    for d in data:
-                        del d
-                    thisbatch.append(tfdata)
-                    nbatches_in += 1
+                thisbatch, nbatches_in = accumulate_batch(nbatches_in, traingen)
 
                 if len(thisbatch) != self.ngpus: #last batch might not be enough
                     break
@@ -520,9 +540,9 @@ class training_base(object):
                 if hasattr(wandb, 'flush'): #backwards compatibility
                     wandb.flush()
 
-                for l in logs.values():
-                    del l
-                del logs
+                #for l in logs.values():
+                #    del l
+                #del logs
 
                 single_counter += 1
                 if add_progbar:
@@ -534,8 +554,54 @@ class training_base(object):
                 for b in thisbatch:
                     del b
 
-            if nbatches_in % 32 == 0: #force garbage collection every 32 batches
-                gc.collect()
+                if nbatches_in % 32 == 0: #force garbage collection every 32 batches
+                    gc.collect()
+
+            #same for validation
+            nbatches_in = 0
+
+            while nbatches_in < nbatches_val:
+
+                thisbatch, nbatches_in = accumulate_batch(nbatches_in, valgen)
+
+                if len(thisbatch) != self.ngpus: #last batch might not be enough
+                    break
+
+                callbacks.on_test_batch_begin(nbatches_in)
+
+                callbacks.on_train_batch_begin(single_counter)
+
+                self.teststep_parallel(thisbatch)
+                
+                logs = { m.name: m.result() for m in self.keras_model.metrics } #only for main model
+
+                callbacks.on_train_batch_end(single_counter, logs)
+
+                #explicit wandb loss
+                wandb.log({'global_loss': self.global_loss})
+                wandb.log({'time_per_step': time.time() - start_time})
+                start_time = time.time() #take the full next batch including overhead
+
+                if hasattr(wandb, 'flush_val'): #backwards compatibility
+                    wandb.flush_val()
+
+                #for l in logs.values():
+                #    del l
+                #del logs
+
+                single_counter += 1
+                if add_progbar:
+                    pbar.update(len(thisbatch))
+                    #also put the global loss in the prog bar
+
+                    pbar.set_postfix({'val_global_loss': self.global_loss})
+
+                for b in thisbatch:
+                    del b
+
+                if nbatches_in % 32 == 0: #force garbage collection every 32 batches
+                    gc.collect()
+            
             try:
                 callbacks.on_epoch_end(self.trainedepoches, logs) #use same logs here, will throw error atm
             except Exception as e:
