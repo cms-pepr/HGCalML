@@ -2893,7 +2893,7 @@ def double_tree_condensation_block(in_dict,
                              name = 'double_tree_condensation_block',
                              trainable = False,
                              record_metrics = False,
-                             push_heads : int = 8):
+                             push_heads : int = 4):
 
     [out, graph], x_proc = tree_condensation_block(in_dict, 
                                   
