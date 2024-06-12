@@ -343,7 +343,7 @@ class LossLayerBase(LayerWithMetrics):
 class LLDummy(LossLayerBase):
 
     def loss(self, inputs):
-        return tf.reduce_mean(inputs)
+        return tf.reduce_mean(inputs**2)
 
 
 

@@ -341,7 +341,7 @@ class training_base(object):
         
     def run_model(self, model, data, i):
         with tf.device(f'/GPU:{i}'):
-            predictions = model(data, training=True)
+            predictions = model(data, training=False) #run in test mode
             loss = tf.add_n(model.losses)
             return None, loss
         
@@ -398,7 +398,8 @@ class training_base(object):
                 for future in concurrent.futures.as_completed(futures):
                     _, losses = future.result()
                     batch_losses.append(losses)
-            return np.mean(batch_losses)
+            self.global_loss = np.mean(batch_losses)
+            return self.global_loss
 
         
     def trainModel(self,
@@ -498,9 +499,9 @@ class training_base(object):
             print('training batches: ',nbatches_train)
             print('validation batches: ',nbatches_val)
 
-            def accumulate_batch(nbatches_in, gen):
+            def accumulate_batch(nbatches_in, nbatches_tot, gen):
                 thisbatch = []
-                while len(thisbatch) < self.ngpus and nbatches_in < nbatches_train:
+                while len(thisbatch) < self.ngpus and nbatches_in < nbatches_tot:
                     #only 'feature' part matters for HGCAL
                     data = next(gen.feedNumpyData())[0]
                     tfdata = [tf.convert_to_tensor(data[i]) for i in range(len(data))] #explicit
@@ -519,7 +520,7 @@ class training_base(object):
             start_time = time.time()
             while nbatches_in < nbatches_train:
 
-                thisbatch, nbatches_in = accumulate_batch(nbatches_in, traingen)
+                thisbatch, nbatches_in = accumulate_batch(nbatches_in, nbatches_train, traingen)
 
                 if len(thisbatch) != self.ngpus: #last batch might not be enough
                     break
@@ -559,23 +560,23 @@ class training_base(object):
 
             #same for validation
             nbatches_in = 0
+            start_time = time.time() #reset batch time here
 
             while nbatches_in < nbatches_val:
 
-                thisbatch, nbatches_in = accumulate_batch(nbatches_in, valgen)
+
+                thisbatch, nbatches_in = accumulate_batch(nbatches_in, nbatches_val, valgen)
 
                 if len(thisbatch) != self.ngpus: #last batch might not be enough
                     break
 
-                callbacks.on_test_batch_begin(nbatches_in)
-
-                callbacks.on_train_batch_begin(single_counter)
+                callbacks.on_test_batch_begin(single_counter)
 
                 self.teststep_parallel(thisbatch)
                 
                 logs = { m.name: m.result() for m in self.keras_model.metrics } #only for main model
 
-                callbacks.on_train_batch_end(single_counter, logs)
+                callbacks.on_test_batch_end(single_counter, logs)
 
                 #explicit wandb loss
                 wandb.log({'global_loss': self.global_loss})
@@ -612,6 +613,7 @@ class training_base(object):
                 pbar.close()
             self.trainedepoches += 1
             traingen.shuffleFileList()
+
             gc.collect()
             #
     
