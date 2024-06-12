@@ -125,8 +125,7 @@ if not train.args.no_wandb:
         project=train.args.wandb_project,
         config=wandb_config,
     )
-    wandb.save(sys.argv[0]) # Save python file
-    wandb.save(train.args.configFile) # Save config file
+    
 else:
     wandb.active=False
 
@@ -152,7 +151,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     x = Dense(64, name='dense', activation='elu')(x)
 
     output = LLDummy(
-            record_metrics=False,
+            record_metrics=True,
             print_loss=False,
             name="Dummy",)(x)
 

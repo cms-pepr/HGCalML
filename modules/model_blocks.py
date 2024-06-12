@@ -2893,7 +2893,7 @@ def double_tree_condensation_block(in_dict,
                              name = 'double_tree_condensation_block',
                              trainable = False,
                              record_metrics = False,
-                             push_heads : int = 4):
+                             push_heads : int = 8):
 
     [out, graph], x_proc = tree_condensation_block(in_dict, 
                                   
@@ -2906,6 +2906,8 @@ def double_tree_condensation_block(in_dict,
     ###########################################################################
     ### Just some debug out ###################################################
     ###########################################################################
+
+    all_out = {'no_noise_idx_stage_0': graph['sel_idx_up']}
     
     in_dict['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
@@ -2955,8 +2957,10 @@ def double_tree_condensation_block(in_dict,
 
     # create indices that were removed for tracking
     survived_both_stages = SelectUp()(graph['sel_idx_up'], graph2) 
+    all_out['no_noise_idx_stage_1'] = graph2['sel_idx_up']
+    all_out['survived_both_stages'] = survived_both_stages
 
-    return out2, graph2, survived_both_stages
+    return out2, graph2, all_out
     
 
 def tree_cleaning_block(pre_processed, # the full dictionary so that the truth can be fed through
