@@ -2626,6 +2626,7 @@ def mini_tree_create(
     else:
         lcc_input = [coords, t_idx,  score, rs ]
 
+    # right now this would scale with score (makes sense); could it be useful to cut that gradient?
     coords = LLClusterCoordinates(
                 record_metrics = record_metrics,
                 active=trainable,
@@ -2804,7 +2805,7 @@ def tree_condensation_block(pre_processed,
     t_idx = pre_processed['t_idx']
     x = pre_processed['features']
 
-    xd = Dense(32, activation='tanh', name=name+'_enc', trainable = trainable)(x)
+    xd = Dense(32, activation='elu', name=name+'_enc', trainable = trainable)(x)
     x = Concatenate()([prime_coords,xd,x])
 
     xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
