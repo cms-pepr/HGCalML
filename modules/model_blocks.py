@@ -2806,7 +2806,7 @@ def tree_condensation_block(pre_processed,
     x = pre_processed['features']
     
     #norm the inputs with scaled..2
-    x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm', trainable = trainable,learn=True)(x)
+    x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm_0', trainable = trainable,learn=True)(x)
     x = Dense(2*x.shape[1], activation='tanh', name=name+'_enc', trainable = trainable)(x) #keeping this in check is useful
     x = Concatenate()([prime_coords,x])
 
@@ -2819,6 +2819,7 @@ def tree_condensation_block(pre_processed,
                                    trainable = trainable)
     
     x = Concatenate()([xgn, x])
+    x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm_1', trainable = trainable,learn=True)(x)
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
     gn_coords = Add()([gn_coords, Dense(gn_coords.shape[1], 
                                          name=name+'_coords_add', use_bias = False, 
