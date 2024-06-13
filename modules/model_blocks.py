@@ -2807,8 +2807,8 @@ def tree_condensation_block(pre_processed,
     
     #norm the inputs with scaled..2
     x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm', trainable = trainable,learn=True)(x)
-    xd = Dense(32, activation='elu', name=name+'_enc', trainable = trainable)(x)
-    x = Concatenate()([prime_coords,xd,x])
+    x = Dense(2*x.shape[1], activation='tanh', name=name+'_enc', trainable = trainable)(x) #keeping this in check is useful
+    x = Concatenate()([prime_coords,x])
 
     xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
                                    gn_nodes, #nodes
@@ -2820,6 +2820,10 @@ def tree_condensation_block(pre_processed,
     
     x = Concatenate()([xgn, x])
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
+    gn_coords = Add()([gn_coords, Dense(gn_coords.shape[1], 
+                                         name=name+'_coords_add', use_bias = False, 
+                                         activation = 'tanh', # +1 is a good scale here
+                                         trainable = trainable)(x) ] )
     pre_processed['features'] = x #pass through
     
     ud_graph = mini_tree_create(
