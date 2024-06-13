@@ -2804,7 +2804,9 @@ def tree_condensation_block(pre_processed,
     energy = pre_processed['rechit_energy']
     t_idx = pre_processed['t_idx']
     x = pre_processed['features']
-
+    
+    #norm the inputs with scaled..2
+    x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm', trainable = trainable,learn=True)(x)
     xd = Dense(32, activation='elu', name=name+'_enc', trainable = trainable)(x)
     x = Concatenate()([prime_coords,xd,x])
 
