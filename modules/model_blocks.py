@@ -2630,7 +2630,7 @@ def mini_tree_create(
     coords = LLClusterCoordinates(
                 record_metrics = record_metrics,
                 active=trainable,
-                scale = 1.,
+                scale = .1, #scale this down, this will not be the main focus
                 ignore_noise = True, #this is filtered by the graph condensation anyway
                 print_batch_time=False,
                 specweight_to_weight = True,
@@ -2798,8 +2798,11 @@ def tree_condensation_block(pre_processed,
                              
                              enc_nodes = 32,
                              gn_nodes = 16,
-                             gn_neighbours = 16,
-                             teq_nodes = [16,16]):
+                             gn_neighbours = 12,
+                             teq_nodes = [32,16],
+                             
+                             edge_dense = [32,16],
+                             edge_pre_nodes = 16 ):
 
     prime_coords = pre_processed['prime_coords']
     is_track = pre_processed['is_track']
@@ -2849,8 +2852,8 @@ def tree_condensation_block(pre_processed,
     out = mini_tree_clustering(
         pre_processed,
         ud_graph,
-        edge_dense = [32,16],
-        edge_pre_nodes = 16,
+        edge_dense = edge_dense,
+        edge_pre_nodes = edge_pre_nodes,
 
         record_metrics = record_metrics,
         trainable = trainable,
@@ -2903,6 +2906,8 @@ def tree_condensation_block2(*args, **kwargs):
                                    gn_nodes = 64,
                                    gn_neighbours = 128,
                                    teq_nodes = [64,64],
+                                   edge_dense = [64,32],
+                                   edge_pre_nodes = 32,
                                    name = 'tree_condensation_block2')
 
 def double_tree_condensation_block(in_dict,
