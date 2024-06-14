@@ -11,9 +11,62 @@ import numpy as np
 from plotting_tools import shuffle_truth_colors
 from oc_helper_ops import SelectWithDefault
 from sklearn.metrics import roc_curve
-from DeepJetCore.training.DeepJet_callbacks import publish
+from DeepJetCore.training.DeepJet_callbacks import publish as dcj_publish
+from DeepJetCore.wandb_interface import wandb_wrapper
 import queue
 import os
+
+
+from datetime import datetime, timedelta
+class _Publish:
+
+    def __init__(self, time_threshold=3600):
+        self.time_threshold = timedelta(seconds=time_threshold)
+        self.created_time = datetime.now()
+        self.last_logged_time = {}
+
+    def publish(self, infile, where_to, ftype='html'):
+        if where_to == 'wandb':
+            if not wandb_wrapper.active:
+                return
+            if ftype != 'html':
+                print("Warning: Unsupported file type. Only 'html' is supported.")
+                return
+            
+            # Strip name of path and extension
+            infilename = os.path.basename(infile)
+            infilename = os.path.splitext(infilename)[0]
+            
+            # Read HTML content from file
+            with open(infile, 'r') as f:
+                html_content = f.read()
+            
+            self.log_html_to_wandb(infilename, html_content)
+        else:
+            dcj_publish(infile, where_to)
+
+    def log_html_to_wandb(self, infilename, html_content):
+        current_time = datetime.now()
+        last_time = self.last_logged_time.get(infilename, datetime.min)
+        
+        if current_time - last_time >= self.time_threshold:
+            # Log HTML content to wandb
+            # add wandb step number to name
+            logname = infilename + f"_step_{wandb_wrapper.wandb().run.step}"
+            wandb_wrapper.log({logname: wandb_wrapper.wandb().Html(html_content)})
+            self.last_logged_time[infilename] = current_time
+        else:
+            next_allowed_time = last_time + self.time_threshold
+            time_remaining = (next_allowed_time - current_time).total_seconds()
+            print(f"Warning: {infilename} was logged less than {self.time_threshold} s ago. Next allowed logging time in {time_remaining // 60:.0f} minutes.")
+
+# Usage example:
+publisher = _Publish(time_threshold=3600)
+
+# Replace the original function call with a method call on the publisher instance
+def publish(infile, where_to, ftype='html'):
+    publisher.publish(infile, where_to, ftype)
+
 
 class CumulativeArray(object):
     def __init__(self, capacity = 60, default=0., name=None):
