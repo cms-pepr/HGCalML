@@ -180,6 +180,15 @@ if not train.modelSet():
 
 #set the learning rate to 1e-2
 
+train.change_learning_rate(1e-3)
+train.trainModel(
+        nepochs=1,
+        batchsize=120000,
+        add_progbar=pre_args.no_wandb,
+        additional_callbacks=[],
+        collect_gradients = 4 #average out more gradients
+        )
+
 train.change_learning_rate(2e-4)
 train.trainModel(
         nepochs=2,
