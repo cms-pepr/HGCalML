@@ -1580,6 +1580,27 @@ class ProcessFeatures(tf.keras.layers.Layer):
             1.0,    # recHitTime -> All zeros
             1.0,    # recHitHitR -> All zeros for tracks
             ])
+    
+    def get_config(self):
+        config = {}
+        base_config = super(ProcessFeatures, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+
+    def call(self, inputs):
+        features = inputs
+        is_track = tf.cast(features[:,2:3], bool) # is True if feature is != 0 (also true for -1)
+    
+        normalized_hits = (features - self.mean_hit) / self.std_hit
+        normalized_tracks = (features - self.mean_track) / self.std_track
+        normalized = tf.where(is_track, normalized_tracks, normalized_hits)
+
+        return normalized
+    
 class ProcessFeaturesCocoa(ProcessFeatures):
     def __init__(self,
                  **kwargs):
@@ -1633,29 +1654,6 @@ class ProcessFeaturesCocoa(ProcessFeatures):
             1.0,    # recHitTime -> All zeros
             1.0,    # recHitHitR -> All zeros for tracks
             ])
-
-
-    
-    def get_config(self):
-        config = {}
-        base_config = super(ProcessFeatures, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-    
-
-    def compute_output_shape(self, input_shape):
-        return input_shape
-
-
-    def call(self, inputs):
-        features = inputs
-        is_track = tf.cast(features[:,2:3], bool) # is True if feature is != 0 (also true for -1)
-    
-        normalized_hits = (features - self.mean_hit) / self.std_hit
-        normalized_tracks = (features - self.mean_track) / self.std_track
-        normalized = tf.where(is_track, normalized_tracks, normalized_hits)
-
-        return normalized
-
 
 
 

@@ -77,7 +77,7 @@ LOSS_OPTIONS = {
     "classification_loss_weight": 0.01,
     "position_loss_weight": 0.0,
     "timing_loss_weight": 0.0,
-    "q_min": 0.8,
+    "q_min": 0.95,
     "use_average_cc_pos": 0.9999,
 }
 BATCHNORM_OPTIONS = {
@@ -94,25 +94,25 @@ loss_layer = LLExtendedObjectCondensation3
 
 TRAINING = {
   "stage_1": {
-    "batch_size": 5000,
+    "batch_size": 10000,
     "learning_rate": 0.002,
     "epochs": 5,
     },
 
   "stage_2": {
-    "batch_size": 5000,
+    "batch_size": 10000,
     "learning_rate": 0.0002,
     "epochs": 10,
     },
 
   "stage_3": {
-    "batch_size": 5000,
+    "batch_size": 10000,
     "learning_rate": 0.00002,
     "epochs": 20,
     },
   
   "stage_4": {
-    "batch_size": 5000,
+    "batch_size": 10000,
     "learning_rate": 0.00001,
     "epochs": 40,
     },
@@ -385,6 +385,7 @@ if not train.modelSet():
     train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
+    train.saveModel(train.outputDir+'/model_init.h5')
 
 ###############################################################################
 ### Callbacks #################################################################

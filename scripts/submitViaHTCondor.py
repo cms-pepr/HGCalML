@@ -123,7 +123,7 @@ else:
 #Setup the sub file
 sub_temp=f'''#!/bin/bash
 Universe = docker
-docker_image = cernml4reco/deepjetcore4:06bc79b
+docker_image = cernml4reco/deepjetcore4:abc9aee
 accounting_group = cms.jet
 
 requirements =(TARGET.CloudSite=="topas")
@@ -204,6 +204,10 @@ rm HGCalML.tar.gz
 rm -r HGCalML
 rm *.djctd
 rm *.djcdc
+
+rm -r temp
+rm -r var
+rm -r wandb
 
 ls -l
 '''
