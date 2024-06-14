@@ -2764,7 +2764,7 @@ def GravNet_plus_TEQMP(name,
                                           scale=space_reg_strength)([gndist, cprime, gnnidx])
     
     gncoords = PlotCoordinates(
-            plot_every=plot_debug_every,
+            plot_every= 4 * plot_debug_every,
             outdir = debug_outdir,
             name=f'gncoords_{name}',
             publish = debug_publish
