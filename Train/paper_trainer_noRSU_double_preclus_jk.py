@@ -177,7 +177,7 @@ train.applyFunctionToAllModels(fix_batchnorm)
 train.compileModel(learningrate=1e-3)
 print('entering second training phase')
 
-train.change_learning_rate(1e-4)
+train.change_learning_rate(3e-5)
 train.trainModel(
         nepochs=20,
         batchsize=120000,

@@ -32,7 +32,8 @@ class MLBase(LayerWithMetrics):
         pass
     
     def call(self, inputs):
-        self.metrics_call(inputs)
+        if self.active:
+            self.metrics_call(inputs)
         return inputs[0]
 
 class SimpleReductionMetrics(MLBase):
@@ -168,10 +169,13 @@ class MLReductionMetrics(MLBase):
     
     def metrics_call(self, inputs):
         istrack = None
+        other_feat = None
         if len(inputs)==5:
             gsel,tidx,ten,rs,srs = inputs
         if len(inputs)==6:
             gsel,tidx,ten,istrack,rs,srs = inputs
+        if len(inputs)==7:
+            gsel,tidx,ten,istrack,other_feat,rs,srs = inputs
         #tf.assert_equal(tidx.shape,ten.shape)#safety
         
         alltruthcount = None
@@ -213,6 +217,16 @@ class MLReductionMetrics(MLBase):
         lostfraction = 1. - tf.cast(seltruthcount,dtype='float32')/(tf.cast(alltruthcount,dtype='float32'))
         
         #done with fractions
+        # create the indices of one unique hit (first dimension) entry for each object (defined by tidx or unique ten)
+        # that is lost after applying the selection gsel
+        def create_lost_indices(tidx,ten,gsel):
+            no_noise_sel = tidx[:,0]>=0
+            ue,_,c = tf.unique_with_counts(tf.boolean_mask(ten, no_noise_sel)[:,0])
+            #ue = ue[c>3] #don't count <4 hit showers
+            no_noise_sel = stidx[:,0]>=0
+            uesel,_,c = tf.unique_with_counts(tf.boolean_mask(sten, no_noise_sel)[:,0])
+
+            
         
         #for simplicity assume that no energy is an exact duplicate (definitely good enough here)
         no_noise_sel = tidx[:,0]>=0
@@ -234,6 +248,7 @@ class MLReductionMetrics(MLBase):
         
         l_ema = tf.reduce_max(lostenergies)
         l_ema = tf.where(tf.math.is_finite(l_ema),l_ema, 0.)
+
 
         reduced_to_fraction = tf.cast(srs[-1],dtype='float32')/tf.cast(rs[-1],dtype='float32')
 

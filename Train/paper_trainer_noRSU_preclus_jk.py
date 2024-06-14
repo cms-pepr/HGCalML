@@ -114,6 +114,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                             record_metrics = True,
                             produce_output = check_keys)
     
+    out.update(graph) #to save it all
+    
     ###########################################################################
     ### Just some debug out ###################################################
     ###########################################################################
@@ -162,6 +164,7 @@ if not train.modelSet():
     train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
+    train.saveModel(train.outputDir+'/model_init.h5')
 
 ###############################################################################
 ### Callbacks #################################################################

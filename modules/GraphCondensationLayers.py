@@ -1365,6 +1365,8 @@ class MLGraphCondensationMetrics(MLReductionMetrics):
         super(MLGraphCondensationMetrics, self).__init__(**kwargs)
     def call(self, graph_transition : GraphCondensation, t_idx, t_energy, is_track = None):
         gt = graph_transition
+        if not self.active:
+            return gt
         if is_track is None:
             self.metrics_call([gt['sel_idx_up'], t_idx, t_energy, gt['rs_down'], gt['rs_up']])
         else:
@@ -1452,16 +1454,98 @@ def point_scatter(x, trans : list, dense_nodes = 64, name = ""):
 
 
 
+import numpy as np
+def _get_first_occurrence_mask(a, b):
+    '''
+    Returns a boolean mask (w.r.t. a) having a true value only for the first occurrence of each unique element in b.
+    Input b is supposed to be unique already, but not necessarily ordered.
+    b is a subset of a, and is shorter. b is not sorted. a is also not sorted.
+    '''
+    # Sort a and get the sorting indices
+    sort_indices = tf.argsort(a, axis=-1)
+    sorted_a = tf.gather(a, sort_indices)
+    
+    # Search for b in sorted_a
+    sorted_idx = tf.searchsorted(sorted_a, b)
+    
+    # Get the first occurrence indices in the original array a
+    first_occurrence_indices = tf.gather(sort_indices, sorted_idx)
+    
+    # Create the mask
+    mask = tf.zeros_like(a, dtype=tf.bool)
+    mask = tf.tensor_scatter_nd_update(mask, tf.expand_dims(first_occurrence_indices, 1), tf.ones_like(first_occurrence_indices, dtype=tf.bool))
+    
+    return mask
 
 
+def get_unique_masks(t_idx, sel):
+    if len(t_idx.shape) > 1:
+        t_idx = t_idx[:, 0]
+    if len(sel.shape) > 1:
+        sel = sel[:, 0]
 
+    any_unique_t_idx = _get_first_occurrence_mask(t_idx, tf.unique(t_idx).y)
+    
+    selected_t_idx = tf.gather(t_idx, sel)
+    unique_selected_t_idx = tf.unique(selected_t_idx).y
+    unique_selected_mask = _get_first_occurrence_mask(t_idx, unique_selected_t_idx)
 
+    #same for not_sel -> lost
+    unique_t_idx = tf.unique(t_idx).y
+    unique_lost_t_idx = tf.sets.difference(unique_t_idx[tf.newaxis,...], unique_selected_t_idx[tf.newaxis,...]).values
+    #unique_lost_t_idx = tf.unique(lost_t_idx).y
+    unique_lost_mask = _get_first_occurrence_mask(t_idx, unique_lost_t_idx)
 
+    return unique_selected_mask, unique_lost_mask, any_unique_t_idx
 
+def test_get_lost_objects_mask():
+    V = 12
 
+    # Example arrays (replace with your actual data)
+    t_idx = tf.constant(
+        [0, 0, 1, 1, 6, 6, 3, 3, 4, -1, -1, -1], dtype=tf.int32
+    )  # Truth index
 
+    sel = tf.constant([1, 0, 4, 5, 8], dtype=tf.int32)  # Selected points
 
+    print('\n\n\n')
+    print('t_idx', t_idx.numpy())
+    print('selected t_idx', tf.gather(t_idx, sel).numpy())
+    print('expected lost object t_idx', [1, 3, -1])
+    print('expected selected object t_idx', [0, 6, 4])
+    # Same random property where t_idx is the same
+    t_property = tf.cast(t_idx, tf.float32)
 
+    unique_selected_mask, unique_lost_mask,_ = get_unique_masks(t_idx, sel)
+
+    print('unique sel mask', unique_selected_mask.numpy())
+    print('unique_lost_mask', unique_lost_mask.numpy())
+
+    unique_selected_properties = tf.boolean_mask(t_property, unique_selected_mask)
+    unique_lost_properties = tf.boolean_mask(t_property, unique_lost_mask)
+
+    # Evaluate the results
+    print("Unique selected properties per object:", unique_selected_properties.numpy())
+    print("Unique lost properties per object:", unique_lost_properties.numpy())
+
+#test_get_lost_objects_mask()
+
+# create a large scale test with 100000 points
+def test_get_lost_objects_mask_large_scale():
+    V = 100000
+
+    # Example arrays (replace with your actual data)
+    t_idx = tf.random.uniform((V,), minval=-1, maxval=100, dtype=tf.int32)  # Truth index
+    sel = tf.random.uniform((V // 1000,), minval=0, maxval=V, dtype=tf.int32)  # Selected points
+
+    unique_selected_mask, unique_lost_mask = get_unique_masks(t_idx, sel)
+
+    unique_selected_properties = tf.boolean_mask(t_idx, unique_selected_mask)
+    unique_lost_properties = tf.boolean_mask(t_idx, unique_lost_mask)
+
+    # Evaluate the results
+    print("Unique selected properties per object:", unique_selected_properties.numpy())
+    print("Unique lost properties per object:", unique_lost_properties.numpy())
 
     
     

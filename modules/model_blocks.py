@@ -2626,6 +2626,7 @@ def mini_tree_create(
     else:
         lcc_input = [coords, t_idx,  score, rs ]
 
+    # right now this would scale with score (makes sense); could it be useful to cut that gradient?
     coords = LLClusterCoordinates(
                 record_metrics = record_metrics,
                 active=trainable,
@@ -2803,9 +2804,11 @@ def tree_condensation_block(pre_processed,
     energy = pre_processed['rechit_energy']
     t_idx = pre_processed['t_idx']
     x = pre_processed['features']
-
-    xd = Dense(32, activation='tanh', name=name+'_enc', trainable = trainable)(x)
-    x = Concatenate()([prime_coords,xd,x])
+    
+    #norm the inputs with scaled..2
+    x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm_0', trainable = trainable,learn=True)(x)
+    x = Dense(2*x.shape[1], activation='tanh', name=name+'_enc', trainable = trainable)(x) #keeping this in check is useful
+    x = Concatenate()([prime_coords,x])
 
     xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
                                    gn_nodes, #nodes
@@ -2816,7 +2819,12 @@ def tree_condensation_block(pre_processed,
                                    trainable = trainable)
     
     x = Concatenate()([xgn, x])
+    x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm_1', trainable = trainable,learn=True)(x)
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
+    gn_coords = Add()([gn_coords, Dense(gn_coords.shape[1], 
+                                         name=name+'_coords_add', use_bias = False, 
+                                         activation = 'tanh', # +1 is a good scale here
+                                         trainable = trainable)(x) ] )
     pre_processed['features'] = x #pass through
     
     ud_graph = mini_tree_create(
@@ -2859,16 +2867,21 @@ def post_tree_condensation_push(
         graph,
         trainable = True,
         heads : int = 4,
+        mix_nodes = 8,
         name = 'post_tree_push'):
     '''
-    Defines a simple block to push up learnable quantities
+    Defines a simple block to push up learnable quantities.
+    The inputs x and x_mix are *before* the push up defined by the graph object.
+    The output will have dimensionality *after* the push up.
     '''
     from GraphCondensationLayers import Mix
     
     x = x_in
     xup = []
     for i in range(heads):
-        x_mix_i = Mix()(x_mix, graph)
+        x_mix_i = Dense(mix_nodes, activation='elu', trainable = trainable,
+              name = name + f'_int_mix_{i}')(x_mix)
+        x_mix_i = Mix()(x_mix_i, graph)
         #sigmoid is ok, the 'mean' takes care of what the softmax does in classic attention
         attention = Dense(graph['nidx_down'].shape[1], activation='sigmoid', trainable = trainable,
               name = name + f'_weights_{i}')(x_mix_i)
@@ -2876,8 +2889,12 @@ def post_tree_condensation_push(
         #this behaves very similar to standard attention now
         xm = PushUp(add_self=False, mode = 'mean')(x, graph, nweights = attention)
         xup.append(xm)
-
-    return Concatenate()(xup)
+    
+    if heads > 1:
+        xup = Concatenate()(xup)
+    else:
+        xup = xup[0]
+    return xup
 
 
 def tree_condensation_block2(*args, **kwargs):
@@ -2906,6 +2923,8 @@ def double_tree_condensation_block(in_dict,
     ###########################################################################
     ### Just some debug out ###################################################
     ###########################################################################
+
+    all_out = {'no_noise_idx_stage_0': graph['sel_idx_up']}
     
     in_dict['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
@@ -2920,17 +2939,17 @@ def double_tree_condensation_block(in_dict,
     ########################################################################### 
 
     x = Concatenate()([x_proc, in_dict['features']])
-    x_mix = Dense(8, activation='sigmoid', trainable = trainable,
-              name = name + '_x_mix')(x)
+    x = BatchNormalization(name = name + '_bn0', 
+                                         trainable = trainable)(x) #this might be crucial after the summing
        
     xadd = post_tree_condensation_push(x, #pushed (with attention)
-                                       x_mix, # used to mix and build attention
+                                       x, # used to mix and build attention
                                        graph, 
-                                       heads = push_heads, 
+                                       # take default here: heads = push_heads, 
                                        name = name+'_push',
                                        trainable = trainable) #this gets the original vector, adds more features to be pushed
+    
     out['features'] = Concatenate()( [out['features'], xadd] )  
-
     out['features'] = BatchNormalization(name = name + '_bn1', 
                                          trainable = trainable)(out['features']) #this might be crucial after the summing
 
@@ -2955,8 +2974,10 @@ def double_tree_condensation_block(in_dict,
 
     # create indices that were removed for tracking
     survived_both_stages = SelectUp()(graph['sel_idx_up'], graph2) 
+    all_out['no_noise_idx_stage_1'] = graph2['sel_idx_up']
+    all_out['survived_both_stages'] = survived_both_stages
 
-    return out2, graph2, survived_both_stages
+    return out2, graph2, all_out
     
 
 def tree_cleaning_block(pre_processed, # the full dictionary so that the truth can be fed through
