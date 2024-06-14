@@ -36,6 +36,7 @@ from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
 from Layers import Multi
 from Layers import ShiftDistance
+from Layers import ScaledGooeyBatchNorm2
 # from Layers import LLRegulariseGravNetSpace
 from Layers import SplitOffTracks, ConcatRaggedTensors
 from Regularizers import AverageDistanceRegularizer
@@ -79,7 +80,7 @@ else:
 #parses the rest of the arguments
 train = training_base_hgcal.HGCalTraining(parser=parser)
 
-PLOT_FREQUENCY = 600
+PLOT_FREQUENCY = 4000 # a bit more than one every hour
 
 ###############################################################################
 ### Define Model ##############################################################
@@ -112,7 +113,18 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     orig_input = td.interpretAllModelInputs(Inputs)
     pre_processed = condition_input(orig_input, no_scaling=True, no_prime=False, new_prime=True)
     
-    pre_processed['features'] = ProcessFeatures()(pre_processed['features'])    
+    pre_processed['features'] = ProcessFeatures()(pre_processed['features'])  
+
+    #plot the prime coordinates for debugging
+    pre_processed['prime_coords'] = PlotCoordinates(
+        plot_every=plot_debug_every,
+        outdir=debug_outdir,
+        publish = 'wandb',
+        name='input_coords',
+        )([pre_processed['prime_coords'], 
+           pre_processed['rechit_energy'], 
+           pre_processed['t_idx'], 
+           pre_processed['row_splits']])  
 
     ###########################################################################
     ### Model definition ######################################################
@@ -121,7 +133,19 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     out, graph, sels = double_tree_condensation_block(pre_processed,
                              debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
                              trainable = True,
-                             record_metrics = True)
+                             record_metrics = True,
+                             debug_publish = 'wandb')
+    
+    #plot the prime coordinates for debugging
+    out['prime_coords'] = PlotCoordinates(
+        plot_every=plot_debug_every,
+        outdir=debug_outdir,
+        publish = 'wandb',
+        name='output_coords',
+        )([out['prime_coords'], 
+           out['rechit_energy'], 
+           out['t_idx'], 
+           out['row_splits']])  
     
     graph.update(out) #just so everything is connected
     return Model(inputs=Inputs, outputs=graph)
@@ -169,6 +193,8 @@ train.trainModel(
 def fix_batchnorm(m):
     for layer in m.layers:
         if isinstance(layer, BatchNormalization):
+            layer.trainable = False
+        if isinstance(layer, ScaledGooeyBatchNorm2):
             layer.trainable = False
 
 #apply to all models
