@@ -2970,6 +2970,7 @@ def double_tree_condensation_block(in_dict,
     out['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
                      name = 'double_cond_second_stage',
+                     publish = debug_publish,
                      outdir= debug_outdir )(out['t_energy'], out['t_idx'], graph2)
 
     #make sure the above does not get optimised away
@@ -2988,7 +2989,7 @@ def tree_cleaning_block(pre_processed, # the full dictionary so that the truth c
                         score, # the score for the cleaning (sigmoid activated!)
                         score_threshold = 0.5, # high threshold -> more cleaning; between 0 and 1
                         name = 'tree_cleaning_block',
-                        trainable = False 
+                        trainable = False
                         ):
     '''
     Contains the loss necessary for the tree cleaning
