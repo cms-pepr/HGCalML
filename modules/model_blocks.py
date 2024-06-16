@@ -2795,6 +2795,7 @@ def tree_condensation_block(pre_processed,
                              record_metrics = False,
                              produce_output = True,
                              always_record_reduction = True,
+                             decouple_coords = False,
                              
                              enc_nodes = 32,
                              gn_nodes = 16,
@@ -2828,6 +2829,8 @@ def tree_condensation_block(pre_processed,
     
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
     pre_processed['features'] = x #pass through
+    if decouple_coords:
+        gn_coords = Dense(gn_coords.shape[1], name=name+'_coords', trainable = trainable, use_bias=False)(x)
     
     ud_graph = mini_tree_create(
         score,
@@ -2915,8 +2918,24 @@ def double_tree_condensation_block(in_dict,
                              name = 'double_tree_condensation_block',
                              trainable = False,
                              record_metrics = False,
+                             decouple_coords = False,
                              debug_publish = None):
-
+    
+    if decouple_coords: #run one single gravnet to gather info about best coordinates
+        xgn = Concatenate()([in_dict['prime_coords'], in_dict['features']])
+        rs = in_dict['row_splits']
+        xgn, *_ = RaggedGravNet(
+                name = "GravNet_pre_"+name, # 76929, 42625, 42625
+            n_neighbours=16,
+            n_dimensions=3,
+            n_filters=16,
+            n_propagate=16,
+            coord_initialiser_noise=1e-3,
+            feature_activation=None,#allows the possibility for this to learn to be translation equivariant
+            trainable = trainable,
+            )([xgn, rs])
+        in_dict['features'] = Concatenate()([xgn, in_dict['features']])
+        
     [out, graph], x_proc = tree_condensation_block(in_dict, 
                                   
                             #the latter overwrites the default arguments such that it is in training mode
@@ -2924,6 +2943,7 @@ def double_tree_condensation_block(in_dict,
                             trainable = trainable,
                             record_metrics = record_metrics,
                             debug_publish = debug_publish,
+                            decouple_coords = decouple_coords,
                             produce_output = True)
     
     ###########################################################################
@@ -2964,6 +2984,7 @@ def double_tree_condensation_block(in_dict,
                                           debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
                                           debug_publish = debug_publish,
                                           trainable = trainable,
+                                          decouple_coords = decouple_coords,
                                           record_metrics = record_metrics)
     
     
