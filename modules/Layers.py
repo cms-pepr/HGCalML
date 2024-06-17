@@ -312,6 +312,7 @@ from LossLayers import LossLayerBase, LLBasicObjectCondensation, LLFullObjectCon
 from LossLayers import LLFullObjectCondensationUncertainty, LLFullObjectCondensationID
 from LossLayers import LLExtendedObjectCondensation, LLExtendedObjectCondensation2
 from LossLayers import LLExtendedObjectCondensation3, LLExtendedObjectCondensation4
+from LossLayers import LLExtendedObjectCondensation5
 from LossLayers import LLEdgeClassifier, AmbiguousTruthToNoiseSpectator, LLGoodNeighbourHood, LLKnnPushPullObjectCondensation
 from LossLayers import LLEnergySums,LLKnnSimpleObjectCondensation, LLPushTracks, LLFullOCThresholds, LLLocalEnergyConservation
 from LossLayers import LLRegulariseGravNetSpace, LLSpectatorPenalty
@@ -354,6 +355,7 @@ global_layers_list['LLExtendedObjectCondensation']=LLExtendedObjectCondensation
 global_layers_list['LLExtendedObjectCondensation2']=LLExtendedObjectCondensation2
 global_layers_list['LLExtendedObjectCondensation3']=LLExtendedObjectCondensation3
 global_layers_list['LLExtendedObjectCondensation4']=LLExtendedObjectCondensation4
+global_layers_list['LLExtendedObjectCondensation5']=LLExtendedObjectCondensation5
 global_layers_list['LLFullObjectCondensationID']=LLFullObjectCondensationID
 global_layers_list['LLGraphCondOCLoss']=LLGraphCondOCLoss
 global_layers_list['LLPFCondensates']=LLPFCondensates
