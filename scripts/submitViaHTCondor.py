@@ -205,7 +205,7 @@ rm -r HGCalML
 rm *.djctd
 rm *.djcdc
 
-rm -r temp
+rm -r tmp
 rm -r var
 rm -r wandb
 
