@@ -2630,7 +2630,7 @@ def mini_tree_create(
     coords = LLClusterCoordinates(
                 record_metrics = record_metrics,
                 active=trainable,
-                scale = 1.,
+                scale = .1, #scale this down, this will not be the main focus
                 ignore_noise = True, #this is filtered by the graph condensation anyway
                 print_batch_time=False,
                 specweight_to_weight = True,
@@ -2657,7 +2657,7 @@ def mini_tree_create(
 
     trans_a = MLGraphCondensationMetrics(
         name = name + '_metrics',
-        record_metrics = record_metrics or always_record_reduction,
+        record_metrics = record_metrics or always_record_reduction
         )(trans_a, t_idx, t_energy)
     
     return trans_a
@@ -2737,7 +2737,8 @@ def GravNet_plus_TEQMP(name,
                        n_neighbours,
                        debug_outdir, 
                        plot_debug_every, 
-                       space_reg_strength=1e-9,
+                       debug_publish = None,
+                       space_reg_strength=-1.,
                        n_gn_coords = 4,
                        teq_nodes = [64, 32, 16, 8],
                        return_coords = False,
@@ -2763,9 +2764,10 @@ def GravNet_plus_TEQMP(name,
                                           scale=space_reg_strength)([gndist, cprime, gnnidx])
     
     gncoords = PlotCoordinates(
-            plot_every=plot_debug_every,
+            plot_every= 4 * plot_debug_every,
             outdir = debug_outdir,
-            name=f'gncoords_{name}'
+            name=f'gncoords_{name}',
+            publish = debug_publish
             )([gncoords, hit_energy, t_idx, rs])
     
     x = DummyLayer()([x, gncoords]) #just so the branch is not optimised away, anyway used further down
@@ -2787,16 +2789,21 @@ def GravNet_plus_TEQMP(name,
     return Concatenate()([xgn, x])
 
 def tree_condensation_block(pre_processed,
-                             debug_outdir='', plot_debug_every=-1,
+                             debug_outdir='', plot_debug_every=-1, debug_publish = None,
                              name = 'tree_condensation_block',
                              trainable = False,
                              record_metrics = False,
                              produce_output = True,
                              always_record_reduction = True,
+                             decouple_coords = False,
                              
+                             enc_nodes = 32,
                              gn_nodes = 16,
-                             gn_neighbours = 16,
-                             teq_nodes = [16,16]):
+                             gn_neighbours = 12,
+                             teq_nodes = [32,16],
+                             
+                             edge_dense = [32,16],
+                             edge_pre_nodes = 16 ):
 
     prime_coords = pre_processed['prime_coords']
     is_track = pre_processed['is_track']
@@ -2805,27 +2812,25 @@ def tree_condensation_block(pre_processed,
     t_idx = pre_processed['t_idx']
     x = pre_processed['features']
     
-    #norm the inputs with scaled..2
-    x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm_0', trainable = trainable,learn=True)(x)
-    x = Dense(2*x.shape[1], activation='tanh', name=name+'_enc', trainable = trainable)(x) #keeping this in check is useful
+     #keeping this in check is useful, therefore tanh is actually a good choice
+    x = Dense(enc_nodes, activation='tanh', name=name+'_enc', trainable = trainable)(x)
     x = Concatenate()([prime_coords,x])
 
     xgn, gn_coords = GravNet_plus_TEQMP(name + '_net', x, prime_coords, energy, t_idx, rs, 
                                    gn_nodes, #nodes
                                    gn_neighbours, #neighbours
                                    debug_outdir, plot_debug_every,
+                                   debug_publish = debug_publish,
                                    teq_nodes = teq_nodes,
                                    return_coords = True, 
                                    trainable = trainable)
     
     x = Concatenate()([xgn, x])
-    x = ScaledGooeyBatchNorm2(name = name+'_enc_batchnorm_1', trainable = trainable,learn=True)(x)
+    
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
-    gn_coords = Add()([gn_coords, Dense(gn_coords.shape[1], 
-                                         name=name+'_coords_add', use_bias = False, 
-                                         activation = 'tanh', # +1 is a good scale here
-                                         trainable = trainable)(x) ] )
     pre_processed['features'] = x #pass through
+    if decouple_coords:
+        gn_coords = Dense(gn_coords.shape[1], name=name+'_coords', trainable = trainable, use_bias=False)(x)
     
     ud_graph = mini_tree_create(
         score,
@@ -2850,13 +2855,13 @@ def tree_condensation_block(pre_processed,
     out = mini_tree_clustering(
         pre_processed,
         ud_graph,
-        edge_dense = [32,16],
-        edge_pre_nodes = 16,
+        edge_dense = edge_dense,
+        edge_pre_nodes = edge_pre_nodes,
 
         record_metrics = record_metrics,
         trainable = trainable,
         name = name+'_tree_clustering',
-        produce_output = produce_output,
+        produce_output = produce_output
         )
     
     return out, x
@@ -2900,9 +2905,12 @@ def post_tree_condensation_push(
 def tree_condensation_block2(*args, **kwargs):
     #just define some defaults here
     return tree_condensation_block(*args, **kwargs,
+                                   enc_nodes = 128,
                                    gn_nodes = 64,
                                    gn_neighbours = 128,
                                    teq_nodes = [64,64],
+                                   edge_dense = [64,32],
+                                   edge_pre_nodes = 32,
                                    name = 'tree_condensation_block2')
 
 def double_tree_condensation_block(in_dict,
@@ -2910,14 +2918,32 @@ def double_tree_condensation_block(in_dict,
                              name = 'double_tree_condensation_block',
                              trainable = False,
                              record_metrics = False,
-                             push_heads : int = 4):
-
+                             decouple_coords = False,
+                             debug_publish = None):
+    
+    if decouple_coords: #run one single gravnet to gather info about best coordinates
+        xgn = Concatenate()([in_dict['prime_coords'], in_dict['features']])
+        rs = in_dict['row_splits']
+        xgn, *_ = RaggedGravNet(
+                name = "GravNet_pre_"+name, # 76929, 42625, 42625
+            n_neighbours=16,
+            n_dimensions=3,
+            n_filters=16,
+            n_propagate=16,
+            coord_initialiser_noise=1e-3,
+            feature_activation=None,#allows the possibility for this to learn to be translation equivariant
+            trainable = trainable,
+            )([xgn, rs])
+        in_dict['features'] = Concatenate()([xgn, in_dict['features']])
+        
     [out, graph], x_proc = tree_condensation_block(in_dict, 
                                   
                             #the latter overwrites the default arguments such that it is in training mode
                             debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
                             trainable = trainable,
                             record_metrics = record_metrics,
+                            debug_publish = debug_publish,
+                            decouple_coords = decouple_coords,
                             produce_output = True)
     
     ###########################################################################
@@ -2929,6 +2955,7 @@ def double_tree_condensation_block(in_dict,
     in_dict['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
                      name = 'double_cond_first_stage',
+                            publish = debug_publish,
                      outdir= debug_outdir )(in_dict['t_energy'], in_dict['t_idx'], graph)
     
     #just to keep the plot in the loop
@@ -2955,7 +2982,9 @@ def double_tree_condensation_block(in_dict,
 
     [out2, graph2], x_proc2 = tree_condensation_block2(out, 
                                           debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
+                                          debug_publish = debug_publish,
                                           trainable = trainable,
+                                          decouple_coords = decouple_coords,
                                           record_metrics = record_metrics)
     
     
@@ -2967,6 +2996,7 @@ def double_tree_condensation_block(in_dict,
     out['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
                      name = 'double_cond_second_stage',
+                     publish = debug_publish,
                      outdir= debug_outdir )(out['t_energy'], out['t_idx'], graph2)
 
     #make sure the above does not get optimised away
@@ -2985,7 +3015,7 @@ def tree_cleaning_block(pre_processed, # the full dictionary so that the truth c
                         score, # the score for the cleaning (sigmoid activated!)
                         score_threshold = 0.5, # high threshold -> more cleaning; between 0 and 1
                         name = 'tree_cleaning_block',
-                        trainable = False 
+                        trainable = False
                         ):
     '''
     Contains the loss necessary for the tree cleaning
