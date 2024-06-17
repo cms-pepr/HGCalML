@@ -2823,7 +2823,8 @@ def tree_condensation_block(pre_processed,
                                    debug_publish = debug_publish,
                                    teq_nodes = teq_nodes,
                                    return_coords = True, 
-                                   trainable = trainable)
+                                   trainable = trainable,
+                                   space_reg_strength = 1e-6 if decouple_coords else -1.,)
     
     x = Concatenate()([xgn, x])
     
