@@ -955,9 +955,12 @@ class LLGraphCondensationScore(LossLayerBase):
        returns truth labels for the K neighbours of each hit V x K x 1
        and a loss mask (V x 1)
        '''
-    
+       
+       # treat low energy hits as noise
+       t_idx = tf.where(t_energy > self.low_energy_cut, t_idx, -1) 
+
        n_t_idx = select(nidx, t_idx, -2) # V x K x 1
-    
+
        # create the truth label -> V x K here, not V x 1!
        # needs to be w.r.t. each hit, not the max score one to not miss an object; mask noise at the end
        is_same = t_idx[...,tf.newaxis] == n_t_idx 
@@ -986,7 +989,6 @@ class LLGraphCondensationScore(LossLayerBase):
        y = tf.where(max_mask, y_inv, y)
        # add low energy cut
        n_t_energy = select(nidx, t_energy, 0.) # V x K x 1
-       y = tf.where(n_t_energy > self.low_energy_cut, y, 0.) # keep target score low also for low energy objects
 
        #set y for noise to zero
        y = tf.where(n_t_idx < 0, 0., y)
