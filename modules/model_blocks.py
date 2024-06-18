@@ -2799,8 +2799,8 @@ def tree_condensation_block(pre_processed,
                              
                              enc_nodes = 32,
                              gn_nodes = 16,
-                             gn_neighbours = 12,
-                             teq_nodes = [32,16],
+                             gn_neighbours = 16,
+                             teq_nodes = [16,16],
                              
                              edge_dense = [32,16],
                              edge_pre_nodes = 16 ):
@@ -2824,7 +2824,7 @@ def tree_condensation_block(pre_processed,
                                    teq_nodes = teq_nodes,
                                    return_coords = True, 
                                    trainable = trainable,
-                                   space_reg_strength = 1e-6 if decouple_coords else -1.,)
+                                   space_reg_strength = 1e-6 )
     
     x = Concatenate()([xgn, x])
     
@@ -2920,22 +2920,39 @@ def double_tree_condensation_block(in_dict,
                              trainable = False,
                              record_metrics = False,
                              decouple_coords = False,
+                             pre_gravnet = True,
                              debug_publish = None):
     
-    if decouple_coords: #run one single gravnet to gather info about best coordinates
+    if pre_gravnet: #run one single gravnet to gather info about best coordinates
+
         xgn = Concatenate()([in_dict['prime_coords'], in_dict['features']])
-        rs = in_dict['row_splits']
-        xgn, *_ = RaggedGravNet(
+        
+        xgn,  gncoords, gnnidx, gndist = RaggedGravNet(
                 name = "GravNet_pre_"+name, # 76929, 42625, 42625
             n_neighbours=16,
             n_dimensions=3,
             n_filters=16,
             n_propagate=16,
-            coord_initialiser_noise=1e-3,
+            coord_initialiser_noise=1e-8,#start with physical coordinates only
             feature_activation=None,#allows the possibility for this to learn to be translation equivariant
             trainable = trainable,
-            )([xgn, rs])
-        in_dict['features'] = Concatenate()([xgn, in_dict['features']])
+            )([xgn, in_dict['row_splits']])
+        #gndist = LLRegulariseGravNetSpace(name=f'pre_gravnet_coords_reg_{name}' , 
+        #                                  record_metrics=True,
+        #                                  scale=1e-9)([gndist, in_dict['prime_coords'], gnnidx])
+        
+        gndist = StopGradient()(gndist)
+        in_dict['features'] = Concatenate()([xgn, in_dict['features'], gndist])
+
+        ### the rest in this if statement is just debug plotting
+        gncoords = PlotCoordinates(
+            plot_every= 4 * plot_debug_every,
+            outdir = debug_outdir,
+            name=f'pre_gncoords_{name}',
+            publish = debug_publish
+            )([gncoords, in_dict['rechit_energy'], in_dict['t_idx'], in_dict['row_splits']])
+        in_dict['features'] = DummyLayer()([in_dict['features'], gncoords]) #just so the branch is not optimised away, anyway used further down
+        
         
     [out, graph], x_proc = tree_condensation_block(in_dict, 
                                   
