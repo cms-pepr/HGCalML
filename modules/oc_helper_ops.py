@@ -28,7 +28,7 @@ m_not is the usual K x V dimension (for now) and can just be multiplied
 
 _op = tf.load_op_library('oc_helper_m_indices.so')
 
-def CreateMidx(truth_idxs, calc_m_not=False):
+def CreateMidx(truth_idxs, rs, calc_m_not=False):
     '''
    /*
  * Takes as helper input
@@ -50,8 +50,14 @@ REGISTER_OP("MIndicesOpFunctor")
 
     '''
     
-    #only consider non-noise
-    c_truth_idxs = truth_idxs[truth_idxs>=0]
+    # Repeat each rs according to the differences to offset the indices
+    differences = tf.concat([tf.math.abs(rs[1:] - rs[:-1]), [0]], axis=0)
+    repeated_rs = tf.reshape(tf.repeat(rs, differences),(-1,1))
+    offset_truth_idxs = truth_idxs + repeated_rs
+    
+    offset_truth_idxs = tf.where(truth_idxs<0, -1, offset_truth_idxs)
+    
+    c_truth_idxs= offset_truth_idxs[offset_truth_idxs>=0]
     unique_idxs, _, cperunique = tf.unique_with_counts(c_truth_idxs)
     
     nmax_per_unique = tf.reduce_max(cperunique)
@@ -60,11 +66,15 @@ REGISTER_OP("MIndicesOpFunctor")
     if nmax_per_unique.numpy() < 1:
         return None, None, None
 
+    nmax_in_rs = tf.reduce_max(rs[1:]-rs[:-1])
+    
     sel_dxs, m_not = _op.MIndices( 
         calc_m_not=calc_m_not,
         asso_idxs = truth_idxs,
         unique_idxs = unique_idxs,
-        nmax_per_unique = nmax_per_unique
+        nmax_per_unique = nmax_per_unique,
+        rs = rs,
+        nmax_in_rs = nmax_in_rs
         )
     
     return sel_dxs, tf.expand_dims(m_not,axis=2), tf.expand_dims(cperunique,axis=1) #just some conventions

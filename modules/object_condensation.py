@@ -3,7 +3,7 @@
 import tensorflow as tf
 from oc_helper_ops import CreateMidx, SelectWithDefault
 from binned_select_knn_op import BinnedSelectKnn
-
+import time
 
 
 def huber(x, d):
@@ -118,8 +118,8 @@ class Basic_OC_per_sample(object):
         return ak * (1. - fraction_wrt_alpha) + fraction_wrt_alpha * wvk
     
     
-    def create_Ms(self, truth_idx):
-        self.Msel, self.Mnot, _ = CreateMidx(truth_idx, calc_m_not=True)
+    def create_Ms(self, truth_idx, rs):
+        self.Msel, self.Mnot, _ = CreateMidx(truth_idx, rs, calc_m_not=True)
     
     
     def set_input(self, 
@@ -128,6 +128,7 @@ class Basic_OC_per_sample(object):
                          d,
                          pll,
                          truth_idx,
+                         rs,
                          object_weight,
                          is_spectator_weight,
                          calc_Ms=True,
@@ -153,7 +154,7 @@ class Basic_OC_per_sample(object):
         self.q_v = tf.where(truth_idx < 0, noise_qmin, self.q_v) # set noise qmin
         
         if calc_Ms:
-            self.create_Ms(truth_idx)
+            self.create_Ms(truth_idx, rs=rs)
         if self.Msel is None:
             self.valid=False
             return
@@ -677,7 +678,7 @@ class GraphCond_OC_per_sample(Basic_OC_per_sample):
                          ):
         
         #replace beta with per-object normalised value
-        self.create_Ms(truth_idx)
+        self.create_Ms(truth_idx, rs=rs)
         beta_max = tf.reduce_max(self.Mnot * tf.expand_dims(beta,axis=0),axis=1, keepdims=True)  #K x 1 x 1
         beta_max *= self.Mnot  #K x V x 1
         
@@ -710,10 +711,9 @@ class OC_loss(object):
                          truth_idx,
                          object_weight,
                          is_spectator_weight,
-                         
                          rs,
                          energies = None): #rs last
-        
+        starttime = time.time()
         tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = 6*[tf.constant(0., tf.float32)]
         #batch loop
             
@@ -721,29 +721,25 @@ class OC_loss(object):
             return tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
         batch_size = rs.shape[0] - 1
         mdict = {}
-    
-        for b in tf.range(batch_size):
-            
-            self.loss_impl.set_input( 
-                 beta[rs[b]:rs[b + 1]],
-                 x[rs[b]:rs[b + 1]],
-                 d[rs[b]:rs[b + 1]],
-                 pll[rs[b]:rs[b + 1]],
-                 truth_idx[rs[b]:rs[b + 1]],
-                 object_weight[rs[b]:rs[b + 1]],
-                 is_spectator_weight[rs[b]:rs[b + 1]]
+        self.loss_impl.set_input( 
+                 beta,
+                 x,
+                 d,
+                 pll,
+                 truth_idx,
+                 rs,
+                 object_weight,
+                 is_spectator_weight
                  )
             
-            tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = self.loss_impl.add_to_terms(
-                tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
-                )
-
-            #just last row split is good enough for metric
-            if energies is not None and b == batch_size-1: 
-                mdict = self.loss_impl.calc_metrics(energies[rs[b]:rs[b + 1]])
-
+        tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = self.loss_impl.add_to_terms(
+            tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
+            )
+        
+        mdict = self.loss_impl.calc_metrics(energies)
         bs = tf.cast(batch_size, dtype='float32') + 1e-3
         out = [a/bs for a in [tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen]]
+        print('OC loss time total:', time.time()-starttime)
         return out, mdict
 
 

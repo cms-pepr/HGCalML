@@ -22,13 +22,17 @@ __global__
 static void calc(
         const int *d_truthidx,
         const int *d_unique_idx,
+        const int *rs,
 
         int * out_idx,
-        float * m_not,
+        int * m_not,
 
         const int n_vert,
         const int n_unique,
         const int n_max_per_unique,
+        const int n_rs,
+        const int n_max_in_rs,
+
         bool calc_m_not){
 
     const int k = blockIdx.x * blockDim.x + threadIdx.x;
@@ -49,15 +53,38 @@ static void calc(
     for(int prem = puqcounter; prem < n_max_per_unique; prem++){
         out_idx[I2D(k, prem, n_max_per_unique)] = -1;
     }
+    //m_not
+    if(calc_m_not){
+        //find row for uqidx
+        int rowForUqidx = 0;
+        while(rowForUqidx<n_rs && uqidx > rs[rowForUqidx]){
+            rowForUqidx++;
+        }
+        rowForUqidx--;
 
-    //
-    if(calc_m_not ){
-        //m_not
+        
+        int placedelementscounter=0;
         for(int i_v = 0; i_v < n_vert; i_v++ ){
-            if(uqidx>=0 && d_truthidx[i_v] == uqidx)
-                m_not [I2D(k, i_v, n_vert)] = 0.;
-            else
-                m_not [I2D(k, i_v, n_vert)] = 1.;
+            //find row for i_v
+            int rowFori_v= 0;
+            while(rowFori_v<n_rs && uqidx > rs[rowFori_v]){
+                rowFori_v++;
+            }
+            rowFori_v--;
+            //compare rows
+            
+            if(rowFori_v==rowForUqidx){
+
+                //if same row, check if uqidx
+                if(uqidx>=0 && d_truthidx[i_v] != uqidx){
+                    m_not [I2D(k, placedelementscounter, n_max_in_rs)] = i_v;
+                    placedelementscounter++;
+                }
+            }
+        }
+        //fill rest with -1
+        for(int m_not_idx = placedelementscounter; m_not_idx < n_max_in_rs; m_not_idx++){
+            m_not [I2D(k, m_not_idx, n_max_in_rs)] = -1;
         }
     }
 
@@ -86,13 +113,16 @@ struct MIndicesOpFunctor<GPUDevice, dummy> {
 
             const int *d_truthidx,
             const int *d_unique_idx,
+            const int *rs,
 
             int * out_idx,
-            float * m_not,
+            int * m_not,
 
             const int n_vert,
             const int n_unique,
             const int n_max_per_unique,
+            const int n_rs,
+            const int n_max_in_rs,
 
             bool calc_m_not
 
@@ -102,6 +132,7 @@ struct MIndicesOpFunctor<GPUDevice, dummy> {
         calc<<<gb.grid(),gb.block()>>>(
                 d_truthidx,
                 d_unique_idx,
+                rs,
 
                 out_idx,
                 m_not,
@@ -109,6 +140,8 @@ struct MIndicesOpFunctor<GPUDevice, dummy> {
                 n_vert,
                 n_unique,
                 n_max_per_unique,
+                n_rs,
+                n_max_in_rs,
 
                 calc_m_not
         );
