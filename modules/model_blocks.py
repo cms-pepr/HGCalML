@@ -2782,6 +2782,7 @@ def GravNet_plus_TEQMP(name,
                  layer_norm = True,
                  activation = None, #layer norm takes care
                  sum_weight = True,
+                 # FIXME this is missing a name!!!
                  trainable = trainable)([x, gnnidx, gndist])
 
     if return_coords:
@@ -2927,13 +2928,22 @@ def double_tree_condensation_block(in_dict,
     if pre_gravnet: #run one single 'gravnet' to gather info about best coordinates; no need to learn coordinates yet so direct implementation
 
         nidx, dist = KNN(16, record_metrics=record_metrics, name='pre_knn_coords')([in_dict['prime_coords'], in_dict['row_splits']])
-        
+
         xpre = Concatenate()([in_dict['prime_coords'], in_dict['features']])
         xpre = Dense(16, activation='tanh', name='pre_enc', trainable = trainable)(xpre)
 
         xscale = Dense(1, name='pre_scale', trainable = trainable)(xpre)
         dist = LocalDistanceScaling(name='pre_scale_dist', max_scale = 10.)([dist, xscale])
-        xgn = DistanceWeightedMessagePassing([16], name='pre_dmp1', trainable = trainable)([xpre, nidx, dist])
+        if True:
+            xgn = TranslationInvariantMP([16], 
+                 layer_norm = True,
+                 activation = None, #layer norm takes care
+                 sum_weight = True,
+                 name = name+'_pre_teqmp',
+                 trainable = trainable)([xpre, nidx, dist ])
+
+        else:
+            xgn = DistanceWeightedMessagePassing([16], name=name+'_pre_dmp1', trainable = trainable)([xpre, nidx, dist])
         
         dist = StopGradient()(dist)
         in_dict['features'] = Concatenate()([xgn, in_dict['features'], dist])
