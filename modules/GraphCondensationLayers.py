@@ -956,8 +956,8 @@ class LLGraphCondensationScore(LossLayerBase):
        and a loss mask (V x 1)
        '''
        
-       # treat low energy hits as noise
-       t_idx = tf.where(t_energy > self.low_energy_cut, t_idx, -1) 
+       # do not treat low energy hits as noise, see below; *might* not push their scores down properly (to be checked but the other option is safer)
+       # t_idx = tf.where(t_energy > self.low_energy_cut, t_idx, -1) 
 
        n_t_idx = select(nidx, t_idx, -2) # V x K x 1
 
@@ -987,8 +987,9 @@ class LLGraphCondensationScore(LossLayerBase):
        max_mask = max_mask[:,0,:, tf.newaxis] # V x K x 1
        
        y = tf.where(max_mask, y_inv, y)
-       # add low energy cut
+       # add low energy cut - here, not at t_idx level otherwise this will get ignored through the loss mask
        n_t_energy = select(nidx, t_energy, 0.) # V x K x 1
+       y = tf.where(n_t_energy < self.low_energy_cut, 0., y)
 
        #set y for noise to zero
        y = tf.where(n_t_idx < 0, 0., y)
