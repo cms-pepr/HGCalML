@@ -2831,6 +2831,7 @@ def tree_condensation_block(pre_processed,
     score = Dense(1, activation='sigmoid', name=name+'_score', trainable = trainable)(x)
     pre_processed['features'] = x #pass through
     if decouple_coords:
+         #prime coordinates are passed through to here (see above)
         gn_coords = Dense(gn_coords.shape[1], name=name+'_coords', trainable = trainable, use_bias=False)(x)
     
     ud_graph = mini_tree_create(
@@ -2923,37 +2924,21 @@ def double_tree_condensation_block(in_dict,
                              pre_gravnet = True,
                              debug_publish = None):
     
-    if pre_gravnet: #run one single gravnet to gather info about best coordinates
+    if pre_gravnet: #run one single 'gravnet' to gather info about best coordinates; no need to learn coordinates yet so direct implementation
 
-        xgn = Concatenate()([in_dict['prime_coords'], in_dict['features']])
+        nidx, dist = KNN(16, record_metrics=record_metrics, name='pre_knn_coords')([in_dict['prime_coords'], in_dict['row_splits']])
         
-        xgn,  gncoords, gnnidx, gndist = RaggedGravNet(
-                name = "GravNet_pre_"+name, # 76929, 42625, 42625
-            n_neighbours=16,
-            n_dimensions=3,
-            n_filters=16,
-            n_propagate=16,
-            coord_initialiser_noise=1e-8,#start with physical coordinates only
-            feature_activation=None,#allows the possibility for this to learn to be translation equivariant
-            trainable = trainable,
-            )([xgn, in_dict['row_splits']])
-        #gndist = LLRegulariseGravNetSpace(name=f'pre_gravnet_coords_reg_{name}' , 
-        #                                  record_metrics=True,
-        #                                  scale=1e-9)([gndist, in_dict['prime_coords'], gnnidx])
-        
-        gndist = StopGradient()(gndist)
-        in_dict['features'] = Concatenate()([xgn, in_dict['features'], gndist])
+        xpre = Concatenate()([in_dict['prime_coords'], in_dict['features']])
+        xpre = Dense(16, activation='tanh', name='pre_enc', trainable = trainable)(xpre)
 
-        ### the rest in this if statement is just debug plotting
-        gncoords = PlotCoordinates(
-            plot_every= 4 * plot_debug_every,
-            outdir = debug_outdir,
-            name=f'pre_gncoords_{name}',
-            publish = debug_publish
-            )([gncoords, in_dict['rechit_energy'], in_dict['t_idx'], in_dict['row_splits']])
-        in_dict['features'] = DummyLayer()([in_dict['features'], gncoords]) #just so the branch is not optimised away, anyway used further down
+        xscale = Dense(1, name='pre_scale', trainable = trainable)(xpre)
+        dist = LocalDistanceScaling(name='pre_scale_dist', max_scale = 10.)([dist, xscale])
+        xgn = DistanceWeightedMessagePassing([16], name='pre_dmp1', trainable = trainable)([xpre, nidx, dist])
         
-        
+        dist = StopGradient()(dist)
+        in_dict['features'] = Concatenate()([xgn, in_dict['features'], dist])
+
+
     [out, graph], x_proc = tree_condensation_block(in_dict, 
                                   
                             #the latter overwrites the default arguments such that it is in training mode
