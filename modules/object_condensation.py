@@ -3,7 +3,6 @@
 import tensorflow as tf
 from oc_helper_ops import CreateMidx, SelectWithDefault
 from binned_select_knn_op import BinnedSelectKnn
-import time
 
 
 def huber(x, d):
@@ -713,7 +712,6 @@ class OC_loss(object):
                          is_spectator_weight,
                          rs,
                          energies = None): #rs last
-        starttime = time.time()
         tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = 6*[tf.constant(0., tf.float32)]
         #batch loop
             
@@ -737,9 +735,7 @@ class OC_loss(object):
             )
         
         mdict = self.loss_impl.calc_metrics(energies)
-        bs = tf.cast(batch_size, dtype='float32') + 1e-3
-        out = [a/bs for a in [tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen]]
-        print('OC loss time total:', time.time()-starttime)
+        out = [tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen]
         return out, mdict
 
 

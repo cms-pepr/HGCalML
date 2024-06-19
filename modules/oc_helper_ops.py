@@ -65,17 +65,15 @@ REGISTER_OP("MIndicesOpFunctor")
     #eager
     if nmax_per_unique.numpy() < 1:
         return None, None, None
-
-    nmax_in_rs = tf.reduce_max(rs[1:]-rs[:-1])
     
     sel_dxs, m_not = _op.MIndices( 
         calc_m_not=calc_m_not,
-        asso_idxs = truth_idxs,
+        asso_idxs = offset_truth_idxs,
         unique_idxs = unique_idxs,
         nmax_per_unique = nmax_per_unique,
-        rs = rs,
-        nmax_in_rs = nmax_in_rs
+        rs = rs
         )
+    
     
     return sel_dxs, tf.expand_dims(m_not,axis=2), tf.expand_dims(cperunique,axis=1) #just some conventions
     

@@ -42,14 +42,13 @@ struct MIndicesOpFunctor<CPUDevice, dummy> {
             const int *rs,
 
             int * out_idx,
-            int * m_not,
+            float * m_not,
 
             const int n_vert,
             const int n_unique,
             const int n_max_per_unique,
 
             const int n_rs,
-            const int n_max_in_rs,
             bool calc_m_not) {
 
         //main axis: n_unique == K_obj
@@ -74,34 +73,24 @@ struct MIndicesOpFunctor<CPUDevice, dummy> {
             if(calc_m_not){
                 //find row for uqidx
                 int rowForUqidx = 0;
-                while(rowForUqidx<n_rs && uqidx > rs[rowForUqidx]){
+                while(rowForUqidx+1<n_rs && uqidx >= rs[rowForUqidx+1]){
                     rowForUqidx++;
                 }
-                rowForUqidx--;
 
                 
-                int placedelementscounter=0;
                 for(int i_v = 0; i_v < n_vert; i_v++ ){
                     //find row for i_v
                     int rowFori_v= 0;
-                    while(rowFori_v<n_rs && uqidx > rs[rowFori_v]){
+                    while(rowFori_v+1<n_rs && i_v >= rs[rowFori_v+1]){
                         rowFori_v++;
                     }
-                    rowFori_v--;
                     //compare rows
                     
-                    if(rowFori_v==rowForUqidx){
-
-                        //if same row, check if uqidx
-                        if(uqidx>=0 && d_truthidx[i_v] != uqidx){
-                            m_not [I2D(k, placedelementscounter, n_max_in_rs)] = i_v;
-                            placedelementscounter++;
-                        }
+                    if(rowFori_v!=rowForUqidx || (uqidx>=0 && d_truthidx[i_v] == uqidx)){
+                        m_not [I2D(k, i_v, n_vert)] = 0.0;                
+                    }else{
+                        m_not [I2D(k, i_v, n_vert)] = 1.0;
                     }
-                }
-                //fill rest with -1
-                for(int m_not_idx = placedelementscounter; m_not_idx < n_max_in_rs; m_not_idx++){
-                    m_not [I2D(k, m_not_idx, n_max_in_rs)] = -1;
                 }
             }
 
@@ -131,15 +120,12 @@ public:
         const Tensor &t_uqtixs = context->input(1);
         const Tensor &t_nmax_puq = context->input(2);//needs to be evaluated in kernel
         const Tensor &t_rs = context->input(3);
-        const Tensor &t_max_in_rs = context->input(4);
 
 
         const int n_vert = t_tidx.dim_size(0);
         const int n_unique = t_uqtixs.dim_size(0);
         int n_max_per_unique=0;
         const int n_rs = t_rs.dim_size(0);
-
-        int n_max_in_rs = 0;
 
 
         MIndicesMaxUqOpFunctor<Device, int>()(
@@ -148,13 +134,7 @@ public:
                 &n_max_per_unique
         );
 
-        MIndicesMaxUqOpFunctor<Device, int>()(
-                context->eigen_device<Device>(),
-                t_max_in_rs.flat<int>().data(),
-                &n_max_in_rs
-        );
 
-        std::cout << "n_max_in_rs:" << n_max_in_rs << std::endl;
         Tensor *out_idx = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(0,
                 {n_unique, n_max_per_unique}, &out_idx));
@@ -162,7 +142,7 @@ public:
         Tensor *m_not = NULL;
         TensorShape m_not_shape={1, 1};
         if(calc_m_not_)
-            m_not_shape={n_unique, n_max_in_rs};
+            m_not_shape={n_unique, n_vert};
         OP_REQUIRES_OK(context, context->allocate_output(1,
                 m_not_shape, &m_not));
 
@@ -173,13 +153,12 @@ public:
                 t_rs.flat<int>().data(),
 
                 out_idx->flat<int>().data(),
-                m_not->flat<int>().data(),
+                m_not->flat<float>().data(),
 
                 n_vert,
                 n_unique,
                 n_max_per_unique,
                 n_rs,
-                n_max_in_rs,
                 calc_m_not_
 
         );
