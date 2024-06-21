@@ -2774,14 +2774,14 @@ def GravNet_plus_TEQMP(name,
     x = Concatenate()([xgn, x])
 
     dscale = Dense(1, activation='sigmoid', name=name+'_dscale', trainable = trainable)(x)
-    dscale = ScalarMultiply(2.)(dscale)
-    dscale = Multiply()([dscale, dscale]) # as distances are also quadratic
+    #dscale = ScalarMultiply(2.)(dscale)
+    #dscale = Multiply()([dscale, dscale]) # as distances are also quadratic
     gndist = LocalDistanceScaling()([gndist, dscale])
     
     x = TranslationInvariantMP(teq_nodes, 
                  layer_norm = True,
                  activation = None, #layer norm takes care
-                 sum_weight = True,
+                 sum_weight = False,
                  # FIXME this is missing a name!!!
                  trainable = trainable)([x, gnnidx, gndist])
 
