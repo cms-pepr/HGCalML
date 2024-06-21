@@ -82,7 +82,7 @@ if '-h' in sys.argv or '--help' in sys.argv or (not all_valid):
     print('script to create a submission and script file and submit them via HTCondor to topas\n')
     print('all commands are fully forwarded with one exception:')
     print('\n    ---n <name> (opt) specifies a name for the scripts\n')
-    print('\n    ---f <filepath> location of the HGCalML-Folder with necessary modules\n')
+    print('\n    ---f <filepath> location of folder with other necessary files\n')
     print('\n    ---cpu <number> (opt) number of cpus to request default: 1\n')
     print('\n    ---memory <memory size> (opt) size of memory to request default: 15 GB\n')
     print('\n    ---disk <disk size> (opt) size of memory to request default 8 GB\n')
@@ -110,7 +110,7 @@ CWD = os.getcwd()
 ### Create Sub File ################################################################################
 ####################################################################################################
 
-#Get absolute filepath and transfer entire folder if there is a .djcdc file also replace filepaths with filenames
+#Get absolute filepath and transfer entire folder if there is a .djcdc file also replace filepaths with filenames in command
 inputfileslocations =''
 NEWCOMMANDS = ''
 for word in COMMANDS.split():
@@ -123,20 +123,28 @@ for word in COMMANDS.split():
     else:
         NEWCOMMANDS+=word + ' '
 
-#Create a tarball of the HGCalML folder
+#Create a tarball of the folder
+hasfolder = True
 if os.path.isdir(opts['f'].value):
+    print('Folder found, creating a tarball of the folder...')
     os.system(f'''
             cd {opts['f'].value}
             cd ../
-            tar -czf {opts['n'].value}/HGCalML.tar.gz {os.path.basename(opts['f'].value)}
+            tar -czf {opts['n'].value}/ZipFolder.tar.gz {os.path.basename(opts['f'].value)}
             cd {CWD}''')
+    inputfileslocations += CWD+ '/' +opts['n'].value + '/ZipFolder.tar.gz, '
 elif os.path.isfile(opts['f'].value) and opts['f'].value.endswith('.tar.gz'):
+    print('File found, copying the file to the submission folder...')
     os.system(f'''
-            cp {opts['f'].value} {opts['n'].value}/HGCalML.tar.gz''')
+            cp {opts['f'].value} {opts['n'].value}/ZipFolder.tar.gz''')
+    inputfileslocations += CWD+ '/' +opts['n'].value + '/ZipFolder.tar.gz, '
 else:
-    raise Exception('Folder not found, please specify the correct path to the HGCalML-folder with ---f <filepath>')
+    print('Folder not found, no additional files will be transferred.')
+    hasfolder = False
+    
 
 #Setup the sub file
+print('Creating the submission file...')
 sub_temp=f'''#!/bin/bash
 Universe = docker
 docker_image = cernml4reco/deepjetcore4:abc9aee
@@ -151,7 +159,7 @@ executable = {opts['n'].value+'_run.sh'}
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 
-transfer_input_files =  {inputfileslocations} {CWD+ '/' +opts['n'].value}/HGCalML.tar.gz, {CWD+ '/' +opts['n'].value+ '/' + opts['n'].value+'_run.sh'}
+transfer_input_files =  {inputfileslocations} {CWD+ '/' +opts['n'].value+ '/' + opts['n'].value+'_run.sh'}
 transfer_output_files = .
 
 output = {opts['n'].value}.out
@@ -198,12 +206,26 @@ with open(opts['n'].value+'/'+opts['n'].value+'.sub','w', encoding='utf-8') as f
 ### Create Run File ################################################################################
 ####################################################################################################
 
-#Setup Run script
+print('Creating the run file...')
+#Unpack the ZipFolder.tar.gz
 runscript_temp=f'''
 #!/bin/bash
+'''
 
-#Unpack the HGCalML.tar.gz and set the necessary environment variables
-tar -xzf HGCalML.tar.gz
+if hasfolder:
+    runscript_temp += f'''
+#Unpack the ZipFolder.tar.gz and set the necessary environment variables
+tar -xzf ZipFolder.tar.gz
+
+#Display the content of the directory for debugging
+ls -l
+
+'''
+
+#if the folder is my HGCalML, set the necessary environment variables
+if os.path.basename(opts['f'].value)=='HGCalML':
+    runscript_temp += f'''
+#Set some environment variables
 export HGCALML=$(readlink -f HGCalML)
 export DEEPJETCORE_SUBPACKAGE=$HGCALML
 export PATH=$HGCALML/scripts:$PATH
@@ -211,13 +233,17 @@ export PYTHONPATH=$HGCALML/modules:$PYTHONPATH
 export LD_LIBRARY_PATH=$HGCALML/modules:$LD_LIBRARY_PATH
 export LC_ALL=C.UTF-8 	# necessary for wandb
 export LANG=C.UTF-8    # necessary for wandb
+'''
 
-#Display the content of the directory for debugging
-ls -l
-
+#Run the commands
+runscript_temp += f'''
 #Run the command
 {NEWCOMMANDS}
+'''
 
+#if the folder is my HGCalML, clean up unnecessary files
+if os.path.basename(opts['f'].value)=='HGCalML':
+    runscript_temp += f'''
 #Clean up
 rm HGCalML.tar.gz
 rm -r HGCalML
