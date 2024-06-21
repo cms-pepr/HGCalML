@@ -2938,7 +2938,7 @@ def double_tree_condensation_block(in_dict,
             xgn = TranslationInvariantMP([16], 
                  layer_norm = True,
                  activation = None, #layer norm takes care
-                 sum_weight = True,
+                 sum_weight = False,
                  name = name+'_pre_teqmp',
                  trainable = trainable)([xpre, nidx, dist ])
 
