@@ -59,26 +59,37 @@ DENSE_ACTIVATION = 'elu'
 DENSE_INIT = "he_normal"
 d_shape = 64
 DENSE_REGULARIZER = tf.keras.regularizers.l2(1e-9)
-NEIGHBOURS = [64,32,32,16]
+NEIGHBOURS = [64,64,64,64]
 
 ###############################################################################
 ### Define Model ##############################################################
 ###############################################################################
 
-def GravNet_plus_TEQMP(name,
+def GravNet(name,
                        x, cprime, hit_energy, t_idx,
                        rs, 
                        d_shape, 
                        n_neighbours,
                        debug_outdir, 
                        plot_debug_every, 
-                       space_reg_strength=1e-2,
+                       space_reg_strength=-1e-2,
                        ):
+    
+    x= Dense(d_shape,activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
+            kernel_regularizer=DENSE_REGULARIZER)(x)
+    x= Dense(d_shape,activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
+            kernel_regularizer=DENSE_REGULARIZER)(x)
+    x= Dense(d_shape,activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
+            kernel_regularizer=DENSE_REGULARIZER)(x)
+    
+    x = BatchNormalization()(x)
+    
+    x = Concatenate()([cprime, x])
     
     xgn, gncoords, gnnidx, gndist = RaggedGravNet(
                 name = "GravNet_"+name, # 76929, 42625, 42625
             n_neighbours=n_neighbours,
-            n_dimensions=3,
+            n_dimensions=4,
             n_filters=d_shape,
             n_propagate=d_shape,
             coord_initialiser_noise=1e-3,
@@ -97,13 +108,8 @@ def GravNet_plus_TEQMP(name,
             )([gncoords, hit_energy, t_idx, rs])
     
     x = DummyLayer()([x, gncoords]) #just so the branch is not optimised away, anyway used further down
-    x = Concatenate()([xgn, x])
+    x = BatchNormalization()(x)
     
-    x = TranslationInvariantMP([64, 32, 16, 8], 
-                 layer_norm = True,
-                 activation = None, #layer norm takes care
-                 sum_weight = True)([x, gnnidx, gndist])
-
     return Concatenate()([xgn, x])
 
 
@@ -153,24 +159,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 
     for i in range(len(NEIGHBOURS)):
 
-        x = Dense(d_shape,activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(d_shape,activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
-            kernel_regularizer=DENSE_REGULARIZER)(x)
         
-        x = Concatenate()([c_coords, x])
-        
-        x = GravNet_plus_TEQMP(f'gncomb_{i}', x, prime_coords, energy, t_idx, rs, 
-                               d_shape, NEIGHBOURS[i], debug_outdir, plot_debug_every, space_reg_strength=1e-2)
-
-        x = Dense(d_shape,
-                  name=f"dense_post_gravnet_1_iteration_{i}",
-                  activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
-                  kernel_regularizer=DENSE_REGULARIZER)(x)
-        x = Dense(d_shape,
-                  name=f"dense_post_gravnet_2_iteration_{i}",
-                  activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
-                  kernel_regularizer=DENSE_REGULARIZER)(x)
+        x = GravNet(f'gncomb_{i}', x, prime_coords, energy, t_idx, rs, 
+                               d_shape, NEIGHBOURS[i], debug_outdir, plot_debug_every, space_reg_strength=-1e-2)
 
         #x = LayerNormalization()(x)
         allfeat.append(x)
@@ -189,6 +180,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
               name=f"dense_final_{1}",
               activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
               kernel_regularizer=DENSE_REGULARIZER)(x)
+    x = BatchNormalization()(x)
     x = Dense(64,
               name=f"dense_final_{2}",
               activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
@@ -196,7 +188,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     x = Dense(64,
               name=f"dense_final_{3}",
               activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
-              kernel_regularizer=DENSE_REGULARIZER)(x)    
+              kernel_regularizer=DENSE_REGULARIZER)(x)  
+    x = BatchNormalization()(x)  
 
     pred_beta, pred_ccoords, pred_dist, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
@@ -327,7 +320,7 @@ print('entering second training phase')
 train.trainModel(
         nepochs=5,
         batchsize=50000,
-        add_progbar=False,
+        add_progbar=pre_args.no_wandb,
         additional_callbacks=cb,
         collect_gradients = 4
         )
@@ -339,7 +332,7 @@ print('entering third training phase')
 train.trainModel(
         nepochs=10,
         batchsize=50000,
-        add_progbar=False,
+        add_progbar=args.no_wandb,
         additional_callbacks=cb,
         collect_gradients = 4
         )
