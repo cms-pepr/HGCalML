@@ -80,7 +80,7 @@ else:
 #parses the rest of the arguments
 train = training_base_hgcal.HGCalTraining(parser=parser)
 
-PLOT_FREQUENCY = 4000 # a bit more than one every hour
+PLOT_FREQUENCY = 8000 # a bit more than one 2 hours
 
 ###############################################################################
 ### Define Model ##############################################################
