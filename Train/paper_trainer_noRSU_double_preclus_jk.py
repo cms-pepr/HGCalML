@@ -80,7 +80,7 @@ else:
 #parses the rest of the arguments
 train = training_base_hgcal.HGCalTraining(parser=parser)
 
-PLOT_FREQUENCY = 4000 # a bit more than one every hour
+PLOT_FREQUENCY = 8000 # a bit more than one 2 hours
 
 ###############################################################################
 ### Define Model ##############################################################
@@ -134,7 +134,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                              debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
                              trainable = True,
                              record_metrics = True,
-                             decouple_coords = True, #to check
+                             decouple_coords = False, #to check
                              debug_publish = 'wandb')
     
     #plot the prime coordinates for debugging
