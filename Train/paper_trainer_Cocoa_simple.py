@@ -82,9 +82,9 @@ def GravNet(name,
     x= Dense(d_shape,activation=DENSE_ACTIVATION, kernel_initializer=DENSE_INIT,
             kernel_regularizer=DENSE_REGULARIZER)(x)
     
-    x = BatchNormalization()(x)
-    
     x = Concatenate()([cprime, x])
+ 
+    x = BatchNormalization()(x)   
     
     xgn, gncoords, gnnidx, gndist = RaggedGravNet(
                 name = "GravNet_"+name, # 76929, 42625, 42625
@@ -93,7 +93,7 @@ def GravNet(name,
             n_filters=d_shape,
             n_propagate=d_shape,
             coord_initialiser_noise=1e-3,
-            feature_activation='elu',
+            feature_activation='tanh',
             )([x, rs])
 
     if space_reg_strength > 0:
@@ -104,7 +104,8 @@ def GravNet(name,
     gncoords = PlotCoordinates(
             plot_every=plot_debug_every,
             outdir = debug_outdir,
-            name=f'gncoords_{name}'
+            name=f'gncoords_{name}',
+            publish='wandb'
             )([gncoords, hit_energy, t_idx, rs])
     
     x = DummyLayer()([x, gncoords]) #just so the branch is not optimised away, anyway used further down
@@ -142,6 +143,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         plot_every=plot_debug_every,
         outdir=debug_outdir,
         name='input_c_coords',
+        publish='wandb'
         )([c_coords, energy, t_idx, rs])
     
     c_coords = extent_coords_if_needed(c_coords, x, 3)
@@ -214,6 +216,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             classification_loss_weight = 0.4,
             position_loss_weight =  0.0,
             timing_loss_weight = 0.0,
+            downweight_low_energy=False,
+            train_energy_unc=False,
             q_min = 1.0,
             use_average_cc_pos = 0.9999)(
                     [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
@@ -226,7 +230,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     pred_ccoords = PlotCoordinates(
         plot_every=plot_debug_every,
         outdir = debug_outdir,
-        name='condensation'
+        name='condensation',
+        publish='wandb'
         )([pred_ccoords, pred_beta, pre_processed['t_idx'], rs])
 
     model_outputs = {
@@ -284,7 +289,7 @@ cb += [
     plotClusterSummary(
         outputfile=train.outputDir + "/clustering/",
         samplefile=train.val_data.getSamplePath(train.val_data.samples[0]),
-        after_n_batches=1000
+        after_n_batches=500
         )
     ]
 
@@ -295,12 +300,12 @@ cb += [
 ### Actual Training ###########################################################
 ###############################################################################
 
-train.change_learning_rate(5e-3)
+train.change_learning_rate(1e-3)
 train.trainModel(
         nepochs=2,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
-        additional_callbacks=cb,
+        #additional_callbacks=cb,
         collect_gradients = 4 #average out more gradients
         )
 
@@ -315,24 +320,24 @@ train.applyFunctionToAllModels(fix_batchnorm)
 
 
 #recompile
-train.compileModel(learningrate=2e-4)
+train.compileModel(learningrate=1e-4)
 print('entering second training phase')
 train.trainModel(
-        nepochs=5,
+        nepochs=15,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
-        additional_callbacks=cb,
+        #additional_callbacks=cb,
         collect_gradients = 4
         )
 
 
 #recompile
-train.compileModel(learningrate=1e-4)
+train.compileModel(learningrate=1e-5)
 print('entering third training phase')
 train.trainModel(
-        nepochs=10,
+        nepochs=25,
         batchsize=50000,
-        add_progbar=args.no_wandb,
-        additional_callbacks=cb,
+        add_progbar=pre_args.no_wandb,
+        #additional_callbacks=cb,
         collect_gradients = 4
         )

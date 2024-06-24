@@ -2178,6 +2178,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  beta_push=0.,
                  implementation = '',
                  global_weight=False,
+                 train_energy_unc=True,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -2318,6 +2319,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.loc_time=time.time()
         self.call_count=0
         self.beta_push = beta_push
+        self.train_energy_unc=train_energy_unc
 
         assert kalpha_damping_strength >= 0. and kalpha_damping_strength <= 1.
 
@@ -2727,7 +2729,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'div_repulsion' : self.div_repulsion,
             'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset,
             'beta_push': self.beta_push,
-            'implementation': self.implementation
+            'implementation': self.implementation,
+            'train_energy_unc': self.train_energy_unc
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -3026,6 +3029,10 @@ class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
 
         epred = pred_energy * t_dep_energies
         sigma = pred_uncertainty_high * t_dep_energies + 1.0
+        
+        if not self.train_energy_unc:
+            sigma = tf.ones_like(sigma)
+            
 
         # Uncertainty 'sigma' must minimize this term:
         # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
@@ -3033,7 +3040,9 @@ class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
         prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
 
         uncertainty_loss = tf.math.log(sigma**2)
-
+        if not self.train_energy_unc:
+            uncertainty_loss = pred_uncertainty_high**2
+        
         matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
         prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
         uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
