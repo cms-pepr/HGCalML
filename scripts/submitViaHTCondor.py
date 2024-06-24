@@ -44,8 +44,8 @@ opts = {
     'n' : meta_option('n','TrainJob_'+UEXT),
     'f' : meta_option('f', '/work/friemer/hgcalml/HGCalML'), 
     'cpu': meta_option('cpu', '1'),
-    'memory': meta_option('memory', '15 GB'),
-    'disk': meta_option('disk', '8 GB'),
+    'memory': meta_option('memory', '5 GB'),
+    'disk': meta_option('disk', '2 GB'),
     'gpu': meta_option('gpu', '1'),
     'wandb': meta_option('wandb', 'True'),
     'submit': meta_option('submit', 'True')
@@ -152,7 +152,7 @@ accounting_group = cms.jet
 
 requirements =(TARGET.CloudSite=="topas")
 +RemoteJob = True
-+RequestWalltime = 72 * 60 * 60
++RequestWalltime = 24 * 60 * 60
 
 executable = {opts['n'].value+'_run.sh'}
 

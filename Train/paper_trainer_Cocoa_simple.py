@@ -84,10 +84,10 @@ def GravNet(name,
     
     x = Concatenate()([cprime, x])
  
-    x = BatchNormalization()(x)   
+    x = BatchNormalization()(x)
     
     xgn, gncoords, gnnidx, gndist = RaggedGravNet(
-                name = "GravNet_"+name, # 76929, 42625, 42625
+            name = "GravNet_"+name,
             n_neighbours=n_neighbours,
             n_dimensions=4,
             n_filters=d_shape,
