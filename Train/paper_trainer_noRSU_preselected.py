@@ -186,6 +186,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
 
                                debug_outdir=debug_outdir,
                                plot_debug_every=plot_debug_every,
+                               debug_publish = 'wandb',
                                trainable = True)
         
         x = BatchNormalization(name = f'bn_{i}_b')(x)
