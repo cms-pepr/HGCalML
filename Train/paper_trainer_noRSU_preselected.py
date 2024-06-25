@@ -279,7 +279,7 @@ if not train.modelSet():
 
 train.change_learning_rate(1e-3)
 train.trainModel(
-        nepochs=1,
+        nepochs=10,
         batchsize=10000,
         add_progbar=pre_args.no_wandb,
         additional_callbacks=[],
@@ -288,7 +288,7 @@ train.trainModel(
 
 train.change_learning_rate(2e-4)
 train.trainModel(
-        nepochs=1+2,
+        nepochs=1+2+10,
         batchsize=10000,
         add_progbar=pre_args.no_wandb,
         additional_callbacks=[],
@@ -311,7 +311,7 @@ print('entering second training phase')
 
 train.change_learning_rate(3e-5)
 train.trainModel(
-        nepochs=1+2+20,
+        nepochs=1+2+20+10,
         batchsize=60000,
         add_progbar=False,
         additional_callbacks=[],
