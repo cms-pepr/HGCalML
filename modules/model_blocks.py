@@ -2798,7 +2798,7 @@ def tree_condensation_block(pre_processed,
                              always_record_reduction = True,
                              decouple_coords = False,
 
-                             low_energy_cut = 6.,
+                             low_energy_cut = 4.,
                              
                              enc_nodes = 32,
                              gn_nodes = 16,
@@ -2917,7 +2917,7 @@ def tree_condensation_block2(*args, **kwargs):
                                    teq_nodes = [64,64],
                                    edge_dense = [64,32],
                                    edge_pre_nodes = 32,
-                                   low_energy_cut = 2.,
+                                   low_energy_cut = 4.,
                                    name = 'tree_condensation_block2')
 
 def double_tree_condensation_block(in_dict,
