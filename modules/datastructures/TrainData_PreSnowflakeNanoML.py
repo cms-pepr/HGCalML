@@ -119,6 +119,9 @@ class TrainData_PreSnowflakeNanoML(TrainData):
             tot_in += len(feat[0])
             out = model(feat)
             rs_tmp = out['row_splits'].numpy()
+            if not (rs_tmp[-1] == len(out[self.output_keys[0]])):
+                print( self.output_keys[0], rs_tmp[-1],  len(out[self.output_keys[0]]) )
+                raise ValueError('row splits do not match input size')
 
             #format time to ms and round to int
             print('reduction', len(feat[0]), '->', rs_tmp[-1], '(' ,round(rs_tmp[-1]/len(feat[0]) * 100.) ,'%)', 'time', round((time.time() - start) * 1000.), 'ms' )
@@ -140,6 +143,7 @@ class TrainData_PreSnowflakeNanoML(TrainData):
         # converting to DeepJetCore.SimpleArray
         rs = np.array(rs, dtype='int64')
         rs = np.cumsum(rs,axis=0)
+        rs = rs[:,0]
         print(rs)
         print([(k,newout[k].shape) for k in newout.keys()])
         print('reduction',tot_in, '->', rs[-1])
