@@ -79,7 +79,9 @@ if not os.path.exists(args.output_dir):
 
 # load the model
 if not args.plot_only:
+    from DebugLayers import switch_off_debug_plots
     model = load_model(args.input_model)
+    model = switch_off_debug_plots(model)
     #turn off all metrics layers and all losses
     for l in model.layers:
         if isinstance(l, LossLayerBase):
