@@ -25,6 +25,10 @@ def _getkeys(file):
     output_keys.remove('distsq_down')
     output_keys.remove('weights_down')
     output_keys.remove('row_splits') #will be recalculated
+    output_keys.remove('no_noise_idx_stage_0') 
+    output_keys.remove('no_noise_idx_stage_1') 
+    output_keys.remove('orig_features') 
+    output_keys.remove('orig_row_splits') 
 
     # output_keys.remove('orig_row_splits') # PZ: didn't exist
     if 'no_noise_row_splits' in output_keys:
