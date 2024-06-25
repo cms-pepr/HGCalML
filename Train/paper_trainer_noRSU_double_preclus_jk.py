@@ -191,7 +191,7 @@ train.trainModel(
 
 train.change_learning_rate(2e-4)
 train.trainModel(
-        nepochs=2,
+        nepochs=1+2,
         batchsize=120000,
         add_progbar=pre_args.no_wandb,
         additional_callbacks=[],
@@ -214,7 +214,7 @@ print('entering second training phase')
 
 train.change_learning_rate(3e-5)
 train.trainModel(
-        nepochs=20,
+        nepochs=1+2+20,
         batchsize=120000,
         add_progbar=False,
         additional_callbacks=[],
