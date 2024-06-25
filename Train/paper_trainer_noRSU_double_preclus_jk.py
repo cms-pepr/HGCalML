@@ -148,6 +148,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
            out['row_splits']])  
     
     graph.update(out) #just so everything is connected
+    graph.update(sels) #just so everything is connected
     return Model(inputs=Inputs, outputs=graph)
 
 
@@ -167,6 +168,7 @@ if not train.modelSet():
     train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
+    
 
 ###############################################################################
 ### Callbacks #################################################################
@@ -179,6 +181,9 @@ if not train.modelSet():
 ###############################################################################
 
 #set the learning rate to 1e-2
+
+train.saveModel("updated_model.h5")
+exit()
 
 train.change_learning_rate(1e-3)
 train.trainModel(
