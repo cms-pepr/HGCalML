@@ -384,8 +384,11 @@ class PlotNoiseDiscriminator(_DebugPlotBase):
     
 class PlotCoordinates(_DebugPlotBase):
     
-    def __init__(self, **kwargs):
+    def __init__(self, no_noise_plot = False, 
+                 **kwargs):
         '''
+        Options
+            - no_noise_plot: also plot without noise
         Takes as input
          - coordinate 
          - features (first will be used for size)
@@ -395,7 +398,12 @@ class PlotCoordinates(_DebugPlotBase):
         Returns coordinates (unchanged)
         '''
         super(PlotCoordinates, self).__init__(**kwargs)
+        self.no_noise_plot = no_noise_plot
         
+    def get_config(self):
+        config = {'no_noise_plot': self.no_noise_plot}
+        base_config = super(PlotCoordinates, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()) )
         
     def plot(self, inputs, training=None):
         
@@ -467,16 +475,17 @@ class PlotCoordinates(_DebugPlotBase):
             if self.publish is not None:
                 publish(self.outdir+'/'+self.name+'_'+str(i)+".html", self.publish)
             
-            df = df[df['orig_tIdx']>=0]
-            
-            fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
-                                color="tIdx",
-                                size='features',
-                                hover_data=hover_data,
-                                template='plotly_dark',
-                    color_continuous_scale=px.colors.sequential.Rainbow)
-            fig.update_traces(marker=dict(line=dict(width=0)))
-            fig.write_html(self.create_base_output_path()+'_'+str(i)+"_no_noise.html")
+            if self.no_noise_plot:
+                df = df[df['orig_tIdx']>=0]
+                
+                fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
+                                    color="tIdx",
+                                    size='features',
+                                    hover_data=hover_data,
+                                    template='plotly_dark',
+                        color_continuous_scale=px.colors.sequential.Rainbow)
+                fig.update_traces(marker=dict(line=dict(width=0)))
+                fig.write_html(self.create_base_output_path()+'_'+str(i)+"_no_noise.html")
             
             
             if self.publish is not None:
