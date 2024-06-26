@@ -210,7 +210,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     pred_ccoords = PlotCoordinates(
         plot_every=plot_debug_every,
         outdir = debug_outdir,
-        name='condensation'
+        name='condensation',
+        publish = 'wandb',
         )([pred_ccoords, pred_beta, pre_processed['t_idx'], rs])
     
     pred_beta = loss_layer(
