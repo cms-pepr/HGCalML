@@ -7,12 +7,15 @@ from DeepJetCore.modeltools import apply_weights_where_possible
 import numpy as np
 
 #debug overwrite
-def apply_weights_where_possible(target_model, weight_model, strict=True):
+def apply_weights_where_possible(target_model, weight_model, strict=True, match_remaining_by_type_and_shape=False):
+
+    layers_set = []
 
     def try_to_set_weights(layer_a, layer_b):
         try:
             layer_a.set_weights(layer_b.get_weights()) 
             print('using weights from ',  layer_a.name)
+            layers_set.append(layer_a.name)
         except Exception as e :  
             print(e)
             print('target shape\n',
@@ -29,8 +32,29 @@ def apply_weights_where_possible(target_model, weight_model, strict=True):
                     try_to_set_weights(layer_a.input_feature_transform, layer_b.input_feature_transform)
                     try_to_set_weights(layer_a.input_spatial_transform, layer_b.input_spatial_transform)
                     try_to_set_weights(layer_a.output_feature_transform, layer_b.output_feature_transform)
+                    layers_set.append(layer_a.name)
                 else:
                     try_to_set_weights(layer_a, layer_b)
+
+    if match_remaining_by_type_and_shape:
+        for layer_a in target_model.layers:
+            if layer_a.name in layers_set:
+                continue
+            for layer_b in weight_model.layers:
+                if layer_b.name in layers_set:
+                    continue
+                if layer_a.__class__.__name__ == layer_b.__class__.__name__:
+                    if len(layer_a.get_weights()) == len(layer_b.get_weights()):
+                        #if all shapes are the same
+                        shapes_a = [a.shape for a in layer_a.get_weights()]
+                        shapes_b = [a.shape for a in layer_b.get_weights()]
+                        if all([a==b for a,b in zip(shapes_a,shapes_b)]):
+                            try_to_set_weights(layer_a, layer_b)
+                            layers_set.append(layer_a.name)
+    #print all layers that were *not* set
+    for layer_a in target_model.layers:
+        if layer_a.name not in layers_set:
+            print('WARNING: layer', layer_a.name, 'was not set')
 
     return target_model
 

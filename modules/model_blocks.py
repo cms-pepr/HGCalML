@@ -2782,7 +2782,7 @@ def GravNet_plus_TEQMP(name,
                  layer_norm = True,
                  activation = None, #layer norm takes care
                  sum_weight = False,
-                 # FIXME this is missing a name!!!
+                 name = name+'_teqmp',
                  trainable = trainable)([x, gnnidx, gndist])
 
     if return_coords:
