@@ -155,6 +155,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     x = pre_processed['features']
     rs = pre_processed['row_splits']
     prime_coords = pre_processed['prime_coords']
+    c_coords = pre_processed['coords']
     energy = pre_processed['rechit_energy']
     t_idx = pre_processed['t_idx']
     is_track = pre_processed['is_track']
@@ -164,7 +165,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     ###########################################################################
 
 
-    all_features = [x]
+    all_features = [c_coords, x]
 
     for i in range(len(NEIGHBOURS)):
 
@@ -172,7 +173,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
         x = Dense(DSHAPE, activation=DENSE_ACTIVATION, name = f'dense_{i}_b')(x)
         x = Dense(DSHAPE, activation=DENSE_ACTIVATION, name = f'dense_{i}_c')(x)
 
-        x = Concatenate()([prime_coords, x])
+        x = Concatenate()([prime_coords, c_coords, x])
 
         x = BatchNormalization(name = f'bn_{i}_a')(x)
 
