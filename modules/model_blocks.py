@@ -2773,7 +2773,7 @@ def GravNet_plus_TEQMP(name,
     x = DummyLayer()([x, gncoords]) #just so the branch is not optimised away, anyway used further down
     x = Concatenate()([xgn, x])
 
-    dscale = Dense(1, activation='sigmoid', name=name+'_dscale', trainable = trainable)(x) #FIXME sigmoid needs to go
+    dscale = Dense(1, name=name+'_dscale', trainable = trainable)(x) #FIXME sigmoid needs to go
     #dscale = ScalarMultiply(2.)(dscale)
     #dscale = Multiply()([dscale, dscale]) # as distances are also quadratic
     gndist = LocalDistanceScaling()([gndist, dscale])
