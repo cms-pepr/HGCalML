@@ -13,6 +13,11 @@ import time
 
 
 def _getkeys(file):
+
+    from DeepJetCore.wandb_interface import wandb_wrapper
+    tmp = wandb_wrapper.active
+    wandb_wrapper.active = False #prevent accidental logging when loading the model
+
     from DeepJetCore.modeltools import load_model
     tmp_model = load_model(file)
     print(tmp_model.output_shape.keys())
@@ -34,6 +39,8 @@ def _getkeys(file):
     if 'no_noise_row_splits' in output_keys:
         output_keys.remove('no_noise_row_splits')
     del tmp_model #close tf
+
+    wandb_wrapper.active = tmp
     return output_keys
 
 def calc_theta(x, y, z):
@@ -76,6 +83,11 @@ class TrainData_PreSnowflakeNanoML(TrainData):
 
     def convertFromSourceFile(self, filename, weighterobjects, istraining, treename=""):
          
+        #prevent accidental logging when loading the model
+        from DeepJetCore.wandb_interface import wandb_wrapper
+        tmp = wandb_wrapper.active
+        wandb_wrapper.active = False 
+
         #this needs GPU
         from DeepJetCore.modeltools import load_model
         from LossLayers import LossLayerBase
@@ -156,6 +168,9 @@ class TrainData_PreSnowflakeNanoML(TrainData):
         for k2 in self.output_keys:
             print(k2, ' ', newout[k2].shape)
             outSA.append(SimpleArray(newout[k2],rs,name=k2))
+
+        del model
+        wandb_wrapper.active = tmp
 
         return outSA,[], []
 
