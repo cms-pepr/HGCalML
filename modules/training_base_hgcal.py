@@ -426,6 +426,33 @@ class training_base(object):
                    collect_gradients = 1, #average N batches before update 
                    **trainargs):
         
+        '''
+        
+        nepochs: int , number of epochs to train *on top of what has already been trained*
+        batchsize: int, batchsize for training
+        run_eagerly: bool, run in eager mode
+        batchsize_use_sum_of_squares: bool, use sum of squares for batchsize
+        fake_truth: bool, extend the truth list with dummies. Useful when adding more prediction outputs than truth inputs
+        stop_patience: int, patience for early stopping
+        lr_factor: float, factor to reduce learning rate
+        lr_patience: int, patience for learning rate reduction
+        lr_epsilon: float, epsilon for learning rate reduction
+        lr_cooldown: int, cooldown for learning rate reduction
+        lr_minimum: float, minimum learning rate
+        checkperiod: int, period to check for early stopping
+        backup_after_batches: int, backup after N batches
+        additional_plots: list, additional plots to be added
+        additional_callbacks: list, additional callbacks to be added
+        load_in_mem: bool, load data in memory - dummy
+        max_files: int, maximum number of files to load - dummy
+        plot_batch_loss: bool, plot batch loss
+        add_progbar: bool, add progress bar
+        verbose: int, verbosity - dummy
+        collect_gradients: int, average N batches before update
+        trainargs: dict, additional arguments
+
+        '''
+        
         for m in self.mgpu_keras_models:
             m.run_eagerly=run_eagerly
         # write only after the output classes have been added
