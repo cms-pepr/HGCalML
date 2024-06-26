@@ -267,7 +267,7 @@ if not train.modelSet():
         debug_outdir=train.outputDir+'/intplots',
         plot_debug_every=PLOT_FREQUENCY,
         )
-    train.applyFunctionToAllModels(RaggedGravNet.set_all_gn_space_trainable, False) #start with fixed GN space
+    #train.applyFunctionToAllModels(RaggedGravNet.set_all_gn_space_trainable, False) #start with fixed GN space
     train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
@@ -320,10 +320,10 @@ train.applyFunctionToAllModels(fix_batchnorm)
 
 
 #recompile
-train.compileModel(learningrate=1e-4)
+train.compileModel(learningrate=5e-4)
 print('entering second training phase')
 train.trainModel(
-        nepochs=15,
+        nepochs=10,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
@@ -332,7 +332,7 @@ train.trainModel(
 
 
 #recompile
-train.compileModel(learningrate=1e-5)
+train.compileModel(learningrate=1e-4)
 print('entering third training phase')
 train.trainModel(
         nepochs=25,

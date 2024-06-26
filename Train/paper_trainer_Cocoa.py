@@ -269,7 +269,7 @@ if not train.modelSet():
         debug_outdir=train.outputDir+'/intplots',
         plot_debug_every=PLOT_FREQUENCY,
         )
-    train.applyFunctionToAllModels(RaggedGravNet.set_all_gn_space_trainable, False) #start with fixed GN space
+    #train.applyFunctionToAllModels(RaggedGravNet.set_all_gn_space_trainable, False) #start with fixed GN space
     train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
