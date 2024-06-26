@@ -182,8 +182,6 @@ if not train.modelSet():
 
 #set the learning rate to 1e-2
 
-train.saveModel("updated_model.h5")
-exit()
 
 train.change_learning_rate(1e-3)
 train.trainModel(
