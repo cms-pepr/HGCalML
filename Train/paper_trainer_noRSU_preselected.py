@@ -116,6 +116,7 @@ LOSS_OPTIONS = {
     "timing_loss_weight": 0.0,
     "q_min": 1.0,
     "use_average_cc_pos": 0.9999,
+    "use_energy_weights": False,
 }
 loss_layer = LLExtendedObjectCondensation3
 
@@ -217,7 +218,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     
     pred_beta = loss_layer(
             scale=1.,
-            use_energy_weights=True,
+            
             record_metrics=True,
             print_loss=False,
             name="ExtendedOCLoss",
