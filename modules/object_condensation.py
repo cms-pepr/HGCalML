@@ -198,7 +198,7 @@ class Basic_OC_per_sample(object):
         N_k =  tf.reduce_sum(self.mask_k_m, axis=1)
         dsq_k_m = self.calc_dsq_att() #K x V-obj x 1
         sigma = self.weighted_d_k_m(dsq_k_m) #create gradients for all
-        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, sigma + 1e-4)
+        dsq_k_m = tf.math.divide_no_nan(dsq_k_m, sigma**2 + 1e-4)
         V_att = self.att_func(dsq_k_m) * self.q_k_m * self.mask_k_m  #K x V-obj x 1
         V_att = self.q_k * tf.reduce_sum( V_att ,axis=1)  #K x 1
         if self.global_weight:
@@ -240,7 +240,7 @@ class Basic_OC_per_sample(object):
         # nogradbeta = tf.stop_gradient(self.beta_k_m)
         #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
         sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
-        dsq = tf.math.divide_no_nan(dsq, sigma + 1e-4) #K x V x 1
+        dsq = tf.math.divide_no_nan(dsq, sigma**2 + 1e-4) #K x V x 1
 
         V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
         if self.rep_range > 0:

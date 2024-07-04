@@ -80,7 +80,7 @@ else:
 #parses the rest of the arguments
 train = training_base_hgcal.HGCalTraining(parser=parser)
 
-PLOT_FREQUENCY = 4000 # a bit more than one every hour
+PLOT_FREQUENCY = 8000 # a bit more than one 2 hours
 
 ###############################################################################
 ### Define Model ##############################################################
@@ -134,7 +134,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                              debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
                              trainable = True,
                              record_metrics = True,
-                             decouple_coords = False, #to check
                              debug_publish = 'wandb')
     
     #plot the prime coordinates for debugging
@@ -149,6 +148,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
            out['row_splits']])  
     
     graph.update(out) #just so everything is connected
+    graph.update(sels) #just so everything is connected
     return Model(inputs=Inputs, outputs=graph)
 
 
@@ -168,6 +168,7 @@ if not train.modelSet():
     train.setCustomOptimizer(tf.keras.optimizers.Adam())#clipnorm=1.))
     train.compileModel(learningrate=1e-4)
     train.keras_model.summary()
+    
 
 ###############################################################################
 ### Callbacks #################################################################
@@ -181,7 +182,8 @@ if not train.modelSet():
 
 #set the learning rate to 1e-2
 
-train.change_learning_rate(1e-3)
+
+train.change_learning_rate(1e-4)
 train.trainModel(
         nepochs=1,
         batchsize=120000,
@@ -190,9 +192,9 @@ train.trainModel(
         collect_gradients = 4 #average out more gradients
         )
 
-train.change_learning_rate(2e-4)
+train.change_learning_rate(1e-4)
 train.trainModel(
-        nepochs=2,
+        nepochs=1+2,
         batchsize=120000,
         add_progbar=pre_args.no_wandb,
         additional_callbacks=[],
@@ -215,7 +217,7 @@ print('entering second training phase')
 
 train.change_learning_rate(3e-5)
 train.trainModel(
-        nepochs=20,
+        nepochs=1+2+20,
         batchsize=120000,
         add_progbar=False,
         additional_callbacks=[],

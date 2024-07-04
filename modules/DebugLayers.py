@@ -251,7 +251,7 @@ class _DebugPlotBase(tf.keras.layers.Layer):
             print(self.name, 'plotting...')
             self.plot(inputs,training)
         except Exception as e:
-            raise e
+            print(e)
             #do nothing, don't interrupt training because a debug plot failed
             
         return out
@@ -488,8 +488,8 @@ class PlotCoordinates(_DebugPlotBase):
                 fig.write_html(self.create_base_output_path()+'_'+str(i)+"_no_noise.html")
             
             
-            if self.publish is not None:
-                publish(self.create_base_output_path()+'_'+str(i)+"_no_noise.html", self.publish)
+                if self.publish is not None:
+                    publish(self.create_base_output_path()+'_'+str(i)+"_no_noise.html", self.publish)
         
         
 class Plot2DCoordinatesPlusScore(_DebugPlotBase):
