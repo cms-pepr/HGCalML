@@ -245,7 +245,7 @@ runscript_temp += f'''
 if os.path.basename(opts['f'].value)=='HGCalML':
     runscript_temp += f'''
 #Clean up
-rm HGCalML.tar.gz
+rm ZipFolder.tar.gz
 rm -r HGCalML
 rm *.djctd
 rm *.djcdc

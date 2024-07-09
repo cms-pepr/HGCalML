@@ -105,7 +105,7 @@ def GravNet(name,
             plot_every=plot_debug_every,
             outdir = debug_outdir,
             name=f'gncoords_{name}',
-            publish='wandb'
+            #publish='wandb'
             )([gncoords, hit_energy, t_idx, rs])
     
     x = DummyLayer()([x, gncoords]) #just so the branch is not optimised away, anyway used further down
@@ -143,7 +143,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         plot_every=plot_debug_every,
         outdir=debug_outdir,
         name='input_c_coords',
-        publish='wandb'
+    #    publish='wandb'
         )([c_coords, energy, t_idx, rs])
     
     c_coords = extent_coords_if_needed(c_coords, x, 3)
@@ -203,7 +203,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 set_track_betas_to_one=True)
 
 
-    pred_beta = LLExtendedObjectCondensation3(
+    pred_beta = LLExtendedObjectCondensation5(
             scale=1.,
             use_energy_weights=True,
             record_metrics=True,
@@ -218,7 +218,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             timing_loss_weight = 0.0,
             downweight_low_energy=False,
             train_energy_unc=False,
-            q_min = 1.0,
+            q_min = 0.1,
             use_average_cc_pos = 0.9999)(
                     [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
                         pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
@@ -231,7 +231,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         plot_every=plot_debug_every,
         outdir = debug_outdir,
         name='condensation',
-        publish='wandb'
+        #publish='wandb'
         )([pred_ccoords, pred_beta, pre_processed['t_idx'], rs])
 
     model_outputs = {
@@ -335,7 +335,7 @@ train.trainModel(
 train.compileModel(learningrate=1e-4)
 print('entering third training phase')
 train.trainModel(
-        nepochs=25,
+        nepochs=35,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
