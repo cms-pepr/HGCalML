@@ -182,11 +182,12 @@ if not train.modelSet():
 
 #set the learning rate to 1e-2
 
+batchsize = 320000
 
 train.change_learning_rate(1e-3)
 train.trainModel(
         nepochs=1,
-        batchsize=120000,
+        batchsize=batchsize,
         add_progbar=pre_args.no_wandb,
         additional_callbacks=[],
         collect_gradients = 4 #average out more gradients
@@ -195,7 +196,7 @@ train.trainModel(
 train.change_learning_rate(2e-4)
 train.trainModel(
         nepochs=1+2,
-        batchsize=120000,
+        batchsize=batchsize,
         add_progbar=pre_args.no_wandb,
         additional_callbacks=[],
         collect_gradients = 4 #average out more gradients
@@ -218,7 +219,7 @@ print('entering second training phase')
 train.change_learning_rate(3e-5)
 train.trainModel(
         nepochs=1+2+20,
-        batchsize=120000,
+        batchsize=batchsize,
         add_progbar=False,
         additional_callbacks=[],
         collect_gradients = 4

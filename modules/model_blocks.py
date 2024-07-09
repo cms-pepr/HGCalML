@@ -2634,6 +2634,7 @@ def mini_tree_create(
                 ignore_noise = True, #this is filtered by the graph condensation anyway
                 print_batch_time=False,
                 specweight_to_weight = True,
+                downsample=30000, #downsample to 30k
                 )(lcc_input) #score is not affected here
 
     if cleaning_mode:
