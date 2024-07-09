@@ -198,6 +198,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         pred_pos, pred_time, pred_time_unc, pred_id = \
         create_outputs(x,
                 n_ccoords=3,
+                n_pos = 3,
                 fix_distance_scale=True,
                 is_track=is_track,
                 set_track_betas_to_one=True)
@@ -214,7 +215,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             too_much_beta_scale = 0.0,
             energy_loss_weight = 0.4,
             classification_loss_weight = 0.4,
-            position_loss_weight =  0.0,
+            position_loss_weight =  1.0,
             timing_loss_weight = 0.0,
             downweight_low_energy=False,
             train_energy_unc=False,

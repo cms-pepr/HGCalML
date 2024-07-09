@@ -3145,6 +3145,16 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
             return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
         else:
             return prediction_loss, uncertainty_loss + matching_loss
+        
+    def calc_position_loss(self, t_pos, pred_pos):
+        if tf.shape(pred_pos)[-1] == 2:#also has z component, but don't use it here
+            raise ValueError("Position loss is implemented for cosphi, sinphi, eta")
+        if not self.position_loss_weight:
+            return 0.*tf.reduce_sum((pred_pos-t_pos)**2,axis=-1, keepdims=True)
+               
+        ploss = tf.reduce_sum(tf.math.abs(t_pos - pred_pos)**2, axis=1)
+        ploss = tf.debugging.check_numerics(ploss, "ploss loss")
+        return ploss
 
 
 class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):

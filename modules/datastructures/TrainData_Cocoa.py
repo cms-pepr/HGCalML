@@ -12,7 +12,7 @@ class TrainData_Cocoa(TrainData_NanoML):
         #open File
         with uproot.open(filename) as file:
             events = file[file.keys()[0]]
-        data = events.arrays(library='ak')#[0:100]#JUST FOR TESTING REMOVE SLICING LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        data = events.arrays(library='ak')#[0:10]#JUST FOR TESTING REMOVE SLICING LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         #convert data to training data
         trainData,rs = self.converttotrainingdfvec(data)
@@ -63,15 +63,13 @@ class TrainData_Cocoa(TrainData_NanoML):
 
         df_particle['particle_idx'] = np.arange(len(event['particle_e']))
         df_particle['t_energy'] = ak.to_dataframe(event['particle_e'], how='outer')
-        df_particle['t_pos'] = 0 #will be calculated later
         df_particle['t_time'] = 0
         df_particle['t_pid'] = ak.to_dataframe(event['particle_pdgid'], how='outer')
         df_particle['t_spectator'] = 0
         df_particle['t_fully_contained'] = 1
         df_particle['t_rec_energy'] = ak.to_dataframe(event['particle_dep_energy'], how='outer')
-        df_particle['particle_prod_x'] = ak.to_dataframe(event['particle_prod_x'], how='outer')
-        df_particle['particle_prod_y'] = ak.to_dataframe(event['particle_prod_y'], how='outer')
-        df_particle['particle_prod_z'] = ak.to_dataframe(event['particle_prod_z'], how='outer')
+        df_particle['particle_eta'] = ak.to_dataframe(event['particle_eta_lay0'], how='outer')
+        df_particle['particle_phi'] = ak.to_dataframe(event['particle_phi_lay0'], how='outer')
         
         #convert track information to df
         df_track = pd.DataFrame()
@@ -102,14 +100,14 @@ class TrainData_Cocoa(TrainData_NanoML):
 
         #set NaN values (particle information for hits made from background noise to -1)
         df_training.fillna(-1, inplace=True)
+        
+        #encode pos as cos(phi), sin(phi), eta
+        df_training['t_pos'] = df_training.apply(lambda row: [np.cos(row['particle_phi']), np.sin(row['particle_phi']), row['particle_eta']], axis=1)
 
         #set t_is_unique
         df_training['t_is_unique'] = 0
         first_occurrence_mask = (df_training['t_idx'] != -1) & (df_training.groupby('t_idx').cumcount() == 0)
         df_training.loc[first_occurrence_mask, 't_is_unique'] = 1
-
-
-        df_training['t_pos'] = df_training.apply(lambda row: [row['particle_prod_x'], row['particle_prod_y'], row['particle_prod_z']], axis=1)
 
         return df_training
     
