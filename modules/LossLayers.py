@@ -3151,7 +3151,7 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
             raise ValueError("Position loss is implemented for cosphi, sinphi, eta")
         if not self.position_loss_weight:
             return 0.*tf.reduce_sum((pred_pos-t_pos)**2,axis=-1, keepdims=True)
-               
+
         ploss = tf.reduce_sum(tf.math.abs(t_pos - pred_pos)**2, axis=-1, keepdims=True)
         ploss = tf.debugging.check_numerics(ploss, "ploss loss")
         return ploss

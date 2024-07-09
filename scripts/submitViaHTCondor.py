@@ -5,7 +5,7 @@ Script to submit training scripts to Topas via HTCondor
 # Usage:
 # python3 submitViaHTCondor.py <Command to execute> ---n JobName
 #
-# Example usage for a pytohn script with 3 arguments
+# Example usage for a python script with 3 arguments
 # python3 submitViaHTCondor python3 mypythonscript.py --arg1 --arg2 --arg3 ---n JobName
 
 
