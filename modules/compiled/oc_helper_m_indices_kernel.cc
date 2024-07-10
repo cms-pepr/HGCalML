@@ -42,11 +42,12 @@ struct MIndicesOpFunctor<CPUDevice, dummy> {
             const int *rs,
 
             int * out_idx,
-            float * m_not,
+            int * m_not,
 
             const int n_vert,
             const int n_unique,
             const int n_max_per_unique,
+            const int n_max_in_rs,
 
             const int n_rs,
             bool calc_m_not) {
@@ -78,19 +79,24 @@ struct MIndicesOpFunctor<CPUDevice, dummy> {
                 }
 
                 
+                int mnot_index = 0;
                 for(int i_v = 0; i_v < n_vert; i_v++ ){
                     //find row for i_v
                     int rowFori_v= 0;
                     while(rowFori_v+1<n_rs && i_v >= rs[rowFori_v+1]){
                         rowFori_v++;
                     }
-                    //compare rows
-                    
-                    if(rowFori_v!=rowForUqidx || (uqidx>=0 && d_truthidx[i_v] == uqidx)){
-                        m_not [I2D(k, i_v, n_vert)] = 0.0;                
-                    }else{
-                        m_not [I2D(k, i_v, n_vert)] = 1.0;
+
+                    //compare rows and index
+                    if (rowFori_v == rowForUqidx && (uqidx < 0 || d_truthidx[i_v] != uqidx)){
+                        m_not [I2D(k, mnot_index, n_max_in_rs)] = i_v;
+                        mnot_index++;
                     }
+                }
+                //fill rest with -1
+                while(mnot_index < n_max_in_rs){
+                    m_not [I2D(k, mnot_index, n_max_in_rs)] = -1;
+                    mnot_index++;
                 }
             }
 
@@ -120,20 +126,25 @@ public:
         const Tensor &t_uqtixs = context->input(1);
         const Tensor &t_nmax_puq = context->input(2);//needs to be evaluated in kernel
         const Tensor &t_rs = context->input(3);
-
+        const Tensor &t_max_in_rs = context->input(4);
 
         const int n_vert = t_tidx.dim_size(0);
         const int n_unique = t_uqtixs.dim_size(0);
-        int n_max_per_unique=0;
         const int n_rs = t_rs.dim_size(0);
 
-
+        int n_max_per_unique=0;
         MIndicesMaxUqOpFunctor<Device, int>()(
                 context->eigen_device<Device>(),
                 t_nmax_puq.flat<int>().data(),
                 &n_max_per_unique
         );
 
+        int n_max_in_rs = 0;
+        MIndicesMaxUqOpFunctor<Device, int>()(
+                context->eigen_device<Device>(),
+                t_max_in_rs.flat<int>().data(),
+                &n_max_in_rs
+        );
 
         Tensor *out_idx = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(0,
@@ -142,7 +153,7 @@ public:
         Tensor *m_not = NULL;
         TensorShape m_not_shape={1, 1};
         if(calc_m_not_)
-            m_not_shape={n_unique, n_vert};
+            m_not_shape={n_unique, n_max_in_rs};
         OP_REQUIRES_OK(context, context->allocate_output(1,
                 m_not_shape, &m_not));
 
@@ -153,12 +164,13 @@ public:
                 t_rs.flat<int>().data(),
 
                 out_idx->flat<int>().data(),
-                m_not->flat<float>().data(),
+                m_not->flat<int>().data(),
 
                 n_vert,
                 n_unique,
                 n_max_per_unique,
                 n_rs,
+                n_max_in_rs,
                 calc_m_not_
 
         );

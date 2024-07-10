@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import tensorflow as tf
-from oc_helper_ops import CreateMidx, SelectWithDefault
+from oc_helper_ops import CreateMidx, SelectWithDefault, SelectWithDefaultMnot
 from binned_select_knn_op import BinnedSelectKnn
 
 
@@ -226,25 +226,32 @@ class Basic_OC_per_sample(object):
         dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
         return dsq
-        
+
     #@tf.function
     def V_rep_k(self):
         
         
         K = tf.reduce_sum(tf.ones_like(self.q_k))
-        N_notk = tf.reduce_sum(self.Mnot, axis=1)
+        
         #future remark: if this gets too large, one could use a kNN/radiusNN here
         
         dsq = self.calc_dsq_rep()
         
+        
+        dsq_mnot = SelectWithDefaultMnot(self.Mnot, dsq, 0.) #K x V x 1
+        
         # nogradbeta = tf.stop_gradient(self.beta_k_m)
         #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
-        sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
-        dsq = tf.math.divide_no_nan(dsq, sigma**2 + 1e-4) #K x V x 1
+        sigma = self.weighted_d_k_m(dsq_mnot) #create gradients for all, but prefer k vertex
+        dsq_mnot = tf.math.divide_no_nan(dsq_mnot, sigma**2 + 1e-4)
+        
+        
 
-        V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
+        V_rep = self.rep_func(dsq_mnot) * tf.expand_dims(self.q_v,axis=0)
         if self.rep_range > 0:
-            N_notk = tf.reduce_sum(tf.where(dsq < self.rep_range**2 , 1., tf.zeros_like(dsq)) * self.Mnot, axis=1)
+            N_notk = tf.reduce_sum(tf.where(dsq_mnot < self.rep_range**2 , 1., tf.zeros_like(dsq_mnot)), axis=1)
+        else:
+            N_notk = tf.reduce_sum(tf.ones_like(dsq_mnot), axis=1)
 
         V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
         #if self.global_weight:
@@ -393,16 +400,20 @@ class Basic_OC_per_sample(object):
 
         x_k_alpha = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) 
         dsq = tf.expand_dims(x_k_alpha, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
+        dsq_mnot = SelectWithDefaultMnot(self.Mnot, dsq, 0.) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1)  #K x V 
-        in_radius = rel_metrics_radius > tf.sqrt(dsq) / self.d_k# K x V
+        dsq_mnot = tf.reduce_sum(dsq_mnot**2, axis=-1)  #K x V
+        in_radius = rel_metrics_radius > tf.sqrt(dsq) / self.d_k # K x V
+        in_radius_mnot = rel_metrics_radius > tf.sqrt(dsq_mnot) / self.d_k # K x V
         
         energies_k_v = tf.expand_dims(energies, axis=0) # K x V x 1
         energies_ir_all_k_v = tf.where(in_radius[...,tf.newaxis], energies_k_v , 0.)
-        energies_ir_not_k_v = tf.where(in_radius[...,tf.newaxis], self.Mnot * energies_k_v , 0.)
+        
+        energies_ir_not_k_v = tf.where(in_radius_mnot[...,tf.newaxis], energies_k_v , 0.)
         
         rel_cont_k = tf.reduce_sum(energies_ir_not_k_v, axis=1)/tf.reduce_sum(energies_ir_all_k_v, axis=1)
-
-        beta_cont_k = tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.Mnot * self.beta_v[tf.newaxis,...], 0.), axis=1) # K x 1?
+        
+        beta_cont_k = tf.reduce_sum(tf.where(in_radius_mnot[...,tf.newaxis], self.beta_v[tf.newaxis,...], 0.), axis=1) # K x 1?
         beta_cont_k /= tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.beta_v[tf.newaxis,...], 0.), axis=1)
 
         # the same for deposited energy > 20 GeV
@@ -678,8 +689,8 @@ class GraphCond_OC_per_sample(Basic_OC_per_sample):
         
         #replace beta with per-object normalised value
         self.create_Ms(truth_idx, rs=rs)
-        beta_max = tf.reduce_max(self.Mnot * tf.expand_dims(beta,axis=0),axis=1, keepdims=True)  #K x 1 x 1
-        beta_max *= self.Mnot  #K x V x 1
+        beta_max = tf.reduce_max(SelectWithDefault(self.Mnot, tf.expand_dims(beta,axis=0),0),axis=1, keepdims=True)  #K x 1 x 1
+        beta_max = SelectWithDefault(self.Msel, beta_max, 0.)
         
         # this is the same reduced in K given the others are zero with exception of noise (filtered later)
         beta_max = tf.reduce_max(beta_max, axis=0) # V x 1 

@@ -66,16 +66,19 @@ REGISTER_OP("MIndicesOpFunctor")
     if nmax_per_unique.numpy() < 1:
         return None, None, None
     
+    nmax_in_rs = tf.reduce_max(rs[1:]-rs[:-1])
+    
     sel_dxs, m_not = _op.MIndices( 
         calc_m_not=calc_m_not,
         asso_idxs = offset_truth_idxs,
         unique_idxs = unique_idxs,
         nmax_per_unique = nmax_per_unique,
-        rs = rs
+        rs = rs,
+        nmax_in_rs = nmax_in_rs
         )
     
     
-    return sel_dxs, tf.expand_dims(m_not,axis=2), tf.expand_dims(cperunique,axis=1) #just some conventions
+    return sel_dxs, m_not, tf.expand_dims(cperunique,axis=1) #just some conventions
     
 @ops.RegisterGradient("CreateMidx")
 def _CreateMidxGrad(op, sel_dxs, m_not):
@@ -98,6 +101,22 @@ def SelectWithDefault(indices, tensor, default=0, no_check=False):
         tf.assert_equal(tf.shape(tensor)[1], tf.shape(out)[2])]):
         
         return out
+def SelectWithDefaultMnot(Mnot, tensor, default=0, no_check=False):
+    K, V, _ = tensor.shape
+    _, X = Mnot.shape
+    
+    # Step 1: Create a range tensor of shape (V,) and expand dimensions to match dsq for broadcasting
+    v_range = tf.range(V)
+    v_range_expanded = tf.expand_dims(tf.expand_dims(v_range, axis=0), axis=-1)  # Shape (1, V, 1)
+    
+    # Step 2: Expand Mnot dimensions and compare against v_range to create a mask
+    Mnot_expanded = tf.expand_dims(Mnot, axis=1)  # Shape (K, 1, X)
+    mask = tf.reduce_any(tf.equal(Mnot_expanded, v_range_expanded), axis=-1, keepdims=True)  # Shape (K, V, 1)
+    
+    # Step 3: Apply the mask to dsq, setting unselected elements to 0
+    tensor_mnot = tf.where(mask, tensor, tf.zeros_like(tensor))
+    
+    return tensor_mnot
 
 
 def per_rs_segids_to_unique(pred_sid, rs, return_nseg=False, strict_check=True):

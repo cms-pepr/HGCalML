@@ -25,12 +25,13 @@ static void calc(
         const int *rs,
 
         int * out_idx,
-        float * m_not,
+        int * m_not,
 
         const int n_vert,
         const int n_unique,
         const int n_max_per_unique,
         const int n_rs,
+        const int n_max_in_rs,
 
         bool calc_m_not){
 
@@ -61,19 +62,24 @@ static void calc(
         }
 
         
+        int mnot_index = 0;
         for(int i_v = 0; i_v < n_vert; i_v++ ){
             //find row for i_v
             int rowFori_v= 0;
             while(rowFori_v+1<n_rs && i_v >= rs[rowFori_v+1]){
                 rowFori_v++;
             }
-            //compare rows
-            
-            if(rowFori_v!=rowForUqidx || (uqidx>=0 && d_truthidx[i_v] == uqidx)){
-                m_not [I2D(k, i_v, n_vert)] = 0.0;                
-            }else{
-                m_not [I2D(k, i_v, n_vert)] = 1.0;
+
+            //compare rows and index
+            if (rowFori_v == rowForUqidx && (uqidx < 0 || d_truthidx[i_v] != uqidx)){
+                m_not [I2D(k, mnot_index, n_max_in_rs)] = i_v;
+                mnot_index++;
             }
+        }
+        //fill rest with -1
+        while(mnot_index < n_max_in_rs){
+            m_not [I2D(k, mnot_index, n_max_in_rs)] = -1;
+            mnot_index++;
         }
     }
 
@@ -105,12 +111,13 @@ struct MIndicesOpFunctor<GPUDevice, dummy> {
             const int *rs,
 
             int * out_idx,
-            float * m_not,
+            int * m_not,
 
             const int n_vert,
             const int n_unique,
             const int n_max_per_unique,
             const int n_rs,
+            const int n_max_in_rs,
 
             bool calc_m_not
 
@@ -129,6 +136,7 @@ struct MIndicesOpFunctor<GPUDevice, dummy> {
                 n_unique,
                 n_max_per_unique,
                 n_rs,
+                n_max_in_rs,
 
                 calc_m_not
         );

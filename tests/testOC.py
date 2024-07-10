@@ -81,3 +81,36 @@ def random_loss(seed):
 
 for i in [42,300,500,1,565656,400432,342342,3242342]:
     random_loss(i)
+    
+# corrtruth tf.Tensor(2.93983, shape=(), dtype=float32)
+# ExtendedOCLoss loss 642.5552
+# ExtendedOCLoss loss 642.5552
+# tf.Tensor(642.5552, shape=(), dtype=float32)
+# corrtruth tf.Tensor(2.8827302, shape=(), dtype=float32)
+# ExtendedOCLoss loss 644.0271
+# ExtendedOCLoss loss 644.0271
+# tf.Tensor(644.0271, shape=(), dtype=float32)
+# corrtruth tf.Tensor(2.8496196, shape=(), dtype=float32)
+# ExtendedOCLoss loss 643.1459
+# ExtendedOCLoss loss 643.1459
+# tf.Tensor(643.1459, shape=(), dtype=float32)
+# corrtruth tf.Tensor(2.903933, shape=(), dtype=float32)
+# ExtendedOCLoss loss 640.93335
+# ExtendedOCLoss loss 640.93335
+# tf.Tensor(640.93335, shape=(), dtype=float32)
+# corrtruth tf.Tensor(2.935431, shape=(), dtype=float32)
+# ExtendedOCLoss loss 644.8252
+# ExtendedOCLoss loss 644.8252
+# tf.Tensor(644.8252, shape=(), dtype=float32)
+# corrtruth tf.Tensor(2.9261627, shape=(), dtype=float32)
+# ExtendedOCLoss loss 645.67664
+# ExtendedOCLoss loss 645.67664
+# tf.Tensor(645.67664, shape=(), dtype=float32)
+# corrtruth tf.Tensor(3.0330386, shape=(), dtype=float32)
+# ExtendedOCLoss loss 640.2022
+# ExtendedOCLoss loss 640.2022
+# tf.Tensor(640.2022, shape=(), dtype=float32)
+# corrtruth tf.Tensor(2.9854856, shape=(), dtype=float32)
+# ExtendedOCLoss loss 647.0576
+# ExtendedOCLoss loss 647.0576
+# tf.Tensor(647.0576, shape=(), dtype=float32)
