@@ -2619,12 +2619,7 @@ class LLFullObjectCondensation(LossLayerBase):
                 is_spectator_weight=is_spectator,
                 rs=rowsplits,
                 energies = rechit_energy)
-        print("Att: ", att)
-        print("Rep: ", rep)
-        print("Min: ", min_b)
-        print("Noise: ", noise)
-        print("Excee: ", exceed_beta)
-        print("Payload: ", payload)
+        print(mdict)
 
         #log the OC metrics dict, if any
         self.wandb_log(mdict)

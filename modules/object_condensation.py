@@ -400,11 +400,9 @@ class Basic_OC_per_sample(object):
 
         x_k_alpha = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) 
         dsq = tf.expand_dims(x_k_alpha, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
-        dsq_mnot = SelectWithDefaultMnot(self.Mnot, dsq, 0.) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1)  #K x V 
-        dsq_mnot = tf.reduce_sum(dsq_mnot**2, axis=-1)  #K x V
         in_radius = rel_metrics_radius > tf.sqrt(dsq) / self.d_k # K x V
-        in_radius_mnot = rel_metrics_radius > tf.sqrt(dsq_mnot) / self.d_k # K x V
+        in_radius_mnot = SelectWithDefaultMnot(self.Mnot, in_radius, 0.) #K x V
         
         energies_k_v = tf.expand_dims(energies, axis=0) # K x V x 1
         energies_ir_all_k_v = tf.where(in_radius[...,tf.newaxis], energies_k_v , 0.)

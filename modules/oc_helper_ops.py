@@ -102,6 +102,10 @@ def SelectWithDefault(indices, tensor, default=0, no_check=False):
         
         return out
 def SelectWithDefaultMnot(Mnot, tensor, default=0, no_check=False):
+    #tensor dim = K x V x 1 or K x V
+    no_extra_dim = (len(tf.shape(tensor)) == 2)
+    if no_extra_dim:
+        tensor = tf.expand_dims(tensor, axis=-1)  
     K, V, _ = tensor.shape
     _, X = Mnot.shape
     
@@ -115,6 +119,9 @@ def SelectWithDefaultMnot(Mnot, tensor, default=0, no_check=False):
     
     # Step 3: Apply the mask to dsq, setting unselected elements to 0
     tensor_mnot = tf.where(mask, tensor, tf.zeros_like(tensor))
+    
+    if no_extra_dim:
+        tensor_mnot = tf.squeeze(tensor_mnot, axis=-1)
     
     return tensor_mnot
 
