@@ -18,7 +18,7 @@ class TrainData_Cocoa(TrainData_NanoML):
         trainData,rs = self.converttotrainingdfvec(data)
 
         #make simpleArray features
-        features = trainData[['recHitEnergy', 'recHitEta', 'istrack','recHitTheta', 'recHitR', 'recHitX', 'recHitY', 'recHitZ', 'recHitTime', 'recHitHitR']]
+        features = trainData[['recHitEnergy', 'recHitEta', 'isTrack','recHitTheta', 'recHitR', 'recHitX', 'recHitY', 'recHitZ', 'recHitTime', 'recHitHitR']]
         farr = SimpleArray(np.float32(features.to_numpy()),rs,name="recHitFeatures")
 
         #make simpleArray truth
@@ -43,7 +43,7 @@ class TrainData_Cocoa(TrainData_NanoML):
         df_cell = pd.DataFrame()
         df_cell['recHitEnergy'] =  ak.to_dataframe(event['cell_e'], how='outer')
         df_cell['recHitEta'] = ak.to_dataframe(event['cell_eta'], how='outer')
-        df_cell['istrack'] = 0
+        df_cell['isTrack'] = 0
         df_cell['recHitTheta'] =ak.to_dataframe(event['cell_phi'], how='outer')
         df_cell['recHitR'] = 0 #will be calculated later
         df_cell['recHitX']= ak.to_dataframe(event['cell_x'], how='outer')
@@ -82,13 +82,18 @@ class TrainData_Cocoa(TrainData_NanoML):
         df_track['recHitTheta'] =ak.to_dataframe(event['track_theta'], how='outer')
         df_track['recHitEta'] = -np.log(np.tan(df_track['recHitTheta']/2))
 
-        df_track['isTrack'] = 1
-
         df_track['recHitTime'] = 0
         df_track['recHitHitR'] = 0
 
         #join track information to particle information
         df_track = df_track.join(df_particle, on='t_idx')
+        
+        #set is Track to -1 or 1 depending on sign of t_pid
+        df_track['isTrack'] = pdgid_to_charge(df_track['t_pid'])
+        #raise Error if any istrack is zero
+        if 0 in df_track['isTrack'].values:
+            raise ValueError("Error in isTrack")
+        
         
         #Smear true energy for track
         df_track['recHitEnergy'] = df_track['t_energy'].apply(lambda x: np.random.normal(x, 0.01 * x))
@@ -127,3 +132,26 @@ class TrainData_Cocoa(TrainData_NanoML):
         #concat all events
         traindata = pd.concat(traindata)
         return traindata, rs
+    
+#HelpFunction to convert PDGIDs to the charge of the particle
+def pdgid_to_charge(pdgid):
+    charge_dict = {
+        11: -1, # electron
+        -11: 1, # positron
+        13: -1, # muon
+        -13: 1, # antimuon
+        211: 1, # pi+
+        -211: -1, # pi-
+        321: 1, # K+
+        -321: -1, # K-
+        2212: 1, # proton
+        -2212: -1, # antiproton
+        3112: -1, # Sigma-
+        -3112: 1, # antilambda_c+
+        3222: 1, # Sigma+
+        -3222: -1, # antilambda_c-
+        3312: -1, # Xi-
+        -3312: 1, # antixi+
+    }
+    # Default to 0, check if valid later
+    return np.vectorize(charge_dict.get)(pdgid, 0)

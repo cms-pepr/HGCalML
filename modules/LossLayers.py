@@ -3155,6 +3155,56 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
         ploss = tf.reduce_sum(tf.math.abs(t_pos - pred_pos)**2, axis=-1, keepdims=True)
         ploss = tf.debugging.check_numerics(ploss, "ploss loss")
         return ploss
+    
+    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique=None, hasunique=None):
+        """
+        Truth PID is not yet one-hot encoded
+        Encoding:
+            0: Photon
+            1: Neutral Hadron
+            2: Charged
+            3:  Ambiguous
+        """
+        if self.classification_loss_weight <= 0:
+            return tf.reduce_mean(pred_id,axis=1, keepdims=True)
+
+        charged_conditions = [
+                tf.abs(orig_t_pid) == 11,  # Electrons
+                tf.abs(orig_t_pid) == 13,  # Muons
+                tf.abs(orig_t_pid) == 211,  # Charged Pions
+                tf.abs(orig_t_pid) == 321,  # Charged Kaons
+                tf.abs(orig_t_pid) == 2212, # Protons
+                tf.abs(orig_t_pid) == 3112, # Sigma-
+                tf.abs(orig_t_pid) == 3222, # Sigma+
+                tf.abs(orig_t_pid) == 3312, # Xi-
+                ]
+        neutral_hadronic_conditions = [
+                tf.abs(orig_t_pid) == 130,  # Klong
+                tf.abs(orig_t_pid) == 310,  # Kshort
+                tf.abs(orig_t_pid) == 311,  # K0
+                tf.abs(orig_t_pid) == 2112, # Neutrons
+                tf.abs(orig_t_pid) == 3122, # Lambda
+                tf.abs(orig_t_pid) == 3322, # Xi0
+                ]
+        charged_true = tf.reduce_any(charged_conditions, axis=0)
+        neutral_hadronic_true = tf.reduce_any(neutral_hadronic_conditions, axis=0)
+
+        truth_pid_tmp = tf.zeros_like(orig_t_pid) - 1 # Initialize with -1
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 22, 0, truth_pid_tmp)    # Photons
+        truth_pid_tmp = tf.where(neutral_hadronic_true, 1, truth_pid_tmp)       # Neutral Had.
+        truth_pid_tmp = tf.where(charged_true, 2, truth_pid_tmp)       # Charged
+        truth_pid_tmp = tf.where(truth_pid_tmp == -1, 3, truth_pid_tmp)         # Catch rest
+        truth_pid_tmp = tf.cast(truth_pid_tmp, tf.int32)
+
+        truth_pid_onehot = tf.one_hot(truth_pid_tmp, depth=4)
+        truth_pid_onehot = tf.reshape(truth_pid_onehot, (-1, 4))
+
+        pred_id = tf.clip_by_value(pred_id, 1e-9, 1. - 1e-9)
+        classloss = tf.keras.losses.categorical_crossentropy(truth_pid_onehot, pred_id)
+
+        classloss = tf.debugging.check_numerics(classloss, "classloss")
+
+        return classloss[...,tf.newaxis]
 
 
 class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):

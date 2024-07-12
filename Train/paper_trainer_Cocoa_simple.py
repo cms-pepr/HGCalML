@@ -198,6 +198,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         pred_pos, pred_time, pred_time_unc, pred_id = \
         create_outputs(x,
                 n_ccoords=3,
+                n_classes=4,
                 n_pos = 3,
                 fix_distance_scale=True,
                 is_track=is_track,

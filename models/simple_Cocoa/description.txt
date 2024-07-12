@@ -2,3 +2,4 @@ Dataset:
 /work/friemer/hgcalml/trainingdata_split/dataCollection.djcdc (Cocoa Dataset)
 
 Model has been trained for ~2h, but it showed great improvement, so future models can be faster 
+now with 3D position (cosphi, sinphi, eta)

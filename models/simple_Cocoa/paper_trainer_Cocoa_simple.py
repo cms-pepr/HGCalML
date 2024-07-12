@@ -198,12 +198,13 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         pred_pos, pred_time, pred_time_unc, pred_id = \
         create_outputs(x,
                 n_ccoords=3,
+                n_pos = 3,
                 fix_distance_scale=True,
                 is_track=is_track,
                 set_track_betas_to_one=True)
 
 
-    pred_beta = LLExtendedObjectCondensation3(
+    pred_beta = LLExtendedObjectCondensation5(
             scale=1.,
             use_energy_weights=True,
             record_metrics=True,
@@ -214,11 +215,11 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             too_much_beta_scale = 0.0,
             energy_loss_weight = 0.4,
             classification_loss_weight = 0.4,
-            position_loss_weight =  0.0,
+            position_loss_weight =  1.0,
             timing_loss_weight = 0.0,
             downweight_low_energy=False,
             train_energy_unc=False,
-            q_min = 1.0,
+            q_min = 0.1,
             use_average_cc_pos = 0.9999)(
                     [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
                         pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
@@ -335,7 +336,7 @@ train.trainModel(
 train.compileModel(learningrate=1e-4)
 print('entering third training phase')
 train.trainModel(
-        nepochs=25,
+        nepochs=35,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
