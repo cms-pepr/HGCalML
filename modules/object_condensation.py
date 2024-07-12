@@ -237,17 +237,17 @@ class Basic_OC_per_sample(object):
         
         dsq = self.calc_dsq_rep()
         
-        
-        dsq_mnot = SelectWithDefaultMnot(self.Mnot, dsq, 0.) #K x V x 1
-        
         # nogradbeta = tf.stop_gradient(self.beta_k_m)
         #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
-        sigma = self.weighted_d_k_m(dsq_mnot) #create gradients for all, but prefer k vertex
-        dsq_mnot = tf.math.divide_no_nan(dsq_mnot, sigma**2 + 1e-4)
-        
+        sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
+        dsq = tf.math.divide_no_nan(dsq, sigma**2 + 1e-4)
         
 
-        V_rep = self.rep_func(dsq_mnot) * tf.expand_dims(self.q_v,axis=0)
+        V_rep = self.rep_func(dsq) * tf.expand_dims(self.q_v,axis=0)
+        V_rep = SelectWithDefaultMnot(self.Mnot, V_rep, 0.) #K x V x 1
+        
+        
+        dsq_mnot = SelectWithDefaultMnot(self.Mnot, dsq, 0.) #K x V x 1
         if self.rep_range > 0:
             N_notk = tf.reduce_sum(tf.where(dsq_mnot < self.rep_range**2 , 1., tf.zeros_like(dsq_mnot)), axis=1)
         else:
