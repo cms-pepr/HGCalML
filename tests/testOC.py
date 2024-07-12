@@ -83,34 +83,82 @@ for i in [42,300,500,1,565656,400432,342342,3242342]:
     random_loss(i)
     
 # corrtruth tf.Tensor(2.93983, shape=(), dtype=float32)
+# Att:  tf.Tensor(636.08734, shape=(), dtype=float32)
+# Rep:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Min:  tf.Tensor(-0.0024269393, shape=(), dtype=float32)
+# Noise:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Excee:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Payload:  tf.Tensor([ 2.7801     0.         0.        -1.6151048  5.305293 ], shape=(5,), dtype=float32)
 # ExtendedOCLoss loss 642.5552
 # ExtendedOCLoss loss 642.5552
 # tf.Tensor(642.5552, shape=(), dtype=float32)
 # corrtruth tf.Tensor(2.8827302, shape=(), dtype=float32)
+# Att:  tf.Tensor(637.69476, shape=(), dtype=float32)
+# Rep:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Min:  tf.Tensor(-0.0018903641, shape=(), dtype=float32)
+# Noise:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Excee:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Payload:  tf.Tensor([ 2.7772715  0.         0.        -1.6486813  5.2056036], shape=(5,), dtype=float32)
 # ExtendedOCLoss loss 644.0271
 # ExtendedOCLoss loss 644.0271
 # tf.Tensor(644.0271, shape=(), dtype=float32)
 # corrtruth tf.Tensor(2.8496196, shape=(), dtype=float32)
+# Att:  tf.Tensor(636.7689, shape=(), dtype=float32)
+# Rep:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Min:  tf.Tensor(-0.0022501661, shape=(), dtype=float32)
+# Noise:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Excee:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Payload:  tf.Tensor([ 2.7283812  0.         0.        -1.5966831  5.247504 ], shape=(5,), dtype=float32)
 # ExtendedOCLoss loss 643.1459
 # ExtendedOCLoss loss 643.1459
 # tf.Tensor(643.1459, shape=(), dtype=float32)
 # corrtruth tf.Tensor(2.903933, shape=(), dtype=float32)
+# Att:  tf.Tensor(634.7787, shape=(), dtype=float32)
+# Rep:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Min:  tf.Tensor(-0.002124406, shape=(), dtype=float32)
+# Noise:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Excee:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Payload:  tf.Tensor([ 2.7691891  0.         0.        -1.6075772  4.9952393], shape=(5,), dtype=float32)
 # ExtendedOCLoss loss 640.93335
 # ExtendedOCLoss loss 640.93335
 # tf.Tensor(640.93335, shape=(), dtype=float32)
 # corrtruth tf.Tensor(2.935431, shape=(), dtype=float32)
+# Att:  tf.Tensor(638.36597, shape=(), dtype=float32)
+# Rep:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Min:  tf.Tensor(-0.0021555822, shape=(), dtype=float32)
+# Noise:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Excee:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Payload:  tf.Tensor([ 2.7554877  0.         0.        -1.5892332  5.2951083], shape=(5,), dtype=float32)
 # ExtendedOCLoss loss 644.8252
 # ExtendedOCLoss loss 644.8252
 # tf.Tensor(644.8252, shape=(), dtype=float32)
 # corrtruth tf.Tensor(2.9261627, shape=(), dtype=float32)
+# Att:  tf.Tensor(639.1542, shape=(), dtype=float32)
+# Rep:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Min:  tf.Tensor(-0.0028582471, shape=(), dtype=float32)
+# Noise:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Excee:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Payload:  tf.Tensor([ 2.7812486  0.         0.        -1.5922239  5.336297 ], shape=(5,), dtype=float32)
 # ExtendedOCLoss loss 645.67664
 # ExtendedOCLoss loss 645.67664
 # tf.Tensor(645.67664, shape=(), dtype=float32)
 # corrtruth tf.Tensor(3.0330386, shape=(), dtype=float32)
+# Att:  tf.Tensor(633.7874, shape=(), dtype=float32)
+# Rep:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Min:  tf.Tensor(-0.001937026, shape=(), dtype=float32)
+# Noise:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Excee:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Payload:  tf.Tensor([ 2.7607439  0.         0.        -1.6043333  5.2602963], shape=(5,), dtype=float32)
 # ExtendedOCLoss loss 640.2022
 # ExtendedOCLoss loss 640.2022
 # tf.Tensor(640.2022, shape=(), dtype=float32)
 # corrtruth tf.Tensor(2.9854856, shape=(), dtype=float32)
+# Att:  tf.Tensor(640.62555, shape=(), dtype=float32)
+# Rep:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Min:  tf.Tensor(-0.0024138745, shape=(), dtype=float32)
+# Noise:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Excee:  tf.Tensor(0.0, shape=(), dtype=float32)
+# Payload:  tf.Tensor([ 2.7953646  0.         0.        -1.5740322  5.2131767], shape=(5,), dtype=float32)
 # ExtendedOCLoss loss 647.0576
 # ExtendedOCLoss loss 647.0576
 # tf.Tensor(647.0576, shape=(), dtype=float32)
