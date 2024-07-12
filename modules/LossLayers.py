@@ -2619,7 +2619,6 @@ class LLFullObjectCondensation(LossLayerBase):
                 is_spectator_weight=is_spectator,
                 rs=rowsplits,
                 energies = rechit_energy)
-        print(mdict)
 
         #log the OC metrics dict, if any
         self.wandb_log(mdict)
