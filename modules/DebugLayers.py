@@ -630,6 +630,7 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
          - t_energy
          - t_idx
          - graph condensation
+         - (opt) is_track -> if given tracks are marked as noise (efficiency with hits only)
          
         Output:
          - t_energy 
@@ -656,14 +657,14 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         return dict(list(base_config.items()) + list(config.items()))
     
     #overwrite here
-    def call(self, t_energy, t_idx, graph_trans , training=None):
+    def call(self, t_energy, t_idx, graph_trans , is_track = None, training=None):
         
         if not self.check_make_plot([t_energy], training):
             return t_energy
         
         os.system('mkdir -p '+self.outdir)
         try:
-            self.plot(t_energy, t_idx, graph_trans,training)
+            self.plot(t_energy, t_idx, graph_trans,is_track, training)
         except Exception as e:
             raise e
             #do nothing, don't interrupt training because a debug plot failed
@@ -689,7 +690,7 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
             
             
         
-    def plot(self, t_energy, t_idx, graph_trans, training=None):
+    def plot(self, t_energy, t_idx, graph_trans, is_track = None, training=None):
         
         '''
         'rs_down',
@@ -700,9 +701,11 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         '''
         rs = graph_trans['rs_down']
         rsup = graph_trans['rs_up']
+
         
         up_t_idx = tf.gather_nd(t_idx, graph_trans['sel_idx_up'])
         up_t_energy = tf.gather_nd(t_energy, graph_trans['sel_idx_up'])
+        up_is_track = tf.gather_nd(is_track, graph_trans['sel_idx_up']) if is_track is not None else None
         
         orig_energies = []
         energies = []
@@ -711,6 +714,10 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
             
             rs_t_idx = t_idx[rs[i]:rs[i+1]][:,0]
             rs_t_energy = t_energy[rs[i]:rs[i+1]][:,0]
+            rs_is_track = is_track[rs[i]:rs[i+1]][:,0] if is_track is not None else None
+
+            if rs_is_track is not None: #mark tracks as noise so that they are removed from the efficiency calc.
+                rs_t_idx = tf.where(rs_is_track > 0, -1, rs_t_idx)
             
             u, _ = tf.unique(rs_t_energy[rs_t_idx >= 0])
             
@@ -718,6 +725,10 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
             
             rs_sel_t_idx = up_t_idx[ rsup[i]:rsup[i+1] ]
             rs_sel_t_energy = up_t_energy[ rsup[i]:rsup[i+1] ]
+
+            if rs_is_track is not None:
+                rs_up_is_track = up_is_track[ rsup[i]:rsup[i+1] ]
+                rs_sel_t_idx = tf.where(rs_up_is_track > 0, -1, rs_sel_t_idx)
             
             #same for selected
             u, _ = tf.unique(rs_sel_t_energy[rs_sel_t_idx >= 0])
