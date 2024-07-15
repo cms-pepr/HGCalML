@@ -2640,6 +2640,10 @@ def mini_tree_create(
     if cleaning_mode:
         score = LLValuePenalty(1., active = trainable)(score)
     else:
+        if is_track is not None:
+            orig_score = score
+            score = Where()([is_track, ZerosLike()(score),score]) #this will prevent collapse to a single track per particle
+
         score = LLGraphCondensationScore(
             record_metrics = record_metrics,
             K=K_loss,
@@ -2648,7 +2652,9 @@ def mini_tree_create(
                 low_energy_cut = low_energy_cut,
                 name = name + '_score'
                 )([score, coords, t_idx, t_energy, rs])
-
+        
+        if is_track is not None:
+            score = Where()([is_track, orig_score, score]) #technically doesn't matter as tracks are always promoted
 
     trans_a = CreateGraphCondensation(
             score_threshold = score_threshold,
