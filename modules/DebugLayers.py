@@ -48,12 +48,26 @@ class _Publish:
     def log_html_to_wandb(self, infilename, html_content):
         current_time = datetime.now()
         last_time = self.last_logged_time.get(infilename, datetime.min)
-        
-        if current_time - last_time >= self.time_threshold:
+
+        def delete_old():
+            wandb = wandb_wrapper.wandb()
+            #get the current run
+            
+            run = wandb.Api().run(wandb.run.path)
+            files = run.files()
+            for file in files:
+                namewithouthash = file.name[:-(2+1+20+1+4)] #additional _X_20hash.html
+                #remove the prepending path if any
+                namewithouthash = os.path.basename(namewithouthash)
+                if infilename == namewithouthash:
+                    file.delete()
+            
+                    
+        if current_time - last_time >= self.time_threshold: #DEBUG
             # Log HTML content to wandb
             # add wandb step number to name
-            logname = infilename + f"_step_{wandb_wrapper.wandb().run.step}"
-            wandb_wrapper.log({logname: wandb_wrapper.wandb().Html(html_content)})
+            delete_old()
+            wandb_wrapper.log({infilename: wandb_wrapper.wandb().Html(html_content)})
             self.last_logged_time[infilename] = current_time
         else:
             next_allowed_time = last_time + self.time_threshold
@@ -61,7 +75,7 @@ class _Publish:
             print(f"Warning: {infilename} was logged less than {self.time_threshold} s ago. Next allowed logging time in {time_remaining // 60:.0f} minutes.")
 
 # Usage example:
-publisher = _Publish(time_threshold=3600)
+publisher = _Publish(time_threshold=1800) #allow every half an hour
 
 # Replace the original function call with a method call on the publisher instance
 def publish(infile, where_to, ftype='html'):
