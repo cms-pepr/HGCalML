@@ -390,7 +390,8 @@ class training_base(object):
     def teststep_parallel(self, split_data):
         if self.ngpus == 1:
             _, l = self.run_model(self.mgpu_keras_models[0], split_data[0], 0)
-            return l
+            self.global_loss = float(l)
+            return self.global_loss
         else:
             batch_losses = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.ngpus) as executor:
