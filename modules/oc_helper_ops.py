@@ -101,29 +101,43 @@ def SelectWithDefault(indices, tensor, default=0, no_check=False):
         tf.assert_equal(tf.shape(tensor)[1], tf.shape(out)[2])]):
         
         return out
-def SelectWithDefaultMnot(Mnot, tensor, default=0, no_check=False):
-    #tensor dim = K x V x 1 or K x V
+def SelectWithDefaultMnot(Mnot, tensor):
+    # Check if tensor has a third dimension, if not, expand it
     no_extra_dim = (len(tf.shape(tensor)) == 2)
     if no_extra_dim:
-        tensor = tf.expand_dims(tensor, axis=-1)  
+        tensor = tf.expand_dims(tensor, axis=-1)
+    
     K, V, _ = tensor.shape
-    _, X = Mnot.shape
+
+    # Create a base mask of shape (K, V) initialized to False
+    mask = tf.zeros((K, V), dtype=tf.bool)
+
+    # Flatten Mnot and create row indices
+    row_indices = tf.repeat(tf.range(K), repeats=Mnot.shape[1])
+    col_indices = tf.reshape(Mnot, [-1])    
     
-    # Step 1: Create a range tensor of shape (V,) and expand dimensions to match dsq for broadcasting
-    v_range = tf.range(V)
-    v_range_expanded = tf.expand_dims(tf.expand_dims(v_range, axis=0), axis=-1)  # Shape (1, V, 1)
-    
-    # Step 2: Expand Mnot dimensions and compare against v_range to create a mask
-    Mnot_expanded = tf.expand_dims(Mnot, axis=1)  # Shape (K, 1, X)
-    mask = tf.reduce_any(tf.equal(Mnot_expanded, v_range_expanded), axis=-1, keepdims=True)  # Shape (K, V, 1)
-    
-    # Step 3: Apply the mask to dsq, setting unselected elements to 0
-    tensor_mnot = tf.where(mask, tensor, tf.zeros_like(tensor))
+    # Filter out invalid indices (-1)
+    valid_mask = col_indices >= 0
+    row_indices = tf.boolean_mask(row_indices, valid_mask)
+    col_indices = tf.boolean_mask(col_indices, valid_mask)
+
+    # Stack indices together
+    indices = tf.stack([row_indices, col_indices], axis=1)
+
+    # Scatter update to create the mask
+    updates = tf.ones(indices.shape[0], dtype=tf.bool)
+    mask = tf.tensor_scatter_nd_update(mask, indices, updates)
+
+    # Expand the mask to match the last dimension of the tensor
+    mask_expanded = tf.expand_dims(mask, -1)
+
+    # Apply the mask to set the elements to 0
+    tensor = tf.where(mask_expanded, tensor, tf.zeros_like(tensor))
     
     if no_extra_dim:
-        tensor_mnot = tf.squeeze(tensor_mnot, axis=-1)
+        tensor = tf.squeeze(tensor, axis=-1)
     
-    return tensor_mnot
+    return tensor
 
 
 def per_rs_segids_to_unique(pred_sid, rs, return_nseg=False, strict_check=True):

@@ -244,10 +244,10 @@ class Basic_OC_per_sample(object):
         
 
         V_rep = self.rep_func(dsq) * tf.expand_dims(self.q_v,axis=0)
-        V_rep = SelectWithDefaultMnot(self.Mnot, V_rep, 0.) #K x V x 1
+        V_rep = SelectWithDefaultMnot(self.Mnot, V_rep) #K x V x 1
         
         
-        dsq_mnot = SelectWithDefaultMnot(self.Mnot, dsq, 0.) #K x V x 1
+        dsq_mnot = SelectWithDefaultMnot(self.Mnot, dsq) #K x V x 1
         if self.rep_range > 0:
             N_notk = tf.reduce_sum(tf.where(dsq_mnot < self.rep_range**2 , 1., tf.zeros_like(dsq_mnot)), axis=1)
         else:
@@ -402,7 +402,7 @@ class Basic_OC_per_sample(object):
         dsq = tf.expand_dims(x_k_alpha, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1)  #K x V 
         in_radius = rel_metrics_radius > tf.sqrt(dsq) / self.d_k # K x V
-        in_radius_mnot = SelectWithDefaultMnot(self.Mnot, in_radius, 0.) #K x V
+        in_radius_mnot = SelectWithDefaultMnot(self.Mnot, in_radius) #K x V
         
         energies_k_v = tf.expand_dims(energies, axis=0) # K x V x 1
         energies_ir_all_k_v = tf.where(in_radius[...,tf.newaxis], energies_k_v , 0.)
