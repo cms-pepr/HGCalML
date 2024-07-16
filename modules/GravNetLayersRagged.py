@@ -374,6 +374,27 @@ class MixWhere(tf.keras.layers.Layer):
         return out
 
 
+class SuperFlatten(tf.keras.layers.Layer):
+
+    def __init__(self, event_size=50*50, **kwargs):
+        '''
+        
+        '''
+        self.event_size = event_size
+        super(SuperFlatten, self).__init__(**kwargs)
+
+    def get_config(self):
+        base_config = super(SuperFlatten, self).get_config()
+        return dict(list(base_config.items()) + list({'event_size': self.event_size 
+                                                      }.items()))
+    
+    def call(self,inputs):
+        self.event_size
+        out = tf.reshape(inputs, [-1, inputs.shape[3]])
+        rs = tf.range(tf.shape(inputs)[0]) * self.event_size
+        rs = tf.cast(rs, dtype='int32')
+        return out, rs
+
 class ShiftDistance(tf.keras.layers.Layer):
     '''
     Shifts distance to smaller values

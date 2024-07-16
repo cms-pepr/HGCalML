@@ -69,6 +69,9 @@ global_layers_list['CreateMask']=CreateMask
 from GravNetLayersRagged import Where
 global_layers_list['Where']=Where
 
+from GravNetLayersRagged import SuperFlatten
+global_layers_list['SuperFlatten']=SuperFlatten
+
 from GravNetLayersRagged import MixWhere
 global_layers_list['MixWhere']=MixWhere
 
