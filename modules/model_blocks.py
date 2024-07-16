@@ -2640,6 +2640,10 @@ def mini_tree_create(
     if cleaning_mode:
         score = LLValuePenalty(1., active = trainable)(score)
     else:
+        if is_track is not None:
+            orig_score = score
+            score = Where()([is_track, ZerosLike()(score),score]) #this will prevent collapse to a single track per particle
+
         score = LLGraphCondensationScore(
             record_metrics = record_metrics,
             K=K_loss,
@@ -2648,7 +2652,9 @@ def mini_tree_create(
                 low_energy_cut = low_energy_cut,
                 name = name + '_score'
                 )([score, coords, t_idx, t_energy, rs])
-
+        
+        if is_track is not None:
+            score = Where()([is_track, orig_score, score]) #technically doesn't matter as tracks are always promoted
 
     trans_a = CreateGraphCondensation(
             score_threshold = score_threshold,
@@ -2972,9 +2978,15 @@ def double_tree_condensation_block(in_dict,
     
     in_dict['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
-                     name = 'double_cond_first_stage',
+                     name = 'dc_1st_stage',
                             publish = debug_publish,
                      outdir= debug_outdir )(in_dict['t_energy'], in_dict['t_idx'], graph)
+    
+    in_dict['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = plot_debug_every,
+                     name = 'dc_1st_stage_no_tracks',
+                            publish = debug_publish,
+                     outdir= debug_outdir )(in_dict['t_energy'], in_dict['t_idx'], graph, is_track = in_dict['is_track'])
     
     #just to keep the plot in the loop
     graph['weights_down'] = DummyLayer()([graph['weights_down'], in_dict['t_energy']])
@@ -3013,9 +3025,15 @@ def double_tree_condensation_block(in_dict,
     #this is out and not out2 on purpose!
     out['t_energy'] = PlotGraphCondensationEfficiency(
                      plot_every = plot_debug_every,
-                     name = 'double_cond_second_stage',
+                     name = 'dc_2nd_stage',
                      publish = debug_publish,
                      outdir= debug_outdir )(out['t_energy'], out['t_idx'], graph2)
+    
+    out['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = plot_debug_every,
+                     name = 'dc_2nd_stage_no_tracks',
+                     publish = debug_publish,
+                     outdir= debug_outdir )(out['t_energy'], out['t_idx'], graph2, is_track = out['is_track'])
 
     #make sure the above does not get optimised away
     graph2['weights_down'] = DummyLayer()([graph2['weights_down'], out['t_energy']])

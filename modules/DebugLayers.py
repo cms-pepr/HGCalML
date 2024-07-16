@@ -48,12 +48,26 @@ class _Publish:
     def log_html_to_wandb(self, infilename, html_content):
         current_time = datetime.now()
         last_time = self.last_logged_time.get(infilename, datetime.min)
-        
-        if current_time - last_time >= self.time_threshold:
+
+        def delete_old():
+            wandb = wandb_wrapper.wandb()
+            #get the current run
+            
+            run = wandb.Api().run(wandb.run.path)
+            files = run.files()
+            for file in files:
+                namewithouthash = file.name[:-(2+1+20+1+4)] #additional _X_20hash.html
+                #remove the prepending path if any
+                namewithouthash = os.path.basename(namewithouthash)
+                if infilename == namewithouthash:
+                    file.delete()
+            
+                    
+        if current_time - last_time >= self.time_threshold: #DEBUG
             # Log HTML content to wandb
             # add wandb step number to name
-            logname = infilename + f"_step_{wandb_wrapper.wandb().run.step}"
-            wandb_wrapper.log({logname: wandb_wrapper.wandb().Html(html_content)})
+            delete_old()
+            wandb_wrapper.log({infilename: wandb_wrapper.wandb().Html(html_content)})
             self.last_logged_time[infilename] = current_time
         else:
             next_allowed_time = last_time + self.time_threshold
@@ -61,7 +75,7 @@ class _Publish:
             print(f"Warning: {infilename} was logged less than {self.time_threshold} s ago. Next allowed logging time in {time_remaining // 60:.0f} minutes.")
 
 # Usage example:
-publisher = _Publish(time_threshold=3600)
+publisher = _Publish(time_threshold=1800) #allow every half an hour
 
 # Replace the original function call with a method call on the publisher instance
 def publish(infile, where_to, ftype='html'):
@@ -630,6 +644,7 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
          - t_energy
          - t_idx
          - graph condensation
+         - (opt) is_track -> if given tracks are marked as noise (efficiency with hits only)
          
         Output:
          - t_energy 
@@ -656,14 +671,14 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         return dict(list(base_config.items()) + list(config.items()))
     
     #overwrite here
-    def call(self, t_energy, t_idx, graph_trans , training=None):
+    def call(self, t_energy, t_idx, graph_trans , is_track = None, training=None):
         
         if not self.check_make_plot([t_energy], training):
             return t_energy
         
         os.system('mkdir -p '+self.outdir)
         try:
-            self.plot(t_energy, t_idx, graph_trans,training)
+            self.plot(t_energy, t_idx, graph_trans,is_track, training)
         except Exception as e:
             raise e
             #do nothing, don't interrupt training because a debug plot failed
@@ -689,7 +704,7 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
             
             
         
-    def plot(self, t_energy, t_idx, graph_trans, training=None):
+    def plot(self, t_energy, t_idx, graph_trans, is_track = None, training=None):
         
         '''
         'rs_down',
@@ -700,9 +715,11 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         '''
         rs = graph_trans['rs_down']
         rsup = graph_trans['rs_up']
+
         
         up_t_idx = tf.gather_nd(t_idx, graph_trans['sel_idx_up'])
         up_t_energy = tf.gather_nd(t_energy, graph_trans['sel_idx_up'])
+        up_is_track = tf.gather_nd(is_track, graph_trans['sel_idx_up']) if is_track is not None else None
         
         orig_energies = []
         energies = []
@@ -711,6 +728,10 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
             
             rs_t_idx = t_idx[rs[i]:rs[i+1]][:,0]
             rs_t_energy = t_energy[rs[i]:rs[i+1]][:,0]
+            rs_is_track = is_track[rs[i]:rs[i+1]][:,0] if is_track is not None else None
+
+            if rs_is_track is not None: #mark tracks as noise so that they are removed from the efficiency calc.
+                rs_t_idx = tf.where(rs_is_track > 0, -1, rs_t_idx)
             
             u, _ = tf.unique(rs_t_energy[rs_t_idx >= 0])
             
@@ -718,6 +739,10 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
             
             rs_sel_t_idx = up_t_idx[ rsup[i]:rsup[i+1] ]
             rs_sel_t_energy = up_t_energy[ rsup[i]:rsup[i+1] ]
+
+            if rs_is_track is not None:
+                rs_up_is_track = up_is_track[ rsup[i]:rsup[i+1] ]
+                rs_sel_t_idx = tf.where(rs_up_is_track > 0, -1, rs_sel_t_idx)
             
             #same for selected
             u, _ = tf.unique(rs_sel_t_energy[rs_sel_t_idx >= 0])
