@@ -753,12 +753,12 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
     if not isinstance(alpha_idx, np.ndarray):
         alpha_idx = alpha_idx.numpy()
     alpha_idx = np.reshape(alpha_idx, newshape=(-1,))
-    print("Made showers")
+    # print("Made showers")
 
     processed_pred_dict = dict()
     processed_pred_dict['pred_sid'] = pred_sid
 
-    print("Get energy")
+    # print("Get energy")
     energy_data = energy_gather_layer(
             pred_sid,
             predictions_dict['pred_energy_corr_factor'],
@@ -770,7 +770,7 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
             alpha_idx_tracks = alpha_idx_tracks,
             t_is_minbias = is_minbias,
             )
-    print("Got energy")
+    # print("Got energy")
 
 
     try:

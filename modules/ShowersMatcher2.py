@@ -152,7 +152,6 @@ class ShowersMatcher:
 
     def _assign_hasTrack(self):
         id = self.features_dict['recHitID']
-        print(id)
         truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0].astype(np.int32) * 1
         pred_sid = self.pred_sid * 1
 
@@ -164,6 +163,22 @@ class ShowersMatcher:
 
             attr['hasTrack'] = np.any(id[filt])
 
+    #JUST FOR TESTING
+    def _assign_tidx(self):
+        truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0].astype(np.int32) * 1
+        pred_sid = self.pred_sid * 1
+        print(pred_sid)
+        
+        for n, attr in self.graph.nodes(data=True):
+            if attr['type'] == ShowersMatcher._NODE_TYPE_TRUTH_SHOWER:
+                filt = truth_sid == n
+                tidx = self.truth_dict['truthHitAssignementIdx']
+                attr['tidx'] = np.argmax(np.bincount(tidx[filt].flatten()))
+            else:
+                filt = pred_sid == n
+                tidx = self.predictions_dict['t_idx']
+                print("TIDX", tidx[filt])
+                attr['tidx'] = tidx[filt]
     def _build_data_graph(self):
         """
         Builds a graph in which all truth showers and all predicted showers are nodes
@@ -285,7 +300,24 @@ class ShowersMatcher:
                     d= np.sqrt(reldeltaEsq + 5*deltaRsq)
 
                     C[a, b] = 1/(d+1e-3)
-
+        print(C)
+        return C
+    
+    #JUST FOR TESTING
+    def _cost_matrix_tidx(self, truth_shower_sid, pred_shower_sid):
+        
+        n = max(len(truth_shower_sid), len(pred_shower_sid))
+        C = np.zeros((n, n))
+        
+        for a, j in enumerate(pred_shower_sid):
+            x = self.graph.nodes(data=True)[j]
+            for b, i in enumerate(truth_shower_sid):
+                y = self.graph.nodes(data=True)[i]
+                if (x['t_idx'] != y['truthHitAssignementIdx']):
+                    C[a, b] =0
+                else:                    
+                    C[a, b] = 1
+        print(C)
         return C
 
 
@@ -293,7 +325,7 @@ class ShowersMatcher:
         pred_shower_energy = np.array([self.graph.nodes[x]['pred_energy'] for x in pred_shower_sid])
         truth_shower_energy = np.array([self.graph.nodes[x]['truthHitAssignedEnergies'] for x in truth_shower_sid])
         weight = self.features_dict['recHitEnergy'][:, 0]
-        is_track = np.abs(self.features_dict['recHitID'][:,0])
+        is_track = np.bool8(np.abs(self.features_dict['recHitID'][:,0]))
         #is_track = np.abs(self.features_dict['recHitZ'][:,0]) == 315 # TODO: This works for now, but is very hacky
         weight[is_track] = 0
 
@@ -356,8 +388,11 @@ class ShowersMatcher:
 
 
         C = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
+        print(C)
 
         row_id, col_id = linear_sum_assignment(C, maximize=True)
+        print("Row ID", row_id)
+        print("Col ID", col_id)
 
         self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
         matched_full_graph = nx.Graph()
@@ -371,6 +406,8 @@ class ShowersMatcher:
                     attached_in_pass=0)
 
         self.calculated_graph = matched_full_graph
+        #[3 4 2 6 1 5 0]
+        # [6 1 5 4 3 2 7 0 8]
 
     #based on _match_single_pass
     def _match_cocoa(self):
@@ -397,6 +434,49 @@ class ShowersMatcher:
         C = self._cost_matrix_Cocoa(truth_shower_sid, pred_shower_sid)
 
         row_id, col_id = linear_sum_assignment(C, maximize=True)
+        print("Row ID", row_id)
+        print("Col ID", col_id)
+
+        self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
+        matched_full_graph = nx.Graph()
+        matched_full_graph.add_nodes_from(self.graph.nodes(data=True))
+
+        for p, t in zip(row_id, col_id):
+            if C[p, t] > 0:
+                matched_full_graph.add_edge(
+                    truth_shower_sid[t],
+                    pred_shower_sid[p],
+                    attached_in_pass=0)
+
+        self.calculated_graph = matched_full_graph
+    
+    #JUST FOR TESTING 
+    def _match_tidx(self):
+        truth_shower_sid = [
+            x[0]
+            for x in self.graph.nodes(data=True)
+            if x[1]['type']==ShowersMatcher._NODE_TYPE_TRUTH_SHOWER
+            ]
+        pred_shower_sid = [
+            x[0]
+            for x in self.graph.nodes(data=True)
+            if x[1]['type']==ShowersMatcher._NODE_TYPE_PRED_SHOWER
+            ]
+
+        if not len(truth_shower_sid) > 0:
+            print("No truth showers")
+            return
+        if not len(pred_shower_sid) > 0:
+            print("No predicted showers")
+            return
+
+        #self._assign_tidx()
+        
+        C = self._cost_matrix_tidx(truth_shower_sid, pred_shower_sid)
+
+        row_id, col_id = linear_sum_assignment(C, maximize=True)
+        print("Row ID", row_id)
+        print("Col ID", col_id)
 
         self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
         matched_full_graph = nx.Graph()
@@ -417,6 +497,9 @@ class ShowersMatcher:
             self._match_single_pass()
         elif self.match_mode == 'cocoa':
             self._match_cocoa()
+        elif self.match_mode == 'tidx':
+            #JUST FOR TESTING
+            self._match_tidx()
         else:
             raise NotImplementedError('Match mode not found')
         if extra:
