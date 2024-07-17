@@ -117,6 +117,10 @@ class TrainData_Cocoa(TrainData_NanoML):
         return df_training
     
     def converttotrainingdfvec(self, data):
+        #For some reason, there is an outlier event with a track at -1e12, which is not physical
+        data = data[ak.all(data.track_x_layer_0 > -2000, axis=1)]
+        
+        #Convert events one by one
         traindata = np.array([self.convertevent(data[eventnumber]) for eventnumber in np.arange(len(data))])
 
         #Remove all events with an energy lower than 15GeV

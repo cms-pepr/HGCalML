@@ -1652,26 +1652,26 @@ class ProcessFeaturesCocoa(ProcessFeatures):
             ])
 
         self.mean_track = tf.constant([
-            0.0,   # recHitEnergy
+            15173,   # recHitEnergy
             0.0,   # recHitEta
             0.0,    # recHitID -> don't normalize
             1.57,  # recHitTheta
-            5607720,  # recHitR
-            -4402849,    # recHitX -> centered around zero
-            -3468792,    # recHitY -> centered around zero
-            -1.1,  # recHitZ -> All tracks are at z=315
+            2574,  # recHitR
+            0.0,    # recHitX -> centered around zero
+            0.0,    # recHitY -> centered around zero
+            -2.1,  # recHitZ -> 
             0.0,    # recHitTime -> All zeros
             0.0,    # recHitHitR -> All zeros for tracks
             ])
         self.std_track = tf.constant([
-            1.0,   # recHitEnergy
-            1.46,   # recHitEta
+            19126,   # recHitEnergy
+            1.31,   # recHitEta
             1.0,    # recHitID -> don't normalize
             0.93,   # recHitTheta
-            2619667000,    # recHitR
-            2057752536,   # recHitX
-            1621205660,   # recHitY
-            2342,    # recHitZ -> All tracks are at z=315
+            780,    # recHitR
+            990,   # recHitX
+            991,   # recHitY
+            2297,    # recHitZ -> 
             1.0,    # recHitTime -> All zeros
             1.0,    # recHitHitR -> All zeros for tracks
             ])
