@@ -44,7 +44,7 @@ class TrainData_Cocoa(TrainData_NanoML):
         df_cell['recHitEnergy'] =  ak.to_dataframe(event['cell_e'], how='outer')
         df_cell['recHitEta'] = ak.to_dataframe(event['cell_eta'], how='outer')
         df_cell['isTrack'] = 0
-        df_cell['recHitTheta'] =ak.to_dataframe(event['cell_phi'], how='outer')
+        df_cell['recHitTheta'] = 0 #will be calculated later
         df_cell['recHitR'] = 0 #will be calculated later
         df_cell['recHitX']= ak.to_dataframe(event['cell_x'], how='outer')
         df_cell['recHitY']= ak.to_dataframe(event['cell_y'], how='outer')
@@ -56,6 +56,7 @@ class TrainData_Cocoa(TrainData_NanoML):
 
         #Calculate Distance from 0,0,0
         df_cell['recHitR']= np.sqrt(df_cell['recHitX']**2+df_cell['recHitY']**2+df_cell['recHitZ']**2)
+        df_cell['recHitTheta'] = np.arctan2(df_cell['recHitR'], df_cell['recHitZ'])
 
 
         #convert particle information to df
@@ -63,10 +64,7 @@ class TrainData_Cocoa(TrainData_NanoML):
 
         df_particle['particle_idx'] = np.arange(len(event['particle_e']))
         df_particle['t_energy'] = ak.to_dataframe(event['particle_e'], how='outer')
-        df_particle['t_time'] = 0
         df_particle['t_pid'] = ak.to_dataframe(event['particle_pdgid'], how='outer')
-        df_particle['t_spectator'] = 0
-        df_particle['t_fully_contained'] = 1
         df_particle['t_rec_energy'] = ak.to_dataframe(event['particle_dep_energy'], how='outer')
         df_particle['particle_eta'] = ak.to_dataframe(event['particle_eta_lay0'], how='outer')
         df_particle['particle_phi'] = ak.to_dataframe(event['particle_phi_lay0'], how='outer')
@@ -79,8 +77,8 @@ class TrainData_Cocoa(TrainData_NanoML):
         df_track['recHitZ'] = ak.to_dataframe(event['track_z_layer_0'], how='outer')
         df_track['recHitR']= np.sqrt(df_track['recHitX']**2+df_track['recHitY']**2+df_track['recHitZ']**2)
 
-        df_track['recHitTheta'] =ak.to_dataframe(event['track_theta'], how='outer')
-        df_track['recHitEta'] = -np.log(np.tan(df_track['recHitTheta']/2))
+        df_track['recHitTheta'] = np.arctan2(df_track['recHitR'], df_track['recHitZ'])
+        df_track['recHitEta'] = ak.to_dataframe(event['track_eta_layer_0'], how='outer')
 
         df_track['recHitTime'] = 0
         df_track['recHitHitR'] = 0
@@ -106,29 +104,45 @@ class TrainData_Cocoa(TrainData_NanoML):
         #set NaN values (particle information for hits made from background noise to -1)
         df_training.fillna(-1, inplace=True)
         
-        #encode pos as cos(phi), sin(phi), eta
-        df_training['t_pos'] = df_training.apply(lambda row: [np.cos(row['particle_phi']), np.sin(row['particle_phi']), row['particle_eta']], axis=1)
-
+        #Set other default values
+        df_training['t_time'] = 0
+        df_training['t_spectator'] = 0
+        df_training['t_fully_contained'] = 1
+        
         #set t_is_unique
         df_training['t_is_unique'] = 0
         first_occurrence_mask = (df_training['t_idx'] != -1) & (df_training.groupby('t_idx').cumcount() == 0)
         df_training.loc[first_occurrence_mask, 't_is_unique'] = 1
+        
+        #encode pos as cos(phi), sin(phi), eta
+        df_training['t_pos'] = df_training.apply(lambda row: [np.cos(row['particle_phi']), np.sin(row['particle_phi']), row['particle_eta']], axis=1)
+        
+        #set t_pos to [cos(phi), sin(phi), eta] based on RecHitX,Y,Z if t_idx is -1
+        df_training['t_pos'] = df_training['t_pos'].where(df_training['t_idx'] != -1, df_training.apply(lambda row: [np.cos(np.arctan2(row['recHitY'], row['recHitX'])), np.sin(np.arctan2(row['recHitY'], row['recHitX'])), row['recHitEta']], axis=1))
+        
+        #replace -1 in t_energy and t_rec_energy with recHitEnergy
+        df_training['t_energy'] = df_training['t_energy'].where(df_training['t_energy'] != -1, df_training['recHitEnergy'])
+        df_training['t_rec_energy'] = df_training['t_rec_energy'].where(df_training['t_rec_energy'] != -1, df_training['recHitEnergy'])
 
         return df_training
     
     def converttotrainingdfvec(self, data):
         #For some reason, there is an outlier event with a track at -1e12, which is not physical
+        print("Number of events before removing outlier: ", len(data))
         data = data[ak.all(data.track_x_layer_0 > -2000, axis=1)]
+        print("Number of events after removing outlier: ", len(data))
         
         #Convert events one by one
-        traindata = np.array([self.convertevent(data[eventnumber]) for eventnumber in np.arange(len(data))])
+        traindata = np.array([self.convertevent(data[eventnumber]) for eventnumber in np.arange(len(data))], dtype=object)
 
         #Remove all events with an energy lower than 15GeV
         E_cutoff = 15000
+        print("Number of events before removing low energy events: ", len(traindata))
         E = np.sqrt(data['true_jet_pt']**2 * np.cos(data['true_jet_phi'])**2 + data['true_jet_m']**2)
         mask = ak.to_numpy(ak.all(E >= E_cutoff, axis=1))
         traindata = traindata[mask]
-
+        print("Number of events after removing low energy events: ", len(traindata))
+        
         #find the row splits
         rs = np.cumsum([len(df) for df in traindata])
         rs = np.insert(rs, 0, 0)
