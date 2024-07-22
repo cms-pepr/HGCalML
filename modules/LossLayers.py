@@ -3123,14 +3123,13 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
         Wrong name for parity, but calculates the total energy instead of the correction factor.
         * t_energy              -> Truth energy of shower
         * t_dep_energies        -> Sum of deposited energy IF clustered perfectly
-        * pred_energy           -> predicted energz
+        * pred_energy           -> predicted energy
         * pred_uncertainty_low  -> predicted uncertainty
         * pred_uncertainty_high -> predicted uncertainty (should be equal to ...low)
         """
         t_energy = tf.clip_by_value(t_energy,0.,1e12)
-        t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
-
-        prediction_loss = (t_energy - pred_energy)**2
+        
+        prediction_loss = huber((t_energy - pred_energy)**2/1e8, 10)
 
         matching_loss = (pred_uncertainty_low)**2
         uncertainty_loss = pred_uncertainty_high**2
@@ -3138,7 +3137,6 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
         matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
         prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
         uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
-        prediction_loss = tf.clip_by_value(prediction_loss, 0, 10)
         uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
 
         if return_concat:
