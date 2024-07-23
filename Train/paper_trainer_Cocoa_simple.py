@@ -1,7 +1,3 @@
-"""
-Training script based on paper_trainer_noRSU_fixed_jk.py
-"""
-
 import sys
 from argparse import ArgumentParser
 
@@ -148,7 +144,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     
     c_coords = extent_coords_if_needed(c_coords, x, 3)
 
-    x = Concatenate()([x, c_coords, is_track])
+    x = Concatenate()([x, c_coords, is_track])#, tf.cast(t_idx, tf.float32)]) #JUST FOR TESTING FIXME
     x = Dense(64, name='dense_pre_loop', activation=DENSE_ACTIVATION)(x)
 
     allfeat = []
@@ -194,15 +190,17 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     x = BatchNormalization()(x)  
 
     pred_beta, pred_ccoords, pred_dist, \
-        pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
+        pred_energy, pred_energy_low_quantile, pred_energy_high_quantile, \
         pred_pos, pred_time, pred_time_unc, pred_id = \
         create_outputs(x,
                 n_ccoords=3,
                 n_classes=4,
                 n_pos = 3,
                 fix_distance_scale=True,
+                energy_factor=False,
                 is_track=is_track,
-                set_track_betas_to_one=True)
+                set_track_betas_to_one=True,
+                pred_e_factor=10000)
 
 
     pred_beta = LLExtendedObjectCondensation5(
@@ -214,15 +212,16 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             implementation = "hinge",
             beta_loss_scale = 1.0,
             too_much_beta_scale = 0.0,
-            energy_loss_weight = 0.4,
+            energy_loss_weight =1.0,
             classification_loss_weight = 0.4,
-            position_loss_weight =  1.0,
+            position_loss_weight =  10.0,
             timing_loss_weight = 0.0,
             downweight_low_energy=False,
+            potential_scaling = 1.0,
             train_energy_unc=False,
             q_min = 0.1,
             use_average_cc_pos = 0.9999)(
-                    [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
+                    [pred_beta, pred_ccoords, pred_dist, pred_energy, pred_energy_low_quantile,
                         pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, energy,
                         pre_processed['t_idx'] , pre_processed['t_energy'] , pre_processed['t_pos'] ,
                         pre_processed['t_time'] , pre_processed['t_pid'] , pre_processed['t_spectator_weight'],
@@ -239,15 +238,16 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
     model_outputs = {
         'pred_beta': pred_beta,
         'pred_ccoords': pred_ccoords,
-        'pred_energy_corr_factor': pred_energy_corr,
-        'pred_energy_low_quantile': pred_energy_low_quantile,
-        'pred_energy_high_quantile': pred_energy_high_quantile,
+        'pred_energy': pred_energy,
+        #'pred_energy_low_quantile': pred_energy_low_quantile,
+       # 'pred_energy_high_quantile': pred_energy_high_quantile,
         'pred_pos': pred_pos,
         'pred_time': pred_time,
         'pred_id': pred_id,
         'pred_dist': pred_dist,
         'rechit_energy': energy,
         'row_splits': pre_processed['row_splits'],
+        #'t_idx': pre_processed['t_idx'], #JUST FOR TESTING FIXME
         # 'no_noise_sel': pre_processed['no_noise_sel'],
         # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
@@ -302,7 +302,7 @@ cb += [
 ### Actual Training ###########################################################
 ###############################################################################
 
-train.change_learning_rate(1e-3)
+train.change_learning_rate(1e-4)
 train.trainModel(
         nepochs=2,
         batchsize=50000,
@@ -322,10 +322,10 @@ train.applyFunctionToAllModels(fix_batchnorm)
 
 
 #recompile
-train.compileModel(learningrate=5e-4)
+train.compileModel(learningrate=2e-5)
 print('entering second training phase')
 train.trainModel(
-        nepochs=10,
+        nepochs=15,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
@@ -334,7 +334,7 @@ train.trainModel(
 
 
 #recompile
-train.compileModel(learningrate=1e-4)
+train.compileModel(learningrate=5e-6)
 print('entering third training phase')
 train.trainModel(
         nepochs=35,
