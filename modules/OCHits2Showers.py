@@ -725,8 +725,9 @@ def process_endcap2(hits2showers_layer, energy_gather_layer, features_dict,
     """
     if not 'no_noise_sel' in predictions_dict.keys():
         N_pred = len(predictions_dict['pred_beta'])
-        predictions_dict['no_noise_sel'] = np.arange(N_pred).reshape((N_pred,1)).astype(int)
-    is_track = np.abs(features_dict['recHitZ']) == 315
+        predictions_dict['no_noise_sel'] = np.arange(N_pred).reshape((N_pred,1)).astype(int)    
+    is_track = np.abs(features_dict['recHitID'])
+    # is_track = np.abs(features_dict['recHitZ']) == 315
 
     print("Make showers")
     if not hdbscan:

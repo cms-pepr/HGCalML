@@ -167,18 +167,17 @@ class ShowersMatcher:
     def _assign_tidx(self):
         truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0].astype(np.int32) * 1
         pred_sid = self.pred_sid * 1
-        print(pred_sid)
         
         for n, attr in self.graph.nodes(data=True):
             if attr['type'] == ShowersMatcher._NODE_TYPE_TRUTH_SHOWER:
                 filt = truth_sid == n
-                tidx = self.truth_dict['truthHitAssignementIdx']
-                attr['tidx'] = np.argmax(np.bincount(tidx[filt].flatten()))
+                tidx = self.truth_dict['truthHitAssignementIdx'][filt].flatten()
+                attr['tidx'] = np.argmax(np.bincount(tidx))
             else:
                 filt = pred_sid == n
-                tidx = self.predictions_dict['t_idx']
-                print("TIDX", tidx[filt])
-                attr['tidx'] = tidx[filt]
+                tidx = self.predictions_dict['t_idx'][filt].flatten()
+                hist, _ = np.histogram(tidx, bins=range(-2, np.max(tidx)+1))
+                attr['tidx'] = np.argmax(hist)-1
     def _build_data_graph(self):
         """
         Builds a graph in which all truth showers and all predicted showers are nodes
@@ -292,15 +291,15 @@ class ShowersMatcher:
                         reldeltaEsq = (np.abs(x['pred_energy'] - y['truthHitAssignedEnergies'])/ y['truthHitAssignedEnergies'])**2
                     
                     pred_phi = np.arctan2(x['pred_pos'][1], x['pred_pos'][0])
-                    deltaPhi = np.abs(pred_phi - y['truthHitAssignedPhi'])
-                    deltaEta = np.abs(x['pred_pos'][2] - y['truthHitAssignedEta'])
+                    truth_phi = np.arctan2(y['truthHitAssignedY'], y['truthHitAssignedX'])
+                    deltaPhi = np.abs(pred_phi - truth_phi)
+                    deltaEta = np.abs(x['pred_pos'][2] - y['truthHitAssignedZ'])
                     
                     deltaRsq = deltaPhi**2 + deltaEta**2
                     
                     d= np.sqrt(reldeltaEsq + 5*deltaRsq)
 
                     C[a, b] = 1/(d+1e-3)
-        print(C)
         return C
     
     #JUST FOR TESTING
@@ -313,11 +312,10 @@ class ShowersMatcher:
             x = self.graph.nodes(data=True)[j]
             for b, i in enumerate(truth_shower_sid):
                 y = self.graph.nodes(data=True)[i]
-                if (x['t_idx'] != y['truthHitAssignementIdx']):
+                if (x['tidx'] != y['tidx']):
                     C[a, b] =0
                 else:                    
                     C[a, b] = 1
-        print(C)
         return C
 
 
@@ -388,11 +386,8 @@ class ShowersMatcher:
 
 
         C = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
-        print(C)
 
         row_id, col_id = linear_sum_assignment(C, maximize=True)
-        print("Row ID", row_id)
-        print("Col ID", col_id)
 
         self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
         matched_full_graph = nx.Graph()
@@ -406,8 +401,6 @@ class ShowersMatcher:
                     attached_in_pass=0)
 
         self.calculated_graph = matched_full_graph
-        #[3 4 2 6 1 5 0]
-        # [6 1 5 4 3 2 7 0 8]
 
     #based on _match_single_pass
     def _match_cocoa(self):
@@ -434,8 +427,6 @@ class ShowersMatcher:
         C = self._cost_matrix_Cocoa(truth_shower_sid, pred_shower_sid)
 
         row_id, col_id = linear_sum_assignment(C, maximize=True)
-        print("Row ID", row_id)
-        print("Col ID", col_id)
 
         self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
         matched_full_graph = nx.Graph()
@@ -470,13 +461,11 @@ class ShowersMatcher:
             print("No predicted showers")
             return
 
-        #self._assign_tidx()
+        self._assign_tidx()
         
         C = self._cost_matrix_tidx(truth_shower_sid, pred_shower_sid)
 
         row_id, col_id = linear_sum_assignment(C, maximize=True)
-        print("Row ID", row_id)
-        print("Col ID", col_id)
 
         self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
         matched_full_graph = nx.Graph()
