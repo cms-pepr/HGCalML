@@ -69,10 +69,6 @@ def calc_efficiencies(df, bins, mask=None):
     return np.array(efficiencies), np.array(efficiencies_err), np.array(fake_rate), np.array(fake_rate_err), np.array(corr_class_prob), np.array(corr_class_prob_err)
 
 def plot_efficencies(df, bins):
-    # Calculate the bin positions and widths
-    binwidth = bins[1:] - bins[:-1]
-    x_pos = bins[:-1] + binwidth / 2
-    x_err = binwidth / 2
     
     # Calculate the efficiencies and fake rates for the total
     yeff, yerr_eff, yfake, yerr_fake, ycorr, yerr_corr = calc_efficiencies(df, bins)
@@ -89,6 +85,15 @@ def plot_efficencies(df, bins):
     yeff_nh, yerr_eff_nh, yfake_nh, yerr_fake_nh, ycorr_nh, yerr_corr_nh = calc_efficiencies(df, bins, 1)
     yeff_nh, yerr_eff_nh, yfake_nh, yerr_fake_nh, ycorr_nh, yerr_corr_nh = \
         yeff_nh*100, yerr_eff_nh*100, yfake_nh*100, yerr_fake_nh*100, ycorr_nh*100, yerr_corr_nh*100
+    
+    
+    #Convert to GeV
+    bins = bins/1000
+    
+    # Calculate the bin positions and widths
+    binwidth = bins[1:] - bins[:-1]
+    x_pos = bins[:-1] + binwidth / 2
+    x_err = binwidth / 2
     
     # Create the plots
     fig, ((ax1, ax2, ax3), (ax4, ax5,ax6), (ax7,ax8,ax9)) = plt.subplots(nrows=3, ncols=3, figsize=(20, 10))
@@ -117,8 +122,7 @@ def plot_efficencies(df, bins):
         ax.set_xticks(bins)
         ax.set_xticklabels(bins, fontsize=10)
         ax.set_xlim(bins[0], bins[-1])
-        ax.grid(True, which='major', axis='y', linestyle='--', alpha=0.5)
-        ax.grid(True, which='major', axis='x', linestyle='--', alpha=0.5)
+        ax.grid(alpha=0.4)
         ax.set_xlabel('Energy [GeV]', fontsize=10)
     
         yticks1 = np.round(np.arange(40, 101, 20), 1)
@@ -136,16 +140,21 @@ def plot_jet_metrics(df):
     nParicles_truth = []
     
     matched = calc_matched_mask(df)
+    has_truth = np.isnan(df['truthHitAssignedEnergies']) == False
+    has_pred = np.isnan(df['pred_energy']) == False
 
     for i in range(len(df['event_id'].unique())):
-        mask = np.logical_and(df['event_id'] == i, matched)
+        event_mask = df['event_id'] == i
+        mask = np.logical_and(event_mask,  matched)
         
         jet_E_truth = np.sum(df[mask]['truthHitAssignedEnergies'])
         jet_E_pred = np.sum(df[mask]['pred_energy'])
         relresE.append((jet_E_truth-jet_E_pred)/jet_E_truth)
         
-        nParicles_pred.append(len(df[mask]['pred_sid']))
-        nParicles_truth.append(len(df[mask]['truthHitAssignementIdx']))
+        pred_event_mask = np.logical_and(event_mask, has_pred)
+        truth_event_mask = np.logical_and(event_mask, has_truth)
+        nParicles_pred.append(np.sum(pred_event_mask))
+        nParicles_truth.append(np.sum(truth_event_mask))
         
         t_eta = np.mean(df[mask]['truthHitAssignedZ'])
         pred_eta = df[mask]['pred_pos'].apply(lambda x: x[2]).mean()
@@ -159,39 +168,43 @@ def plot_jet_metrics(df):
     nParticle_bins = np.linspace(0, 30, 31)
     fig_jet_nparticle = plt.figure()
     plt.hist(nParicles_truth, bins=nParticle_bins, label='Truth', color='#fee7ae')
-    plt.grid(alpha=0.5)
+    plt.grid(alpha=0.4)
     plt.hist(nParicles_pred, bins=nParticle_bins, label='Prediction', histtype='step', color='#67c4ce', linestyle='--')
-    plt.text(0.02, 0.98, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes)    
-    plt.ylabel('Events')
-    plt.xlabel('Jet nConstituents')
-    plt.legend()
+    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.ylabel('Events', fontsize=20)
+    plt.xlabel('Jet nConstituents', fontsize=20)
+    plt.legend(fontsize=10)
+    plt.xticks(np.linspace(0, 30, 7))
     plt.close()
 
     relres_bins = np.linspace(-1, 1, 51)
     fig_jet_relresE = plt.figure()
-    plt.hist(relresE, bins=relres_bins, histtype='step', color='#67c4ce', linestyle='--')
-    plt.grid(alpha=0.5)
-    plt.text(0.02, 0.98, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes)
-    plt.ylabel('Number of events')
-    plt.xlabel('rel. res. Cal. Jet Energy')
+    plt.hist(np.clip(relresE, -1, 1), bins=relres_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.grid(alpha=0.4)
+    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.ylabel('Number of events', fontsize=20)
+    plt.xlabel('rel. res. Cal. Jet Energy', fontsize=20)
+    plt.xticks(np.linspace(-1, 1, 5))
     plt.close()
     
     
     res_bins = np.linspace(-0.2, 0.2, 51)
     fig_jet_reseta = plt.figure()
-    plt.hist(reseta, bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
-    plt.grid(alpha=0.5)
-    plt.text(0.02, 0.98, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes)
-    plt.ylabel('Number of events')
-    plt.xlabel('Jet $\\Delta \\eta$')
+    plt.hist(np.clip(reseta,-0.2,0.2), bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.grid(alpha=0.4)
+    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.ylabel('Number of events', fontsize=20)
+    plt.xlabel('Jet $\\Delta \\eta$', fontsize=20)
+    plt.xticks(np.linspace(-0.2, 0.2, 5))
     plt.close()
 
     fig_jet_resphi = plt.figure()
-    plt.hist(resphi, bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
-    plt.grid(alpha=0.5)
-    plt.text(0.02, 0.98, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes)
-    plt.ylabel('Number of events')
-    plt.xlabel('Jet $\\Delta \\phi$')
+    plt.hist(np.clip(resphi, -0.2, 0.2), bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.grid(alpha=0.4)
+    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.ylabel('Number of events', fontsize=20)
+    plt.xlabel('Jet $\\Delta \\phi$', fontsize=20)
+    plt.xticks(np.linspace(-0.2, 0.2, 5))
     plt.close()
     
     return fig_jet_nparticle, fig_jet_relresE, fig_jet_reseta, fig_jet_resphi
@@ -236,25 +249,28 @@ def plot_particle_metrics(df):
 
     relres_bins = np.linspace(-1, 1, 51)
     fig_relresE = plt.figure()
-    plt.hist(relresE, bins=relres_bins, histtype='step', color='#67c4ce', linestyle='--')
-    plt.grid(alpha=0.5)
-    plt.xlabel('res. res. Neutral Particle Energy')
-    plt.ylabel('Number of neutral particles')
+    plt.hist(np.clip(relresE, -1,1), bins=relres_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.grid(alpha=0.4)
+    plt.xlabel('rel. res. Neutral Particle Energy', fontsize=20)
+    plt.ylabel('Number of neutral particles', fontsize=20)
+    plt.xticks(np.linspace(-1, 1, 5))
     plt.close()
 
-    res_bins = np.linspace(-0.2, 0.2, 51)
+    res_bins = np.linspace(-0.4, 0.4, 51)
     fig_reseta = plt.figure()
-    plt.hist(reseta, bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
-    plt.grid(alpha=0.5)
-    plt.xlabel('Neutral Particle $\\Delta \\eta$')
-    plt.ylabel('Number of neutral particles')
+    plt.hist(np.clip(reseta, -0.4, 0.4), bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.grid(alpha=0.4)
+    plt.xlabel('Neutral Particle $\\Delta \\eta$', fontsize=20)
+    plt.ylabel('Number of neutral particles', fontsize=20)
+    plt.xticks(np.linspace(-0.4, 0.4, 5))
     plt.close()
 
     fig_resphi = plt.figure()
-    plt.hist(resphi, bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
-    plt.grid(alpha=0.5)
-    plt.xlabel('Neutral Particle $\\Delta \\phi$')
-    plt.ylabel('Number of neutral particles')
+    plt.hist(np.clip(resphi, -0.4, 0.4), bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.grid(alpha=0.4)
+    plt.xlabel('Neutral Particle $\\Delta \\phi$', fontsize=20)
+    plt.ylabel('Number of neutral particles', fontsize=20)
+    plt.xticks(np.linspace(-0.4, 0.4, 5))
     plt.close()
 
     return fig_relresE, fig_reseta, fig_resphi
@@ -314,7 +330,7 @@ def plt_energy_resolution(df, bins=None):
     # ax1.set_yticks(yticks)
     # ax1.set_yticklabels(yticks, fontsize=20)
     
-    ax1.grid(alpha=0.5, linestyle='--')
+    ax1.grid(alpha=0.4)
     ax1.set_ylabel('$\sigma E [GeV]$', fontsize=20)
     ax1.set_xlabel('Energy [GeV]', fontsize=20)
     
@@ -363,7 +379,7 @@ def plot_everything(df, outputpath='/work/friemer/hgcalml/testplots/'):
         if not var in ('yes', 'y'):
             sys.exit()
             
-    #Create everything            
+    #Create everything       
     energy_bins_neutral = np.array([1,2,3,4,5,10,20,30,50])*1000
     fig_eff=plot_efficencies(df, bins=energy_bins_neutral)
     

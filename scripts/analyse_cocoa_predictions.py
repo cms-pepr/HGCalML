@@ -114,16 +114,18 @@ def analyse(preddir,
     ###############################################################################################
     ### Write to file #############################################################################
     ###############################################################################################
-    scalar_variables = {
+    if len(analysisoutpath) > 0:
+        print("Writing dataframes to pickled file", analysisoutpath)
+        
+        scalar_variables = {
         'beta_threshold': str(beta_threshold),
         'distance_threshold': str(distance_threshold),
         'iou_threshold': str(iou_threshold),
         'matching_mode': str(matching_mode),
         'de_e_cut': str(de_e_cut),
         'angle_cut': str(angle_cut),
-    }
-
-    if len(analysisoutpath) > 0:
+        }
+        
         analysis_data = {
             'showers_dataframe' : showers_dataframe,
             'scalar_variables' : scalar_variables,
@@ -144,6 +146,7 @@ def analyse(preddir,
     ###############################################################################################
     
     if(len(pdfpath) > 0):
+        print('Starting to plot', pdfpath)
         plot_everything(showers_dataframe, pdfpath)
     print("DONE")
 

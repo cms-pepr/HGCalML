@@ -44,7 +44,7 @@ opts = {
     'n' : meta_option('n','TrainJob_'+UEXT),
     'f' : meta_option('f', '/work/friemer/hgcalml/HGCalML'), 
     'cpu': meta_option('cpu', '1'),
-    'memory': meta_option('memory', '5 GB'),
+    'memory': meta_option('memory', '10 GB'),
     'disk': meta_option('disk', '2 GB'),
     'gpu': meta_option('gpu', '1'),
     'wandb': meta_option('wandb', 'True'),
