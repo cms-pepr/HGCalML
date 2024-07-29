@@ -176,8 +176,10 @@ class ShowersMatcher:
             else:
                 filt = pred_sid == n
                 tidx = self.predictions_dict['t_idx'][filt].flatten()
-                hist, _ = np.histogram(tidx, bins=range(-2, np.max(tidx)+1))
+                beta = self.predictions_dict['pred_beta'][filt].flatten()
+                hist, _ = np.histogram(tidx, bins=range(-2, np.max(tidx)+1), weights=beta)
                 attr['tidx'] = np.argmax(hist)-1
+
     def _build_data_graph(self):
         """
         Builds a graph in which all truth showers and all predicted showers are nodes

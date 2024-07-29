@@ -24,7 +24,7 @@ from plot_cocoa import plot_everything
 
 
 def analyse(preddir,
-            pdfpath,
+            outputpath,
             beta_threshold,
             distance_threshold,
             iou_threshold,
@@ -145,9 +145,9 @@ def analyse(preddir,
     ### Make Plots ################################################################################
     ###############################################################################################
     
-    if(len(pdfpath) > 0):
-        print('Starting to plot', pdfpath)
-        plot_everything(showers_dataframe, pdfpath)
+    if(len(outputpath) > 0):
+        print('Starting to plot', outputpath)
+        plot_everything(showers_dataframe, prediction, truth, features, outputpath)
     print("DONE")
 
 
@@ -185,7 +185,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     analyse(preddir=args.preddir,
-            pdfpath=args.p,
+            outputpath=args.p,
             beta_threshold=float(args.b),
             distance_threshold=float(args.d),
             iou_threshold=float(args.i),

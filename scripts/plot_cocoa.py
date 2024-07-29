@@ -336,37 +336,50 @@ def plt_energy_resolution(df, bins=None):
     
     return fig
 
-def plot_condensation(event_id, pred_list, t_list, feature_list, location='/work/friemer/hgcalml/condensationplots/condensation'):
-    coords = pred_list[event_id]['pred_ccoords']
+def plot_condensation(pred_dict, t_dict, feature_dict, coordspace='condensation'):
+    if(coordspace == 'condensation'):
+        coords = pred_dict['pred_ccoords']
 
-    if coords.shape[1] < 3: #add a zero
-        coords = tf.concat([coords, tf.zeros_like(coords)[:,0:1]], axis=-1)
+        if coords.shape[1] < 3: #add a zero
+            coords = tf.concat([coords, tf.zeros_like(coords)[:,0:1]], axis=-1)
+        X = coords[:,0]
+        Y = coords[:,1]
+        Z = coords[:,2]
+        sizefield = 'features'
+    elif(coordspace == 'input'):
+        X = feature_dict['recHitX'][:,0]
+        Y = feature_dict['recHitY'][:,0]
+        Z = feature_dict['recHitZ'][:,0]
+        sizefield = 'rechit_energy_scaled'
+    else:
+        raise ValueError('coordspace must be "condensation" or "input"')
 
     data={
-        'X':  coords[:,0],
-        'Y':  coords[:,1],
-        'Z':  coords[:,2],
-        'hyper_idx': t_list[event_id]['truthHitAssignementIdx'][:,0],
-        'features': pred_list[event_id]['pred_beta'][:,0],
-        'pdgid': t_list[event_id]['truthHitAssignedPIDs'][:,0],
-        'recHitID': feature_list[event_id]['recHitID'][:,0],
+        'X': X,
+        'Y': Y,
+        'Z': Z,
+        't_idx': t_dict['truthHitAssignementIdx'][:,0],
+        'features': pred_dict['pred_beta'][:,0],
+        'pdgid': t_dict['truthHitAssignedPIDs'][:,0],
+        'recHitID': feature_dict['recHitID'][:,0],
+        'rechit_energy': feature_dict['recHitEnergy'][:,0],        
+        'rechit_energy_scaled': np.log(feature_dict['recHitEnergy'][:,0]+1),
         }
     eventdf = pd.DataFrame(data)
 
-    hover_data = {'X': True, 'Y': True, 'Z': True, 'hyper_idx': True,'features': True, 'pdgid': True,'recHitID': True}
+    hover_data = {'X': True, 'Y': True, 'Z': True, 't_idx': True,'features': True, 'pdgid': True,'recHitID': True, 'rechit_energy': True}
 
     fig = px.scatter_3d(eventdf, x="X", y="Y", z="Z", 
-                        color="hyper_idx",
-                        size='features',
+                        color="t_idx",
+                        size=sizefield,
                         template='plotly_dark',
                         hover_data=hover_data,
             color_continuous_scale=px.colors.sequential.Rainbow)
     fig.update_traces(marker=dict(line=dict(width=0)))
-
-    fig.write_html(location+str(event_id)+".html")
+    
     return fig
 
-def plot_everything(df, outputpath='/work/friemer/hgcalml/testplots/'):
+def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friemer/hgcalml/testplots/'):
     
     #Create Output directory  
     if not os.path.exists(outputpath):
@@ -378,30 +391,41 @@ def plot_everything(df, outputpath='/work/friemer/hgcalml/testplots/'):
         var = var.lower()
         if not var in ('yes', 'y'):
             sys.exit()
+    os.makedirs(os.path.join(outputpath, 'condensation'), exist_ok=True)   
             
-    #Create everything       
+    #Create everything 
+    
+    print('Plotting efficiencies')
     energy_bins_neutral = np.array([1,2,3,4,5,10,20,30,50])*1000
     fig_eff=plot_efficencies(df, bins=energy_bins_neutral)
-    
-    fig_jet_nparticle, fig_jet_relresE, fig_jet_reseta, fig_jet_resphi = plot_jet_metrics(df)
-    
-    mask_neutral = df['truthHitAssignedPIDs'].isin([22,130, 310, 311, 2112, -2112, 3122, -3122, 3322, -3322])    
-    fig_neutral_relresE, fig_neutral_reseta, fig_neutral_resphi = plot_particle_metrics(df[mask_neutral])
-    
-    energy_bins_charged = np.array([15,20,30,50,200])*1000
-    mask_charged = df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])    
-    fig_charged_res = plt_energy_resolution(df[mask_charged], bins=energy_bins_charged)
-    
-    #Save everything
     fig_eff.savefig(os.path.join(outputpath,'efficiencies.png'))
+    
+    print('Plotting jet metrics')
+    fig_jet_nparticle, fig_jet_relresE, fig_jet_reseta, fig_jet_resphi = plot_jet_metrics(df)
     fig_jet_nparticle.savefig(os.path.join(outputpath,'jet_nparticle.png'))
     fig_jet_relresE.savefig(os.path.join(outputpath,'jet_relresE.png'))
     fig_jet_reseta.savefig(os.path.join(outputpath,'jet_reseta.png'))
     fig_jet_resphi.savefig(os.path.join(outputpath,'jet_resphi.png'))
+    
+    print('Plotting particle metrics')
+    mask_neutral = df['truthHitAssignedPIDs'].isin([22,130, 310, 311, 2112, -2112, 3122, -3122, 3322, -3322])    
+    fig_neutral_relresE, fig_neutral_reseta, fig_neutral_resphi = plot_particle_metrics(df[mask_neutral])
     fig_neutral_relresE.savefig(os.path.join(outputpath,'neutral_relresE.png'))
     fig_neutral_reseta.savefig(os.path.join(outputpath,'neutral_reseta.png'))
     fig_neutral_resphi.savefig(os.path.join(outputpath,'neutral_resphi.png'))
+    
+    print('Plotting energy resolution')
+    energy_bins_charged = np.array([15,20,30,50,200])*1000
+    mask_charged = df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])    
+    fig_charged_res = plt_energy_resolution(df[mask_charged], bins=energy_bins_charged)
     fig_charged_res.savefig(os.path.join(outputpath,'charged_res.png'))
+
+    print('Plotting condensation and input') 
+    for event_id in range(10):
+        fig = plot_condensation(pred_list[event_id], t_list[event_id], feature_list[event_id], 'condensation')
+        fig.write_html(os.path.join(outputpath, 'condensation' ,'condensation'+str(event_id)+".html"))
+        fig = plot_condensation(pred_list[event_id], t_list[event_id], feature_list[event_id], 'input')
+        fig.write_html(os.path.join(outputpath, 'condensation' ,'input'+str(event_id)+".html"))
     
     
     
@@ -409,7 +433,11 @@ def plot_everything_from_file(analysisfilepath, outputpath='/work/friemer/hgcalm
     with gzip.open(analysisfilepath, 'rb') as input_file:
         analysis_data = pickle.load(input_file)
     df = analysis_data['showers_dataframe']
-    plot_everything(df, outputpath)
+    pred_list = analysis_data['prediction']
+    t_list = analysis_data['truth']
+    feature_list =  analysis_data['features']
+        
+    plot_everything(df, pred_list, t_list, feature_list, outputpath)
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -421,5 +449,4 @@ if __name__ == '__main__':
         default='')
 
     args = parser.parse_args()
-
-    plot_everything_from_file(args.analysisfile, args.outputlocation)    
+    plot_everything_from_file(args.analysisfile, args.outputlocation)
