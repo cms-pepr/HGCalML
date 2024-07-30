@@ -1,6 +1,7 @@
 import gzip
 import pickle
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -379,6 +380,52 @@ def plot_condensation(pred_dict, t_dict, feature_dict, coordspace='condensation'
     
     return fig
 
+def plot_distribution(truth_list, feature_list):
+    print('Plotting distribution')
+    n_tracks = []
+    n_hits = []
+    n_particles = []
+    n_charged = []
+    n_photon = []
+    n_neutral_had = []
+    for i in range(len(feature_list)):
+        n_tracks.append(np.sum(np.abs(feature_list[i]['recHitID'])))
+        n_hits.append(len(feature_list[i]['recHitID'])-n_tracks[-1])
+        truth_data ={
+            'truthHitAssignementIdx': truth_list[i]['truthHitAssignementIdx'][:,0],
+            'truthHitAssignedPIDs': truth_list[i]['truthHitAssignedPIDs'][:,0],            
+        }
+        truth_df = pd.DataFrame(truth_data)
+        n_particles.append(len(truth_df['truthHitAssignementIdx'].unique()))
+        
+        charged_mask = truth_df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])
+        photon_mask = truth_df['truthHitAssignedPIDs'].isin([22])
+        neutral_mask = truth_df['truthHitAssignedPIDs'].isin([130,310,311,2112,-2112,3122,-3122,3322,-3322])
+        n_charged.append(len(truth_df[charged_mask]['truthHitAssignementIdx'].unique()))
+        n_photon.append(len(truth_df[photon_mask]['truthHitAssignementIdx'].unique()))
+        n_neutral_had.append(len(truth_df[neutral_mask]['truthHitAssignementIdx'].unique()))
+    #convert to numpy
+    n_tracks, n_hits, n_particles, n_charged, n_photon, n_neutral_had = np.array(n_tracks), np.array(n_hits), np.array(n_particles), np.array(n_charged), np.array(n_photon), np.array(n_neutral_had)
+    
+    #create horizontal boxplot
+    fig = plt.figure()
+    values = [n_charged, n_neutral_had, n_photon, n_particles, n_tracks,n_hits/100]
+    labels = ['ch. hadrons','nu. hadrons','photons','total particles', 'tracks','cells [$10^2$]']
+
+    plt.boxplot(values, labels=labels, vert=False, patch_artist=True, 
+                boxprops=dict(facecolor="limegreen"), medianprops=dict(color="black"),
+                whis =  (0, 100))
+    
+    plt.grid(alpha=0.4, axis='x')
+    # Add mean values as text
+    for pos, data in zip(np.arange(len(values)), values):
+        mean = np.mean(data)
+        plt.text(21.5, pos+1, f'({mean:.1f})', va='center', ha='left', fontsize=10)
+    
+    plt.close()
+    return fig
+    
+
 def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friemer/hgcalml/testplots/'):
     
     #Create Output directory  
@@ -395,30 +442,32 @@ def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friem
             
     #Create everything 
     
+    matplotlib.rcParams.update({'font.size': 20})
+    
     print('Plotting efficiencies')
     energy_bins_neutral = np.array([1,2,3,4,5,10,20,30,50])*1000
     fig_eff=plot_efficencies(df, bins=energy_bins_neutral)
-    fig_eff.savefig(os.path.join(outputpath,'efficiencies.png'))
+    fig_eff.savefig(os.path.join(outputpath,'efficiencies.png'), bbox_inches='tight')
     
     print('Plotting jet metrics')
     fig_jet_nparticle, fig_jet_relresE, fig_jet_reseta, fig_jet_resphi = plot_jet_metrics(df)
-    fig_jet_nparticle.savefig(os.path.join(outputpath,'jet_nparticle.png'))
-    fig_jet_relresE.savefig(os.path.join(outputpath,'jet_relresE.png'))
-    fig_jet_reseta.savefig(os.path.join(outputpath,'jet_reseta.png'))
-    fig_jet_resphi.savefig(os.path.join(outputpath,'jet_resphi.png'))
+    fig_jet_nparticle.savefig(os.path.join(outputpath,'jet_nparticle.png'), bbox_inches='tight')
+    fig_jet_relresE.savefig(os.path.join(outputpath,'jet_relresE.png'), bbox_inches='tight')
+    fig_jet_reseta.savefig(os.path.join(outputpath,'jet_reseta.png'), bbox_inches='tight')
+    fig_jet_resphi.savefig(os.path.join(outputpath,'jet_resphi.png'), bbox_inches='tight')
     
     print('Plotting particle metrics')
     mask_neutral = df['truthHitAssignedPIDs'].isin([22,130, 310, 311, 2112, -2112, 3122, -3122, 3322, -3322])    
     fig_neutral_relresE, fig_neutral_reseta, fig_neutral_resphi = plot_particle_metrics(df[mask_neutral])
-    fig_neutral_relresE.savefig(os.path.join(outputpath,'neutral_relresE.png'))
-    fig_neutral_reseta.savefig(os.path.join(outputpath,'neutral_reseta.png'))
-    fig_neutral_resphi.savefig(os.path.join(outputpath,'neutral_resphi.png'))
+    fig_neutral_relresE.savefig(os.path.join(outputpath,'neutral_relresE.png'), bbox_inches='tight')
+    fig_neutral_reseta.savefig(os.path.join(outputpath,'neutral_reseta.png'), bbox_inches='tight')
+    fig_neutral_resphi.savefig(os.path.join(outputpath,'neutral_resphi.png'), bbox_inches='tight')
     
     print('Plotting energy resolution')
     energy_bins_charged = np.array([15,20,30,50,200])*1000
     mask_charged = df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])    
     fig_charged_res = plt_energy_resolution(df[mask_charged], bins=energy_bins_charged)
-    fig_charged_res.savefig(os.path.join(outputpath,'charged_res.png'))
+    fig_charged_res.savefig(os.path.join(outputpath,'charged_res.png'), bbox_inches='tight')
 
     print('Plotting condensation and input') 
     for event_id in range(10):
@@ -426,6 +475,10 @@ def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friem
         fig.write_html(os.path.join(outputpath, 'condensation' ,'condensation'+str(event_id)+".html"))
         fig = plot_condensation(pred_list[event_id], t_list[event_id], feature_list[event_id], 'input')
         fig.write_html(os.path.join(outputpath, 'condensation' ,'input'+str(event_id)+".html"))
+    
+    print('Plotting distribution')
+    fig_dist = plot_distribution(t_list, feature_list)
+    fig_dist.savefig(os.path.join(args.outputlocation, 'distribution.png'), bbox_inches='tight')
     
     
     
