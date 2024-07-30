@@ -3129,20 +3129,18 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
         """
         t_energy = tf.clip_by_value(t_energy,0.,1e12)
         
-        prediction_loss = huber((t_energy - pred_energy)**2/1e8, 10)
+        prediction_loss = tf.math.log((t_energy - pred_energy)**2+1)
 
-        matching_loss = (pred_uncertainty_low)**2
-        uncertainty_loss = pred_uncertainty_high**2
+        uncertainty_loss = pred_uncertainty_high**2 + pred_uncertainty_low**2
 
-        matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
         prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
         uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
         uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
 
         if return_concat:
-            return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
+            return tf.concat([prediction_loss, uncertainty_loss], axis=-1)
         else:
-            return prediction_loss, uncertainty_loss + matching_loss
+            return prediction_loss, uncertainty_loss
         
     def calc_position_loss(self, t_pos, pred_pos):
         if tf.shape(pred_pos)[-1] == 2:#also has z component, but don't use it here
