@@ -104,6 +104,8 @@ class TrainData_Cocoa(TrainData_NanoML):
         #set NaN values (particle information for hits made from background noise to -1)
         df_training.fillna(-1, inplace=True)
         
+        noisemask = df_training['t_idx']==-1
+        
         #Set other default values
         df_training['t_time'] = 0
         df_training['t_spectator'] = 0
@@ -118,12 +120,13 @@ class TrainData_Cocoa(TrainData_NanoML):
         df_training['t_pos'] = df_training.apply(lambda row: [np.cos(row['particle_phi']), np.sin(row['particle_phi']), row['particle_eta']], axis=1)
         
         #set t_pos to [cos(phi), sin(phi), eta] based on RecHitX,Y,Z if t_idx is -1
-        df_training['t_pos'] = df_training['t_pos'].where(df_training['t_idx'] != -1, df_training.apply(lambda row: [np.cos(np.arctan2(row['recHitY'], row['recHitX'])), np.sin(np.arctan2(row['recHitY'], row['recHitX'])), row['recHitEta']], axis=1))
+        df_training.loc[noisemask, 't_pos'] = df_training[noisemask].apply(lambda row: [np.cos(np.arctan2(row['recHitY'], row['recHitX'])), np.sin(np.arctan2(row['recHitY'], row['recHitX'])), row['recHitEta']], axis=1)
         
-        #replace -1 in t_energy and t_rec_energy with recHitEnergy
-        df_training['t_energy'] = df_training['t_energy'].where(df_training['t_energy'] != -1, df_training['recHitEnergy'])
-        df_training['t_rec_energy'] = df_training['t_rec_energy'].where(df_training['t_rec_energy'] != -1, df_training['recHitEnergy'])
-
+        #replace -1 in t_energy and t_rec_energy with the sum of all noise hits
+        noiseEnergy = np.sum(df_training[noisemask]['recHitEnergy'])
+        df_training.loc[noisemask, 't_energy'] = noiseEnergy
+        df_training.loc[noisemask, 't_rec_energy'] = noiseEnergy
+        
         return df_training
     
     def converttotrainingdfvec(self, data):
@@ -134,14 +137,21 @@ class TrainData_Cocoa(TrainData_NanoML):
         
         #Convert events one by one
         traindata = np.array([self.convertevent(data[eventnumber]) for eventnumber in np.arange(len(data))], dtype=object)
-
+        
         #Remove all events with an energy lower than 15GeV
         E_cutoff = 15000
-        print("Number of events before removing low energy events: ", len(traindata))
         E = np.sqrt(data['true_jet_pt']**2 * np.cos(data['true_jet_phi'])**2 + data['true_jet_m']**2)
-        mask = ak.to_numpy(ak.all(E >= E_cutoff, axis=1))
+        mask_e = ak.to_numpy(ak.all(E >= E_cutoff, axis=1))
+        
+        #Remove all events with more than one jet
+        n_pflow_jets = ak.num(data['pflow_jet_pt'])
+        mask_jets = ak.to_numpy(n_pflow_jets == 1)
+        
+        mask = np.logical_and(mask_e, mask_jets)
+        
+        print("Number of events before removing low energy events and multiple jets: ", len(traindata))
         traindata = traindata[mask]
-        print("Number of events after removing low energy events: ", len(traindata))
+        print("Number of events after removing low energy events and multiple jets: ", len(traindata))
         
         #find the row splits
         rs = np.cumsum([len(df) for df in traindata])
