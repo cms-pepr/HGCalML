@@ -448,13 +448,69 @@ class PlotCoordinates(_DebugPlotBase):
             n_tidxs = SelectWithDefault(nidx, tidx, -2)
             n_sameasprobe = tf.cast(tf.expand_dims(tidx, axis=2) == n_tidxs[:,1:,:], dtype='float32')
             av_same = tf.reduce_mean(n_sameasprobe, axis=1)# V x 1
-            
-        #just project
-        for i in range(coords.shape[1]-2):
+
+        
+        if coords.shape[1] > 2:
+            #just project
+            for i in range(coords.shape[1]-2):
+                data={
+                    'X':  coords[:,0+i:1+i].numpy(),
+                    'Y':  coords[:,1+i:2+i].numpy(),
+                    'Z':  coords[:,2+i:3+i].numpy(),
+                    'tIdx': tidx[:,0:1].numpy(),
+                    'features': features[:,0:1].numpy(),
+                    'idx' : idxs[...,np.newaxis]
+                    }
+                hoverdict={}
+                if hoverfeat is not None:
+                    for j in range(hoverfeat.shape[1]):
+                        hoverdict['f_'+str(j)] = hoverfeat[:,j:j+1]
+                    data.update(hoverdict)
+                    
+                if nidx is not None:
+                    data.update({'av_same': av_same})
+                
+                df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
+                df['orig_tIdx']=df['tIdx']
+                rdst = np.random.RandomState(1234567890)#all the same
+                shuffle_truth_colors(df,'tIdx',rdst)
+                
+                hover_data=['orig_tIdx','idx']+[k for k in hoverdict.keys()]
+                if nidx is not None:
+                    hover_data.append('av_same')
+                fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
+                                    color="tIdx",
+                                    size='features',
+                                    hover_data=hover_data,
+                                    template='plotly_dark',
+                        color_continuous_scale=px.colors.sequential.Rainbow)
+                fig.update_traces(marker=dict(line=dict(width=0)))
+                fig.write_html(self.outdir+'/'+self.name+'_'+str(i)+".html")
+                
+                
+                if self.publish is not None:
+                    publish(self.outdir+'/'+self.name+'_'+str(i)+".html", self.publish)
+                
+                if self.no_noise_plot:
+                    df = df[df['orig_tIdx']>=0]
+                    
+                    fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
+                                        color="tIdx",
+                                        size='features',
+                                        hover_data=hover_data,
+                                        template='plotly_dark',
+                            color_continuous_scale=px.colors.sequential.Rainbow)
+                    fig.update_traces(marker=dict(line=dict(width=0)))
+                    fig.write_html(self.create_base_output_path()+'_'+str(i)+"_no_noise.html")
+                
+                
+                    if self.publish is not None:
+                        publish(self.create_base_output_path()+'_'+str(i)+"_no_noise.html", self.publish)
+        else:
+            print('>>>plotting in 2D') #DEBUG , remove message
             data={
-                'X':  coords[:,0+i:1+i].numpy(),
-                'Y':  coords[:,1+i:2+i].numpy(),
-                'Z':  coords[:,2+i:3+i].numpy(),
+                'X':  coords[:,0:1].numpy(),
+                'Y':  coords[:,1:2].numpy(),
                 'tIdx': tidx[:,0:1].numpy(),
                 'features': features[:,0:1].numpy(),
                 'idx' : idxs[...,np.newaxis]
@@ -464,47 +520,53 @@ class PlotCoordinates(_DebugPlotBase):
                 for j in range(hoverfeat.shape[1]):
                     hoverdict['f_'+str(j)] = hoverfeat[:,j:j+1]
                 data.update(hoverdict)
-                
-            if nidx is not None:
-                data.update({'av_same': av_same})
-            
+            #forget about nidx, just create data frame, shuffle truth colors and plot
             df = pd.DataFrame (np.concatenate([data[k] for k in data],axis=1), columns = [k for k in data])
             df['orig_tIdx']=df['tIdx']
-            rdst = np.random.RandomState(1234567890)#all the same
+            rdst = np.random.RandomState(1234567890)
             shuffle_truth_colors(df,'tIdx',rdst)
-            
             hover_data=['orig_tIdx','idx']+[k for k in hoverdict.keys()]
-            if nidx is not None:
-                hover_data.append('av_same')
-            fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
-                                color="tIdx",
-                                size='features',
-                                hover_data=hover_data,
-                                template='plotly_dark',
-                    color_continuous_scale=px.colors.sequential.Rainbow)
+            fig = px.scatter(df, x="X", y="Y", 
+                            color="tIdx",
+                            size='features',
+                            hover_data=hover_data,
+                            template='plotly_dark',
+                color_continuous_scale=px.colors.sequential.Rainbow)
             fig.update_traces(marker=dict(line=dict(width=0)))
-            fig.write_html(self.outdir+'/'+self.name+'_'+str(i)+".html")
-            
-            
+            fig.write_html(self.outdir+'/'+self.name+".html")
+            #publish
             if self.publish is not None:
-                publish(self.outdir+'/'+self.name+'_'+str(i)+".html", self.publish)
-            
-            if self.no_noise_plot:
-                df = df[df['orig_tIdx']>=0]
-                
-                fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
-                                    color="tIdx",
-                                    size='features',
-                                    hover_data=hover_data,
-                                    template='plotly_dark',
-                        color_continuous_scale=px.colors.sequential.Rainbow)
-                fig.update_traces(marker=dict(line=dict(width=0)))
-                fig.write_html(self.create_base_output_path()+'_'+str(i)+"_no_noise.html")
-            
-            
-                if self.publish is not None:
-                    publish(self.create_base_output_path()+'_'+str(i)+"_no_noise.html", self.publish)
-        
+                publish(self.outdir+'/'+self.name+".html", self.publish)
+            #done
+
+
+def _test_PlotCoordinates(n_dims = 2):
+    #just a quick test if the 2D and 3D plots are working, using more or less clustered inputs so that the truth index looks nice
+    import numpy as np
+    import tensorflow as tf
+    import os
+    #os.system('mkdir -p testplots_'+str(n_dims))
+    coords = np.random.normal(size=(10000,n_dims))
+    features = np.abs(np.random.normal(size=(10000,1)))
+    # create the truth index such that it more or less corresponds to closeness in space
+    tidx = np.zeros((10000,1))
+    tidx[coords[:,0]>0.5] = 1
+    tidx[coords[:,0]<-0.5] = 2
+    tidx[coords[:,1]>0.5] = 3
+    tidx[coords[:,1]<-0.5] = 4
+
+    rs = [0,10000]
+    coords = tf.convert_to_tensor(coords, dtype='float32')
+    features = tf.convert_to_tensor(features, dtype='float32')
+    tidx = tf.convert_to_tensor(tidx, dtype='int32')
+    rs = tf.convert_to_tensor(rs, dtype='int32')
+    
+    #os.mkdir('testplots_'+str(n_dims), exist_ok=True)
+    abs_out_path = os.path.abspath('testplots_'+str(n_dims))
+    
+    plotter = PlotCoordinates(outdir=abs_out_path, plot_every=1, name='testplot')
+    plotter.plot([coords, features, tidx, rs])
+
         
 class Plot2DCoordinatesPlusScore(_DebugPlotBase):
     
