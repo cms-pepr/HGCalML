@@ -478,7 +478,7 @@ def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friem
     
     print('Plotting distribution')
     fig_dist = plot_distribution(t_list, feature_list)
-    fig_dist.savefig(os.path.join(args.outputlocation, 'distribution.png'), bbox_inches='tight')
+    fig_dist.savefig(os.path.join(outputpath, 'distribution.png'), bbox_inches='tight')
     
     
     
