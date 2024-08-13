@@ -41,7 +41,7 @@ class TrainData_Cocoa(TrainData_NanoML):
     def convertevent(self, event):
         #convert cells to df
         df_cell = pd.DataFrame()
-        df_cell['recHitEnergy'] =  ak.to_dataframe(event['cell_e'], how='outer')
+        df_cell['recHitEnergy'] =  ak.to_dataframe(event['cell_e'], how='outer')/1000
         df_cell['recHitEta'] = ak.to_dataframe(event['cell_eta'], how='outer')
         df_cell['isTrack'] = 0
         df_cell['recHitTheta'] = 0 #will be calculated later
@@ -63,9 +63,9 @@ class TrainData_Cocoa(TrainData_NanoML):
         df_particle= pd.DataFrame()
 
         df_particle['particle_idx'] = np.arange(len(event['particle_e']))
-        df_particle['t_energy'] = ak.to_dataframe(event['particle_e'], how='outer')
+        df_particle['t_energy'] = ak.to_dataframe(event['particle_e'], how='outer')/1000
         df_particle['t_pid'] = ak.to_dataframe(event['particle_pdgid'], how='outer')
-        df_particle['t_rec_energy'] = ak.to_dataframe(event['particle_dep_energy'], how='outer')
+        df_particle['t_rec_energy'] = ak.to_dataframe(event['particle_dep_energy'], how='outer')/1000
         df_particle['particle_eta'] = ak.to_dataframe(event['particle_eta_lay0'], how='outer')
         df_particle['particle_phi'] = ak.to_dataframe(event['particle_phi_lay0'], how='outer')
         
@@ -140,18 +140,13 @@ class TrainData_Cocoa(TrainData_NanoML):
         
         #Remove all events with an energy lower than 15GeV
         E_cutoff = 15000
-        E = np.sqrt(data['true_jet_pt']**2 * np.cos(data['true_jet_phi'])**2 + data['true_jet_m']**2)
-        mask_e = ak.to_numpy(ak.all(E >= E_cutoff, axis=1))
+        E_sum = ak.sum(data['particle_e'], axis=1)
+        mask = ak.to_numpy(E_sum >= E_cutoff)
+              
         
-        #Remove all events with more than one jet
-        n_pflow_jets = ak.num(data['pflow_jet_pt'])
-        mask_jets = ak.to_numpy(n_pflow_jets == 1)
-        
-        mask = np.logical_and(mask_e, mask_jets)
-        
-        print("Number of events before removing low energy events and multiple jets: ", len(traindata))
+        print("Number of events before removing low energy events: ", len(traindata))
         traindata = traindata[mask]
-        print("Number of events after removing low energy events and multiple jets: ", len(traindata))
+        print("Number of events after removing low energy events: ", len(traindata))
         
         #find the row splits
         rs = np.cumsum([len(df) for df in traindata])
