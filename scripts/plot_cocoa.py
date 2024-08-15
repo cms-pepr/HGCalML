@@ -88,8 +88,6 @@ def plot_efficencies(df, bins):
         yeff_nh*100, yerr_eff_nh*100, yfake_nh*100, yerr_fake_nh*100, ycorr_nh*100, yerr_corr_nh*100
     
     
-    #Convert to GeV
-    bins = bins/1000
     
     # Calculate the bin positions and widths
     binwidth = bins[1:] - bins[:-1]
@@ -132,6 +130,160 @@ def plot_efficencies(df, bins):
         #ax.set_ylim(20, 101)
 
     return fig
+def plot_efficency_and_fakerate(df, bins):
+    # Calculate the efficiencies and fake rates for the total
+    efficiencies, efficiencies_err, fake_rate, fake_rate_err = [], [], [], []
+    
+    mask_predicted = np.isnan(df['pred_energy']) == False
+    mask_truth = np.isnan(df['truthHitAssignedEnergies']) == False
+        
+    
+    for i in range(len(bins) - 1):
+        mask_bintruth = np.logical_and(
+            df['truthHitAssignedEnergies'] >= bins[i],
+            df['truthHitAssignedEnergies'] < bins[i + 1])
+        mask_binpred = np.logical_and(
+            df['pred_energy'] >= bins[i],
+            df['pred_energy'] < bins[i + 1])
+
+        matched = np.logical_and(
+            mask_predicted,
+            mask_bintruth)
+        faked = np.logical_and(
+            mask_binpred,
+            np.logical_not(mask_truth))
+        
+        eff = np.sum(matched) / np.sum(mask_bintruth)
+        eff_err = np.sqrt(eff * (1 - eff) / np.sum(matched)) 
+        efficiencies.append(eff)
+        efficiencies_err.append(eff_err)
+        
+        fake = np.sum(faked) / np.sum(mask_binpred)
+        fake_err = np.sqrt(fake * (1 - fake) / np.sum(faked))
+        fake_rate.append(fake)
+        fake_rate_err.append(fake_err)
+
+    yeff, yerr_eff, yfake, yerr_fake, = np.array(efficiencies)*100, np.array(efficiencies_err)*100, np.array(fake_rate)*100, np.array(fake_rate_err)*100
+    
+    # Calculate the bin positions and widths
+    binwidth = bins[1:] - bins[:-1]
+    x_pos = bins[:-1] + binwidth / 2
+    x_err = binwidth / 2
+    
+    fig_eff = plt.figure()
+    plt.errorbar(x_pos, yeff, xerr=x_err, yerr=yerr_eff, fmt='o', color='red')
+    plt.xticks(bins)
+    plt.xticklabels(bins, fontsize=10)
+    plt.xlim(bins[0], bins[-1])
+    plt.xlabel('Energy [GeV]', fontsize=10)
+    
+    yticks1 = np.round(np.arange(40, 101, 20), 1)
+    plt.yticks(yticks1)
+    plt.yticklabels([f"{y}%" for y in yticks1], fontsize=10)
+    plt.ylabel('Efficiency')
+    
+    plt.grid(alpha=0.4)
+    
+    plt.close()
+    
+    fig_fake = plt.figure()
+    plt.errorbar(x_pos, yfake, xerr=x_err, yerr=yerr_fake, fmt='o', color='red')
+    plt.xticks(bins)
+    plt.xticklabels(bins, fontsize=10)
+    plt.xlim(bins[0], bins[-1])
+    plt.xlabel('Energy [GeV]', fontsize=10)
+    
+    yticks1 = np.round(np.arange(0, 21, 5), 1)
+    plt.yticks(yticks1)
+    plt.yticklabels([f"{y}%" for y in yticks1], fontsize=10)
+    plt.ylabel('Fake rate')
+    
+    plt.grid(alpha=0.4)
+    
+    plt.close()
+    
+    return fig_eff, fig_fake
+
+def calc_classification_p(df, bins, mask):
+    corr_class_prob = []
+    corr_class_prob_err = []    
+    
+    mask_predicted = np.isnan(df['pred_energy']) == False
+    mask_truth = np.isnan(df['truthHitAssignedEnergies']) == False
+    
+    if(mask == 0):
+        mask_PID_truth = df['truthHitAssignedPIDs'].isin([22])
+    elif(mask == 1):
+        mask_PID_truth = df['truthHitAssignedPIDs'].isin([130,310,311,2112,-2112,3122,-3122,3322,-3322])
+    elif(mask == 2):
+        mask_PID_truth = df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])
+    else:
+        raise ValueError("mask must be 0, 1 or 2")
+    mask_PID_pred = df['pred_id_value'].isin([mask])
+        
+    mask_PID_matched = np.logical_and(mask_PID_truth, mask_PID_pred)
+        
+    
+    for i in range(len(bins) - 1):
+        mask_bintruth = np.logical_and(
+            df['truthHitAssignedEnergies'] >= bins[i],
+            df['truthHitAssignedEnergies'] < bins[i + 1])
+        mask_binpred = np.logical_and(
+            df['pred_energy'] >= bins[i],
+            df['pred_energy'] < bins[i + 1])
+
+        matched = np.logical_and(
+            mask_predicted,
+            mask_bintruth)
+    
+        
+        cc_prob = np.sum(matched[mask_PID_matched]) / np.sum(matched[mask_PID_truth])
+        cc_prob_err = np.sqrt(cc_prob * (1 - cc_prob) / np.sum(matched[mask_PID_truth]))
+        corr_class_prob.append(cc_prob)
+        corr_class_prob_err.append(cc_prob_err)
+    
+    return np.array(corr_class_prob), np.array(corr_class_prob_err)
+
+def plot_classification_p(df, bins):
+    ycorr_photon, yerr_corr_photon = calc_classification_p(df, bins, 0)
+    ycorr_photon, yerr_corr_photon = ycorr_photon*100, yerr_corr_photon*100
+    
+    ycorr_nh, yerr_corr_nh = calc_classification_p(df, bins, 1)
+    ycorr_nh, yerr_corr_nh = ycorr_nh*100, yerr_corr_nh*100
+    
+    ycorr_ch, yerr_corr_ch = calc_classification_p(df, bins, 2)
+    ycorr_ch, yerr_corr_ch = ycorr_ch*100, yerr_corr_ch*100
+    
+    # Calculate the bin positions and widths
+    binwidth = bins[1:] - bins[:-1]
+    x_pos = bins[:-1] + binwidth / 2
+    x_err = binwidth / 2
+    
+    # Create the plots
+    fig_classification = plt.figure()
+    plt.errorbar(x_pos, ycorr_photon, xerr=x_err, yerr=yerr_corr_photon, fmt='o', color='red', label='Photon')
+    plt.errorbar(x_pos, ycorr_nh, xerr=x_err, yerr=yerr_corr_nh, fmt='o', color='blue', label='Neutral Hadron')
+    plt.errorbar(x_pos, ycorr_ch, xerr=x_err, yerr=yerr_corr_ch, fmt='o', color='green', label='Charged Hadron')
+    
+    plt.legend()    
+    plt.grid(alpha=0.4)
+    
+    plt.xticks(bins)
+    plt.xticklabels(bins, fontsize=10)
+    plt.xlim(bins[0], bins[-1])
+    plt.xlabel('Energy [GeV]', fontsize=10)
+    
+    yticks1 = np.round(np.arange(40, 101, 20), 1)
+    plt.yticks(yticks1)
+    plt.yticklabels([f"{y}%" for y in yticks1], fontsize=10)
+    plt.ylabel('Probability of predicting correct class')    
+    
+    plt.close()
+    
+    return fig_classification
+    
+
+    
 def plot_jet_metrics(df):
     #Jet metrics
     reseta = []
@@ -306,13 +458,6 @@ def plt_energy_resolution(df, bins=None):
     y = means
     yerr = std_error
     
-    #Convert MeV to GeV
-    x = x/1000
-    xerr = xerr/1000
-    y = y/1000
-    yerr = yerr/1000
-    bins = bins/1000
-    
     # plot x, y with error bars
     ax1.errorbar(x, y, xerr=xerr, yerr=yerr, fmt='o', color='#67c4ce')
     
@@ -381,11 +526,11 @@ def plot_condensation(pred_dict, t_dict, feature_dict, coordspace='condensation'
     return fig
 
 def plot_distribution(truth_list, feature_list):
-    print('Plotting distribution')
     n_tracks = []
     n_hits = []
     n_particles = []
-    n_charged = []
+    n_charged_had = []
+    n_lepton = []
     n_photon = []
     n_neutral_had = []
     for i in range(len(feature_list)):
@@ -398,19 +543,22 @@ def plot_distribution(truth_list, feature_list):
         truth_df = pd.DataFrame(truth_data)
         n_particles.append(len(truth_df['truthHitAssignementIdx'].unique()))
         
-        charged_mask = truth_df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])
+        charged_hd_mask = truth_df['truthHitAssignedPIDs'].isin([211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])
+        lepton_mask = truth_df['truthHitAssignedPIDs'].isin([11,-11,13,-13])
         photon_mask = truth_df['truthHitAssignedPIDs'].isin([22])
         neutral_mask = truth_df['truthHitAssignedPIDs'].isin([130,310,311,2112,-2112,3122,-3122,3322,-3322])
-        n_charged.append(len(truth_df[charged_mask]['truthHitAssignementIdx'].unique()))
+        n_charged_had.append(len(truth_df[charged_hd_mask]['truthHitAssignementIdx'].unique()))
+        n_lepton.append(len(truth_df[lepton_mask]['truthHitAssignementIdx'].unique()))
         n_photon.append(len(truth_df[photon_mask]['truthHitAssignementIdx'].unique()))
         n_neutral_had.append(len(truth_df[neutral_mask]['truthHitAssignementIdx'].unique()))
     #convert to numpy
-    n_tracks, n_hits, n_particles, n_charged, n_photon, n_neutral_had = np.array(n_tracks), np.array(n_hits), np.array(n_particles), np.array(n_charged), np.array(n_photon), np.array(n_neutral_had)
+    n_tracks, n_hits, n_particles, n_charged_had, n_lepton, n_photon, n_neutral_had = \
+        np.array(n_tracks), np.array(n_hits), np.array(n_particles), np.array(n_charged_had), np.array(n_lepton), np.array(n_photon), np.array(n_neutral_had)
     
     #create horizontal boxplot
     fig = plt.figure()
-    values = [n_charged, n_neutral_had, n_photon, n_particles, n_tracks,n_hits/100]
-    labels = ['ch. hadrons','nu. hadrons','photons','total particles', 'tracks','cells [$10^2$]']
+    values = [n_lepton, n_charged_had, n_neutral_had, n_photon, n_particles, n_tracks,n_hits/100]
+    labels = ['leptons', 'ch. hadrons','nu. hadrons','photons','total particles', 'tracks','cells [$10^2$]']
 
     plt.boxplot(values, labels=labels, vert=False, patch_artist=True, 
                 boxprops=dict(facecolor="limegreen"), medianprops=dict(color="black"),
@@ -420,7 +568,7 @@ def plot_distribution(truth_list, feature_list):
     # Add mean values as text
     for pos, data in zip(np.arange(len(values)), values):
         mean = np.mean(data)
-        plt.text(21.5, pos+1, f'({mean:.1f})', va='center', ha='left', fontsize=10)
+        plt.text(21.2, pos+1, f'({mean:.1f})', va='center', ha='left')
     
     plt.close()
     return fig
@@ -445,7 +593,7 @@ def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friem
     matplotlib.rcParams.update({'font.size': 20})
     
     print('Plotting efficiencies')
-    energy_bins_neutral = np.array([1,2,3,4,5,10,20,30,50])*1000
+    energy_bins_neutral = np.array([1,2,3,4,5,10,20,30,50])
     fig_eff=plot_efficencies(df, bins=energy_bins_neutral)
     fig_eff.savefig(os.path.join(outputpath,'efficiencies.png'), bbox_inches='tight')
     
@@ -464,7 +612,7 @@ def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friem
     fig_neutral_resphi.savefig(os.path.join(outputpath,'neutral_resphi.png'), bbox_inches='tight')
     
     print('Plotting energy resolution')
-    energy_bins_charged = np.array([15,20,30,50,200])*1000
+    energy_bins_charged = np.array([15,20,30,50,200])
     mask_charged = df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])    
     fig_charged_res = plt_energy_resolution(df[mask_charged], bins=energy_bins_charged)
     fig_charged_res.savefig(os.path.join(outputpath,'charged_res.png'), bbox_inches='tight')

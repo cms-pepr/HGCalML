@@ -1627,19 +1627,19 @@ class ProcessFeaturesCocoa(ProcessFeatures):
                  **kwargs):
         super().__init__(**kwargs)  
         self.mean_hit = tf.constant([
-            182, # recHitEnergy
+            0.182, # recHitEnergy
             0.028,   # recHitEta
             0.0,    # recHitID -> don't normalize
             0.0074,  # recHitTheta
             3012,  # recHitR
             0.0,    # recHitX -> centered around zero
             0.0,    # recHitY -> centered around zero
-            48,  # recHitZ
+            0.0,  # recHitZ
             0.0,    # recHitTime -> All zeros
             0.0,   # recHitHitR
             ])
         self.std_hit = tf.constant([
-            1087, # recHitEnergy
+            1.087, # recHitEnergy
             1.46,   # recHitEta
             1.0,    # recHitID -> don't normalize
             1.78,  # recHitTheta
@@ -1652,19 +1652,19 @@ class ProcessFeaturesCocoa(ProcessFeatures):
             ])
 
         self.mean_track = tf.constant([
-            15173,   # recHitEnergy
+            15.173,   # recHitEnergy
             0.0,   # recHitEta
             0.0,    # recHitID -> don't normalize
             1.57,  # recHitTheta
             2574,  # recHitR
             0.0,    # recHitX -> centered around zero
             0.0,    # recHitY -> centered around zero
-            -2.1,  # recHitZ -> 
+            0.0,  # recHitZ -> 
             0.0,    # recHitTime -> All zeros
             0.0,    # recHitHitR -> All zeros for tracks
             ])
         self.std_track = tf.constant([
-            19126,   # recHitEnergy
+            19.126,   # recHitEnergy
             1.31,   # recHitEta
             1.0,    # recHitID -> don't normalize
             0.93,   # recHitTheta
