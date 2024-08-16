@@ -24,7 +24,7 @@ from Layers import ScaledGooeyBatchNorm2
 from Layers import MixWhere
 from Layers import ProcessFeatures
 from Layers import RaggedGravNet
-from Layers import PlotCoordinates
+from Layers import PlotCoordinates, ZerosLike
 from Layers import DistanceWeightedMessagePassing, TranslationInvariantMP
 from Layers import LLFillSpace
 from Layers import LLExtendedObjectCondensation
@@ -81,7 +81,7 @@ else:
 #parses the rest of the arguments
 train = training_base_hgcal.HGCalTraining(parser=parser)
 
-PLOT_FREQUENCY = 8000 # a bit more than one 2 hours
+PLOT_FREQUENCY = 2 # a bit more than one 2 hours
 
 ###############################################################################
 ### Define Model ##############################################################
@@ -215,6 +215,8 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
         name='condensation',
         publish = 'wandb',
         )([pred_ccoords, pred_beta, pre_processed['t_idx'], rs])
+
+    pre_processed['t_spectator_weight'] = ZerosLike()(pred_beta) #this should not be necessary
     
     pred_beta = loss_layer(
             scale=1.,

@@ -517,7 +517,7 @@ def create_outputs(x, n_ccoords=3,
         name = name_prefix+'_class',
         trainable=trainable)(x)
 
-    pred_dist = OnesLike()(pred_time)
+    pred_dist = OnesLike()(pred_beta)
     if not fix_distance_scale:
         pred_dist = ScalarMultiply(2.)(Dense(1,
             activation='sigmoid',
