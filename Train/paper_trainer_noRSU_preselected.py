@@ -105,13 +105,13 @@ NEIGHBOURS = [128,128,128]
 DSHAPE = 64
 DENSE_ACTIVATION = 'elu'
 LOSS_IMPLEMENTATION = "hinge"
-N_CLUSTER_SPACE_COORDINATES = 4
-DISTANCE_SCALE = True
+N_CLUSTER_SPACE_COORDINATES = 3
+DISTANCE_SCALE = False
 LOSS_OPTIONS = {
     "beta_loss_scale": 1.0,
     "too_much_beta_scale": 0.0,
-    "energy_loss_weight": 0.01,
-    "classification_loss_weight": 0.01,
+    "energy_loss_weight": 1.0,
+    "classification_loss_weight": 1.00,
     "position_loss_weight": 0.0,
     "timing_loss_weight": 0.0,
     "q_min": 1.0,
