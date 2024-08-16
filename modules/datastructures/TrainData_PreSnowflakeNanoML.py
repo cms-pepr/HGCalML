@@ -5,6 +5,7 @@ import numpy as np
 #from IPython import embed
 import os
 import gzip
+import pdb
 
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from djcdata.dataPipeline import TrainDataGenerator
@@ -63,7 +64,8 @@ class TrainData_PreSnowflakeNanoML(TrainData):
     model_keys = None
 
     def set_model(self):
-        self.path_to_pretrained = os.getenv("HGCALML")+'/models/double_tree_condensation_block/KERAS_check_model_last.h5'
+        # self.path_to_pretrained = os.getenv("HGCALML")+'/models/double_tree_condensation_block/KERAS_check_model_last.h5'
+        self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre-cluster_tmp/KERAS_check_model_last.h5'
 
     def __init__(self):
         TrainData.__init__(self)
