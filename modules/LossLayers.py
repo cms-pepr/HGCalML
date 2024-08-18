@@ -3046,11 +3046,6 @@ class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
         * pred_uncertainty_low  -> predicted uncertainty
         * pred_uncertainty_high -> predicted uncertainty (should be equal to ...low)
         """
-        t_energy = tf.clip_by_value(t_energy,0.,1e12)
-        t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
-        t_dep_energies = tf.where(t_dep_energies / t_energy > 2.0, 2.0 * t_energy, t_dep_energies)
-        t_dep_energies = tf.where(t_dep_energies / t_energy < 0.5, 0.5 * t_energy, t_dep_energies)
-
         epred = pred_energy * t_dep_energies
         sigma = pred_uncertainty_high * t_dep_energies + 1.0
 
@@ -3064,8 +3059,6 @@ class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
         matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
         prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
         uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
-        prediction_loss = tf.clip_by_value(prediction_loss, 0, 10)
-        uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
 
         if return_concat:
             return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
