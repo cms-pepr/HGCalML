@@ -9,6 +9,7 @@ import sys
 import os
 import plotly.express as px
 import argparse
+from scipy.stats import norm
 
 
 def calc_efficiencies(df, bins, mask=None):
@@ -163,7 +164,7 @@ def plot_efficency_and_fakerate(df, bins):
         fake_rate.append(fake)
         fake_rate_err.append(fake_err)
 
-    yeff, yerr_eff, yfake, yerr_fake, = np.array(efficiencies)*100, np.array(efficiencies_err)*100, np.array(fake_rate)*100, np.array(fake_rate_err)*100
+    yeff, yerr_eff, yfake, yerr_fake, = np.array(efficiencies), np.array(efficiencies_err), np.array(fake_rate), np.array(fake_rate_err)
     
     # Calculate the bin positions and widths
     binwidth = bins[1:] - bins[:-1]
@@ -171,15 +172,15 @@ def plot_efficency_and_fakerate(df, bins):
     x_err = binwidth / 2
     
     fig_eff = plt.figure()
-    plt.errorbar(x_pos, yeff, xerr=x_err, yerr=yerr_eff, fmt='o', color='red')
-    plt.xticks(bins)
-    plt.xticklabels(bins, fontsize=10)
+    plt.errorbar(x_pos, yeff, xerr=x_err, yerr=yerr_eff, fmt='o')    
     plt.xlim(bins[0], bins[-1])
-    plt.xlabel('Energy [GeV]', fontsize=10)
+    #plt.xscale('log')
+    #plt.gca().get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    plt.xticks([1,5,10,20,30,50])
+    plt.xlabel('Energy [GeV]')
     
-    yticks1 = np.round(np.arange(40, 101, 20), 1)
-    plt.yticks(yticks1)
-    plt.yticklabels([f"{y}%" for y in yticks1], fontsize=10)
+    # yticks1 = np.round(np.arange(40, 101, 20), 1)
+    # plt.yticks(yticks1)
     plt.ylabel('Efficiency')
     
     plt.grid(alpha=0.4)
@@ -187,15 +188,16 @@ def plot_efficency_and_fakerate(df, bins):
     plt.close()
     
     fig_fake = plt.figure()
-    plt.errorbar(x_pos, yfake, xerr=x_err, yerr=yerr_fake, fmt='o', color='red')
-    plt.xticks(bins)
-    plt.xticklabels(bins, fontsize=10)
+    plt.errorbar(x_pos, yfake, xerr=x_err, yerr=yerr_fake, fmt='o')
     plt.xlim(bins[0], bins[-1])
-    plt.xlabel('Energy [GeV]', fontsize=10)
+    #plt.xscale('log')
+    #plt.gca().get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    plt.xticks([1,5,10,20,30,50])
+    plt.xlabel('Energy [GeV]')
     
-    yticks1 = np.round(np.arange(0, 21, 5), 1)
-    plt.yticks(yticks1)
-    plt.yticklabels([f"{y}%" for y in yticks1], fontsize=10)
+    # yticks2 = np.round(np.arange(0, 21, 5), 1)
+    # plt.yticks(yticks2)
+    plt.ylim(bottom=0)
     plt.ylabel('Fake rate')
     
     plt.grid(alpha=0.4)
@@ -246,13 +248,13 @@ def calc_classification_p(df, bins, mask):
 
 def plot_classification_p(df, bins):
     ycorr_photon, yerr_corr_photon = calc_classification_p(df, bins, 0)
-    ycorr_photon, yerr_corr_photon = ycorr_photon*100, yerr_corr_photon*100
+    #ycorr_photon, yerr_corr_photon = ycorr_photon*100, yerr_corr_photon*100
     
     ycorr_nh, yerr_corr_nh = calc_classification_p(df, bins, 1)
-    ycorr_nh, yerr_corr_nh = ycorr_nh*100, yerr_corr_nh*100
+    #ycorr_nh, yerr_corr_nh = ycorr_nh*100, yerr_corr_nh*100
     
     ycorr_ch, yerr_corr_ch = calc_classification_p(df, bins, 2)
-    ycorr_ch, yerr_corr_ch = ycorr_ch*100, yerr_corr_ch*100
+    #ycorr_ch, yerr_corr_ch = ycorr_ch*100, yerr_corr_ch*100
     
     # Calculate the bin positions and widths
     binwidth = bins[1:] - bins[:-1]
@@ -261,22 +263,22 @@ def plot_classification_p(df, bins):
     
     # Create the plots
     fig_classification = plt.figure()
-    plt.errorbar(x_pos, ycorr_photon, xerr=x_err, yerr=yerr_corr_photon, fmt='o', color='red', label='Photon')
-    plt.errorbar(x_pos, ycorr_nh, xerr=x_err, yerr=yerr_corr_nh, fmt='o', color='blue', label='Neutral Hadron')
-    plt.errorbar(x_pos, ycorr_ch, xerr=x_err, yerr=yerr_corr_ch, fmt='o', color='green', label='Charged Hadron')
+    plt.errorbar(x_pos, ycorr_photon, xerr=x_err, yerr=yerr_corr_photon, fmt='o', label='Photon')
+    plt.errorbar(x_pos, ycorr_nh, xerr=x_err, yerr=yerr_corr_nh, fmt='o', label='Neutral Hadron')
+    plt.errorbar(x_pos, ycorr_ch, xerr=x_err, yerr=yerr_corr_ch, fmt='o', label='Charged Particle')
     
     plt.legend()    
     plt.grid(alpha=0.4)
     
-    plt.xticks(bins)
-    plt.xticklabels(bins, fontsize=10)
     plt.xlim(bins[0], bins[-1])
-    plt.xlabel('Energy [GeV]', fontsize=10)
+    #plt.xscale('log')
+    #plt.gca().get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    plt.xticks([1,5,10,20,30,50])
+    plt.xlabel('Energy [GeV]')
     
-    yticks1 = np.round(np.arange(40, 101, 20), 1)
-    plt.yticks(yticks1)
-    plt.yticklabels([f"{y}%" for y in yticks1], fontsize=10)
-    plt.ylabel('Probability of predicting correct class')    
+    # yticks = np.round(np.arange(0.4, 101, 20), 1)
+    # plt.yticks(yticks)
+    plt.ylabel('Probability of correct class')
     
     plt.close()
     
@@ -284,11 +286,12 @@ def plot_classification_p(df, bins):
     
 
     
-def plot_jet_metrics(df):
+def plot_jet_metrics_based_on_particles(df, datasetname='QuarkJet'):
     #Jet metrics
     reseta = []
     resphi = []
     relresE = []
+    relrespt = []
     nParicles_pred = []
     nParicles_truth = []
     
@@ -314,17 +317,22 @@ def plot_jet_metrics(df):
         reseta.append(t_eta-pred_eta)
         
         t_phi = np.mean(np.arctan2(df[mask]['truthHitAssignedY'], df[mask]['truthHitAssignedX']))
-        pred_phi = df[mask]['pred_pos'].apply(lambda x: np.arctan2(x[1], x[0])).mean()
+        pred_phi = df[mask]['pred_pos'].mean()
         delta_phi = calc_deltaphi(t_phi, pred_phi)        
         resphi.append(delta_phi)
-
+        
+        jet_pt_truth = jet_E_truth/np.cosh(t_eta)
+        jet_pt_pred = jet_E_pred/np.cosh(pred_eta)
+        relrespt.append((jet_pt_truth-jet_pt_pred)/jet_pt_truth)
+        
+    print(datasetname)
     nParticle_bins = np.linspace(0, 30, 31)
     fig_jet_nparticle = plt.figure()
-    plt.hist(nParicles_truth, bins=nParticle_bins, label='Truth', color='#fee7ae')
+    plt.hist(nParicles_truth, bins=nParticle_bins, label='Truth', color='orange', alpha=0.5)#color='#fee7ae')
     plt.grid(alpha=0.4)
-    plt.hist(nParicles_pred, bins=nParticle_bins, label='Prediction', histtype='step', color='#67c4ce', linestyle='--')
-    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
-    plt.ylabel('Events', fontsize=20)
+    plt.hist(nParicles_pred, bins=nParticle_bins, label='Prediction', histtype='step')#color='#67c4ce', linestyle='--')
+    plt.text(0.05, 0.95, datasetname, horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.ylabel('Number of events', fontsize=20)
     plt.xlabel('Jet nConstituents', fontsize=20)
     plt.legend(fontsize=10)
     plt.xticks(np.linspace(0, 30, 7))
@@ -332,9 +340,10 @@ def plot_jet_metrics(df):
 
     relres_bins = np.linspace(-1, 1, 51)
     fig_jet_relresE = plt.figure()
-    plt.hist(np.clip(relresE, -1, 1), bins=relres_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.hist(np.clip(relresE, -1, 1), bins=relres_bins, histtype='step')#color='#67c4ce', linestyle='--')
     plt.grid(alpha=0.4)
-    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.text(0.05, 0.95, datasetname, horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    write_mean_std_displayed(relresE, relres_bins)
     plt.ylabel('Number of events', fontsize=20)
     plt.xlabel('rel. res. Cal. Jet Energy', fontsize=20)
     plt.xticks(np.linspace(-1, 1, 5))
@@ -343,24 +352,188 @@ def plot_jet_metrics(df):
     
     res_bins = np.linspace(-0.2, 0.2, 51)
     fig_jet_reseta = plt.figure()
-    plt.hist(np.clip(reseta,-0.2,0.2), bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.hist(np.clip(reseta,-0.2,0.2), bins=res_bins, histtype='step')# color='#67c4ce', linestyle='--')
     plt.grid(alpha=0.4)
-    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.text(0.05, 0.95, datasetname, horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    write_mean_std_displayed(reseta, res_bins)
     plt.ylabel('Number of events', fontsize=20)
     plt.xlabel('Jet $\\Delta \\eta$', fontsize=20)
     plt.xticks(np.linspace(-0.2, 0.2, 5))
     plt.close()
 
     fig_jet_resphi = plt.figure()
-    plt.hist(np.clip(resphi, -0.2, 0.2), bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.hist(np.clip(resphi, -0.2, 0.2), bins=res_bins, histtype='step')#color='#67c4ce', linestyle='--')
     plt.grid(alpha=0.4)
-    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.text(0.05, 0.95, datasetname, horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    write_mean_std_displayed(resphi, res_bins)
     plt.ylabel('Number of events', fontsize=20)
     plt.xlabel('Jet $\\Delta \\phi$', fontsize=20)
     plt.xticks(np.linspace(-0.2, 0.2, 5))
     plt.close()
     
-    return fig_jet_nparticle, fig_jet_relresE, fig_jet_reseta, fig_jet_resphi
+    fig_jet_pt = plt.figure()
+    plt.hist(relrespt, bins=relres_bins, histtype='step')
+    plt.grid(alpha=0.4)
+    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    write_mean_std_displayed(relrespt, relres_bins)
+    plt.ylabel('Number of events', fontsize=20)
+    plt.xlabel('rel. res. Cal. Jet $p_T$', fontsize=20)
+    plt.xticks(np.linspace(-1, 1, 5))
+    plt.close()
+    
+    return fig_jet_nparticle, fig_jet_relresE, fig_jet_reseta, fig_jet_resphi, fig_jet_pt
+
+def correct_jet_pt(jets_df, bins):
+    
+    corrected_jets_df = jets_df
+    for i in range(len(bins) - 1):
+        mask_bintruth = np.logical_and(
+            jets_df['true_pt'] >= bins[i],
+            jets_df['true_pt'] < bins[i + 1])
+        matched = np.logical_and(
+            jets_df['matched'],
+            mask_bintruth)
+        relrespt = []
+        for j in range(len(jets_df['event_id'].unique())):
+            event_id_mask = jets_df['event_id'] == j
+            mask = np.logical_and(event_id_mask,  matched)
+            
+            jet_pt_truth = jets_df[mask]['true_pt']
+            jet_pt_pred = jets_df[mask]['pred_pt']
+            relrespt.append((jet_pt_truth-jet_pt_pred)/jet_pt_truth)
+        
+        relres_bins = np.linspace(-1, 1, 51)
+        relrespt = np.concatenate(relrespt)
+        fig_jet_pt = plt.figure()
+        plt.hist(np.clip(relrespt, -1,1), bins=relres_bins, histtype='step')
+        plt.grid(alpha=0.4)
+        plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+        write_mean_std_displayed(relrespt, relres_bins)
+        plt.ylabel('Number of jets', fontsize=20)
+        plt.xlabel('rel. res. Cal. Jet $p_T$', fontsize=20)
+        plt.xticks(np.round(np.linspace(-1, 1, 9), 2), fontsize=12)
+        plt.savefig(f'/work/friemer/hgcalml/testplots/jet_pt_{bins[i]}.png')
+        plt.close()
+
+        corr_factor = np.mean(relrespt)
+        print('Correction factor:', corr_factor)
+        corrected_jets_df.loc[mask_bintruth, 'pred_pt'] = corrected_jets_df.loc[mask_bintruth, 'pred_pt']*(1+corr_factor)
+    return corrected_jets_df
+    
+
+def plot_jet_metrics_from_jets(jets_df, datasetname='QuarkJet'):
+    #Jet metrics
+    reseta = []
+    resphi = []
+    relrespt = []
+    nParicles_pred = []
+    nParicles_truth = []
+    
+    jets_df = correct_jet_pt(jets_df, [0,5,10,20,30,50,100, 1000])
+    
+    for i in range(len(jets_df['event_id'].unique())):
+        matched = jets_df['matched']
+        event_id_mask = jets_df['event_id'] == i
+        mask = np.logical_and(event_id_mask,  matched)
+        
+        nParicles_truth.append(jets_df[mask]['true_n_constituents'])
+        nParicles_pred.append(jets_df[mask]['pred_n_constituents'])
+        
+        t_eta = jets_df[mask]['true_eta']
+        pred_eta = jets_df[mask]['pred_eta']
+        reseta.append(t_eta-pred_eta)
+        
+        t_phi = jets_df[mask]['true_phi']
+        pred_phi = jets_df[mask]['pred_phi']
+        delta_phi = calc_deltaphi(t_phi, pred_phi)        
+        resphi.append(delta_phi)
+        
+        jet_pt_truth = jets_df[mask]['true_pt']
+        jet_pt_pred = jets_df[mask]['pred_pt']
+        relrespt.append((jet_pt_truth-jet_pt_pred)/jet_pt_truth)
+            
+        
+    print('Total unmatched jets:', np.sum([jets_df['matched'] == False]))
+    
+    nParicles_truth = np.concatenate(nParicles_truth)
+    nParicles_pred = np.concatenate(nParicles_pred)
+    reseta = np.concatenate(reseta)
+    resphi = np.concatenate(resphi)
+    relrespt = np.concatenate(relrespt)
+
+    nParticle_bins = np.linspace(0, 30, 31)
+    fig_jet_nparticle = plt.figure()
+    plt.hist(nParicles_truth, bins=nParticle_bins, label='Truth', color='orange', alpha=0.5)#color='#fee7ae')
+    plt.grid(alpha=0.4)
+    plt.hist(nParicles_pred, bins=nParticle_bins, label='Prediction', histtype='step')#color='#67c4ce', linestyle='--')
+    plt.text(0.05, 0.95, datasetname, horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    plt.ylabel('Number of jets', fontsize=20)
+    plt.xlabel('Jet nConstituents', fontsize=20)
+    plt.legend(fontsize=10)
+    plt.xticks(np.linspace(0, 30, 7))
+    plt.close()
+    
+    res_bins = np.linspace(-0.2, 0.2, 51)
+    fig_jet_reseta = plt.figure()
+    plt.hist(np.clip(reseta,-0.2,0.2), bins=res_bins, histtype='step')# color='#67c4ce', linestyle='--')
+    plt.grid(alpha=0.4)
+    plt.text(0.05, 0.95, datasetname, horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    write_mean_std_displayed(reseta, res_bins)
+    plt.ylabel('Number of jets', fontsize=20)
+    plt.xlabel('Jet $\\Delta \\eta$', fontsize=20)
+    plt.xticks(np.linspace(-0.2, 0.2, 5))
+    plt.close()
+
+    fig_jet_resphi = plt.figure()
+    plt.hist(np.clip(resphi, -0.2, 0.2), bins=res_bins, histtype='step')#color='#67c4ce', linestyle='--')
+    plt.grid(alpha=0.4)
+    plt.text(0.05, 0.95, datasetname, horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    write_mean_std_displayed(resphi, res_bins)
+    plt.ylabel('Number of jets', fontsize=20)
+    plt.xlabel('Jet $\\Delta \\phi$', fontsize=20)
+    plt.xticks(np.linspace(-0.2, 0.2, 5))
+    plt.close()
+    
+    relres_bins = np.linspace(-1, 1, 51)
+    fig_jet_pt = plt.figure()
+    plt.hist(np.clip(relrespt, -1,1), bins=relres_bins, histtype='step')
+    plt.grid(alpha=0.4)
+    plt.text(0.05, 0.95, 'Quark Jet', horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    write_mean_std_displayed(relrespt, relres_bins)
+    plt.ylabel('Number of jets', fontsize=20)
+    plt.xlabel('rel. res. Cal. Jet $p_T$', fontsize=20)
+    plt.xticks(np.round(np.linspace(-1, 1, 9), 2), fontsize=12)
+    plt.close()
+    
+    return fig_jet_nparticle, fig_jet_reseta, fig_jet_resphi, fig_jet_pt
+
+
+def write_mean_std_displayed(data, bins):
+    #remove inf and Nan
+    data = np.array(data, dtype=np.float64)
+    data = data[np.isfinite(data)]
+    data = data[np.isnan(data) == False]
+    
+    displayed = np.sum(np.logical_and(data >= bins[0], data < bins[-1]))/len(data)
+    mean= np.mean(data)
+    std = np.std(data)
+    
+    #Fit a normal distribution to the data
+    data = data[np.logical_and(data >= bins[0], data < bins[-1])]
+    mu, sigma = norm.fit(data)    
+    
+    textstr = '\n'.join((
+    r'$\mathrm{Mean}=%.2f$' % (mean, ),
+    r'$\mathrm{Std\ }=%.2f$' % (std, ),
+    r'$\mu=%.2f$' % (mu, ),
+    r'$\sigma=%.2f$' % (sigma, ),
+    r'$\mathrm{Displayed}=%.2f$' % (displayed, )))
+
+    # Add the text box
+    plt.text(0.95, 0.95, textstr, transform=plt.gca().transAxes,
+         fontsize=12, verticalalignment='top', horizontalalignment='right',
+         bbox=dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='black'))
+    
 
 def calc_matched_mask(df):
     has_truth = np.isnan(df['truthHitAssignedEnergies']) == False
@@ -381,6 +554,7 @@ def plot_particle_metrics(df):
     reseta = []
     resphi = []
     relresE = []
+    relrespt = []
 
     for i in range(len(df['event_id'].unique())):
         mask = np.logical_and(df['event_id'] == i, matched)
@@ -399,11 +573,17 @@ def plot_particle_metrics(df):
         pred_phi = df[mask]['pred_pos'].apply(lambda x: np.arctan2(x[1], x[0]))
         delta_phi = calc_deltaphi(t_phi, pred_phi)
         resphi = np.concatenate((resphi, delta_phi))
+        
+        truth_pt = truth_e/np.cosh(t_eta)
+        pred_pt = pred_e/np.cosh(pred_eta)
+        newrelrespt = ((truth_pt-pred_pt)/truth_pt).to_numpy()
+        relrespt = np.concatenate((relrespt, newrelrespt))
 
     relres_bins = np.linspace(-1, 1, 51)
     fig_relresE = plt.figure()
-    plt.hist(np.clip(relresE, -1,1), bins=relres_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.hist(np.clip(relresE, -1,1), bins=relres_bins, histtype='step')#color='#67c4ce', linestyle='--')
     plt.grid(alpha=0.4)
+    write_mean_std_displayed(relresE, relres_bins)
     plt.xlabel('rel. res. Neutral Particle Energy', fontsize=20)
     plt.ylabel('Number of neutral particles', fontsize=20)
     plt.xticks(np.linspace(-1, 1, 5))
@@ -411,27 +591,102 @@ def plot_particle_metrics(df):
 
     res_bins = np.linspace(-0.4, 0.4, 51)
     fig_reseta = plt.figure()
-    plt.hist(np.clip(reseta, -0.4, 0.4), bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.hist(np.clip(reseta, -0.4, 0.4), bins=res_bins, histtype='step')#color='#67c4ce', linestyle='--')
     plt.grid(alpha=0.4)
+    write_mean_std_displayed(reseta, res_bins)
     plt.xlabel('Neutral Particle $\\Delta \\eta$', fontsize=20)
     plt.ylabel('Number of neutral particles', fontsize=20)
     plt.xticks(np.linspace(-0.4, 0.4, 5))
     plt.close()
 
     fig_resphi = plt.figure()
-    plt.hist(np.clip(resphi, -0.4, 0.4), bins=res_bins, histtype='step', color='#67c4ce', linestyle='--')
+    plt.hist(np.clip(resphi, -0.4, 0.4), bins=res_bins, histtype='step')#color='#67c4ce', linestyle='--')
     plt.grid(alpha=0.4)
+    write_mean_std_displayed(resphi, res_bins)
     plt.xlabel('Neutral Particle $\\Delta \\phi$', fontsize=20)
     plt.ylabel('Number of neutral particles', fontsize=20)
     plt.xticks(np.linspace(-0.4, 0.4, 5))
     plt.close()
-
-    return fig_relresE, fig_reseta, fig_resphi
     
-def plt_energy_resolution(df, bins=None):
-    has_truth = np.isnan(df['truthHitAssignedEnergies']) == False
-    has_pred = np.isnan(df['pred_energy']) == False
-    matched = np.logical_and(has_truth, has_pred)
+    fig_pt = plt.figure()
+    plt.hist(np.clip(relrespt, -1, 1), bins=relres_bins, histtype='step')
+    plt.grid(alpha=0.4)
+    write_mean_std_displayed(relrespt, relres_bins)
+    plt.xlabel('rel. res. Neutral Particle $p_T$', fontsize=20)
+    plt.ylabel('Number of neutral particles', fontsize=20)
+    plt.xticks(np.linspace(-1, 1, 5))
+    plt.close()
+
+    return fig_relresE, fig_reseta, fig_resphi, fig_pt
+
+def calc_energy_resolution(df, bins=None):
+    matched = calc_matched_mask(df)
+
+    ratios = []
+    ratios_err= []
+    diffs = []
+    diffs_err = []
+
+    for i in range(len(bins) - 1):
+        mask_truth_bin = np.logical_and(
+            df['truthHitAssignedEnergies'] >= bins[i],
+            df['truthHitAssignedEnergies'] < bins[i + 1])
+        mask_bin = np.logical_and(mask_truth_bin, matched)
+        diff = np.abs(df['pred_energy'][mask_bin] - df['truthHitAssignedEnergies'][mask_bin])
+        diffs.append(np.mean(diff))
+        diffs_err.append(np.std(diff) / np.sqrt(len(diff)))
+        
+        ratio = df['pred_energy'][mask_bin] / df['truthHitAssignedEnergies'][mask_bin]
+        ratios.append(np.mean(ratio))
+        ratios_err.append(np.std(ratio) / np.sqrt(len(ratio)))
+        
+    diffs, diffs_err, ratios, ratios_err = np.array(diffs), np.array(diffs_err), np.array(ratios), np.array(ratios_err)
+    return diffs, diffs_err, ratios, ratios_err
+def plot_energy_resolution(df, bins=None):
+    diffs, diffs_err, ratios, ratios_err = calc_energy_resolution(df, bins)
+    
+    neutral_mask = df['truthHitAssignedPIDs'].isin([22,130,310,311,2112,-2112,3122,-3122,3322,-3322])
+    diffs_neutral, diffs_err_neutral, ratios_neutral, ratios_err_neutral = calc_energy_resolution(df[neutral_mask], bins)
+    
+    charged_mask = df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])
+    diffs_charged, diffs_err_charged, ratios_charged, ratios_err_charged = calc_energy_resolution(df[charged_mask], bins)
+    
+    # Calculate the bin positions and widths
+    binwidth = bins[1:] - bins[:-1]
+    x_pos = bins[:-1] + binwidth / 2
+    x_err = binwidth / 2
+    # Create the stacked plots of diff and ratio with one errorbar for total, neutral and charged each
+    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(12, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+
+    ax1.errorbar(x_pos, diffs, xerr=x_err, yerr=diffs_err, fmt='o', label='Total')
+    ax1.errorbar(x_pos, diffs_neutral, xerr=x_err, yerr=diffs_err_neutral, fmt='o', label='Neutral')
+    ax1.errorbar(x_pos, diffs_charged, xerr=x_err, yerr=diffs_err_charged, fmt='o', label='Charged')
+    ax1.set_ylabel('$\sigma E [GeV]$', fontsize=20)
+    ax1.grid(alpha=0.4)
+    ax1.legend()
+
+    ax2.errorbar(x_pos, ratios, xerr=x_err, yerr=ratios_err, fmt='o', label='Total')
+    ax2.errorbar(x_pos, ratios_neutral, xerr=x_err, yerr=ratios_err_neutral, fmt='o', label='Neutral')
+    ax2.errorbar(x_pos, ratios_charged, xerr=x_err, yerr=ratios_err_charged, fmt='o', label='Charged')
+    ax2.set_ylabel('$E_{pred} / E_{truth}$', fontsize=20)
+    ax2.grid(alpha=0.4)
+    
+    ydelta = np.round(max(1 - ax2.get_ylim()[0], ax2.get_ylim()[1] - 1),1)
+    ax2.set_ylim(1 - ydelta, 1 + ydelta)
+
+    ax2.set_xlim(bins[0], bins[-1])
+    ax2.set_xscale('log')
+    ax2.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    xticks = np.round(bins, 0).astype(int)
+    ax2.set_xticks(xticks)
+    ax2.set_xticklabels(xticks)
+
+    fig.subplots_adjust(hspace=0.1)
+    
+    return fig
+
+def plot_pt_resolution(df, bins=None):
+    matched = calc_matched_mask(df)
 
     means = []
     std_error = []
@@ -441,10 +696,21 @@ def plt_energy_resolution(df, bins=None):
             df['truthHitAssignedEnergies'] >= bins[i],
             df['truthHitAssignedEnergies'] < bins[i + 1])
         mask_bin = np.logical_and(mask_truth_bin, matched)
-        diff = np.abs(df['pred_energy'][mask_bin] - df['truthHitAssignedEnergies'][mask_bin])
-        #ratios = df['pred_energy'][mask_bin] / df['truthHitAssignedEnergies'][mask_bin]
-        means.append(np.mean(diff))
-        std_error.append(np.std(diff) / np.sqrt(len(diff)))
+        # diff = np.abs(df['pred_energy'][mask_bin] - df['truthHitAssignedEnergies'][mask_bin])
+        # means.append(np.mean(diff))
+        # std_error.append(np.std(diff) / np.sqrt(len(diff)))
+        
+        
+        t_eta = df[mask_bin]['truthHitAssignedZ']
+        pred_eta = df[mask_bin]['pred_pos'].apply(lambda x: x[2])
+        t_energy = df[mask_bin]['truthHitAssignedEnergies']
+        pred_energy = df[mask_bin]['pred_energy']
+        t_pt = t_energy/np.cosh(t_eta)
+        pred_pt = pred_energy/np.cosh(pred_eta)
+        ratios = pred_pt / t_pt
+        means.append(np.mean(ratios))
+        std_error.append(np.std(ratios) / np.sqrt(len(ratios)))
+        
         
     means = np.array(means)
     std_error = np.array(std_error)
@@ -459,25 +725,18 @@ def plt_energy_resolution(df, bins=None):
     yerr = std_error
     
     # plot x, y with error bars
-    ax1.errorbar(x, y, xerr=xerr, yerr=yerr, fmt='o', color='#67c4ce')
+    ax1.errorbar(x, y, xerr=xerr, yerr=yerr, fmt='o')#, color='#67c4ce')
     
     # set xticks
+    ax1.set_xlim(bins[0], bins[-1])
+    ax1.set_xscale('log')
+    ax1.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())    
     xticks = np.round(bins, 0).astype(int)
     ax1.set_xticks(xticks)
-    ax1.set_xticklabels(xticks, fontsize=10)
-    
-    # ymin = np.round(ax1.get_ylim()[0], 1)
-    # ymax = np.round(ax1.get_ylim()[1], 1)
-    # ydelta = max(1 - ymin, ymax - 1)
-    # ax1.set_ylim(1 - ydelta, 1 + ydelta)    
-    # # set yticks to be evenly spaced around 1
-    # yticks = np.round(np.arange(1 - ydelta, 1 + ydelta, 0.02), 2)
-    # yticks = np.round(np.linspace(1 - ydelta, 1 + ydelta, 11), 2)
-    # ax1.set_yticks(yticks)
-    # ax1.set_yticklabels(yticks, fontsize=20)
+    ax1.set_xticklabels(xticks)
     
     ax1.grid(alpha=0.4)
-    ax1.set_ylabel('$\sigma E [GeV]$', fontsize=20)
+    ax1.set_ylabel('$\sigma p_T [GeV]$', fontsize=20)
     ax1.set_xlabel('Energy [GeV]', fontsize=20)
     
     return fig
@@ -572,9 +831,21 @@ def plot_distribution(truth_list, feature_list):
     
     plt.close()
     return fig
+
+def plot_energydistribution(df):
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.hist(df['truthHitAssignedEnergies'], histtype='step', color='blue', label='Truth')
+    ax.hist(df['pred_energy'], histtype='step', label='Prediction')
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    ax.set_xlabel('Energy [GeV]')
+    ax.set_ylabel('Number of showers')
+    ax.legend()
+    ax.grid(alpha=0.4)
+    return fig
     
 
-def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friemer/hgcalml/testplots/'):
+def plot_everything(df, pred_list, t_list, feature_list, jets_df, outputpath='/work/friemer/hgcalml/testplots/', datasetname='Quark Jet'):
     
     #Create Output directory  
     if not os.path.exists(outputpath):
@@ -594,51 +865,68 @@ def plot_everything(df, pred_list, t_list, feature_list, outputpath='/work/friem
     
     print('Plotting efficiencies')
     energy_bins_neutral = np.array([1,2,3,4,5,10,20,30,50])
-    fig_eff=plot_efficencies(df, bins=energy_bins_neutral)
-    fig_eff.savefig(os.path.join(outputpath,'efficiencies.png'), bbox_inches='tight')
+    fig_eff_overview=plot_efficencies(df, bins=energy_bins_neutral)
+    fig_eff_overview.savefig(os.path.join(outputpath,'efficienciesOverview_{}.png'.format(datasetname)), bbox_inches='tight')
+    
+    fig_eff, fig_fake = plot_efficency_and_fakerate(df, bins=energy_bins_neutral)
+    fig_eff.savefig(os.path.join(outputpath,'efficiencies_{}.png'.format(datasetname)), bbox_inches='tight')
+    fig_fake.savefig(os.path.join(outputpath,'fake_rate_{}.png'.format(datasetname)), bbox_inches='tight')
     
     print('Plotting jet metrics')
-    fig_jet_nparticle, fig_jet_relresE, fig_jet_reseta, fig_jet_resphi = plot_jet_metrics(df)
-    fig_jet_nparticle.savefig(os.path.join(outputpath,'jet_nparticle.png'), bbox_inches='tight')
-    fig_jet_relresE.savefig(os.path.join(outputpath,'jet_relresE.png'), bbox_inches='tight')
-    fig_jet_reseta.savefig(os.path.join(outputpath,'jet_reseta.png'), bbox_inches='tight')
-    fig_jet_resphi.savefig(os.path.join(outputpath,'jet_resphi.png'), bbox_inches='tight')
+    fig_jet_nparticle,  fig_jet_reseta, fig_jet_resphi, fig_jet_pt = plot_jet_metrics_from_jets(jets_df, datasetname=datasetname)
+    fig_jet_nparticle.savefig(os.path.join(outputpath,'jet_nparticle_{}.png'.format(datasetname)), bbox_inches='tight')
+    fig_jet_reseta.savefig(os.path.join(outputpath,'jet_reseta_{}.png'.format(datasetname)), bbox_inches='tight')
+    fig_jet_resphi.savefig(os.path.join(outputpath,'jet_resphi_{}.png'.format(datasetname)), bbox_inches='tight')
+    fig_jet_pt.savefig(os.path.join(outputpath,'jet_pt_{}.png'.format(datasetname)), bbox_inches='tight')
     
     print('Plotting particle metrics')
     mask_neutral = df['truthHitAssignedPIDs'].isin([22,130, 310, 311, 2112, -2112, 3122, -3122, 3322, -3322])    
-    fig_neutral_relresE, fig_neutral_reseta, fig_neutral_resphi = plot_particle_metrics(df[mask_neutral])
-    fig_neutral_relresE.savefig(os.path.join(outputpath,'neutral_relresE.png'), bbox_inches='tight')
-    fig_neutral_reseta.savefig(os.path.join(outputpath,'neutral_reseta.png'), bbox_inches='tight')
-    fig_neutral_resphi.savefig(os.path.join(outputpath,'neutral_resphi.png'), bbox_inches='tight')
+    fig_neutral_relresE, fig_neutral_reseta, fig_neutral_resphi, fig_neutral_pt = plot_particle_metrics(df[mask_neutral])
+    fig_neutral_relresE.savefig(os.path.join(outputpath,'neutral_relresE_{}.png'.format(datasetname)), bbox_inches='tight')
+    fig_neutral_reseta.savefig(os.path.join(outputpath,'neutral_reseta_{}.png'.format(datasetname)), bbox_inches='tight')
+    fig_neutral_resphi.savefig(os.path.join(outputpath,'neutral_resphi_{}.png'.format(datasetname)), bbox_inches='tight')
+    fig_neutral_pt.savefig(os.path.join(outputpath,'neutral_pt_{}.png'.format(datasetname)), bbox_inches='tight')
     
-    print('Plotting energy resolution')
-    energy_bins_charged = np.array([15,20,30,50,200])
-    mask_charged = df['truthHitAssignedPIDs'].isin([11,-11,13,-13,211,-211,321,-321,2212,-2212,3112,-3112,3222,-3222,3312,-3312])    
-    fig_charged_res = plt_energy_resolution(df[mask_charged], bins=energy_bins_charged)
-    fig_charged_res.savefig(os.path.join(outputpath,'charged_res.png'), bbox_inches='tight')
+    fig_class = plot_classification_p(df, energy_bins_neutral)
+    fig_class.savefig(os.path.join(outputpath,'classification_p_{}.png'.format(datasetname)), bbox_inches='tight')
+    
+    print('Plotting energy resolution')    
+    energy_bins_combined = np.array([1,5,10,20,30,50,200])
+    fig_new_res = plot_energy_resolution(df, bins=energy_bins_combined)
+    fig_new_res.savefig(os.path.join(outputpath,'energy_resolution_{}.png'.format(datasetname)), bbox_inches='tight')
 
     print('Plotting condensation and input') 
     for event_id in range(10):
         fig = plot_condensation(pred_list[event_id], t_list[event_id], feature_list[event_id], 'condensation')
-        fig.write_html(os.path.join(outputpath, 'condensation' ,'condensation'+str(event_id)+".html"))
+        fig.write_html(os.path.join(outputpath, 'condensation' ,'condensation{}_{}.html'.format(event_id, datasetname)))
         fig = plot_condensation(pred_list[event_id], t_list[event_id], feature_list[event_id], 'input')
-        fig.write_html(os.path.join(outputpath, 'condensation' ,'input'+str(event_id)+".html"))
+        fig.write_html(os.path.join(outputpath, 'condensation' ,'input{}_{}.html'.format(event_id, datasetname)))
     
     print('Plotting distribution')
     fig_dist = plot_distribution(t_list, feature_list)
-    fig_dist.savefig(os.path.join(outputpath, 'distribution.png'), bbox_inches='tight')
+    fig_dist.savefig(os.path.join(outputpath, 'distribution_{}.png'.format(datasetname)), bbox_inches='tight')
+    
+    # fig_edist = plot_energydistribution(df)
+    # fig_edist.savefig(os.path.join(outputpath, 'energydistribution.png'), bbox_inches='tight')
+    
+    # fig_edist_neutral = plot_energydistribution(df[mask_neutral])
+    # fig_edist_neutral.savefig(os.path.join(outputpath, 'energydistribution_neutral.png'), bbox_inches='tight')
+    
+    # fig_edist_charged = plot_energydistribution(df[mask_charged])
+    # fig_edist_charged.savefig(os.path.join(outputpath, 'energydistribution_charged.png'), bbox_inches='tight')
     
     
     
-def plot_everything_from_file(analysisfilepath, outputpath='/work/friemer/hgcalml/testplots/'):
+    
+def plot_everything_from_file(analysisfilepath, outputpath='/work/friemer/hgcalml/testplots/', datasetname='Quark Jet'):
     with gzip.open(analysisfilepath, 'rb') as input_file:
         analysis_data = pickle.load(input_file)
     df = analysis_data['showers_dataframe']
     pred_list = analysis_data['prediction']
     t_list = analysis_data['truth']
     feature_list =  analysis_data['features']
-        
-    plot_everything(df, pred_list, t_list, feature_list, outputpath)
+    jets_df = analysis_data['jets_dataframe']
+    plot_everything(df, pred_list, t_list, feature_list, jets_df, outputpath, datasetname=datasetname)
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -648,6 +936,12 @@ if __name__ == '__main__':
     parser.add_argument('outputlocation',
         help="Output directory for the plots",
         default='')
+    parser.add_argument('--gluon', action='store_true', help='Writing Gluon dataset')
 
     args = parser.parse_args()
-    plot_everything_from_file(args.analysisfile, args.outputlocation)
+    
+    if args.gluon:
+        datasetname='Gluon Jet'
+    else:
+        datasetname='Quark Jet'
+    plot_everything_from_file(args.analysisfile, args.outputlocation, datasetname=datasetname)

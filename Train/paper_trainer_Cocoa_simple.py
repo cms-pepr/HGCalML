@@ -200,7 +200,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 energy_factor=False,
                 is_track=is_track,
                 set_track_betas_to_one=True,
-                pred_e_factor=10000)
+                pred_e_factor=10)
 
 
     pred_beta = LLExtendedObjectCondensation5(
@@ -212,9 +212,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             implementation = "hinge",
             beta_loss_scale = 1.0,
             too_much_beta_scale = 0.0,
-            energy_loss_weight =1.0,
-            classification_loss_weight = 0.4,
-            position_loss_weight =  10.0,
+            energy_loss_weight = 1.0,
+            classification_loss_weight = 1.0,
+            position_loss_weight =  1.0,
             timing_loss_weight = 0.0,
             downweight_low_energy=False,
             potential_scaling = 1.0,
@@ -247,7 +247,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         'pred_dist': pred_dist,
         'rechit_energy': energy,
         'row_splits': pre_processed['row_splits'],
-        #'t_idx': pre_processed['t_idx'], #JUST FOR TESTING FIXME
+        't_idx': pre_processed['t_idx'], #JUST FOR TESTING FIXME
         # 'no_noise_sel': pre_processed['no_noise_sel'],
         # 'no_noise_rs': pre_processed['no_noise_rs'],
         }
@@ -302,15 +302,26 @@ cb += [
 ### Actual Training ###########################################################
 ###############################################################################
 
-train.change_learning_rate(1e-4)
+train.change_learning_rate(1e-3)
 train.trainModel(
-        nepochs=2,
+        nepochs=100,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
         collect_gradients = 4 #average out more gradients
         )
 
+
+#recompile
+train.compileModel(learningrate=5e-4)
+print('entering second training phase')
+train.trainModel(
+        nepochs=350,
+        batchsize=50000,
+        add_progbar=pre_args.no_wandb,
+        #additional_callbacks=cb,
+        collect_gradients = 4
+        )
 # loop through model layers and turn  batch normalisation to fixed
 def fix_batchnorm(m):
     for layer in m.layers:
@@ -320,24 +331,32 @@ def fix_batchnorm(m):
 #apply to all models
 train.applyFunctionToAllModels(fix_batchnorm)
 
-
 #recompile
-train.compileModel(learningrate=2e-5)
-print('entering second training phase')
+train.compileModel(learningrate=5e-4)
+print('entering third training phase')
 train.trainModel(
-        nepochs=15,
+        nepochs=600,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
         collect_gradients = 4
         )
 
-
-#recompile
-train.compileModel(learningrate=5e-6)
+train.compileModel(learningrate=1e-4)
 print('entering third training phase')
 train.trainModel(
-        nepochs=35,
+        nepochs=800,
+        batchsize=50000,
+        add_progbar=pre_args.no_wandb,
+        #additional_callbacks=cb,
+        collect_gradients = 4
+        )
+
+#recompile
+train.compileModel(learningrate=1e-5)
+print('entering third training phase')
+train.trainModel(
+        nepochs=1000,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
