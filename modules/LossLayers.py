@@ -3130,6 +3130,7 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
         t_energy = tf.clip_by_value(t_energy,0.,1e12)
         
         prediction_loss = tf.math.log((t_energy - pred_energy)**2+1)
+        #prediction_loss = ((t_energy - pred_energy)/t_energy)**2
 
         uncertainty_loss = pred_uncertainty_high**2 + pred_uncertainty_low**2
 

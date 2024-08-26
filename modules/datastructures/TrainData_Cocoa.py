@@ -99,7 +99,7 @@ class TrainData_Cocoa(TrainData_NanoML):
         #join cell information to truth information
         df_cell = df_cell.join(df_particle, on='t_idx')
 
-        df_training = pd.concat([df_cell, df_track])
+        df_training = pd.concat([df_cell, df_track], ignore_index=True)
 
         #set NaN values (particle information for hits made from background noise to -1)
         df_training.fillna(-1, inplace=True)
@@ -127,6 +127,16 @@ class TrainData_Cocoa(TrainData_NanoML):
         df_training.loc[noisemask, 't_energy'] = noiseEnergy
         df_training.loc[noisemask, 't_rec_energy'] = noiseEnergy
         
+        #set is_energymax to one if the hit has the maximum energy for each particle (t_idx)
+        # df_training['is_energymax'] = 0       
+        # for i in np.unique(df_training['t_idx']):
+        #     mask = np.logical_and(df_training['t_idx'] == i, df_training['t_idx'] != -1)
+        #     max_energy_idx = df_training.loc[mask, 'recHitEnergy'].idxmax()
+        #     df_training.loc[mask, 'is_energymax'][max_energy_idx] =  1
+
+        # #JUST FOR TESTING FIXME
+        # df_training['isTrack']=df_training['is_energymax']
+        
         return df_training
     
     def converttotrainingdfvec(self, data):
@@ -138,15 +148,29 @@ class TrainData_Cocoa(TrainData_NanoML):
         #Convert events one by one
         traindata = np.array([self.convertevent(data[eventnumber]) for eventnumber in np.arange(len(data))], dtype=object)
         
-        #Remove all events with an energy lower than 15GeV
-        E_cutoff = 15000
-        E_sum = ak.sum(data['particle_e'], axis=1)
-        mask = ak.to_numpy(E_sum >= E_cutoff)
+        if True:
+            #Remove all events with an energy lower than 15GeV
+            # E_cutoff = 15000
+            # E_sum = ak.sum(data['particle_e'], axis=1)
+            # mask = ak.to_numpy(E_sum >= E_cutoff)
+            mask = np.ones(len(traindata), dtype=bool)
+            
+            #Remove all events with a particle that has multiple clusters
+            for i in range(len(data)):
+                for j in range(len(data.particle_pdgid[i])):
+                    particlemask = data.cell_parent_idx[i] == j
+                    mean_phi = ak.mean(data.cell_phi[i][particlemask])
+                    mean_eta = ak.mean(data.cell_eta[i][particlemask])
+                    phi_mask = abs(data.cell_phi[i][particlemask] - mean_phi) < 0.5
+                    eta_mask = abs(data.cell_eta[i][particlemask] - mean_eta) < 0.5
+                    energy_outside = ak.sum(data.cell_e[i][particlemask][~phi_mask | ~eta_mask])
+                    energy_total = ak.sum(data.cell_e[i][particlemask])
+                    mask[i] = mask[i] and energy_outside < 0.1 * energy_total
               
         
-        print("Number of events before removing low energy events: ", len(traindata))
-        traindata = traindata[mask]
-        print("Number of events after removing low energy events: ", len(traindata))
+            print("Number of events before removing low energy events: ", len(traindata))
+            traindata = traindata[mask]
+            print("Number of events after removing low energy events: ", len(traindata))
         
         #find the row splits
         rs = np.cumsum([len(df) for df in traindata])
