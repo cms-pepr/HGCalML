@@ -575,7 +575,14 @@ class OCGatherEnergyCorrFac_new(tf.keras.layers.Layer):
 
 
 class OCHits2ShowersLayer(tf.keras.layers.Layer):
-    def __init__(self, beta_threshold, distance_threshold, use_local_distance_thresholding=True, assign_by_max_beta=True, nbinning_dims=3,**kwargs):
+    def __init__(self, 
+            beta_threshold,
+            distance_threshold,
+            use_local_distance_thresholding=True,
+            assign_by_max_beta=True,
+            nbinning_dims=3,
+            **kwargs):
+
         super(OCHits2ShowersLayer, self).__init__(**kwargs)
 
         self.beta_threshold = beta_threshold
