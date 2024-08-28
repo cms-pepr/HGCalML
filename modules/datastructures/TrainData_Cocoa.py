@@ -1,3 +1,7 @@
+"""
+Class for the conversion of the COCOA data to DJC format
+start conversion with 'convertDJCFromSource -i /path/to/input -o /path/to/output -c TrainData_Cocoa --gpu'
+"""
 from datastructures.TrainData_NanoML import TrainData_NanoML
 import uproot
 import pandas as pd
@@ -61,7 +65,6 @@ class TrainData_Cocoa(TrainData_NanoML):
 
         #convert particle information to df
         df_particle= pd.DataFrame()
-
         df_particle['particle_idx'] = np.arange(len(event['particle_e']))
         df_particle['t_energy'] = ak.to_dataframe(event['particle_e'], how='outer')/1000
         df_particle['t_pid'] = ak.to_dataframe(event['particle_pdgid'], how='outer')
@@ -86,12 +89,11 @@ class TrainData_Cocoa(TrainData_NanoML):
         #join track information to particle information
         df_track = df_track.join(df_particle, on='t_idx')
         
-        #set is Track to -1 or 1 depending on sign of t_pid
+        #set is Track to -1 or 1 depending on charge of particle
         df_track['isTrack'] = pdgid_to_charge(df_track['t_pid'])
-        #raise Error if any istrack is zero
+        #raise Error if any isTrack is zero (should not happen)
         if 0 in df_track['isTrack'].values:
-            raise ValueError("Error in isTrack")
-        
+            raise ValueError("Error in isTrack. Unknown PDGID for particle with track.")
         
         #Smear true energy for track
         df_track['recHitEnergy'] = df_track['t_energy'].apply(lambda x: np.random.normal(x, 0.01 * x))
@@ -99,6 +101,7 @@ class TrainData_Cocoa(TrainData_NanoML):
         #join cell information to truth information
         df_cell = df_cell.join(df_particle, on='t_idx')
 
+        #concat cell and track information
         df_training = pd.concat([df_cell, df_track], ignore_index=True)
 
         #set NaN values (particle information for hits made from background noise to -1)
@@ -148,12 +151,13 @@ class TrainData_Cocoa(TrainData_NanoML):
         #Convert events one by one
         traindata = np.array([self.convertevent(data[eventnumber]) for eventnumber in np.arange(len(data))], dtype=object)
         
+        #Remove broken events (set to False for Testdata)
         if True:
+            mask = np.ones(len(traindata), dtype=bool)
             #Remove all events with an energy lower than 15GeV
             # E_cutoff = 15000
             # E_sum = ak.sum(data['particle_e'], axis=1)
             # mask = ak.to_numpy(E_sum >= E_cutoff)
-            mask = np.ones(len(traindata), dtype=bool)
             
             #Remove all events with a particle that has multiple clusters
             for i in range(len(data)):
@@ -168,9 +172,9 @@ class TrainData_Cocoa(TrainData_NanoML):
                     mask[i] = mask[i] and energy_outside < 0.1 * energy_total
               
         
-            print("Number of events before removing low energy events: ", len(traindata))
+            print("Number of events before cuts: ", len(traindata))
             traindata = traindata[mask]
-            print("Number of events after removing low energy events: ", len(traindata))
+            print("Number of events after cuts: ", len(traindata))
         
         #find the row splits
         rs = np.cumsum([len(df) for df in traindata])

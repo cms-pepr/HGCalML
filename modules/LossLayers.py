@@ -3289,7 +3289,8 @@ class LLExtendedObjectCondensation4(LLFullObjectCondensation):
 
 class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
     '''
-    Same as `LLExtendedObjecCondensation3` but uses total energy instead of correction as prediction:
+    Same as `LLExtendedObjecCondensation3` but uses total energy instead of correction as prediction,
+    position loss for [cos(phi), sin(phi), eta] and classification loss into categories for COCOA
     '''
 
 
@@ -3342,7 +3343,7 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
             0: Photon
             1: Neutral Hadron
             2: Charged
-            3:  Ambiguous
+            3: Ambiguous
         """
         if self.classification_loss_weight <= 0:
             return tf.reduce_mean(pred_id,axis=1, keepdims=True)

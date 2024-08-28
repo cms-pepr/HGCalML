@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Analysis script to run of the predictions of the model.
+Analysis script adapted from analyse_hgcal_predictions to run of the predictions of the model for the COCOA dataset.
+Call with python analyse_cocoa_predictions.py -h for help.
 """
 
-import pdb
 import os
 import argparse
 import pickle
@@ -16,12 +16,8 @@ import matplotlib.pyplot as plt
 import fastjet as fj
 from scipy.optimize import linear_sum_assignment
 
-from OCHits2Showers import OCHits2ShowersLayer, OCHits2ShowersLayer_HDBSCAN
-from OCHits2Showers import process_endcap2, OCGatherEnergyCorrFac2, OCGatherEnergyCorrFac_new
+from OCHits2Showers import OCHits2ShowersLayer
 from ShowersMatcher2 import ShowersMatcher
-from hplots.hgcal_analysis_plotter import HGCalAnalysisPlotter
-import extra_plots as ep
-from visualize_event import dataframe_to_plot, matched_plot
 from plot_cocoa import plot_everything
 
 
@@ -83,6 +79,7 @@ def analyse(preddir,
 
             print(f"Analyzing event {event_id}")
 
+            #Create showers
             pred_sid, _, alpha_idx, _, _  = hits2showers(
             predictions_dict['pred_ccoords'],
             predictions_dict['pred_beta'],
@@ -281,7 +278,7 @@ if __name__ == '__main__':
     parser.add_argument('-b', help='Beta threshold (default 0.1)', default='0.1')
     parser.add_argument('-d', help='Distance threshold (default 0.5)', default='0.5')
     parser.add_argument('-i', help='IOU threshold (default 0.1)', default='0.1')
-    parser.add_argument('-m', help='Matching mode', default='iou_max')
+    parser.add_argument('-m', help='Matching mode', default='cocoa')
     parser.add_argument('--analysisoutpath',
         help='Will dump analysis data to a file to remake plots without re-running everything.',
         default='')

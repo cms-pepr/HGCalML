@@ -44,7 +44,7 @@ opts = {
     'n' : meta_option('n','TrainJob_'+UEXT),
     'f' : meta_option('f', '/work/friemer/hgcalml/HGCalML'), 
     'cpu': meta_option('cpu', '1'),
-    'memory': meta_option('memory', '10 GB'),
+    'memory': meta_option('memory', '20 GB'),
     'disk': meta_option('disk', '5 GB'),
     'gpu': meta_option('gpu', '1'),
     'wandb': meta_option('wandb', 'True'),
@@ -230,6 +230,7 @@ export HGCALML=$(readlink -f HGCalML)
 export DEEPJETCORE_SUBPACKAGE=$HGCALML
 export PATH=$HGCALML/scripts:$PATH
 export PYTHONPATH=$HGCALML/modules:$PYTHONPATH
+export PYTHONPATH=$HGCALML/scripts:$PYTHONPATH
 export LD_LIBRARY_PATH=$HGCALML/modules:$LD_LIBRARY_PATH
 export LC_ALL=C.UTF-8 	# necessary for wandb
 export LANG=C.UTF-8    # necessary for wandb
