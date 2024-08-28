@@ -287,19 +287,23 @@ class ShowersMatcher:
                 if (x['hasTrack'] != y['hasTrack']):
                     C[a, b] =0
                 else:                    
-                    if y['hasTrack']:
-                        reldeltaEsq = 0
-                    else:
-                        reldeltaEsq = (np.abs(x['pred_energy'] - y['truthHitAssignedEnergies'])/ y['truthHitAssignedEnergies'])**2
-                    
                     pred_phi = np.arctan2(x['pred_pos'][1], x['pred_pos'][0])
                     truth_phi = np.arctan2(y['truthHitAssignedY'], y['truthHitAssignedX'])
                     deltaPhi = np.abs(pred_phi - truth_phi)
-                    deltaEta = np.abs(x['pred_pos'][2] - y['truthHitAssignedZ'])
+                    pred_eta = x['pred_pos'][2]
+                    truth_eta = y['truthHitAssignedZ']
+                    deltaEta = np.abs(pred_eta - truth_eta)
                     
                     deltaRsq = deltaPhi**2 + deltaEta**2
                     
-                    d= np.sqrt(reldeltaEsq + 5*deltaRsq)
+                    if y['hasTrack']:
+                        reldeltaptsq = 0
+                    else:
+                        pt_truth = y['truthHitAssignedEnergies']/np.cosh(truth_eta)
+                        pt_pred = x['pred_energy']/np.cosh(pred_eta)
+                        reldeltaptsq = (np.abs(pt_pred - pt_truth)/ pt_truth)**2
+                    
+                    d= np.sqrt(reldeltaptsq + 5*deltaRsq)
 
                     C[a, b] = 1/(d+1e-3)
         return C
