@@ -2927,6 +2927,91 @@ def tree_condensation_block2(*args, **kwargs):
                                    low_energy_cut = 4.,
                                    name = 'tree_condensation_block2')
 
+def single_tree_condensation_block(in_dict,
+                             debug_outdir='', plot_debug_every=-1,
+                             name = 'single_tree_condensation_block',
+                             trainable = False,
+                             record_metrics = False,
+                             decouple_coords = False,
+                             pre_gravnet = True,
+                             debug_publish = None):
+    
+    if pre_gravnet: #run one single 'gravnet' to gather info about best coordinates; no need to learn coordinates yet so direct implementation
+
+        nidx, dist = KNN(16, record_metrics=record_metrics, name='pre_knn_coords')([in_dict['prime_coords'], in_dict['row_splits']])
+
+        xpre = Concatenate()([in_dict['prime_coords'], in_dict['features']])
+        xpre = Dense(16, activation='tanh', name='pre_enc', trainable = trainable)(xpre)
+
+        xscale = Dense(1, name='pre_scale', trainable = trainable)(xpre)
+        dist = LocalDistanceScaling(name='pre_scale_dist', max_scale = 10.)([dist, xscale])
+        if True:
+            xgn = TranslationInvariantMP([16], 
+                 layer_norm = True,
+                 activation = None, #layer norm takes care
+                 sum_weight = False,
+                 name = name+'_pre_teqmp',
+                 trainable = trainable)([xpre, nidx, dist ])
+
+        else:
+            xgn = DistanceWeightedMessagePassing([16], name=name+'_pre_dmp1', trainable = trainable)([xpre, nidx, dist])
+        
+        dist = StopGradient()(dist)
+        in_dict['features'] = Concatenate()([xgn, in_dict['features'], dist])
+
+
+    [out, graph], x_proc = tree_condensation_block(in_dict, 
+                                  
+                            #the latter overwrites the default arguments such that it is in training mode
+                            debug_outdir=debug_outdir, plot_debug_every=plot_debug_every,
+                            trainable = trainable,
+                            record_metrics = record_metrics,
+                            debug_publish = debug_publish,
+                            decouple_coords = decouple_coords,
+                            produce_output = True)
+    
+    ###########################################################################
+    ### Just some debug out ###################################################
+    ###########################################################################
+
+    all_out = {'no_noise_idx_stage_0': graph['sel_idx_up']}
+    
+    in_dict['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = plot_debug_every,
+                     name = 'dc_1st_stage',
+                            publish = debug_publish,
+                     outdir= debug_outdir )(in_dict['t_energy'], in_dict['t_idx'], graph)
+    
+    in_dict['t_energy'] = PlotGraphCondensationEfficiency(
+                     plot_every = plot_debug_every,
+                     name = 'dc_1st_stage_no_tracks',
+                            publish = debug_publish,
+                     outdir= debug_outdir )(in_dict['t_energy'], in_dict['t_idx'], graph, is_track = in_dict['is_track'])
+    
+    #just to keep the plot in the loop
+    graph['weights_down'] = DummyLayer()([graph['weights_down'], in_dict['t_energy']])
+
+    ###########################################################################
+    ### Second stage ##########################################################
+    ########################################################################### 
+
+    x = Concatenate()([x_proc, in_dict['features']])
+    x = BatchNormalization(name = name + '_bn0', 
+                                         trainable = trainable)(x) #this might be crucial after the summing
+       
+    xadd = post_tree_condensation_push(x, #pushed (with attention)
+                                       x, # used to mix and build attention
+                                       graph, 
+                                       # take default here: heads = push_heads, 
+                                       name = name+'_push',
+                                       trainable = trainable) #this gets the original vector, adds more features to be pushed
+    
+    out['features'] = Concatenate()( [out['features'], xadd] )  
+    out['features'] = BatchNormalization(name = name + '_bn1', 
+                                         trainable = trainable)(out['features']) #this might be crucial after the summing
+    return out, graph, all_out
+
+
 def double_tree_condensation_block(in_dict,
                              debug_outdir='', plot_debug_every=-1,
                              name = 'double_tree_condensation_block',
