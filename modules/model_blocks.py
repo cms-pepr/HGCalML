@@ -2677,6 +2677,7 @@ def mini_tree_clustering(
 
         edge_dense = [64,64,64],
         edge_pre_nodes = 32,
+        remove_ambiguous = True,
 
         record_metrics = False,
         trainable = False,
@@ -2695,13 +2696,15 @@ def mini_tree_clustering(
         x_e = Dense(nodes, activation='elu', 
               kernel_initializer='he_normal',
               name=name+f'_edge_dense_{i}', trainable = trainable)(x_e)
-    #break them down to K+1
+        
     x_e = Dense(trans_a.K()+1, activation='sigmoid', 
               name=name+'_edge_dense_final', trainable = trainable)(x_e)
 
     x_e = LLGraphCondensationEdges(
             active=trainable,
-            record_metrics=record_metrics
+            record_metrics=record_metrics,
+            treat_none_same_as_noise = remove_ambiguous,
+            #set n
             )(x_e, trans_a, pre_inputs['t_idx'])
 
     x_e = StopGradient()(x_e) #edges are purely learned from explicit loss
@@ -2806,6 +2809,7 @@ def tree_condensation_block(pre_processed,
                              decouple_coords = False,
 
                              low_energy_cut = 4.,
+                             remove_ambiguous = True,
                              
                              enc_nodes = 32,
                              gn_nodes = 16,
@@ -2870,7 +2874,7 @@ def tree_condensation_block(pre_processed,
         ud_graph,
         edge_dense = edge_dense,
         edge_pre_nodes = edge_pre_nodes,
-
+        remove_ambiguous = remove_ambiguous,
         record_metrics = record_metrics,
         trainable = trainable,
         name = name+'_tree_clustering',
@@ -2968,6 +2972,7 @@ def double_tree_condensation_block(in_dict,
                             record_metrics = record_metrics,
                             debug_publish = debug_publish,
                             decouple_coords = decouple_coords,
+                             remove_ambiguous = False, #just redistribute energy, don't remove any
                             produce_output = True)
     
     ###########################################################################
@@ -3015,6 +3020,7 @@ def double_tree_condensation_block(in_dict,
                                           debug_publish = debug_publish,
                                           trainable = trainable,
                                           decouple_coords = decouple_coords,
+                                          remove_ambiguous = False, #just redistribute energy, don't remove any
                                           record_metrics = record_metrics)
     
     

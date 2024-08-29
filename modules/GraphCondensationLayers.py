@@ -852,7 +852,7 @@ class InsertEdgesIntoTransition(tf.keras.layers.Layer):
     
     def __init__(self, 
                  exponent = 1, 
-                 noise_assign_norm_threshold = 0.1, 
+                 noise_assign_norm_threshold = 0.01, 
                  **kwargs):
         '''
         This also takes care of normalisation! Should not be done beforehand
@@ -1274,6 +1274,7 @@ graph_condensation_layers['LLGraphCondensationScore'] =   LLGraphCondensationSco
 
 class LLGraphCondensationEdges(LossLayerBase):
     def __init__(self,
+                 treat_none_same_as_noise = True,
                  **kwargs):
         '''
         Inputs:
@@ -1284,7 +1285,13 @@ class LLGraphCondensationEdges(LossLayerBase):
         '''
         
         super(LLGraphCondensationEdges, self).__init__(**kwargs)
+        self.treat_none_same_as_noise = treat_none_same_as_noise
         self.bce = tf.keras.losses.BinaryCrossentropy(reduction = tf.keras.losses.Reduction.NONE)
+
+    def get_config(self):
+        config = {'treat_none_same_as_noise': self.treat_none_same_as_noise}
+        base_config = super(LLGraphCondensationEdges, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
         
     def call(self, x_e, trans, t_idx):  
         
@@ -1317,7 +1324,10 @@ class LLGraphCondensationEdges(LossLayerBase):
             
             none_same = tf.reduce_all( n_same == False ,axis=1, keepdims=True ) #also treat as noise
             
-            like_noise = tf.logical_or(t_idx < 0, none_same)
+            if self.treat_none_same_as_noise:
+                like_noise = tf.logical_or(t_idx < 0, none_same)
+            else:
+                like_noise = t_idx < 0
             return tf.where(like_noise,  noise_encoding, no_noise_encoding)[:,:,tf.newaxis]#match score
 
         is_up = nidx[:,0] < 0
