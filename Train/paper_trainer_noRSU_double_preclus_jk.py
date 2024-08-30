@@ -159,7 +159,9 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
            out['row_splits']])  
     
     ###########################################################################
-    ### Add pro-forma OC loss, so that features are selected in that direction 
+    ### Add pro-forma OC loss, so that features are selected in that direction
+    ### This is just to nudge the weights in the right direction for the OC
+    ### It is not used int he main model 
     ###########################################################################
     pred_beta, pred_ccoords, pred_dist, \
         pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
@@ -220,7 +222,7 @@ if not train.modelSet():
 
 #set the learning rate to 1e-2
 
-batchsize = 80000# 320000
+batchsize = 320000
 
 train.change_learning_rate(1e-3)
 train.trainModel(
