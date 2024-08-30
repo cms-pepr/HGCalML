@@ -27,10 +27,7 @@ from Layers import RaggedGravNet
 from Layers import PlotCoordinates
 from Layers import DistanceWeightedMessagePassing, TranslationInvariantMP
 from Layers import LLFillSpace
-from Layers import LLExtendedObjectCondensation
-from Layers import LLExtendedObjectCondensation2
-from Layers import LLExtendedObjectCondensation3
-from Layers import LLExtendedObjectCondensation4
+from Layers import LLExtendedObjectCondensation5
 from Layers import DictModel
 from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
@@ -99,6 +96,19 @@ Trainable params: 342,361
 Non-trainable params: 8,665
 '''
 
+loss_layer = LLExtendedObjectCondensation5
+LOSS_OPTIONS = {
+    "beta_loss_scale": 1.0,
+    "too_much_beta_scale": 0.0,
+    "energy_loss_weight": 1.0,
+    "classification_loss_weight": 1.00,
+    "position_loss_weight": 0.0,
+    "timing_loss_weight": 0.0,
+    "q_min": 1.0,
+    "use_average_cc_pos": 0.9999,
+    "use_energy_weights": False,
+}
+
 def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY, 
                  #check_keys is just for debugging
                  check_keys = False):
@@ -136,6 +146,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                              record_metrics = True,
                              debug_publish = 'wandb')
     
+    
     #plot the prime coordinates for debugging
     out['prime_coords'] = PlotCoordinates(
         plot_every=plot_debug_every,
@@ -147,6 +158,33 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
            out['t_idx'], 
            out['row_splits']])  
     
+    ###########################################################################
+    ### Add pro-forma OC loss, so that features are selected in that direction 
+    ###########################################################################
+    pred_beta, pred_ccoords, pred_dist, \
+        pred_energy_corr, pred_energy_low_quantile, pred_energy_high_quantile, \
+        pred_pos, pred_time, pred_time_unc, pred_id = \
+        create_outputs(out['features'],
+                n_ccoords=8,
+                fix_distance_scale=True,
+                is_track=out['features'],
+                set_track_betas_to_one=False)
+    
+    pred_beta = loss_layer(
+            name = 'presel_OC_loss',
+            scale=0.1,
+            record_metrics=True,
+            print_loss=False,
+            implementation = 'hinge',
+            **LOSS_OPTIONS)(
+                    [pred_beta, pred_ccoords, pred_dist, pred_energy_corr, pred_energy_low_quantile,
+                        pred_energy_high_quantile, pred_pos, pred_time, pred_time_unc, pred_id, out['rechit_energy'],
+                        out['t_idx'] , out['t_energy'] , out['t_pos'] ,
+                        out['t_time'] , out['t_pid'] , out['t_spectator_weight'],
+                        out['t_fully_contained'], out['t_rec_energy'],
+                        out['t_is_unique'], out['is_track'], out['row_splits']])
+
+    graph.update({'pre_oc_beta': pred_beta})
     graph.update(out) #just so everything is connected
     graph.update(sels) #just so everything is connected
     return Model(inputs=Inputs, outputs=graph)
@@ -182,7 +220,7 @@ if not train.modelSet():
 
 #set the learning rate to 1e-2
 
-batchsize = 320000
+batchsize = 80000# 320000
 
 train.change_learning_rate(1e-3)
 train.trainModel(
