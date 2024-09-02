@@ -3384,7 +3384,14 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
 
         classloss = tf.debugging.check_numerics(classloss, "classloss")
 
-        return classloss[...,tf.newaxis]
+        # Weight the loss by the class weights to account for class imbalance
+        class_weights = tf.constant([1/2.5, 1/0.4, 1/3.75, 1.0], dtype=tf.float32) #Inverse of frequency of classes in COCOA dataset
+        class_weights = tf.reshape(class_weights, (1, 4))
+        weighted_classloss = classloss * tf.reduce_sum(truth_pid_onehot * class_weights, axis=-1)
+
+        weighted_classloss = tf.debugging.check_numerics(weighted_classloss, "weighted_classloss")
+
+        return weighted_classloss[..., tf.newaxis]
 
 
 class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):
