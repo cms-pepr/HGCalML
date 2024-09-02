@@ -3289,7 +3289,7 @@ class LLExtendedObjectCondensation4(LLFullObjectCondensation):
         else:
             return prediction_loss, uncertainty_loss + matching_loss
 
-class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
+class LLExtendedObjectCondensationCocoa(LLExtendedObjectCondensation):
     '''
     Same as `LLExtendedObjecCondensation3` but uses total energy instead of correction as prediction,
     position loss for [cos(phi), sin(phi), eta] and classification loss into categories for COCOA
@@ -3297,7 +3297,7 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
 
 
     def __init__(self, *args, **kwargs):
-        super(LLExtendedObjectCondensation5, self).__init__(*args, **kwargs)
+        super(LLExtendedObjectCondensationCocoa, self).__init__(*args, **kwargs)
 
 
     def calc_energy_correction_factor_loss(self,

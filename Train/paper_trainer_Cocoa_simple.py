@@ -14,8 +14,7 @@ from Layers import ProcessFeaturesCocoa
 from Layers import RaggedGravNet
 from Layers import PlotCoordinates
 from Layers import TranslationInvariantMP
-from Layers import LLExtendedObjectCondensation5
-from Layers import LLExtendedObjectCondensation3
+from Layers import LLExtendedObjectCondensationCocoa
 from model_blocks import condition_input
 from model_blocks import extent_coords_if_needed
 from model_blocks import create_outputs
@@ -201,7 +200,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 pred_e_factor=10)
 
 
-    pred_beta = LLExtendedObjectCondensation5(
+    pred_beta = LLExtendedObjectCondensationCocoa(
             scale=1.,
             use_energy_weights=True,
             record_metrics=True,
