@@ -44,6 +44,7 @@ def analyse(preddir,
             hdf=False,
             eta_phi_mask=False,
             shower0=False,
+            precluster=False,
         ):
     """
     Analyse model predictions
@@ -115,7 +116,7 @@ def analyse(preddir,
             prediction.append(predictions_dict)
             truth.append(truth_dict)
             
-            if 'no_noise_sel' in predictions_dict.keys():
+            if 'no_noise_sel' in predictions_dict.keys() and not precluster:
                 no_noise_indices = predictions_dict['no_noise_sel'] #Shape [N_filtered, 1]
             else:
                 n_feat = features_dict['recHitEnergy'].shape[0]
@@ -245,7 +246,7 @@ def analyse(preddir,
             df = pd.DataFrame()
             df['pred_sid'] = processed_pred_dict['pred_sid'][:,0]
             df['no_noise_sel'] = processed_pred_dict['no_noise_sel'][:,0]
-            df['truth_sid'] = truth_dict['truthHitAssignementIdx'][df['no_noise_sel']][:,0]
+            df['truth_sid'] = truth_dict['truthHitAssignementIdx'][no_noise_indices][:,0]
 
             mapped_pred_sid = []
             for sid in df.pred_sid.values:
@@ -264,7 +265,7 @@ def analyse(preddir,
                 e_truth.append(df[df.truth_sid == sid]['recHitEnergy'].sum())
                 n_pred.append(df[df.mapped_pred_sid == sid].shape[0])
                 e_pred.append(df[df.mapped_pred_sid == sid]['recHitEnergy'].sum())
-                n_pred_and_truth.append(df[(df.truth_sid == sid) & (df.mapped_pred_sid == sid)].shape[0])
+            
                 e_pred_and_truth.append(df[(df.truth_sid == sid) & (df.mapped_pred_sid == sid)]['recHitEnergy'].sum())
                 n_pred_not_truth.append(df[(df.truth_sid != sid) & (df.mapped_pred_sid == sid)].shape[0])
                 e_pred_not_truth.append(df[(df.truth_sid != sid) & (df.mapped_pred_sid == sid)]['recHitEnergy'].sum())
@@ -272,18 +273,20 @@ def analyse(preddir,
             matched_df['e_truth'] = e_truth
             matched_df['n_pred'] = n_pred
             matched_df['e_pred'] = e_pred
+            """
             matched_df['n_pred_and_truth'] = n_pred_and_truth
             matched_df['e_pred_and_truth'] = e_pred_and_truth
             matched_df['n_pred_not_truth'] = n_pred_not_truth
             matched_df['e_pred_not_truth'] = e_pred_not_truth
             matched_df['event_id'] = event_id
             matched_showers = pd.concat((matched_showers, matched_df))
+            """
 
 
             eventsdir = os.path.join('.', 'events')
             if not os.path.isdir(eventsdir):
                 os.mkdir(eventsdir)
-            if event_id < 2:
+            if event_id > 4 and event_id < 7:
                 # pdb.set_trace()
                 # make 3d plot of the event and save it
                 tmp_feat = ep.dictlist_to_dataframe([filtered_features], add_event_id=False)
@@ -311,7 +314,7 @@ def analyse(preddir,
                 fig_cluster_pca.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_pca.html'))
                 fig_cluster_first.write_html(os.path.join(args.picturepath, 'events', f'event_{event_id}_cluster_first.html'))
                 fig_cluster_pca_truth = dataframe_to_plot(full_df, truth=True, clusterspace='pca', plot_detector=False)
-                fig_cluster_first_truth = dataframe_to_plot(full_df, truth=True, clusterspace=(0,1,2), plot_detector=False)
+                fig_cluster_first_truth = dataframe_to_plot(full_df, truth=True, clusterspace=(0,1,2), allgrey=True, plot_detector=False)
                 fig_cluster_pca_truth.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_pca_truth.html'))
                 fig_cluster_first_truth.write_html(os.path.join(event_dir, f'event_{event_id}_cluster_first_truth.html'))
                 fig_matched = matched_plot(filtered_truth, filtered_features, processed_dataframe, dataframe)
@@ -427,7 +430,7 @@ def analyse(preddir,
             'alpha_ids'        : alpha_ids,
             'noise_masks': noise_masks,
             'matched': matched,
-            'matched_showers': matched_showers,
+            # 'matched_showers': matched_showers,
         }
         if not slim:
             analysis_data['processed_dataframe'] = ep.dictlist_to_dataframe(processed)
@@ -506,6 +509,9 @@ if __name__ == '__main__':
     parser.add_argument('--shower0',
         help="Only match with truth shower ID=0",
         action='store_true')
+    parser.add_argument('--precluster',
+        help="Use for pre-clustered data - otherwise the mask created from 'no_noise_sel' breaks stuff",
+        action='store_true')
 
 
     args = parser.parse_args()
@@ -534,5 +540,6 @@ if __name__ == '__main__':
             extra=args.extra,
             hdf=args.hdf,
             eta_phi_mask=args.eta_phi_mask,
-            shower0=args.shower0
+            shower0=args.shower0,
+            precluster=args.precluster,
             )

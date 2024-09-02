@@ -30,7 +30,7 @@ from Layers import LLFillSpace
 from Layers import LLExtendedObjectCondensation
 from Layers import LLExtendedObjectCondensation2
 from Layers import LLExtendedObjectCondensation3
-from Layers import LLExtendedObjectCondensation4
+from Layers import LLExtendedObjectCondensation5
 from Layers import DictModel
 from Layers import RaggedGlobalExchange
 from Layers import SphereActivation
@@ -105,7 +105,7 @@ NEIGHBOURS = [128,128,128]
 DSHAPE = 64
 DENSE_ACTIVATION = 'elu'
 LOSS_IMPLEMENTATION = "hinge"
-N_CLUSTER_SPACE_COORDINATES = 3
+N_CLUSTER_SPACE_COORDINATES = 8
 DISTANCE_SCALE = False
 LOSS_OPTIONS = {
     "beta_loss_scale": 1.0,
@@ -118,7 +118,7 @@ LOSS_OPTIONS = {
     "use_average_cc_pos": 0.9999,
     "use_energy_weights": False,
 }
-loss_layer = LLExtendedObjectCondensation3
+loss_layer = LLExtendedObjectCondensation5
 
 
 
@@ -134,6 +134,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     ###########################################################################
 
     pre_processed = td.interpretAllModelInputs(Inputs)
+
 
     if not isinstance(td, TrainData_PreSnowflakeNanoML): #not preselected
         pre_processed = condition_input(pre_processed, no_scaling=True, no_prime=False, new_prime=True)
@@ -160,6 +161,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
     energy = pre_processed['rechit_energy']
     t_idx = pre_processed['t_idx']
     is_track = pre_processed['is_track']
+    print(is_track)
 
     ###########################################################################
     ### Model definition ######################################################
@@ -207,7 +209,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                 n_ccoords=N_CLUSTER_SPACE_COORDINATES,
                 fix_distance_scale=not DISTANCE_SCALE,
                 is_track=is_track,
-                set_track_betas_to_one=True)
+                set_track_betas_to_one=False)
     
     pred_ccoords = PlotCoordinates(
         plot_every=plot_debug_every,
@@ -231,7 +233,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=PLOT_FREQUENCY,
                         pre_processed['t_idx'] , pre_processed['t_energy'] , pre_processed['t_pos'] ,
                         pre_processed['t_time'] , pre_processed['t_pid'] , pre_processed['t_spectator_weight'],
                         pre_processed['t_fully_contained'], pre_processed['t_rec_energy'],
-                        pre_processed['t_is_unique'], pre_processed['row_splits']])
+                        pre_processed['t_is_unique'], is_track, pre_processed['row_splits']])
 
     model_outputs = {
         'pred_beta': pred_beta,

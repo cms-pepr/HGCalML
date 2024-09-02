@@ -3396,6 +3396,203 @@ class LLExtendedObjectCondensationCocoa(LLExtendedObjectCondensation):
         return weighted_classloss[..., tf.newaxis]
 
 
+class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
+    '''
+    Same as `LLExtendedObjecCondensation` but doesn't use the Huber loss in the energy prediction:
+    '''
+
+
+    def __init__(self, *args, **kwargs):
+        super(LLExtendedObjectCondensation5, self).__init__(*args, **kwargs)
+
+
+    def calc_energy_correction_factor_loss(self,
+            t_energy, t_dep_energies,
+            pred_energy, pred_uncertainty_low, pred_uncertainty_high,
+            return_concat=False):
+        """
+        This loss uses a Bayesian approach to predict an energy uncertainty.
+        * t_energy              -> Truth energy of shower
+        * t_dep_energies        -> Sum of deposited energy IF clustered perfectly
+        * pred_energy           -> Correction factor applied to energy
+        * pred_uncertainty_low  -> predicted uncertainty
+        * pred_uncertainty_high -> predicted uncertainty (should be equal to ...low)
+        """
+        t_energy = tf.clip_by_value(t_energy,0.,1e12)
+        t_dep_energies = tf.clip_by_value(t_dep_energies,0.,1e12)
+        # t_dep_energies = tf.where(t_dep_energies / t_energy > 2.0, 2.0 * t_energy, t_dep_energies)
+        # t_dep_energies = tf.where(t_dep_energies / t_energy < 0.5, 0.5 * t_energy, t_dep_energies)
+
+        epred = pred_energy * t_dep_energies
+        # sigma = pred_uncertainty_high * t_dep_energies + 1.0
+        sigma = tf.sqrt(t_energy)
+
+        # Uncertainty 'sigma' must minimize this term:
+        # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
+        matching_loss = (pred_uncertainty_low)**2
+        uncertainty_loss = (pred_uncertainty_high)**2
+        prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma)
+        # uncertainty_loss = tf.math.log(sigma**2)
+        # prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
+
+        matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
+        prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
+        uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
+
+        prediction_loss = tf.clip_by_value(prediction_loss, 0, 10)
+        uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
+
+        if return_concat:
+            return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
+        else:
+            return prediction_loss, uncertainty_loss + matching_loss
+
+
+    def loss(self, inputs):
+
+        assert len(inputs)==22
+        hasunique = False
+        if len(inputs) == 22:
+            pred_beta, pred_ccoords, pred_distscale,\
+            pred_energy, pred_energy_low_quantile,pred_energy_high_quantile,\
+            pred_pos, pred_time, pred_time_unc, pred_id,\
+            rechit_energy,\
+            t_idx, t_energy, t_pos, t_time, t_pid, t_spectator_weights,t_fully_contained,t_rec_energy,\
+            t_is_unique, recHitID, rowsplits = inputs 
+            hasunique=True
+        else:
+            print("Input doesn't match expected input")
+
+        id_flat = tf.squeeze(t_idx)
+        energy_flat = tf.where(recHitID==0, rechit_energy, tf.zeros_like(rechit_energy))
+        energy_flat = tf.squeeze(energy_flat)
+        unique_ids, _ = tf.unique(id_flat)
+        num_classes = tf.shape(unique_ids)[0]
+        energy_sum_per_class = tf.math.unsorted_segment_sum(energy_flat, id_flat, num_classes)
+        energy_sum = tf.gather(energy_sum_per_class, id_flat)
+        energy_sum = tf.reshape(energy_sum, tf.shape(t_rec_energy))
+
+
+        if rowsplits.shape[0] is None:
+            return tf.constant(0,dtype='float32')
+
+        energy_weights = self.calc_energy_weights(t_energy,t_pid)
+        if not self.use_energy_weights:
+            energy_weights = tf.zeros_like(energy_weights)+1.
+
+        #reduce weight on not fully contained showers
+        energy_weights = tf.where(t_fully_contained>0, energy_weights, energy_weights*0.01)
+
+        #also kill any gradients for zero weight
+        energy_loss,energy_quantiles_loss = None,None
+        if self.train_energy_correction:
+            energy_loss, energy_quantiles_loss = \
+                    self.calc_energy_correction_factor_loss(
+                            t_energy,
+                            energy_sum,
+                            # t_rec_energy,
+                            pred_energy,
+                            pred_energy_low_quantile,
+                            pred_energy_high_quantile)
+            energy_loss *= self.energy_loss_weight
+            energy_quantiles_loss *= self.energy_loss_weight
+        else:
+            energy_loss = self.energy_loss_weight * self.calc_energy_loss(t_energy, pred_energy)
+            _, energy_quantiles_loss =  self.calc_energy_correction_factor_loss(
+                    t_energy,
+                    t_rec_energy,
+                    pred_energy,
+                    pred_energy_low_quantile,
+                    pred_energy_high_quantile)
+        # energy_quantiles_loss *= self.energy_loss_weight/2.
+
+        position_loss = self.position_loss_weight * self.calc_position_loss(t_pos, pred_pos)
+        timing_loss = self.timing_loss_weight * self.calc_timing_loss(t_time, pred_time, pred_time_unc,t_rec_energy)
+        classification_loss = self.classification_loss_weight * self.calc_classification_loss(t_pid, pred_id, t_is_unique, hasunique)
+
+        full_payload = tf.concat([
+            energy_loss,
+            position_loss,
+            timing_loss,
+            classification_loss,
+            energy_quantiles_loss], axis=-1)
+
+        if self.payload_beta_clip > 0:
+            full_payload = tf.where(pred_beta<self.payload_beta_clip, 0., full_payload)
+            #clip not weight, so there is no gradient to push below threshold!
+
+        is_spectator = t_spectator_weights #not used right now
+        # and likely never again (if the truth remains ok)
+        if is_spectator is None:
+            is_spectator = tf.zeros_like(pred_beta)
+
+        with tf.control_dependencies(
+            [tf.assert_equal(rowsplits[-1], pred_beta.shape[0]),
+
+             tf.assert_equal(pred_beta>=0., True),
+             tf.assert_equal(pred_beta<=1., True),
+
+             tf.assert_equal(is_spectator<=1., True),
+             tf.assert_equal(is_spectator>=0., True)]):
+
+            [att, rep, noise, min_b, payload, exceed_beta], mdict = self.oc_loss_object(
+                beta=pred_beta,
+                x=pred_ccoords,
+                d=pred_distscale,
+                pll=full_payload,
+                truth_idx=t_idx,
+                object_weight=energy_weights,
+                is_spectator_weight=is_spectator,
+                rs=rowsplits,
+                energies = rechit_energy)
+
+        #log the OC metrics dict, if any
+        self.wandb_log(mdict)
+
+        att *= self.potential_scaling
+        rep *= self.potential_scaling * self.repulsion_scaling
+        min_b *= self.beta_loss_scale
+        noise *= self.noise_scaler
+        exceed_beta *= self.too_much_beta_scale
+
+        nan_att = tf.reduce_any(tf.math.is_nan(att))
+        nan_rep = tf.reduce_any(tf.math.is_nan(rep))
+        nan_min = tf.reduce_any(tf.math.is_nan(min_b))
+        nan_noise = tf.reduce_any(tf.math.is_nan(noise))
+        nan_exce = tf.reduce_any(tf.math.is_nan(exceed_beta))
+
+        energy_loss = payload[0]
+        pos_loss    = payload[1]
+        time_loss   = payload[2]
+        class_loss  = payload[3]
+        energy_unc_loss  = payload[4]
+
+        nan_unc = tf.reduce_any(tf.math.is_nan(energy_unc_loss))
+        ccdamp = self.cc_damping_strength * (0.02*tf.reduce_mean(pred_ccoords))**4# gently keep them around 0
+
+
+        lossval = att + rep + min_b + noise + energy_loss + energy_unc_loss+ pos_loss + time_loss + class_loss + exceed_beta + ccdamp
+
+        bpush = self.calc_beta_push(pred_beta,t_idx)
+
+        lossval = tf.reduce_mean(lossval)+bpush
+
+        self.wandb_log({self.name+'_attractive_loss' : att,
+                        self.name+'_repulsive_loss': rep,
+                        self.name+'_min_beta_loss': min_b,
+                        self.name+'_noise_loss': noise,
+                        self.name+'_energy_loss': energy_loss,
+                        self.name+'_energy_unc_loss': energy_unc_loss,
+                        self.name+'_position_loss': pos_loss,
+                        self.name+'_time_loss': time_loss,
+                        self.name+'_class_loss': class_loss
+                        })
+
+        self.maybe_print_loss(lossval)
+
+        return lossval
+
+
 class LLFullObjectCondensationUncertainty(LLFullObjectCondensation):
 
     def __init__(self, *args, **kwargs):
