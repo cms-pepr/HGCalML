@@ -49,7 +49,7 @@ else:
 train = training_base_hgcal.HGCalTraining(parser=parser)
 
 
-PLOT_FREQUENCY = 600
+PLOT_FREQUENCY = 6000
 
 DENSE_ACTIVATION = 'elu'
 DENSE_INIT = "he_normal"
@@ -108,8 +108,6 @@ def GravNet(name,
     x = BatchNormalization()(x)
     
     return Concatenate()([xgn, x])
-
-
 
 
 def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
@@ -199,7 +197,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
                 fix_distance_scale=True,
                 energy_factor=False,
                 is_track=is_track,
-                set_track_betas_to_one=True,
+                set_track_betas_to_one=False,
                 pred_e_factor=10)
 
 
@@ -209,7 +207,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
             record_metrics=True,
             print_loss=train.args.no_wandb,
             name="ExtendedOCLoss",
-            implementation = "hinge",
+            implementation = "atanh",
             beta_loss_scale = 1.0,
             too_much_beta_scale = 0.0,
             energy_loss_weight = 1.0,
@@ -240,7 +238,7 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
         'pred_ccoords': pred_ccoords,
         'pred_energy': pred_energy,
         #'pred_energy_low_quantile': pred_energy_low_quantile,
-       # 'pred_energy_high_quantile': pred_energy_high_quantile,
+        #'pred_energy_high_quantile': pred_energy_high_quantile,
         'pred_pos': pred_pos,
         'pred_time': pred_time,
         'pred_id': pred_id,
@@ -259,7 +257,6 @@ def config_model(Inputs, td, debug_outdir=None, plot_debug_every=2000):
 ###############################################################################
 ### Set up training ###########################################################
 ###############################################################################
-
 
 
 if not train.modelSet():
@@ -322,7 +319,19 @@ train.trainModel(
         #additional_callbacks=cb,
         collect_gradients = 4
         )
-# loop through model layers and turn  batch normalisation to fixed
+
+#recompile
+train.compileModel(learningrate=1e-4)
+print('entering third training phase')
+train.trainModel(
+        nepochs=500,
+        batchsize=50000,
+        add_progbar=pre_args.no_wandb,
+        #additional_callbacks=cb,
+        collect_gradients = 4
+        )
+
+# loop through model layers and turn batch normalisation to fixed
 def fix_batchnorm(m):
     for layer in m.layers:
         if isinstance(layer, BatchNormalization):
@@ -335,25 +344,14 @@ train.applyFunctionToAllModels(fix_batchnorm)
 train.compileModel(learningrate=5e-4)
 print('entering third training phase')
 train.trainModel(
-        nepochs=600,
+        nepochs=750,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
         collect_gradients = 4
         )
-
-train.compileModel(learningrate=1e-4)
-print('entering third training phase')
-train.trainModel(
-        nepochs=800,
-        batchsize=50000,
-        add_progbar=pre_args.no_wandb,
-        #additional_callbacks=cb,
-        collect_gradients = 4
-        )
-
 #recompile
-train.compileModel(learningrate=1e-5)
+train.compileModel(learningrate=1e-4)
 print('entering third training phase')
 train.trainModel(
         nepochs=1000,
@@ -362,3 +360,25 @@ train.trainModel(
         #additional_callbacks=cb,
         collect_gradients = 4
         )
+train.compileModel(learningrate=1e-5)
+print('entering third training phase')
+train.trainModel(
+        nepochs=1100,
+        batchsize=50000,
+        add_progbar=pre_args.no_wandb,
+        #additional_callbacks=cb,
+        collect_gradients = 4
+        )
+train.compileModel(learningrate=1e-6)
+print('entering third training phase')
+train.trainModel(
+        nepochs=1200,
+        batchsize=50000,
+        add_progbar=pre_args.no_wandb,
+        #additional_callbacks=cb,
+        collect_gradients = 4
+        )
+try:
+    wandb.wandb().save(train.outputDir + "/KERAS_model.h5")
+except:
+    print("Failed to save model")

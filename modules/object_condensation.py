@@ -268,6 +268,7 @@ class Basic_OC_per_sample(object):
     def Pll_k(self):
         
         tanhsqbeta = self.beta_v**2 #softer here
+        #tanhsqbeta = tf.math.atanh(self.beta_v*(1-1e-3))**2
         tanhsqbeta = tf.debugging.check_numerics(tanhsqbeta, "OC: pw b**2")
         pw = tanhsqbeta * tf.clip_by_value((1.-tf.clip_by_value(self.isn_v+self.sw_v,0.,1.)),0.,1.) + 1e-6
         
@@ -454,6 +455,29 @@ class Hinge_OC_per_sample(Hinge_OC_per_sample_damped):
         super(Hinge_OC_per_sample, self).__init__(**kwargs)
         self.condensation_damping = 0.0 # Don't stop any gradients
         #self.rep_range = 2.
+class Hinge_OC_per_sample_atanhweighing(Hinge_OC_per_sample):
+    '''
+    Same as Hinge_OC_per_sample but with atanh(beta)^2 weighting for the payloads
+    '''
+    def __init__(self, **kwargs):
+        super(Hinge_OC_per_sample_atanhweighing, self).__init__(**kwargs)
+    #@tf.function
+    def Pll_k(self):        
+        #tanhsqbeta = self.beta_v**2 #softer here
+        tanhsqbeta = tf.math.atanh(self.beta_v*(1-1e-3))**2
+        tanhsqbeta = tf.debugging.check_numerics(tanhsqbeta, "OC: pw b**2")
+        pw = tanhsqbeta * tf.clip_by_value((1.-tf.clip_by_value(self.isn_v+self.sw_v,0.,1.)),0.,1.) + 1e-6
+        
+        pw = tf.debugging.check_numerics(pw, "OC: pw")
+        
+        pll_k_m = SelectWithDefault(self.Msel, self.pll_v, 0.) #K x V_perobj x P
+        pw_k_m = SelectWithDefault(self.Msel, pw, 0.) #K x V-obj x P
+        pw_k_sum = tf.reduce_sum(pw_k_m, axis=1)
+        pw_k_sum = tf.where(pw_k_sum <= 0., 1e-2, pw_k_sum)
+        
+        pll_k = tf.math.divide_no_nan(tf.reduce_sum(pll_k_m * pw_k_m, axis=1), 
+                                             pw_k_sum  )#K x P
+        return pll_k
 
 
         

@@ -2232,7 +2232,7 @@ class LLFullObjectCondensation(LossLayerBase):
             raise ValueError("huber_energy_scale>0 and alt_energy_loss exclude each other")
 
 
-        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_OC_per_sample
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_OC_per_sample, Hinge_OC_per_sample_atanhweighing
         from object_condensation import Hinge_OC_per_sample_damped, Hinge_OC_per_sample, Hinge_Manhatten_OC_per_sample
         from object_condensation import Dead_Zone_Hinge_OC_per_sample,Hinge_OC_per_sample_learnable_qmin, Hinge_OC_per_sample_learnable_qmin_betascale_position
         impl = Basic_OC_per_sample
@@ -2256,6 +2256,8 @@ class LLFullObjectCondensation(LossLayerBase):
             impl = Hinge_OC_per_sample_learnable_qmin
         if implementation == 'hinge_qmin_betascale_pos':
             impl = Hinge_OC_per_sample_learnable_qmin_betascale_position
+        if implementation == 'atanh':
+            impl = Hinge_OC_per_sample_atanhweighing
         self.implementation = implementation
 
 
