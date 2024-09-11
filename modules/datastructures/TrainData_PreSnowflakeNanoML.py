@@ -2,6 +2,7 @@ from DeepJetCore import TrainData
 from DeepJetCore import SimpleArray
 import pickle
 import numpy as np
+import tensorflow as tf
 #from IPython import embed
 import os
 import gzip
@@ -10,7 +11,56 @@ import pdb
 from datastructures.TrainData_NanoML import TrainData_NanoML
 from djcdata.dataPipeline import TrainDataGenerator
 from DebugLayers import switch_off_debug_plots
+# from Layers import NormaliseTruthIdxs -> This caused circular imports
 import time
+
+
+from ragged_tools import normalise_index
+class NormaliseTruthIdxs(tf.keras.layers.Layer):
+
+    def __init__(self, active=True, add_rs_offset=True, **kwargs):
+        '''
+        changes arbitrary truth indices to well defined indices such that
+        sort(unique(t_idx)) = -1, 0, 1, 2, 3, 4, 5, ... for each row split
+
+        This should be called after every layer that could have modified
+        the truth indices or removed hits, if the output needs to be regular.
+
+        This Layer takes < 10ms usually so can be used generously.
+
+        :param active: determines if it should be active.
+                       In pure inference mode that might not be needed
+
+        Inputs: truth indices, row splits
+        Output: new truth indices
+
+        '''
+        if 'dynamic' in kwargs:
+            super(NormaliseTruthIdxs, self).__init__(**kwargs)
+        else:
+            super(NormaliseTruthIdxs, self).__init__(dynamic=True,**kwargs)
+
+        self.active = active
+        self.add_rs_offset = add_rs_offset
+
+    def get_config(self):
+        config = {'active': self.active,
+                  'add_rs_offset': self.add_rs_offset}
+        base_config = super(NormaliseTruthIdxs, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def compute_output_shape(self, input_shapes):
+        return input_shapes[0]
+
+    def call(self, inputs):
+        assert len(inputs) == 2
+        t_idx, rs = inputs
+
+        #double unique
+        if not self.active or rs.shape[0] == None:
+            return t_idx
+
+        return normalise_index(t_idx, rs, self.add_rs_offset)
 
 
 def _getkeys(file):
@@ -65,7 +115,8 @@ class TrainData_PreSnowflakeNanoML(TrainData):
 
     def set_model(self):
         # self.path_to_pretrained = os.getenv("HGCALML")+'/models/double_tree_condensation_block/KERAS_check_model_last.h5'
-        self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre-cluster_tmp/KERAS_check_model_last.h5'
+        # self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre-cluster_tmp/KERAS_check_model_last.h5'
+        self.path_to_pretrained = "/mnt/home/jkieseler/trainout/May24/dps_Aug24/KERAS_check_model_last.h5"
 
     def __init__(self):
         TrainData.__init__(self)
@@ -136,7 +187,39 @@ class TrainData_PreSnowflakeNanoML(TrainData):
             feat,_ = next(feeder)
             tot_in += len(feat[0])
             out = model(feat)
+            # print(out.keys())
+            # Available keys: 
+            # 'rs_down', 'rs_up', 'nidx_down', 'distsq_down', 'sel_idx_up', 
+            # 'weights_down', 'prime_coords', 'coords', 'rechit_energy', 'features',
+            # 'is_track', 'row_splits', 'orig_features', 'orig_row_splits', 't_idx',
+            # 't_energy', 't_pos', 't_time', 't_pid', 't_spectator', 't_fully_contained',
+            # 't_rec_energy', 't_is_unique', 't_only_minbias', 't_shower_class',
+            # 't_spectator_weight', 'no_noise_idx_stage_0', 'no_noise_idx_stage_1', 'survived_both_stages'
+            out['t_rec_energy_old']  = out['t_rec_energy'] # This has to be recalculated
+            energies = out['rechit_energy']                                                         # (N,1)
+            energy_hit = tf.where(out['is_track'] == 0, energies, tf.zeros_like(energies))[:,0]     # (N,)
             rs_tmp = out['row_splits'].numpy()
+            id_flat = tf.squeeze(NormaliseTruthIdxs()([out['t_idx'], rs_tmp]))                      # (N,)
+            num_classes = tf.unique(id_flat)[0].shape[0]
+            energy_sum_per_class = tf.math.unsorted_segment_sum(energy_hit, id_flat, num_classes)   # (K,)
+            energy_sum = tf.gather(energy_sum_per_class, id_flat)[:,tf.newaxis]                     # (N,1)
+            track_or_noise = tf.logical_or(out['is_track'] == 1, out['t_idx'] == -1)
+            out['t_rec_energy'] = tf.where(track_or_noise, energies, energy_sum)
+            
+            assert tf.math.reduce_min(id_flat) == -1
+            assert tf.math.reduce_max(id_flat) + 2 == num_classes
+            """
+            energy_flat = tf.where(recHitID==0, rechit_energy, tf.zeros_like(rechit_energy))
+            energy_flat = tf.squeeze(energy_flat)
+            num_classes = tf.shape(unique_ids)[0]
+            energy_sum_per_class = tf.math.unsorted_segment_sum(energy_flat, id_flat, num_classes) #TODO REMOVE!
+            energy_sum = tf.gather(energy_sum_per_class, id_flat)
+            energy_sum = tf.reshape(energy_sum, tf.shape(t_rec_energy))
+            """
+            # BLOCK to calculate new deposited energy
+            # For all hits: -> New sum of all hits
+            # For all noise: -> Noise energy is shower energy
+            # For all tracks: -> Do nothing
             if not (rs_tmp[-1] == len(out[self.output_keys[0]])):
                 print( self.output_keys[0], rs_tmp[-1],  len(out[self.output_keys[0]]) )
                 raise ValueError('row splits do not match input size')
@@ -144,6 +227,8 @@ class TrainData_PreSnowflakeNanoML(TrainData):
             #format time to ms and round to int
             print('reduction', len(feat[0]), '->', rs_tmp[-1], '(' ,round(rs_tmp[-1]/len(feat[0]) * 100.) ,'%)', 'time', round((time.time() - start) * 1000.), 'ms' )
             rs.append([rs_tmp[1]])
+
+
             if i == 0:
                 for k in self.output_keys:
                     newout[k] = [out[k].numpy()]
