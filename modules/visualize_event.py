@@ -94,7 +94,7 @@ def make_figure():
 
 
 
-def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, allgrey=False, plot_detector=True):
+def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, allgrey=False, plot_detector=True, sample_showers=0):
     df = df[df.event_id == id]
     size = 10 * np.log(df.recHitEnergy + 1)
     # change sizes bigger than 5 to 5
@@ -134,6 +134,9 @@ def dataframe_to_plot(df, id=0, truth=True, clusterspace=False, verbose=False, a
             df['pca_z'] = pca_z
 
     for i in ids:
+        if sample_showers > 0:
+            if i % sample_showers != 0:
+                continue
         if truth:
             df_i = df[df.truthHitAssignementIdx == i]
         else:
@@ -473,6 +476,8 @@ if __name__ == '__main__':
 
     INPUTFILE = sys.argv[1]
     OUTPUTDIR = sys.argv[2]
+    if len(sys.argv) > 3:
+        SAMPLERATE = int(sys.argv[3])
 
     if HGCALML is None and INPUTFILE.endswith('.djcdc'):
         print("HGCALML not set, cannot work with .djcdc files")
@@ -494,6 +499,6 @@ if __name__ == '__main__':
     for c in columns: print(c)
 
     for i in range(2):
-        fig = dataframe_to_plot(df, id=i)
+        fig = dataframe_to_plot(df, id=i, sample_showers=SAMPLERATE)
         fig.write_html(os.path.join(OUTPUTDIR, f'event_{i}.html'))
 
