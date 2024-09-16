@@ -669,16 +669,16 @@ def plot_energy_resolution(df, bins=None, datasetname='Quark Jet'):
     ax1.errorbar(x_pos, diffs, xerr=x_err, yerr=diffs_err, fmt='o', label='Total')
     ax1.errorbar(x_pos, diffs_neutral, xerr=x_err, yerr=diffs_err_neutral, fmt='o', label='Neutral')
     ax1.errorbar(x_pos, diffs_charged, xerr=x_err, yerr=diffs_err_charged, fmt='o', label='Charged')
-    ax1.set_ylabel('$\sigma E [GeV]$')
+    ax1.set_ylabel('$\Delta p \ [GeV]$')
     ax1.grid(alpha=0.4)    
     #write datasetname in top right corner
-    ax2.text(0.05, 0.95, datasetname, horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes, fontsize=10)
+    ax1.text(0.05, 0.65, datasetname, horizontalalignment='left', verticalalignment='top', transform=ax1.transAxes, fontsize=10)
     ax1.legend()
 
     ax2.errorbar(x_pos, ratios, xerr=x_err, yerr=ratios_err, fmt='o', label='Total')
     ax2.errorbar(x_pos, ratios_neutral, xerr=x_err, yerr=ratios_err_neutral, fmt='o', label='Neutral')
     ax2.errorbar(x_pos, ratios_charged, xerr=x_err, yerr=ratios_err_charged, fmt='o', label='Charged')
-    ax2.set_ylabel('$E_{pred} / E_{truth}$')
+    ax2.set_ylabel('$p_{pred} / p_{truth}$')
     ax2.grid(alpha=0.4)
     
     ydelta = np.round(max(1 - ax2.get_ylim()[0], ax2.get_ylim()[1] - 1),1)

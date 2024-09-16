@@ -711,7 +711,7 @@ class GraphCond_OC_per_sample(Basic_OC_per_sample):
         
         #replace beta with per-object normalised value
         self.create_Ms(truth_idx, rs=rs)
-        beta_max = tf.reduce_max(SelectWithDefault(self.Mnot, tf.expand_dims(beta,axis=0),0),axis=1, keepdims=True)  #K x 1 x 1
+        beta_max = tf.reduce_max(SelectWithDefaultMnot(self.Mnot, tf.expand_dims(beta,axis=0),0),axis=1, keepdims=True)  #K x 1 x 1
         beta_max = SelectWithDefault(self.Msel, beta_max, 0.)
         
         # this is the same reduced in K given the others are zero with exception of noise (filtered later)

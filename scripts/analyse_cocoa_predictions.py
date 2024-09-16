@@ -110,7 +110,10 @@ def analyse(preddir,
             dataframe['pred_id_value'] = dataframe['pred_id'].apply(lambda x: np.argmax(x))
             showers_dataframe = pd.concat((showers_dataframe, dataframe))
             
-            #Cluster to jets
+            ###############################################################################################
+            ### Jet Clustering ############################################################################
+            ###############################################################################################
+
             has_truth = np.isnan(dataframe['truthHitAssignedEnergies']) == False
             has_pred = np.isnan(dataframe['pred_energy']) == False
                     

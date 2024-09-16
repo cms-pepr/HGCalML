@@ -300,7 +300,7 @@ cb += [
 
 train.change_learning_rate(1e-3)
 train.trainModel(
-        nepochs=100,
+        nepochs=150,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
@@ -310,9 +310,8 @@ train.trainModel(
 
 #recompile
 train.compileModel(learningrate=5e-4)
-print('entering second training phase')
 train.trainModel(
-        nepochs=350,
+        nepochs=400,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
@@ -321,9 +320,8 @@ train.trainModel(
 
 #recompile
 train.compileModel(learningrate=1e-4)
-print('entering third training phase')
 train.trainModel(
-        nepochs=500,
+        nepochs=600,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
@@ -340,38 +338,42 @@ def fix_batchnorm(m):
 train.applyFunctionToAllModels(fix_batchnorm)
 
 #recompile
-train.compileModel(learningrate=5e-4)
-print('entering third training phase')
+train.compileModel(learningrate=1e-3)
 train.trainModel(
-        nepochs=750,
+        nepochs=650,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
         collect_gradients = 4
         )
 #recompile
-train.compileModel(learningrate=1e-4)
-print('entering third training phase')
+train.compileModel(learningrate=5e-4)
 train.trainModel(
-        nepochs=1000,
+        nepochs=800,
+        batchsize=50000,
+        add_progbar=pre_args.no_wandb,
+        #additional_callbacks=cb,
+        collect_gradients = 4
+        )
+train.compileModel(learningrate=1e-4)
+train.trainModel(
+        nepochs=1200,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
         collect_gradients = 4
         )
 train.compileModel(learningrate=1e-5)
-print('entering third training phase')
 train.trainModel(
-        nepochs=1100,
+        nepochs=1400,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,
         collect_gradients = 4
         )
 train.compileModel(learningrate=1e-6)
-print('entering third training phase')
 train.trainModel(
-        nepochs=1200,
+        nepochs=1500,
         batchsize=50000,
         add_progbar=pre_args.no_wandb,
         #additional_callbacks=cb,

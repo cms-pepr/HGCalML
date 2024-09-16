@@ -19,7 +19,7 @@ if __name__ == '__main__':
         help="Output directory",
         default='')
     parser.add_argument('-testfiles',
-        help="Location of the test files",
+        help="Location of a folder with a quarkDC._n.djcdc and gluonDC._n.djcdc test file",
         default='/work/friemer/hgcalml/testdata/')
     parser.add_argument("--max_files", help="Limit number of files", default=-1)
     parser.add_argument("--max_steps", help="Limit number of steps per file", default=-1)

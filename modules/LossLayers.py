@@ -3329,7 +3329,7 @@ class LLExtendedObjectCondensationCocoa(LLExtendedObjectCondensation):
             return prediction_loss, uncertainty_loss
         
     def calc_position_loss(self, t_pos, pred_pos):
-        if tf.shape(pred_pos)[-1] == 2:#also has z component, but don't use it here
+        if tf.shape(pred_pos)[-1] == 2:
             raise ValueError("Position loss is implemented for cosphi, sinphi, eta")
         if not self.position_loss_weight:
             return 0.*tf.reduce_sum((pred_pos-t_pos)**2,axis=-1, keepdims=True)

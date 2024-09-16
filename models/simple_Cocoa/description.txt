@@ -1,5 +1,5 @@
 Dataset: 
-/work/friemer/hgcalml/trainingdata_split/dataCollection.djcdc (Cocoa Dataset)
+/work/friemer/hgcalml/traindata_noEcut/dataCollection._n.djcdc (Cocoa Dataset with Eta Phi Cut)
+->90% of energy of particle has to be within 0.5 eta and phi of mean position of hits
 
-Model has been trained for ~2h, but it showed great improvement, so future models can be faster 
-now with 3D position (cosphi, sinphi, eta)
+Model trained for 1200 epochs (64h)

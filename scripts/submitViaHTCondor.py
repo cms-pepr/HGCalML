@@ -45,7 +45,7 @@ opts = {
     'f' : meta_option('f', '/work/friemer/hgcalml/HGCalML'), 
     'cpu': meta_option('cpu', '1'),
     'memory': meta_option('memory', '20 GB'),
-    'disk': meta_option('disk', '5 GB'),
+    'disk': meta_option('disk', '10 GB'),
     'gpu': meta_option('gpu', '1'),
     'wandb': meta_option('wandb', 'True'),
     'submit': meta_option('submit', 'True')
