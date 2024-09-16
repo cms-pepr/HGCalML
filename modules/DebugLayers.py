@@ -16,12 +16,13 @@ import queue
 import os
 
 class CumulativeArray(object):
-    def __init__(self, capacity = 60, default=0.):
+    def __init__(self, capacity = 60, default=0., name=None):
         
         assert capacity > 0
         self.data = None
         self.capacity = capacity
         self.default = default
+        self.name = name
         
     def put(self, arr):
         arr = np.where(arr == np.nan, self.default, arr)
@@ -109,6 +110,7 @@ class _DebugPlotBase(tf.keras.layers.Layer):
                  outdir :str='' , 
                  plot_only_training=True,
                  publish = None,
+                 externally_triggered = False,
                  **kwargs):
         
         if 'dynamic' in kwargs:
@@ -117,6 +119,8 @@ class _DebugPlotBase(tf.keras.layers.Layer):
             super(_DebugPlotBase, self).__init__(dynamic=False,**kwargs)
             
         self.plot_every = plot_every
+        self.externally_triggered = externally_triggered
+        self.triggered = False
         self.plot_only_training = plot_only_training
         if len(outdir) < 1:
             self.plot_every=0
@@ -131,7 +135,8 @@ class _DebugPlotBase(tf.keras.layers.Layer):
     def get_config(self):
         config = {'plot_every': self.plot_every,
                   'outdir': self.outdir,
-                  'publish': self.publish}
+                  'publish': self.publish,
+                  'externally_triggered': self.externally_triggered}
         base_config = super(_DebugPlotBase, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
@@ -149,6 +154,10 @@ class _DebugPlotBase(tf.keras.layers.Layer):
         return self.outdir+'/'+self.name
     
     def check_make_plot(self, inputs, training = None):
+        
+        if self.externally_triggered:
+            return self.triggered
+        
         out=inputs
         if isinstance(inputs,list):
             out=inputs[0]
@@ -179,6 +188,7 @@ class _DebugPlotBase(tf.keras.layers.Layer):
         out=inputs
         if isinstance(inputs,list):
             out=inputs[0]
+        self.add_loss(0. * tf.reduce_sum(out[0]))#to keep it alive
             
         if not self.check_make_plot(inputs, training):
             return out
@@ -344,9 +354,13 @@ class PlotCoordinates(_DebugPlotBase):
         elif len(inputs) == 6:
             coords, features, hoverfeat, nidx, tidx, rs = inputs
         
+        #give each an index
+        idxs = np.arange(features.shape[0])
+        
         #just select first
         coords = coords[0:rs[1]]
         tidx = tidx[0:rs[1]]
+        idxs = idxs[0:rs[1]]
         if len(tidx.shape) <2:
             tidx = tidx[...,tf.newaxis]
         features = features[0:rs[1]]
@@ -367,7 +381,8 @@ class PlotCoordinates(_DebugPlotBase):
                 'Y':  coords[:,1+i:2+i].numpy(),
                 'Z':  coords[:,2+i:3+i].numpy(),
                 'tIdx': tidx[:,0:1].numpy(),
-                'features': features[:,0:1].numpy()
+                'features': features[:,0:1].numpy(),
+                'idx' : idxs[...,np.newaxis]
                 }
             hoverdict={}
             if hoverfeat is not None:
@@ -383,7 +398,7 @@ class PlotCoordinates(_DebugPlotBase):
             rdst = np.random.RandomState(1234567890)#all the same
             shuffle_truth_colors(df,'tIdx',rdst)
             
-            hover_data=['orig_tIdx']+[k for k in hoverdict.keys()]
+            hover_data=['orig_tIdx','idx']+[k for k in hoverdict.keys()]
             if nidx is not None:
                 hover_data.append('av_same')
             fig = px.scatter_3d(df, x="X", y="Y", z="Z", 
@@ -544,7 +559,10 @@ class PlotGraphCondensation(_DebugPlotBase):
                 
                 
 class PlotGraphCondensationEfficiency(_DebugPlotBase):
-    def __init__(self, update = 0.1, **kwargs):
+    def __init__(self, 
+                 accumulate_every :int = 10 , #how 
+                 externally_triggered = False,
+                 **kwargs):
         '''
         Inputs:
          - t_energy
@@ -555,9 +573,25 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
          - t_energy 
         '''
         
-        super(PlotGraphCondensationEfficiency, self).__init__(**kwargs)
-        self.num = CumulativeArray(40)
-        self.den = CumulativeArray(40)
+        super(PlotGraphCondensationEfficiency, self).__init__(externally_triggered=externally_triggered,
+                                                              **kwargs)
+        
+        self.acc_counter = 0
+        self.accumulate_every = accumulate_every
+        
+        self.only_accumulate_this_time = False
+        
+        accumulate = self.plot_every // accumulate_every + 50
+        
+        self.num = CumulativeArray(accumulate, name = self.name+'_num')
+        self.den = CumulativeArray(accumulate, name = self.name+'_den')
+    
+    
+    
+    def get_config(self):
+        config = {'accumulate_every': self.accumulate_every}#outdir/publish is explicitly not saved and needs to be set again every time
+        base_config = super(PlotGraphCondensationEfficiency, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
     
     #overwrite here
     def call(self, t_energy, t_idx, graph_trans , training=None):
@@ -567,13 +601,31 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         
         os.system('mkdir -p '+self.outdir)
         try:
-            print(self.name, 'plotting...')
             self.plot(t_energy, t_idx, graph_trans,training)
         except Exception as e:
             raise e
             #do nothing, don't interrupt training because a debug plot failed
             
         return t_energy
+        
+    def check_make_plot(self, inputs, training = None):
+        pre =  super(PlotGraphCondensationEfficiency, self).check_make_plot(inputs, training)
+        
+        if self.plot_every <= 0 and not self.externally_triggered: #nothing
+            return pre
+        
+        self.only_accumulate_this_time = False
+        #OR:
+        if self.accumulate_every < self.acc_counter:
+            self.acc_counter = 0
+            self.only_accumulate_this_time = not pre
+            
+            return True
+        
+        self.acc_counter += 1
+        return pre
+            
+            
         
     def plot(self, t_energy, t_idx, graph_trans, training=None):
         
@@ -623,10 +675,14 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         h_orig, _ = np.histogram(orig_energies, bins = bins)
         h_orig = np.array(h_orig, dtype='float32')
         
-        self.den.put(h)
+        self.den.put(h_orig)
+        
+        if self.only_accumulate_this_time:
+            return
+        
+        print(self.name, 'plotting...')
         
         ##interface to old code
-        
         h = self.num.get()
         h_orig = self.den.get()
         
@@ -646,7 +702,7 @@ class PlotGraphCondensationEfficiency(_DebugPlotBase):
         
         fig.write_html(self.outdir+'/'+self.name+'.html')
         if self.publish is not None:
-                publish(self.outdir+'/'+self.name+'.html', self.publish)
+            publish(self.outdir+'/'+self.name+'.html', self.publish)
             
             
             

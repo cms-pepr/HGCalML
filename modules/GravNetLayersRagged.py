@@ -40,7 +40,8 @@ def AccumulateKnnSumw(distances,  features, indices, mean_and_max=False):
     
     fmean = f[:,:origshape]
     fnorm = f[:,origshape:origshape+1]
-    fmean = tf.math.divide_no_nan(fmean,fnorm)
+    fnorm = tf.where(fnorm<1e-3, 1e-3, fnorm)
+    fmean = tf.math.divide_no_nan(fmean, fnorm)
     fmean = tf.reshape(fmean, [-1,origshape])
     if mean_and_max:
         fmean = tf.concat([fmean, f[:,origshape+1:-1]],axis=1)
@@ -216,7 +217,21 @@ class CreateMask(tf.keras.layers.Layer):
         
 
 class Where(tf.keras.layers.Layer):
-    def __init__(self, outputval, condition = '>0', **kwargs):
+    def __init__(self, outputval = None , condition = '>0', **kwargs):
+        '''
+        Simple wrapper around tf.where.
+        
+        Inputs if outputval=None:
+        - tensor defining condition
+        - value to return if condition == True
+        - value to return else
+        
+        Inputs if outputval=val:
+        - tensor defining condition
+        - value to return if condition is not fulfilled
+         --> will return constant outputval=val if condition is fulfilled
+        
+        '''
         conditions = ['>0','>=0','<0','<=0','==0', '!=0']
         assert condition in conditions
         self.condition = condition
@@ -237,20 +252,29 @@ class Where(tf.keras.layers.Layer):
         return (input_shapes[1],)
     
     def call(self,inputs):
-        assert len(inputs)==2
+        
+        if self.outputval is not None:
+            assert len(inputs)==2
+            left = self.outputval
+            right = inputs[1]
+        else:
+            assert len(inputs)==3
+            left = inputs[1]
+            right = inputs[1]
+            
         izero = tf.constant(0,dtype=inputs[0].dtype)
         if self.condition == '>0':
-            return tf.where(inputs[0]> izero,  self.outputval, inputs[1])
+            return tf.where(inputs[0]> izero, left, right)
         elif self.condition == '>=0':
-            return tf.where(inputs[0]>=izero, self.outputval, inputs[1])
+            return tf.where(inputs[0]>=izero, left, right)
         elif self.condition == '<0':
-            return tf.where(inputs[0]< izero,  self.outputval, inputs[1])
+            return tf.where(inputs[0]< izero, left, right)
         elif self.condition == '<=0':
-            return tf.where(inputs[0]<=izero, self.outputval, inputs[1])
+            return tf.where(inputs[0]<=izero, left, right)
         elif self.condition == '!=0':
-            return tf.where(inputs[0]!=izero, self.outputval, inputs[1])
+            return tf.where(inputs[0]!=izero, left, right)
         else:
-            return tf.where(inputs[0]==izero, self.outputval, inputs[1])
+            return tf.where(inputs[0]==izero, left, right)
 
 
 class MixWhere(tf.keras.layers.Layer):
@@ -1018,6 +1042,8 @@ class GooeyBatchNorm(LayerWithMetrics):
                  **kwargs):
         super(GooeyBatchNorm, self).__init__(**kwargs)
         
+        raise ValueError("Layer deprecated, please use ScaledGooeyBatchNorm2")
+        
         assert viscosity >= 0 and viscosity <= 1.
         assert fluidity_decay >= 0 and fluidity_decay <= 1.
         assert max_viscosity >= viscosity
@@ -1177,14 +1203,18 @@ class SignedScaledGooeyBatchNorm(ScaledGooeyBatchNorm):
         s,v = tf.sign(inputs), tf.abs(inputs)
         out = super(SignedScaledGooeyBatchNorm, self).call(v, training)
         return s*out
-
-class ScaledGooeyBatchNorm2(LayerWithMetrics):
+    
+    
+class ScaledGooeyBatchNorm2(tf.keras.layers.Layer):
     def __init__(self, 
                  viscosity=0.01,
                  fluidity_decay=1e-4,
-                 max_viscosity=0.99,
+                 max_viscosity=0.99999,
                  no_gaus = True,
                  epsilon=1e-2,
+                 invert_condition=False,
+                 _promptnames=None, #compatibility, does nothing
+                 record_metrics=False, #compatibility, does nothing
                  **kwargs):
         '''
         Input features (or [features, condition]), output: normed features
@@ -1196,7 +1226,8 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         - fluidity_decay: 'thickening' of the viscosity (see scripts/gooey_plot.py for visualisation)
         - no_gaus:         do not take variance but take mean difference to mean. 
                            Better for non-gaussian inputs and much more robust.
-        - epsilon:         when dividing, added to the denominator (should not require adjustment)
+        - epsilon:         when dividing, added to the denominator (should not require adjustment),
+        - invert_condition: instead of >0.5 uses <=0.5
         '''
         
         super(ScaledGooeyBatchNorm2, self).__init__(**kwargs)
@@ -1211,6 +1242,7 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         self.viscosity_init = viscosity
         self.epsilon = epsilon
         self.no_gaus = no_gaus
+        self.invert_condition = invert_condition
         
     def compute_output_shape(self, input_shapes):
         #return input_shapes[0]
@@ -1223,34 +1255,34 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
                   'fluidity_decay': self.fluidity_decay,
                   'max_viscosity': self.max_viscosity,
                   'epsilon': self.epsilon,
-                  'no_gaus': self.no_gaus
+                  'no_gaus': self.no_gaus,
+                  'invert_condition': self.invert_condition
                   }
         base_config = super(ScaledGooeyBatchNorm2, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
     
     def build(self, input_shapes):
-        
+
         #shape = (1,)+input_shapes[0][1:]
         if isinstance(input_shapes,list):
             shape = (1,)+input_shapes[0][1:]
         else:
             shape = (1,)+input_shapes[1:]
+
+        self.bias = self.add_weight(name = 'bias',shape = shape,
+                                    initializer = 'zeros', trainable = self.trainable)
+        self.gamma = self.add_weight(name = 'gamma',shape = shape,
+                                    initializer = 'ones', trainable = self.trainable)
         
-        self.mean = self.add_weight(name = 'mean',shape = shape, 
-                                    initializer = 'zeros', trainable =  False) 
-        self.den = self.add_weight(name = 'den',shape = shape, 
+        self.mean = self.add_weight(name = 'mean',shape = shape,
+                                    initializer = 'zeros', trainable =  False)
+        self.den = self.add_weight(name = 'den',shape = shape,
                                     initializer = 'ones', trainable =  False)
-        self.viscosity = tf.Variable(initial_value=self.viscosity_init, 
+        self.viscosity = tf.Variable(initial_value=self.viscosity_init,
                                          name='viscosity',
                                          trainable=False,dtype='float32')
-        
-        self.bias = self.add_weight(name = 'bias',shape = shape, 
-                                    initializer = 'zeros', trainable = self.trainable) 
-        
-        self.gamma = self.add_weight(name = 'gamma',shape = shape, 
-                                    initializer = 'ones', trainable = self.trainable) 
-            
+
         super(ScaledGooeyBatchNorm2, self).build(input_shapes)
     
     def _m_mean(self, x, mask):
@@ -1283,7 +1315,10 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         
         out = (x_in - ngmean) / (tf.abs(ngden) + self.epsilon)
         out = out*self.gamma + self.bias
-        return tf.where(cond>0.5,  out, x_in)
+        if self.invert_condition:
+            return tf.where(cond<=0.5,  out, x_in)
+        else:
+            return tf.where(cond>0.5,  out, x_in)
     
     def call(self, inputs, training=None):
         if isinstance(inputs,list):
@@ -1292,6 +1327,10 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
         else:
             x_in = inputs
             cond = tf.ones_like(x_in[...,0:1])
+        
+        
+        #print(self.name, self.mean)
+        #tf.print(self.name, self.mean)
         
         if not self.trainable:
             return self._calc_out(x_in, cond)
@@ -1324,7 +1363,7 @@ class ScaledGooeyBatchNorm2(LayerWithMetrics):
     
         
     
-class ConditionalScaledGooeyBatchNorm(LayerWithMetrics):
+class ConditionalScaledGooeyBatchNorm(tf.keras.layers.Layer):
     def __init__(self,**kwargs):
         '''
         Inputs (list):
@@ -1337,38 +1376,9 @@ class ConditionalScaledGooeyBatchNorm(LayerWithMetrics):
         Options: see ScaledGooeyBatchNorm2 options, will be passed as kwargs
         '''
         
-        super(ConditionalScaledGooeyBatchNorm, self).__init__(**kwargs)
-        if 'name' in kwargs.keys():
-            kwargs.pop('name')
+        raise ValueError("problems with weight saving, use two ScaledGooeyBatchNorm2 layers and invert condition on one.")
         
-        with tf.name_scope(self.name + "/1/"):
-            self.bn_a = ScaledGooeyBatchNorm2(name=self.name+'_bn_a',**kwargs)
-        with tf.name_scope(self.name + "/2/"):
-            self.bn_b = ScaledGooeyBatchNorm2(name=self.name+'_bn_b',**kwargs)
         
-    def compute_output_shape(self, input_shapes):
-        #return input_shapes[0]
-        return self.bn_a.compute_output_shape(input_shapes)
-              
-    def build(self, input_shapes):
-        
-        with tf.name_scope(self.name + "/1/"):
-            self.bn_a.build(input_shapes)
-        with tf.name_scope(self.name + "/2/"):
-            self.bn_b.build(input_shapes)
-            
-        super(ConditionalScaledGooeyBatchNorm, self).build(input_shapes)
-        
-    def call(self, inputs, training=None):
-        x, cond = inputs
-        cond = tf.where(cond > 0.5, tf.ones_like(cond),  0.) #make sure it's ones and zeros
-        
-        x_a = self.bn_a([x, cond],training = training)
-        x_b = self.bn_b([x, 1.-cond], training = training)
-        
-        return tf.where(cond>0.5, x_a, x_b)
-            
-
 class ProcessFeatures(tf.keras.layers.Layer):
     def __init__(self,
                  newformat=True,#compat can be restored but default is new format
@@ -1996,8 +2006,8 @@ class RecalcDistances(tf.keras.layers.Layer):
     def call(self,inputs):
         assert len(inputs)==2
         coords, nidx = inputs
-        
-        ncoords = SelectWithDefault(nidx, coords, 0.) # V x K x C
+        #no check needed here
+        ncoords = SelectWithDefault(nidx, coords, 0., no_check=True) # V x K x C
         dist = tf.reduce_sum( (ncoords - tf.expand_dims(coords,axis=1))**2, axis=2 )
         return dist
 
@@ -2456,13 +2466,15 @@ class SortAndSelectNeighbours(tf.keras.layers.Layer):
         return [tf.TensorSpec(dtype=input_dtypes[i], shape=output_shapes[i]) for i in range(len(output_shapes))]
         
     @staticmethod 
-    def raw_call(distances, nidx, K, radius, sort, incr_sorting_score, keep_self=True):
+    def raw_call(distances, nidx, K, radius=-1, sort=True, incr_sorting_score = None, keep_self=True):
         
         K = K if K>0 else distances.shape[1]
         if not sort:
             return distances[:,:K],nidx[:,:K]
         
-        if tf.shape(incr_sorting_score)[1] is not None and tf.shape(incr_sorting_score)[1]==1:
+        if incr_sorting_score is None:
+            incr_sorting_score = distances
+        elif tf.shape(incr_sorting_score)[1] is not None and tf.shape(incr_sorting_score)[1]==1:
             incr_sorting_score = SelectWithDefault(nidx, incr_sorting_score, 0.)[:,0]
         
         tfssc = tf.where(nidx<0, 1e9, incr_sorting_score) #make sure the -1 end up at the end
@@ -3092,7 +3104,7 @@ class SoftPixelCNN(tf.keras.layers.Layer):
 
 ######## generic neighbours
 
-class RaggedGravNet(LayerWithMetrics):
+class RaggedGravNet(tf.keras.layers.Layer):
     def __init__(self,
                  n_neighbours: int,
                  n_dimensions: int,
@@ -3106,6 +3118,8 @@ class RaggedGravNet(LayerWithMetrics):
                  use_dynamic_knn=True,
                  debug = False,
                  n_knn_bins=None,
+                 _promptnames=None, #compatibility, does nothing
+                 record_metrics=False, #compatibility, does nothing
                  **kwargs):
         """
         Call will return output features, coordinates, neighbor indices and squared distances from neighbors
@@ -3133,7 +3147,7 @@ class RaggedGravNet(LayerWithMetrics):
         #n_neighbours += 1  # includes the 'self' vertex
         assert n_neighbours > 1
         assert not use_approximate_knn #not needed anymore. Exact one is faster by now
-
+        
         self.n_neighbours = n_neighbours
         self.n_dimensions = n_dimensions
         self.n_filters = n_filters
@@ -3152,9 +3166,12 @@ class RaggedGravNet(LayerWithMetrics):
             self.input_feature_transform = tf.keras.layers.Dense(n_propagate, activation=feature_activation)
 
         with tf.name_scope(self.name + "/2/"):
+            s_kernel_initializer = 'glorot_uniform'
+            if coord_initialiser_noise is not None:
+                s_kernel_initializer = EyeInitializer(mean=0, stddev=coord_initialiser_noise)
             self.input_spatial_transform = tf.keras.layers.Dense(n_dimensions,
                                                                  #very slow turn on
-                                                                 kernel_initializer=EyeInitializer(mean=0, stddev=coord_initialiser_noise),
+                                                                 kernel_initializer=s_kernel_initializer,
                                                                  use_bias=False)
 
         with tf.name_scope(self.name + "/3/"):
@@ -3170,27 +3187,18 @@ class RaggedGravNet(LayerWithMetrics):
             self.input_feature_transform.build(input_shape)
 
         with tf.name_scope(self.name + "/2/"):
-            self.input_spatial_transform.build(input_shape)
+            if len(input_shapes) == 3: #extra coords
+                c_shape = [s for s in input_shape]
+                c_shape[-1] += input_shapes[2][-1]
+                self.input_spatial_transform.build(c_shape)
+            else:
+                self.input_spatial_transform.build(input_shape)
 
         with tf.name_scope(self.name + "/3/"):
             self.output_feature_transform.build((input_shape[0], self.n_prop_total + input_shape[1]))
 
         super(RaggedGravNet, self).build(input_shape)
 
-    def update_dynamic_radius(self, dist, training):
-        if not self.use_dynamic_knn or not self.trainable:
-            return
-        #update slowly, with safety margin
-        lindist = tf.sqrt(dist)
-        update = tf.reduce_max(lindist)*1.05 #can be inverted for performance TBI
-        mean_dist = tf.reduce_mean(lindist)
-        low_update = tf.where(update>2.,2.,update)#receptive field ends at 1.
-        update = tf.where(low_update>2.*mean_dist,low_update,2.*mean_dist)#safety setting to not loose all neighbours
-        update += 1e-3
-        update = self.dynamic_radius + 0.05*(update-self.dynamic_radius)
-        updated_radius = tf.keras.backend.in_train_phase(update,self.dynamic_radius,training=training)
-        #print('updated_radius',updated_radius)
-        tf.keras.backend.update(self.dynamic_radius,updated_radius)
         
     def create_output_features(self, x, neighbour_indices, distancesq):
         allfeat = []
@@ -3214,8 +3222,11 @@ class RaggedGravNet(LayerWithMetrics):
         if row_splits.shape[0] is not None:
             tf.assert_equal(row_splits[-1], x.shape[0])
         
+        x_coord = x
+        if len(inputs) == 3:
+            x_coord = tf.concat([inputs[2], x], axis=-1)
         
-        coordinates = self.input_spatial_transform(x)
+        coordinates = self.input_spatial_transform(x_coord)
         neighbour_indices, distancesq, sidx, sdist = self.compute_neighbours_and_distancesq(coordinates, row_splits, training)
         neighbour_indices = tf.reshape(neighbour_indices, [-1, self.n_neighbours]) #for proper output shape for keras
         distancesq = tf.reshape(distancesq, [-1, self.n_neighbours])
@@ -3254,8 +3265,6 @@ class RaggedGravNet(LayerWithMetrics):
         
         dist = tf.where(idx<0,0.,dist)
         
-        self.update_dynamic_radius(dist,training)
-        
         if self.return_self:
             return idx[:, 1:], dist[:, 1:], idx, dist
         return idx[:, 1:], dist[:, 1:], None, None
@@ -3264,9 +3273,11 @@ class RaggedGravNet(LayerWithMetrics):
     def collect_neighbours(self, features, neighbour_indices, distancesq):
         f = None
         if self.sumwnorm:
-            f,_ = AccumulateKnnSumw(10.*distancesq,  features, neighbour_indices)
+            f,_ = AccumulateKnnSumw(10.*distancesq,  features, 
+                                    neighbour_indices, mean_and_max=True)
         else:
-            f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
+            f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices,
+                                mean_and_max=True)
         return f
 
     def get_config(self):
@@ -3303,7 +3314,7 @@ class SelfAttention(tf.keras.layers.Layer):
         return input * att
     
 
-class MultiAttentionGravNetAdd(LayerWithMetrics):
+class MultiAttentionGravNetAdd(tf.keras.layers.Layer):
     def __init__(self,
                  n_attention_kernels :int,
                  **kwargs):
@@ -3365,10 +3376,10 @@ class MultiAttentionGravNetAdd(LayerWithMetrics):
         for di in range(len(self.kernel_coord_dense)):
             refcadd = self.kernel_coord_dense[di](feat)
             
-            for i in range(coord.shape[-1]):
-                meancoord = tf.reduce_mean(refcadd[:,i])
-                self.add_prompt_metric(meancoord, self.name+'_coord_add_mean_'+str(di)+'_'+str(i))
-                self.add_prompt_metric(tf.math.reduce_std(refcadd[:,i]-meancoord), self.name+'_coord_add_var_'+str(di)+'_'+str(i))
+            #for i in range(coord.shape[-1]):
+            #    meancoord = tf.reduce_mean(refcadd[:,i])
+            #    self.add_prompt_metric(meancoord, self.name+'_coord_add_mean_'+str(di)+'_'+str(i))
+            #    self.add_prompt_metric(tf.math.reduce_std(refcadd[:,i]-meancoord), self.name+'_coord_add_var_'+str(di)+'_'+str(i))
             
             refcoord = refcadd + coord
             refcoord = tf.expand_dims(refcoord,axis=1)#V x 1 x C
@@ -3548,6 +3559,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
                  n_feature_transformation, #=[32, 32, 32, 32, 4, 4],
                  sumwnorm=False,
                  activation='relu',
+                 exp_distances = True, #use feat * exp(-distance) weighting, if not simple feat * distance
                  **kwargs):
         super(DistanceWeightedMessagePassing, self).__init__(**kwargs)
 
@@ -3555,6 +3567,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
         self.sumwnorm = sumwnorm
         self.feature_tranformation_dense = []
         self.activation = activation
+        self.exp_distances = exp_distances
         for i in range(len(self.n_feature_transformation)):
             with tf.name_scope(self.name + "/5/" + str(i)):
                 self.feature_tranformation_dense.append(tf.keras.layers.Dense(self.n_feature_transformation[i],
@@ -3579,6 +3592,7 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
     def get_config(self):
         config = {'n_feature_transformation': self.n_feature_transformation,
                   'activation': self.activation,
+                  'exp_distances': self.exp_distances,
                   'sumwnorm':self.sumwnorm
         }
         base_config = super(DistanceWeightedMessagePassing, self).get_config()
@@ -3603,9 +3617,15 @@ class DistanceWeightedMessagePassing(tf.keras.layers.Layer):
     def collect_neighbours(self, features, neighbour_indices, distancesq):
         f=None
         if self.sumwnorm:
-            f,_ = AccumulateKnnSumw(10.*distancesq,  features, neighbour_indices, mean_and_max=True)
+            if self.exp_distances:
+                f,_ = AccumulateKnnSumw(10.*distancesq,  features, neighbour_indices, mean_and_max=True)
+            else:
+                f,_ = AccumulateLinKnnSumw(distancesq,  features, neighbour_indices, mean_and_max=True)
         else:
-            f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
+            if self.exp_distances:
+                f,_ = AccumulateKnn(10.*distancesq,  features, neighbour_indices)
+            else:
+                f,_ = AccumulateLinKnn(distancesq,  features, neighbour_indices)
         return f
 
     def call(self, inputs):
@@ -3980,6 +4000,8 @@ class FlatNeighbourFeatures(tf.keras.layers.Layer):
         super(FlatNeighbourFeatures, self).__init__(**kwargs)
         
     def call(self, inputs):
+        
+        assert len(inputs) == 2
         feat,nidx = inputs
         
         n_feat = SelectWithDefault(nidx,feat,0.) # [V x K x F]

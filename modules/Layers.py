@@ -264,6 +264,10 @@ global_layers_list['SingleLocalGravNetAttention']=SingleLocalGravNetAttention
 from GravNetLayersRagged import LocalGravNetAttention 
 global_layers_list['LocalGravNetAttention']=LocalGravNetAttention
 
+
+from GravNetLayersRagged import FlatNeighbourFeatures 
+global_layers_list['FlatNeighbourFeatures']=FlatNeighbourFeatures
+
 ### odd debug layers
 from DebugLayers import PlotCoordinates
 global_layers_list['PlotCoordinates']=PlotCoordinates
@@ -360,9 +364,71 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 
 
+class GroupSortActivation(tf.keras.layers.Layer): 
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, inputs):
+        out = tf.sort(inputs, axis=-1)
+        return tf.reshape(out, tf.shape(inputs))
+        
+global_layers_list['GroupSortActivation']=GroupSortActivation
 
 
+def layernorm(x, return_norm=False):
+    x = x - tf.reduce_mean(x,axis=-1, keepdims=True)
+    norm = tf.reduce_sum(x**2, axis=-1,keepdims=True)
+    norm = tf.sqrt(norm+1e-6)
+    if return_norm:
+        x = tf.concat([x / norm * tf.sqrt(tf.cast(x.shape[-1],'float32')), norm], axis=-1)
+    else:
+        x = x / norm * tf.sqrt(tf.cast(x.shape[-1],'float32'))
+    return x
 
+global_layers_list['layernorm']= layernorm #convenience
+
+class SphereActivation(tf.keras.layers.Layer): 
+    '''
+    a layer norm that can also return the norm
+    '''
+    
+    def __init__(self,return_norm = False, **kwargs):
+        super(SphereActivation, self).__init__(**kwargs)
+        self.return_norm = return_norm
+        
+    def get_config(self):
+        config = {'return_norm': self.return_norm}
+        base_config = super(SphereActivation, self).get_config()
+        return dict(list(base_config.items()) + list(config.items() ))
+    
+    def call(self, x):
+        if not self.return_norm:
+            return layernorm(x, False)
+        else:
+            out = layernorm(x, True)
+            return out[...,:x.shape[-1]], out[...,x.shape[-1]:x.shape[-1]+1]
+        
+global_layers_list['SphereActivation']=SphereActivation
+
+class Multi(tf.keras.layers.Layer): 
+    
+    def call(self, inputs):
+        assert len(inputs)==2
+        x,y = inputs
+        return x*y #but with broadcasting
+    
+global_layers_list['Multi']=Multi
+
+class Sqrt(tf.keras.layers.Layer): 
+    
+    def compute_output_shape(self, input_shapes):
+        return input_shapes
+    
+    def call(self, x):
+        return tf.sqrt(x + 1e-6)
+        
+global_layers_list['Sqrt']=Sqrt
 
 class SplitFeatures(Layer):
     def __init__(self,**kwargs):
