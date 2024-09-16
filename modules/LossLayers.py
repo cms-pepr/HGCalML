@@ -3463,14 +3463,14 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
         else:
             print("Input doesn't match expected input")
 
-        id_flat = tf.squeeze(t_idx)
-        energy_flat = tf.where(recHitID==0, rechit_energy, tf.zeros_like(rechit_energy))
-        energy_flat = tf.squeeze(energy_flat)
-        unique_ids, _ = tf.unique(id_flat)
-        num_classes = tf.shape(unique_ids)[0]
-        energy_sum_per_class = tf.math.unsorted_segment_sum(energy_flat, id_flat, num_classes)
-        energy_sum = tf.gather(energy_sum_per_class, id_flat)
-        energy_sum = tf.reshape(energy_sum, tf.shape(t_rec_energy))
+        # id_flat = tf.squeeze(t_idx)
+        # energy_flat = tf.where(recHitID==0, rechit_energy, tf.zeros_like(rechit_energy))
+        # energy_flat = tf.squeeze(energy_flat)
+        # unique_ids, _ = tf.unique(id_flat)
+        # num_classes = tf.shape(unique_ids)[0]
+        # energy_sum_per_class = tf.math.unsorted_segment_sum(energy_flat, id_flat, num_classes) #TODO REMOVE!
+        # energy_sum = tf.gather(energy_sum_per_class, id_flat)
+        # energy_sum = tf.reshape(energy_sum, tf.shape(t_rec_energy))
 
 
         if rowsplits.shape[0] is None:
@@ -3489,8 +3489,8 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
             energy_loss, energy_quantiles_loss = \
                     self.calc_energy_correction_factor_loss(
                             t_energy,
-                            energy_sum,
-                            # t_rec_energy,
+                            # energy_sum,
+                            t_rec_energy,
                             pred_energy,
                             pred_energy_low_quantile,
                             pred_energy_high_quantile)
