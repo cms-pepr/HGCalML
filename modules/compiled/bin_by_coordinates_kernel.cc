@@ -23,12 +23,12 @@ struct BinByCoordinatesNbinsHelperOpFunctor<CPUDevice, dummy> { //just because a
             int n_nbins,
             int nrs){
     int n=1;
-    printf("n bins:");
+    //printf("n bins:");
     for(int i=0;i<n_nbins;i++){
         n*=n_bins[i];
-        printf(" %d ,", n_bins[i]);
+        //printf(" %d ,", n_bins[i]);
     }
-    printf("\n");
+    //printf("\n");
 
     *out_tot_bins=n*(nrs-1);
     }

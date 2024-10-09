@@ -21,13 +21,16 @@ struct MIndicesOpFunctor {
 
             const int *d_truthidx,
             const int *d_unique_idx,
+            const int *rs,
 
             int * out_idx,
-            float * m_not,
+            int * m_not,
 
             const int n_vert,
             const int n_unique,
             const int n_max_per_unique,
+            const int n_rs,
+            const int n_max_in_rs,
 
             bool calc_m_not
 

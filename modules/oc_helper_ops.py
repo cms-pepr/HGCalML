@@ -28,7 +28,7 @@ m_not is the usual K x V dimension (for now) and can just be multiplied
 
 _op = tf.load_op_library('oc_helper_m_indices.so')
 
-def CreateMidx(truth_idxs, calc_m_not=False):
+def CreateMidx(truth_idxs, rs, calc_m_not=False):
     '''
    /*
  * Takes as helper input
@@ -50,8 +50,14 @@ REGISTER_OP("MIndicesOpFunctor")
 
     '''
     
-    #only consider non-noise
-    c_truth_idxs = truth_idxs[truth_idxs>=0]
+    # Repeat each rs according to the differences to offset the indices
+    differences = tf.concat([tf.math.abs(rs[1:] - rs[:-1]), [0]], axis=0)
+    repeated_rs = tf.reshape(tf.repeat(rs, differences),(-1,1))
+    offset_truth_idxs = truth_idxs + repeated_rs
+    
+    offset_truth_idxs = tf.where(truth_idxs<0, -1, offset_truth_idxs)
+    
+    c_truth_idxs= offset_truth_idxs[offset_truth_idxs>=0]
     unique_idxs, _, cperunique = tf.unique_with_counts(c_truth_idxs)
     
     nmax_per_unique = tf.reduce_max(cperunique)
@@ -59,15 +65,20 @@ REGISTER_OP("MIndicesOpFunctor")
     #eager
     if nmax_per_unique.numpy() < 1:
         return None, None, None
-
+    
+    nmax_in_rs = tf.reduce_max(rs[1:]-rs[:-1])
+    
     sel_dxs, m_not = _op.MIndices( 
         calc_m_not=calc_m_not,
-        asso_idxs = truth_idxs,
+        asso_idxs = offset_truth_idxs,
         unique_idxs = unique_idxs,
-        nmax_per_unique = nmax_per_unique
+        nmax_per_unique = nmax_per_unique,
+        rs = rs,
+        nmax_in_rs = nmax_in_rs
         )
     
-    return sel_dxs, tf.expand_dims(m_not,axis=2), tf.expand_dims(cperunique,axis=1) #just some conventions
+    
+    return sel_dxs, m_not, tf.expand_dims(cperunique,axis=1) #just some conventions
     
 @ops.RegisterGradient("CreateMidx")
 def _CreateMidxGrad(op, sel_dxs, m_not):
@@ -90,6 +101,43 @@ def SelectWithDefault(indices, tensor, default=0, no_check=False):
         tf.assert_equal(tf.shape(tensor)[1], tf.shape(out)[2])]):
         
         return out
+def SelectWithDefaultMnot(Mnot, tensor):
+    # Check if tensor has a third dimension, if not, expand it
+    no_extra_dim = (len(tf.shape(tensor)) == 2)
+    if no_extra_dim:
+        tensor = tf.expand_dims(tensor, axis=-1)
+    
+    K, V, _ = tensor.shape
+
+    # Create a base mask of shape (K, V) initialized to False
+    mask = tf.zeros((K, V), dtype=tf.bool)
+
+    # Flatten Mnot and create row indices
+    row_indices = tf.repeat(tf.range(K), repeats=Mnot.shape[1])
+    col_indices = tf.reshape(Mnot, [-1])    
+    
+    # Filter out invalid indices (-1)
+    valid_mask = col_indices >= 0
+    row_indices = tf.boolean_mask(row_indices, valid_mask)
+    col_indices = tf.boolean_mask(col_indices, valid_mask)
+
+    # Stack indices together
+    indices = tf.stack([row_indices, col_indices], axis=1)
+
+    # Scatter update to create the mask
+    updates = tf.ones(indices.shape[0], dtype=tf.bool)
+    mask = tf.tensor_scatter_nd_update(mask, indices, updates)
+
+    # Expand the mask to match the last dimension of the tensor
+    mask_expanded = tf.expand_dims(mask, -1)
+
+    # Apply the mask to set the elements to 0
+    tensor = tf.where(mask_expanded, tensor, tf.zeros_like(tensor))
+    
+    if no_extra_dim:
+        tensor = tf.squeeze(tensor, axis=-1)
+    
+    return tensor
 
 
 def per_rs_segids_to_unique(pred_sid, rs, return_nseg=False, strict_check=True):

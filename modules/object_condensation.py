@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import tensorflow as tf
-from oc_helper_ops import CreateMidx, SelectWithDefault
+from oc_helper_ops import CreateMidx, SelectWithDefault, SelectWithDefaultMnot
 from binned_select_knn_op import BinnedSelectKnn
-
 
 
 def huber(x, d):
@@ -118,8 +117,8 @@ class Basic_OC_per_sample(object):
         return ak * (1. - fraction_wrt_alpha) + fraction_wrt_alpha * wvk
     
     
-    def create_Ms(self, truth_idx):
-        self.Msel, self.Mnot, _ = CreateMidx(truth_idx, calc_m_not=True)
+    def create_Ms(self, truth_idx, rs):
+        self.Msel, self.Mnot, _ = CreateMidx(truth_idx, rs, calc_m_not=True)
     
     
     def set_input(self, 
@@ -128,6 +127,7 @@ class Basic_OC_per_sample(object):
                          d,
                          pll,
                          truth_idx,
+                         rs,
                          object_weight,
                          is_spectator_weight,
                          calc_Ms=True,
@@ -153,7 +153,7 @@ class Basic_OC_per_sample(object):
         self.q_v = tf.where(truth_idx < 0, noise_qmin, self.q_v) # set noise qmin
         
         if calc_Ms:
-            self.create_Ms(truth_idx)
+            self.create_Ms(truth_idx, rs=rs)
         if self.Msel is None:
             self.valid=False
             return
@@ -226,13 +226,13 @@ class Basic_OC_per_sample(object):
         dsq = tf.expand_dims(self.x_k, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1, keepdims=True)  #K x V x 1
         return dsq
-        
+
     #@tf.function
     def V_rep_k(self):
         
         
         K = tf.reduce_sum(tf.ones_like(self.q_k))
-        N_notk = tf.reduce_sum(self.Mnot, axis=1)
+        
         #future remark: if this gets too large, one could use a kNN/radiusNN here
         
         dsq = self.calc_dsq_rep()
@@ -240,11 +240,18 @@ class Basic_OC_per_sample(object):
         # nogradbeta = tf.stop_gradient(self.beta_k_m)
         #weight. tf.reduce_sum( tf.exp(-dsq) * d_v_e, , axis=1) / tf.reduce_sum( tf.exp(-dsq) )
         sigma = self.weighted_d_k_m(dsq) #create gradients for all, but prefer k vertex
-        dsq = tf.math.divide_no_nan(dsq, sigma**2 + 1e-4) #K x V x 1
+        dsq = tf.math.divide_no_nan(dsq, sigma**2 + 1e-4)
+        
 
-        V_rep = self.rep_func(dsq) * self.Mnot * tf.expand_dims(self.q_v,axis=0)  #K x V x 1
+        V_rep = self.rep_func(dsq) * tf.expand_dims(self.q_v,axis=0)
+        V_rep = SelectWithDefaultMnot(self.Mnot, V_rep) #K x V x 1
+        
+        
+        dsq_mnot = SelectWithDefaultMnot(self.Mnot, dsq) #K x V x 1
         if self.rep_range > 0:
-            N_notk = tf.reduce_sum(tf.where(dsq < self.rep_range**2 , 1., tf.zeros_like(dsq)) * self.Mnot, axis=1)
+            N_notk = tf.reduce_sum(tf.where(dsq_mnot < self.rep_range**2 , 1., tf.zeros_like(dsq_mnot)), axis=1)
+        else:
+            N_notk = tf.reduce_sum(tf.ones_like(dsq_mnot), axis=1)
 
         V_rep = self.q_k * tf.reduce_sum(V_rep, axis=1) #K x 1
         #if self.global_weight:
@@ -261,6 +268,7 @@ class Basic_OC_per_sample(object):
     def Pll_k(self):
         
         tanhsqbeta = self.beta_v**2 #softer here
+        #tanhsqbeta = tf.math.atanh(self.beta_v*(1-1e-3))**2
         tanhsqbeta = tf.debugging.check_numerics(tanhsqbeta, "OC: pw b**2")
         pw = tanhsqbeta * tf.clip_by_value((1.-tf.clip_by_value(self.isn_v+self.sw_v,0.,1.)),0.,1.) + 1e-6
         
@@ -394,15 +402,17 @@ class Basic_OC_per_sample(object):
         x_k_alpha = tf.gather_nd(self.x_k_m,self.alpha_k, batch_dims=1) 
         dsq = tf.expand_dims(x_k_alpha, axis=1) - tf.expand_dims(self.x_v, axis=0) #K x V x C
         dsq = tf.reduce_sum(dsq**2, axis=-1)  #K x V 
-        in_radius = rel_metrics_radius > tf.sqrt(dsq) / self.d_k# K x V
+        in_radius = rel_metrics_radius > tf.sqrt(dsq) / self.d_k # K x V
+        in_radius_mnot = SelectWithDefaultMnot(self.Mnot, in_radius) #K x V
         
         energies_k_v = tf.expand_dims(energies, axis=0) # K x V x 1
         energies_ir_all_k_v = tf.where(in_radius[...,tf.newaxis], energies_k_v , 0.)
-        energies_ir_not_k_v = tf.where(in_radius[...,tf.newaxis], self.Mnot * energies_k_v , 0.)
+        
+        energies_ir_not_k_v = tf.where(in_radius_mnot[...,tf.newaxis], energies_k_v , 0.)
         
         rel_cont_k = tf.reduce_sum(energies_ir_not_k_v, axis=1)/tf.reduce_sum(energies_ir_all_k_v, axis=1)
-
-        beta_cont_k = tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.Mnot * self.beta_v[tf.newaxis,...], 0.), axis=1) # K x 1?
+        
+        beta_cont_k = tf.reduce_sum(tf.where(in_radius_mnot[...,tf.newaxis], self.beta_v[tf.newaxis,...], 0.), axis=1) # K x 1?
         beta_cont_k /= tf.reduce_sum(tf.where(in_radius[...,tf.newaxis], self.beta_v[tf.newaxis,...], 0.), axis=1)
 
         # the same for deposited energy > 20 GeV
@@ -445,6 +455,29 @@ class Hinge_OC_per_sample(Hinge_OC_per_sample_damped):
         super(Hinge_OC_per_sample, self).__init__(**kwargs)
         self.condensation_damping = 0.0 # Don't stop any gradients
         #self.rep_range = 2.
+class Hinge_OC_per_sample_atanhweighing(Hinge_OC_per_sample):
+    '''
+    Same as Hinge_OC_per_sample but with atanh(beta)^2 weighting for the payloads
+    '''
+    def __init__(self, **kwargs):
+        super(Hinge_OC_per_sample_atanhweighing, self).__init__(**kwargs)
+    #@tf.function
+    def Pll_k(self):        
+        #tanhsqbeta = self.beta_v**2 #softer here
+        tanhsqbeta = tf.math.atanh(self.beta_v*(1-1e-3))**2
+        tanhsqbeta = tf.debugging.check_numerics(tanhsqbeta, "OC: pw b**2")
+        pw = tanhsqbeta * tf.clip_by_value((1.-tf.clip_by_value(self.isn_v+self.sw_v,0.,1.)),0.,1.) + 1e-6
+        
+        pw = tf.debugging.check_numerics(pw, "OC: pw")
+        
+        pll_k_m = SelectWithDefault(self.Msel, self.pll_v, 0.) #K x V_perobj x P
+        pw_k_m = SelectWithDefault(self.Msel, pw, 0.) #K x V-obj x P
+        pw_k_sum = tf.reduce_sum(pw_k_m, axis=1)
+        pw_k_sum = tf.where(pw_k_sum <= 0., 1e-2, pw_k_sum)
+        
+        pll_k = tf.math.divide_no_nan(tf.reduce_sum(pll_k_m * pw_k_m, axis=1), 
+                                             pw_k_sum  )#K x P
+        return pll_k
 
 
         
@@ -677,9 +710,9 @@ class GraphCond_OC_per_sample(Basic_OC_per_sample):
                          ):
         
         #replace beta with per-object normalised value
-        self.create_Ms(truth_idx)
-        beta_max = tf.reduce_max(self.Mnot * tf.expand_dims(beta,axis=0),axis=1, keepdims=True)  #K x 1 x 1
-        beta_max *= self.Mnot  #K x V x 1
+        self.create_Ms(truth_idx, rs=rs)
+        beta_max = tf.reduce_max(SelectWithDefaultMnot(self.Mnot, tf.expand_dims(beta,axis=0),0),axis=1, keepdims=True)  #K x 1 x 1
+        beta_max = SelectWithDefault(self.Msel, beta_max, 0.)
         
         # this is the same reduced in K given the others are zero with exception of noise (filtered later)
         beta_max = tf.reduce_max(beta_max, axis=0) # V x 1 
@@ -710,10 +743,8 @@ class OC_loss(object):
                          truth_idx,
                          object_weight,
                          is_spectator_weight,
-                         
                          rs,
                          energies = None): #rs last
-        
         tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = 6*[tf.constant(0., tf.float32)]
         #batch loop
             
@@ -721,29 +752,23 @@ class OC_loss(object):
             return tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
         batch_size = rs.shape[0] - 1
         mdict = {}
-    
-        for b in tf.range(batch_size):
-            
-            self.loss_impl.set_input( 
-                 beta[rs[b]:rs[b + 1]],
-                 x[rs[b]:rs[b + 1]],
-                 d[rs[b]:rs[b + 1]],
-                 pll[rs[b]:rs[b + 1]],
-                 truth_idx[rs[b]:rs[b + 1]],
-                 object_weight[rs[b]:rs[b + 1]],
-                 is_spectator_weight[rs[b]:rs[b + 1]]
+        self.loss_impl.set_input( 
+                 beta,
+                 x,
+                 d,
+                 pll,
+                 truth_idx,
+                 rs,
+                 object_weight,
+                 is_spectator_weight
                  )
             
-            tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = self.loss_impl.add_to_terms(
-                tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
-                )
-
-            #just last row split is good enough for metric
-            if energies is not None and b == batch_size-1: 
-                mdict = self.loss_impl.calc_metrics(energies[rs[b]:rs[b + 1]])
-
-        bs = tf.cast(batch_size, dtype='float32') + 1e-3
-        out = [a/bs for a in [tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen]]
+        tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen = self.loss_impl.add_to_terms(
+            tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen
+            )
+        
+        mdict = self.loss_impl.calc_metrics(energies)
+        out = [tot_V_att, tot_V_rep, tot_Noise_pen, tot_B_pen, tot_pll,tot_too_much_B_pen]
         return out, mdict
 
 
