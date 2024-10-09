@@ -58,6 +58,13 @@ def _calc_energy_weights(t_energy, t_pid=None, upmouns = True, alt_energy_weight
             w *= extra
         return w
 
+
+def _calc_energy_weights_quadratic(t_energy, t_pid=None, upmouns = True, alt_energy_weight=True):
+
+        w = (t_energy / 33.)**2     # 33 is an empirical factor for 200 pile-up events
+        return w
+
+
 class AmbiguousTruthToNoiseSpectator(LayerWithMetrics):
     '''
     Sets the truth to noise spectators if it is ambiguous for a group of neighbours
@@ -3289,6 +3296,10 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
         super(LLExtendedObjectCondensation5, self).__init__(*args, **kwargs)
 
 
+    def calc_energy_weights(self, t_energy, t_pid=None, upmouns = True):
+        return _calc_energy_weights_quadratic(t_energy, t_pid, upmouns, self.alt_energy_weight)
+
+
     def calc_energy_correction_factor_loss(self,
             t_energy, t_dep_energies,
             pred_energy, pred_uncertainty_low, pred_uncertainty_high,
@@ -3309,6 +3320,7 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
         epred = pred_energy * t_dep_energies
         # sigma = pred_uncertainty_high * t_dep_energies + 1.0
         sigma = tf.sqrt(t_energy)
+        sigma = tf.clip_by_value(sigma, 1.,1e12)
 
         # Uncertainty 'sigma' must minimize this term:
         # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
@@ -3324,6 +3336,30 @@ class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):
 
         prediction_loss = tf.clip_by_value(prediction_loss, 0, 10)
         uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
+
+        offset_abs = tf.abs(t_energy - epred)
+        offset_abs_uncorrected = tf.abs(t_energy - t_dep_energies)
+        offset_rel = tf.abs(t_energy - epred) / t_energy
+        offset_rel_uncorrected = tf.abs(t_energy - t_dep_energies) / t_energy
+
+        offset_abs_small = offset_abs[t_energy < 10]
+        offset_abs_large = offset_abs[t_energy > 10]
+        offset_abs_uncorrected_small = offset_abs_uncorrected[t_energy < 10]
+        offset_abs_uncorrected_large = offset_abs_uncorrected[t_energy > 10]
+        offset_rel_small = offset_rel[t_energy < 10]
+        offset_rel_large = offset_rel[t_energy > 10]
+        offset_rel_uncorrected_small = offset_rel_uncorrected[t_energy < 10]
+        offset_rel_uncorrected_large = offset_rel_uncorrected[t_energy > 10]
+
+        self.wandb_log({
+            self.name+'_absolut_energy_error_lowE' : tf.reduce_mean(offset_abs_small),
+            self.name+'_absolut_energy_error_highE' : tf.reduce_mean(offset_abs_large),
+            self.name+'_absolut_energy_uncorrected_error_lowE' : tf.reduce_mean(offset_abs_uncorrected_small),
+            self.name+'_absolut_energy_uncorrected_error_highE' : tf.reduce_mean(offset_abs_uncorrected_large),
+            self.name+'_relative_energy_error_lowE' : tf.reduce_mean(offset_rel_small),
+            self.name+'_relative_energy_error_lowE' : tf.reduce_mean(offset_rel_small),
+            self.name+'_relative_energy_uncorrected_error_lowE' : tf.reduce_mean(offset_rel_uncorrected_small),
+            self.name+'_relative_energy_uncorrected_error_highE' : tf.reduce_mean(offset_rel_uncorrected_large)})
 
         if return_concat:
             return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
