@@ -117,6 +117,7 @@ class TrainData_PreSnowflakeNanoML(TrainData):
         # self.path_to_pretrained = os.getenv("HGCALML")+'/models/double_tree_condensation_block/KERAS_check_model_last.h5'
         # self.path_to_pretrained = os.getenv("HGCALML")+'/models/pre-cluster_tmp/KERAS_check_model_last.h5'
         self.path_to_pretrained = "/mnt/home/jkieseler/trainout/May24/dps_Aug24/KERAS_check_model_last.h5"
+        self.path_to_pretrained = "/mnt/home/pzehetner/Paper/Models/precluster_new2/KERAS_check_model_block_0_epoch_01.h5"
 
     def __init__(self):
         TrainData.__init__(self)
@@ -372,6 +373,10 @@ class TrainData_PreSnowflakeNanoML(TrainData):
             out['t_rec_energy']=data['t_rec_energy']
         if 't_hit_unique' in data.keys():
             out['t_is_unique']=data['t_hit_unique']
+        if 't_only_minbias' in data.keys():
+            out['t_only_minbias'] = data['t_only_minbias']
+        if 't_minbias_weighted' in data.keys():
+            out['t_minbias_weighted'] = data['t_minbias_weighted']
         return out
 
 

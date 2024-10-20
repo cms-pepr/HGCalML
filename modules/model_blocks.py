@@ -2720,9 +2720,11 @@ def mini_tree_clustering(
         out['coords'] = PushUp(add_self=True)(pre_inputs['coords'], trans_a, weight = energy)
         out['rechit_energy'] = PushUp(mode='sum', add_self=True)(energy, trans_a)
         ew_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a, weight = energy)
+        ew_t_minbias = PushUp(add_self=False)(tf.cast(pre_inputs['t_only_minbias'], tf.float32),trans_a, weight = energy)
         w_feat = PushUp(add_self=False)(pre_inputs['features'],trans_a)
         x_sel = SelectUp()(pre_inputs['features'], trans_a)
         out['features'] = Concatenate()([x_sel, ew_feat, w_feat])
+        out['t_minbias_weighted'] = ew_t_minbias
     
         out['is_track'] = SelectUp()(pre_inputs['is_track'], trans_a)
         out['row_splits'] = trans_a['rs_up']
