@@ -179,6 +179,7 @@ class ShowersMatcher:
                 node_attributes[k] = self.truth_dict[k][truth_shower_idx[i], 0]
 
             node_attributes['type'] = ShowersMatcher._NODE_TYPE_TRUTH_SHOWER
+            node_attributes['matched'] = 0
 
             node = (int(truth_shower_sid[i]), node_attributes)
             truth_nodes.append(node)
@@ -186,6 +187,7 @@ class ShowersMatcher:
         graph.add_nodes_from(truth_nodes)
 
         offset = np.max(truth_shower_sid) + 1000
+        self.offset = offset
         pred_sid = self.predictions_dict['pred_sid']
         pred_sid = np.where(pred_sid==-1, -1, pred_sid + offset)   # Offset node ids for pred nodes, can also be +1.
         self.pred_sid = pred_sid
@@ -207,8 +209,6 @@ class ShowersMatcher:
                     # node_attributes[k] = np.argmax(
                             # self.predictions_dict[k][self.pred_alpha_idx[i]],
                             # axis=1)
-                    # import pdb
-                    # pdb.set_trace()
                     node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i]]
                     # Same as 'else' should work.
                 else:
@@ -216,6 +216,7 @@ class ShowersMatcher:
                     node_attributes[k] = self.predictions_dict[k][self.pred_alpha_idx[i], 0]
             node = (pred_shower_sid[i], node_attributes)
             node_attributes['type'] = ShowersMatcher._NODE_TYPE_PRED_SHOWER
+            node_attributes['matched'] = 0
 
             pred_nodes.append(node)
 
@@ -295,6 +296,25 @@ class ShowersMatcher:
         return C
 
 
+    def _match_on_tracks(self, graph):
+        for true_idx in np.unique(self.truth_dict['truthHitAssignementIdx']):
+            id_mask = np.where(self.truth_dict['truthHitAssignementIdx'] == true_idx, 1, 0)
+            track_mask = np.where(self.features_dict['recHitID'] == 1, 1, 0)
+            mask = np.logical_and(id_mask[:,0], track_mask[:,0])
+            if mask.sum() == 1:
+                track_index = np.argmax(mask)
+                pred_id = self.predictions_dict['pred_sid'][track_index][0]
+            
+                graph.nodes[true_idx]['matched'] = 1
+                graph.nodes[pred_id + self.offset]['matched'] = 1
+                graph.add_edge(
+                    true_idx,
+                    pred_id + self.offset)
+            elif mask.sum() > 1:
+                raise NotImplementedError
+        return graph
+
+
     def _match_single_pass(self):
         #SHAH RUKH:
         # 1. match on tracks (i.e. match the predicted shower containing the
@@ -305,15 +325,20 @@ class ShowersMatcher:
         #       a.) I can't remove the nodes, otherwise the dataframe will not work anymore
         #       b.) The cost matrix's indices are used to draw the edges in the graph
         #           calculating a smaller cost matrix will lead to wrong edges
+        matched_full_graph = nx.Graph()
+        matched_full_graph.add_nodes_from(self.graph.nodes(data=True))
+        matched_full_graph = self._match_on_tracks(matched_full_graph)
         truth_shower_sid = [
             x[0]
             for x in self.graph.nodes(data=True)
-            if x[1]['type']==ShowersMatcher._NODE_TYPE_TRUTH_SHOWER
+            if np.logical_and((x[1]['type']==ShowersMatcher._NODE_TYPE_TRUTH_SHOWER), 
+                (x[1]['matched'] == 0))
             ]
         pred_shower_sid = [
             x[0]
             for x in self.graph.nodes(data=True)
-            if x[1]['type']==ShowersMatcher._NODE_TYPE_PRED_SHOWER
+            if np.logical_and((x[1]['type']==ShowersMatcher._NODE_TYPE_PRED_SHOWER),
+                (x[1]['matched'] == 0))
             ]
 
         if not len(truth_shower_sid) > 0:
@@ -327,13 +352,10 @@ class ShowersMatcher:
 
 
         C = self._cost_matrix_intersection_based(truth_shower_sid, pred_shower_sid)
-        pdb.set_trace()
 
         row_id, col_id = linear_sum_assignment(C, maximize=True)
 
         self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
-        matched_full_graph = nx.Graph()
-        matched_full_graph.add_nodes_from(self.graph.nodes(data=True))
 
         for p, t in zip(row_id, col_id):
             if C[p, t] > 0:
