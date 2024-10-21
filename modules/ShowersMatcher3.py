@@ -225,6 +225,11 @@ class ShowersMatcher:
 
 
     def _cost_matrix_angle_based(self, truth_shower_sid, pred_shower_sid):
+        #SHAH RUKH: This might be the better solution
+        # However: Our predicted showers currently don't contain
+        # the necessary information to directly calculate an angle.
+        #   This is fixable, but one has to decide if the tracks should play
+        #   a part in this or not. They will have a huge impact due to their high energy 
         pred_shower_energy = [self.graph.nodes[x]['dep_energy'] for x in pred_shower_sid]
         truth_shower_energy = [self.graph.nodes[x]['energy'] for x in truth_shower_sid]
         if self.de_e_cut==-1:
@@ -291,10 +296,15 @@ class ShowersMatcher:
 
 
     def _match_single_pass(self):
-        # First match on tracks
-        # Then match on hits
-        truth_tracks_id = [
-        pdb.set_trace()
+        #SHAH RUKH:
+        # 1. match on tracks (i.e. match the predicted shower containing the
+        #       track to its truth shower
+        # 2. match on hits as we already do
+        # 3. My problem: I have to exclude showers that have already been matched
+        #       without messing up any of the following code
+        #       a.) I can't remove the nodes, otherwise the dataframe will not work anymore
+        #       b.) The cost matrix's indices are used to draw the edges in the graph
+        #           calculating a smaller cost matrix will lead to wrong edges
         truth_shower_sid = [
             x[0]
             for x in self.graph.nodes(data=True)
