@@ -257,8 +257,12 @@ class ShowersMatcher:
         pred_shower_energy = np.array([self.graph.nodes[x]['pred_energy'] for x in pred_shower_sid])
         truth_shower_energy = np.array([self.graph.nodes[x]['truthHitAssignedEnergies'] for x in truth_shower_sid])
         weight = self.features_dict['recHitEnergy'][:, 0]
-        is_track = np.abs(self.features_dict['recHitZ'][:,0]) == 315 # TODO: This works for now, but is very hacky
-        weight[is_track] = 0
+        is_track = self.features_dict['recHitID'][:,0] == 1 
+        mask = np.zeros_like(weight)
+        mask[self.pred_alpha_idx] = 1
+        condensation_track = np.logical_and(mask, is_track)
+        weight[is_track] = 0.0
+        weight[condensation_track] = 1e6
 
 
         iou_matrix = calculate_iou_serial_fast(self.truth_dict['truthHitAssignementIdx'][:, 0],
@@ -299,7 +303,7 @@ class ShowersMatcher:
     def _match_on_tracks(self, graph):
         for true_idx in np.unique(self.truth_dict['truthHitAssignementIdx']):
             id_mask = np.where(self.truth_dict['truthHitAssignementIdx'] == true_idx, 1, 0)
-            track_mask = np.where(self.features_dict['recHitID'] == 1, 1, 0)
+            track_mask = np.where(self.features_dict['recHitID'] != 0, 1, 0)
             mask = np.logical_and(id_mask[:,0], track_mask[:,0])
             if mask.sum() == 1:
                 track_index = np.argmax(mask)
@@ -325,9 +329,7 @@ class ShowersMatcher:
         #       a.) I can't remove the nodes, otherwise the dataframe will not work anymore
         #       b.) The cost matrix's indices are used to draw the edges in the graph
         #           calculating a smaller cost matrix will lead to wrong edges
-        matched_full_graph = nx.Graph()
-        matched_full_graph.add_nodes_from(self.graph.nodes(data=True))
-        matched_full_graph = self._match_on_tracks(matched_full_graph)
+        # matched_full_graph = self._match_on_tracks(matched_full_graph)
         truth_shower_sid = [
             x[0]
             for x in self.graph.nodes(data=True)
@@ -356,6 +358,8 @@ class ShowersMatcher:
         row_id, col_id = linear_sum_assignment(C, maximize=True)
 
         self.truth_sid = self.truth_dict['truthHitAssignementIdx'][:, 0]
+        matched_full_graph = nx.Graph()
+        matched_full_graph.add_nodes_from(self.graph.nodes(data=True))
 
         for p, t in zip(row_id, col_id):
             if C[p, t] > 0:
