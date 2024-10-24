@@ -478,6 +478,8 @@ if __name__ == '__main__':
     OUTPUTDIR = sys.argv[2]
     if len(sys.argv) > 3:
         SAMPLERATE = int(sys.argv[3])
+    else:
+        SAMPLERATE= 0
 
     if HGCALML is None and INPUTFILE.endswith('.djcdc'):
         print("HGCALML not set, cannot work with .djcdc files")
