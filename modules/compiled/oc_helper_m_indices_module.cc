@@ -18,7 +18,9 @@ REGISTER_OP("MIndices")
     .Input("asso_idxs: int32")
     .Input("unique_idxs: int32")
     .Input("nmax_per_unique: int32")
+    .Input("rs: int32")
+    .Input("nmax_in_rs: int32")
     .Output("sel_idxs: int32")
-    .Output("m_not: float32");
+    .Output("m_not: int32");
 
 

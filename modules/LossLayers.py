@@ -2185,6 +2185,7 @@ class LLFullObjectCondensation(LossLayerBase):
                  beta_push=0.,
                  implementation = '',
                  global_weight=False,
+                 train_energy_unc=True,
                  **kwargs):
         """
         Read carefully before changing parameters
@@ -2238,7 +2239,7 @@ class LLFullObjectCondensation(LossLayerBase):
             raise ValueError("huber_energy_scale>0 and alt_energy_loss exclude each other")
 
 
-        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_OC_per_sample
+        from object_condensation import Basic_OC_per_sample, PushPull_OC_per_sample, PreCond_OC_per_sample, Hinge_OC_per_sample_atanhweighing
         from object_condensation import Hinge_OC_per_sample_damped, Hinge_OC_per_sample, Hinge_Manhatten_OC_per_sample
         from object_condensation import Dead_Zone_Hinge_OC_per_sample,Hinge_OC_per_sample_learnable_qmin, Hinge_OC_per_sample_learnable_qmin_betascale_position
         impl = Basic_OC_per_sample
@@ -2262,6 +2263,8 @@ class LLFullObjectCondensation(LossLayerBase):
             impl = Hinge_OC_per_sample_learnable_qmin
         if implementation == 'hinge_qmin_betascale_pos':
             impl = Hinge_OC_per_sample_learnable_qmin_betascale_position
+        if implementation == 'atanh':
+            impl = Hinge_OC_per_sample_atanhweighing
         self.implementation = implementation
 
 
@@ -2325,6 +2328,7 @@ class LLFullObjectCondensation(LossLayerBase):
         self.loc_time=time.time()
         self.call_count=0
         self.beta_push = beta_push
+        self.train_energy_unc=train_energy_unc
 
         assert kalpha_damping_strength >= 0. and kalpha_damping_strength <= 1.
 
@@ -2761,7 +2765,8 @@ class LLFullObjectCondensation(LossLayerBase):
             'div_repulsion' : self.div_repulsion,
             'dynamic_payload_scaling_onset': self.dynamic_payload_scaling_onset,
             'beta_push': self.beta_push,
-            'implementation': self.implementation
+            'implementation': self.implementation,
+            'train_energy_unc': self.train_energy_unc
         }
         base_config = super(LLFullObjectCondensation, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -3060,6 +3065,10 @@ class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
 
         epred = pred_energy * t_dep_energies
         sigma = pred_uncertainty_high * t_dep_energies + 1.0
+        
+        if not self.train_energy_unc:
+            sigma = tf.ones_like(sigma)
+            
 
         # Uncertainty 'sigma' must minimize this term:
         # ln(2*pi*sigma^2) + (E_true - E-pred)^2/sigma^2
@@ -3067,7 +3076,9 @@ class LLExtendedObjectCondensation3(LLExtendedObjectCondensation):
         prediction_loss = tf.math.divide_no_nan((t_energy - epred)**2, sigma**2)
 
         uncertainty_loss = tf.math.log(sigma**2)
-
+        if not self.train_energy_unc:
+            uncertainty_loss = pred_uncertainty_high**2
+        
         matching_loss = tf.debugging.check_numerics(matching_loss, "matching_loss")
         prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
         uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
@@ -3284,6 +3295,112 @@ class LLExtendedObjectCondensation4(LLFullObjectCondensation):
             return tf.concat([prediction_loss, matching_loss + uncertainty_loss], axis=-1)
         else:
             return prediction_loss, uncertainty_loss + matching_loss
+
+class LLExtendedObjectCondensationCocoa(LLExtendedObjectCondensation):
+    '''
+    Same as `LLExtendedObjecCondensation3` but uses total energy instead of correction as prediction,
+    position loss for [cos(phi), sin(phi), eta] and classification loss into categories for COCOA
+    '''
+
+
+    def __init__(self, *args, **kwargs):
+        super(LLExtendedObjectCondensationCocoa, self).__init__(*args, **kwargs)
+
+
+    def calc_energy_correction_factor_loss(self,
+            t_energy, t_dep_energies,
+            pred_energy, pred_uncertainty_low, pred_uncertainty_high,
+            return_concat=False):
+        """
+        Wrong name for parity, but calculates the total energy instead of the correction factor.
+        * t_energy              -> Truth energy of shower
+        * t_dep_energies        -> Sum of deposited energy IF clustered perfectly
+        * pred_energy           -> predicted energy
+        * pred_uncertainty_low  -> predicted uncertainty
+        * pred_uncertainty_high -> predicted uncertainty (should be equal to ...low)
+        """
+        t_energy = tf.clip_by_value(t_energy,0.,1e12)
+        
+        prediction_loss = tf.math.log((t_energy - pred_energy)**2+1)
+        #prediction_loss = ((t_energy - pred_energy)/t_energy)**2
+
+        uncertainty_loss = pred_uncertainty_high**2 + pred_uncertainty_low**2
+
+        prediction_loss = tf.debugging.check_numerics(prediction_loss, "matching_loss")
+        uncertainty_loss = tf.debugging.check_numerics(uncertainty_loss, "matching_loss")
+        uncertainty_loss = tf.clip_by_value(uncertainty_loss, 0, 10)
+
+        if return_concat:
+            return tf.concat([prediction_loss, uncertainty_loss], axis=-1)
+        else:
+            return prediction_loss, uncertainty_loss
+        
+    def calc_position_loss(self, t_pos, pred_pos):
+        if tf.shape(pred_pos)[-1] == 2:
+            raise ValueError("Position loss is implemented for cosphi, sinphi, eta")
+        if not self.position_loss_weight:
+            return 0.*tf.reduce_sum((pred_pos-t_pos)**2,axis=-1, keepdims=True)
+
+        ploss = huber(tf.sqrt(tf.reduce_sum((t_pos-pred_pos) ** 2, axis=-1, keepdims=True) + 1e-4), 0.1)
+        ploss = tf.debugging.check_numerics(ploss, "ploss loss")
+        return ploss
+    
+    def calc_classification_loss(self, orig_t_pid, pred_id, t_is_unique=None, hasunique=None):
+        """
+        Truth PID is not yet one-hot encoded
+        Encoding:
+            0: Photon
+            1: Neutral Hadron
+            2: Charged
+            3: Ambiguous
+        """
+        if self.classification_loss_weight <= 0:
+            return tf.reduce_mean(pred_id,axis=1, keepdims=True)
+
+        charged_conditions = [
+                tf.abs(orig_t_pid) == 11,  # Electrons
+                tf.abs(orig_t_pid) == 13,  # Muons
+                tf.abs(orig_t_pid) == 211,  # Charged Pions
+                tf.abs(orig_t_pid) == 321,  # Charged Kaons
+                tf.abs(orig_t_pid) == 2212, # Protons
+                tf.abs(orig_t_pid) == 3112, # Sigma-
+                tf.abs(orig_t_pid) == 3222, # Sigma+
+                tf.abs(orig_t_pid) == 3312, # Xi-
+                ]
+        neutral_hadronic_conditions = [
+                tf.abs(orig_t_pid) == 130,  # Klong
+                tf.abs(orig_t_pid) == 310,  # Kshort
+                tf.abs(orig_t_pid) == 311,  # K0
+                tf.abs(orig_t_pid) == 2112, # Neutrons
+                tf.abs(orig_t_pid) == 3122, # Lambda
+                tf.abs(orig_t_pid) == 3322, # Xi0
+                ]
+        charged_true = tf.reduce_any(charged_conditions, axis=0)
+        neutral_hadronic_true = tf.reduce_any(neutral_hadronic_conditions, axis=0)
+
+        truth_pid_tmp = tf.zeros_like(orig_t_pid) - 1 # Initialize with -1
+        truth_pid_tmp = tf.where(tf.abs(orig_t_pid) == 22, 0, truth_pid_tmp)    # Photons
+        truth_pid_tmp = tf.where(neutral_hadronic_true, 1, truth_pid_tmp)       # Neutral Had.
+        truth_pid_tmp = tf.where(charged_true, 2, truth_pid_tmp)       # Charged
+        truth_pid_tmp = tf.where(truth_pid_tmp == -1, 3, truth_pid_tmp)         # Catch rest
+        truth_pid_tmp = tf.cast(truth_pid_tmp, tf.int32)
+
+        truth_pid_onehot = tf.one_hot(truth_pid_tmp, depth=4)
+        truth_pid_onehot = tf.reshape(truth_pid_onehot, (-1, 4))
+
+        pred_id = tf.clip_by_value(pred_id, 1e-9, 1. - 1e-9)
+        classloss = tf.keras.losses.categorical_crossentropy(truth_pid_onehot, pred_id)
+
+        classloss = tf.debugging.check_numerics(classloss, "classloss")
+
+        # Weight the loss by the class weights to account for class imbalance
+        class_weights = tf.constant([1/2.5, 1/0.4, 1/3.75, 1.0], dtype=tf.float32) #Inverse of frequency of classes in COCOA dataset
+        class_weights = tf.reshape(class_weights, (1, 4))
+        weighted_classloss = classloss * tf.reduce_sum(truth_pid_onehot * class_weights, axis=-1)
+
+        weighted_classloss = tf.debugging.check_numerics(weighted_classloss, "weighted_classloss")
+
+        return weighted_classloss[..., tf.newaxis]
 
 
 class LLExtendedObjectCondensation5(LLExtendedObjectCondensation):

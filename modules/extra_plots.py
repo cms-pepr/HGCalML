@@ -236,6 +236,7 @@ def energy_resolution(df, bins=None, binwidth=10., addfit=False):
     # ax2.hist(bins[1:], weights=entries, histtype='stepfilled', color='grey', alpha=0.2, zorder=1)
     ax2.hist(bins[1:], weights=entries, color='grey', alpha=0.2, zorder=1, label='Counts')
     yticks = ax2.get_yticks()
+    ax2.set_yticks(yticks)
     ax2.set_yticklabels(yticks, fontsize=20)
     ax2.set_title("Respone and Counts", fontsize=40)
     ax2.set_ylabel("Counts", fontsize=40)
@@ -254,6 +255,7 @@ def energy_resolution(df, bins=None, binwidth=10., addfit=False):
     ax3.set_xticks(xticks)
     ax3.set_xticklabels(xticks, fontsize=20)
     yticks = ax3.get_yticks()
+    ax3.set_yticks(yticks)
     ax3.set_yticklabels(np.round(yticks, 3), fontsize=20)
     ax3.grid(alpha=0.5, linestyle='--')
     # fit resolution function to sigmaOverE
@@ -572,6 +574,7 @@ def noise_performance(noise_df):
     return fig
 
 MAP_DICT = {
+    -1: 5,      # Noise
     0: 5,       # Whatever
     13: 0,      # Muon
     -13: 0,

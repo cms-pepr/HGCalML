@@ -66,10 +66,10 @@ loss_layer = LLExtendedObjectCondensation2
 if not train.args.no_wandb:
     wandb.init(
         project=train.args.wandb_project,
-        config=wandb_config,
+        #config=wandb_config,
     )
     wandb.save(sys.argv[0]) # Save python file
-    wandb.save(train.args.configFile) # Save config file
+    #wandb.save(train.args.configFile) # Save config file
 else:
     wandb.active=False
 

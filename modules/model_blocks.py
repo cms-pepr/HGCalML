@@ -426,7 +426,8 @@ def create_outputs(x, n_ccoords=3,
                    trainable=True,
                    is_track=None,
                    set_track_betas_to_one=False,
-                   predict_spectator_weights=False):
+                   predict_spectator_weights=False,
+                   pred_e_factor = 0.01):
     '''
     returns
         * pred_beta                     Dense(1)
@@ -477,7 +478,7 @@ def create_outputs(x, n_ccoords=3,
         name = name_prefix+'_energy',
         kernel_initializer='zeros',
         activation=energy_act,
-        trainable=trainable)(ScalarMultiply(0.01)(x))
+        trainable=trainable)(ScalarMultiply(pred_e_factor)(x))
 
     if energy_factor:
         pred_energy = Add(name= name_prefix+'_one_plus_energy')([OnesLike()(pred_energy),pred_energy])
